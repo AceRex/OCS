@@ -4,7 +4,7 @@ const utilSlice = createSlice({
   name: "util",
   initialState: {
     setTime: false,
-    time: "",
+    time: 0,
     agenda: [],
   },
   reducers: {

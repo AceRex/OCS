@@ -1,10 +1,8 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 // import { utilAction } from "../../Redux/state.jsx";
-// import SetTimePage from "../Modal/SetTimePage.js";
 
 function App() {
-  const time = useSelector((state) => state.util.time);
   const setTime = useSelector((state) => state.util.setTime);
   const [countdown, setCountDown] = useState(Number(0.5) * 60);
   const [bgChange, setBgChange] = useState(false);
@@ -34,7 +32,6 @@ function App() {
   };
 
   useEffect(() => {
-    electron.Timer.setTimer();
     timer.current = setInterval(() => {
       setCountDown((prev) => prev - 1);
     }, 1000);
@@ -45,7 +42,6 @@ function App() {
       setBgChange(true);
     }
     return () => {
-      //   ipcRenderer.removeAllListeners("setTimer");
       clearInterval(timer.current);
     };
   }, [countdown]);
@@ -61,10 +57,10 @@ function App() {
               bgChange ? "bg-red text-light" : "bg-green text-primary"
             }  p-12 flex rounded-lg `}
           >
-            {setTime && <SetTimePage />}
             <p className="text-[170px] font-extrabold">
               {formatTime(countdown)}
             </p>
+            {time}
           </section>
         </section>
       </div>
