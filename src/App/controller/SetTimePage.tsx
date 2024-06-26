@@ -19,7 +19,14 @@ export default function SetTimePage() {
 
     setTimer(totalTimeInSeconds);
     dispatch(utilAction.setTime(timer));
-
+    // @ts-ignore
+    electron.Timer.setTimer(totalTimeInSeconds, (response) => {
+      if (response.error) {
+        console.log(response.error);
+      } else {
+        dispatch(utilAction.setTime(response));
+      }
+    });
   };
   const handleClose = () => {
     dispatch(utilAction.setTime(timer));
@@ -39,12 +46,10 @@ export default function SetTimePage() {
         {/* @ts-ignore */}
         <input
           type="time"
-          value={timer}
           onChange={handleTimeValue}
           className="w-[100%] bg-primary/0 border border-light/30 text-center rounded-lg font-semibold p-4 text-8xl text-light"
         />
       </div>
-      {timer}
       <div className="w-[80%] m-auto mt-8 flex flex-col gap-6">
         <div className="flex flex-row gap-3 items-center">
           <label className="font-normal text-lg w-[15%]">Label: </label>

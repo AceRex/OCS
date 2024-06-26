@@ -27,6 +27,9 @@ function createWindows() {
   });
 
   // viewWindow.webContents.openDevTools();
+  ipcMain.on("activate_set_timer", (event, value) => {
+    viewWindow.webContents.send("set-timer", value);
+  });
 
   const controllerWindow = new BrowserWindow({
     width: primaryDisplay.bounds.width,
@@ -67,9 +70,7 @@ app.whenReady().then(() => {
 
   createWindows();
 });
-ipcMain.on("activate-set-timer", (event, value) => {
-  event.reply("set-timer", value);
-});
+
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();

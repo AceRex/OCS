@@ -6,20 +6,19 @@ import SetTimePage from "./SetTimePage.tsx";
 function App() {
   const time = useSelector((state) => state.util.time);
   const agenda = useSelector((state) => state.util.agenda);
-  const [countdown, setCountDown] = useState(Number(time) * 60);
+  const [countdown, setCountDown] = useState(time);
   const [bgChange, setBgChange] = useState(false);
   const [timeUp, setTimeUp] = useState(false);
-  const dispatch = useDispatch();
   const timer = useRef(null);
 
-  const formatTime = (time) => {
-    if (isNaN(time)) {
+  const formatTime = (timeToFormat) => {
+    if (isNaN(timeToFormat)) {
       return "Set Timer";
     }
 
-    let hr = Math.floor(time / 3600);
-    let min = Math.floor((time % 3600) / 60);
-    let sec = Math.floor(time % 60);
+    let hr = Math.floor(timeToFormat / 3600);
+    let min = Math.floor((timeToFormat % 3600) / 60);
+    let sec = Math.floor(timeToFormat % 60);
 
     if (hr < 10) {
       hr = "0" + hr;
@@ -34,17 +33,11 @@ function App() {
   };
 
   useEffect(() => {
-    electron.Timer.setTimer(0.1, (response) => {
-      if (response.error) {
-        console.log(response.error);
-      } else {
-        dispatch(utilAction.setTime(response));
-      }
-    });
-  }, [dispatch]);
+    electron.Timer.setTimer(time);
+  }, [time]);
 
   useEffect(() => {
-    setCountDown(Number(time) * 60);
+    setCountDown(time);
   }, [time]);
 
   useEffect(() => {
@@ -85,8 +78,7 @@ function App() {
         >
           <p className="capitalize">current timer</p>
           <p className={"text-6xl w-[90%] m-auto font-extrabold"}>
-            {timeUp ? "Time Up!!!" : formatTime(countdown)}
-            {typeof(time)}
+            {timeUp && formatTime(countdown)}
           </p>
         </div>
         <div
