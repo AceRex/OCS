@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-import { utilAction } from "../../Redux/state.jsx";
 import SetTimePage from "./SetTimePage.tsx";
+import { utilAction } from "../../Redux/state.jsx";
 
 function App() {
   const time = useSelector((state) => state.util.time);
@@ -10,6 +10,8 @@ function App() {
   const [bgChange, setBgChange] = useState(false);
   const [timeUp, setTimeUp] = useState(false);
   const timer = useRef(null);
+
+  const dispatch = useDispatch()
 
   const formatTime = (timeToFormat) => {
     if (isNaN(timeToFormat)) {
@@ -67,6 +69,10 @@ function App() {
     }
   }, [countdown]);
 
+  const handleStart = (time) => {
+    dispatch(utilAction.setTime(time));
+  };
+
   return (
     <section className="w-[100vw] h-[100vh] flex flex-row p-4 gap-4">
       <SetTimePage />
@@ -90,10 +96,11 @@ function App() {
             <li
               className="font-bold text-light flex flex-row gap-3 p-5 items-center justify-between list-none bg-ash border border-light/30 rounded-lg"
               key={index}
+              onClick={() => handleStart(time)}
             >
-              <p className="font-bold text-sm">{agenda}</p>
-              <p className="font-light text-start text-sm truncate">{anchor}</p>
-              <p className="font-extrabold text-2xl ">{time}</p>
+              <p className="font-bold capitalize text-sm">{agenda}</p>
+              <p className="font-light capitalize text-start text-sm truncate">{anchor}</p>
+              <p className="font-extrabold text-2xl ">{formatTime(time)}</p>
               <p className="font-black text-sm text-red ">X</p>
             </li>
           ))}

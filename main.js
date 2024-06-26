@@ -46,7 +46,7 @@ function createWindows() {
       preload: path.join(__dirname, "preload.js"),
     },
   });
-  // controllerWindow.webContents.openDevTools();
+  controllerWindow.webContents.openDevTools();
 
   viewWindow.loadFile("view.html");
   controllerWindow.loadFile("controller.html");

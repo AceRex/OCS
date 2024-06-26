@@ -1,6 +1,5 @@
 import React, { useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
-import { Rootstate } from "../../Redux/interface";
+import { useDispatch } from "react-redux";
 import { utilAction } from "../../Redux/state";
 
 export default function SetTimePage() {
@@ -18,21 +17,11 @@ export default function SetTimePage() {
     const totalTimeInSeconds = hours * 3600 + minutes * 60;
 
     setTimer(totalTimeInSeconds);
-    dispatch(utilAction.setTime(timer));
-    // @ts-ignore
-    electron.Timer.setTimer(totalTimeInSeconds, (response) => {
-      if (response.error) {
-        console.log(response.error);
-      } else {
-        dispatch(utilAction.setTime(response));
-      }
-    });
   };
   const handleClose = () => {
     dispatch(utilAction.setTime(timer));
   };
   const handleClick = () => {
-    dispatch(utilAction.setTime(timer));
     dispatch(
       utilAction.setAgenda({ time: timer, agenda: label, anchor: inCharge })
     );

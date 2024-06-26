@@ -36,7 +36,6 @@ function App() {
       electron.Timer.removeSetTimerListener();
     };
   }, [countdown]);
-
   useEffect(() => {
     if (timer.current) {
       clearInterval(timer.current);
@@ -55,7 +54,6 @@ function App() {
 
     return () => clearInterval(timer.current);
   }, [countdown]);
-
   useEffect(() => {
     if (countdown <= 10) {
       setBgChange(true);
