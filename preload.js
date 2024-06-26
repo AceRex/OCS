@@ -2,9 +2,10 @@ const { ipcRenderer, contextBridge } = require("electron");
 
 contextBridge.exposeInMainWorld("electron", {
   Timer: {
-    setTimer() {
-      ipcRenderer.on("setTimer", (value) => {
-        dispatch(utilAction.setTimeState(value));
+    setTimer(value,callback) {
+      ipcRenderer.send("activate-set-timer", value);
+      ipcRenderer.on("set-timer", (event, response) => {
+        callback(response);
       });
     },
   },

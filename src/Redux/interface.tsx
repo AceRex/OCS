@@ -1,7 +1,7 @@
 export interface Rootstate {
   util: {
     setTime: boolean;
-    time: string;
+    time: number;
     agenda: [time: string, label: string, anchor: string];
   };
 }

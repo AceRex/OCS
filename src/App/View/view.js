@@ -1,18 +1,18 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
-// import { utilAction } from "../../Redux/state.jsx";
+import { utilAction } from "../../Redux/state.jsx";
 
 function App() {
-  const setTime = useSelector((state) => state.util.setTime);
-  const [countdown, setCountDown] = useState(Number(0.5) * 60);
+  const time = useSelector((state) => state.util.time);
+  const [countdown, setCountDown] = useState(Number(time) * 60);
   const [bgChange, setBgChange] = useState(false);
-  let dispatch = useDispatch();
-
-  const timer = useRef();
+  const [timeUp, setTimeUp] = useState(false);
+  const dispatch = useDispatch();
+  const timer = useRef(null);
 
   const formatTime = (time) => {
     if (isNaN(time)) {
-      return "Time Up!!!";
+      return "Set Timer";
     }
 
     let hr = Math.floor(time / 3600);
@@ -28,43 +28,64 @@ function App() {
     if (sec < 10) {
       sec = "0" + sec;
     }
-    return hr + ":" + min + ":" + sec;
+    return `${hr}:${min}:${sec}`;
   };
 
   useEffect(() => {
-    timer.current = setInterval(() => {
-      setCountDown((prev) => prev - 1);
-    }, 1000);
-    if (countdown <= 0) {
+    electron.Timer.setTimer(time, (response) => {
+      if (response.error) {
+        console.log(response.error);
+      } else {
+        dispatch(utilAction.setTime(response));
+      }
+    });
+  }, [dispatch]);
+
+  useEffect(() => {
+    setCountDown(Number(time) * 60);
+  }, [time]);
+
+  useEffect(() => {
+    if (timer.current) {
       clearInterval(timer.current);
-      setCountDown("Time Up!!!");
-    } else if (countdown <= 10) {
-      setBgChange(true);
     }
-    return () => {
-      clearInterval(timer.current);
-    };
+
+    timer.current = setInterval(() => {
+      setCountDown((prevCountdown) => {
+        if (prevCountdown <= 1) {
+          clearInterval(timer.current);
+          setTimeUp(true);
+          return 0;
+        }
+        return prevCountdown - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer.current);
+  }, [time]);
+
+  useEffect(() => {
+    if (countdown <= 10) {
+      setBgChange(true);
+    } else {
+      setBgChange(false);
+    }
   }, [countdown]);
 
   return (
-    <>
-      <div className="relative">
-        {/* <SetTimePage /> */}
-
-        <section className="p-[14em] max-lg:p-[0.5em] ">
-          <section
-            className={`${
-              bgChange ? "bg-red text-light" : "bg-green text-primary"
-            }  p-12 flex rounded-lg `}
-          >
-            <p className="text-[170px] font-extrabold">
-              {formatTime(countdown)}
-            </p>
-            {time}
-          </section>
+    <div className="relative">
+      <section className="p-[14em] max-lg:p-[0.5em]">
+        <section
+          className={`${
+            bgChange ? "bg-red text-light" : "bg-green text-primary"
+          } p-12 flex rounded-lg`}
+        >
+          <p className="text-[170px] font-extrabold">
+            {timeUp ? "Time Up!!!" : formatTime(countdown)}
+          </p>
         </section>
-      </div>
-    </>
+      </section>
+    </div>
   );
 }
 

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, screen } = require("electron");
+const { app, BrowserWindow, Menu, screen, ipcMain } = require("electron");
 const path = require("path");
 
 function createWindows() {
@@ -25,6 +25,8 @@ function createWindows() {
       preload: path.join(__dirname, "preload.js"),
     },
   });
+
+  // viewWindow.webContents.openDevTools();
 
   const controllerWindow = new BrowserWindow({
     width: primaryDisplay.bounds.width,
@@ -65,7 +67,9 @@ app.whenReady().then(() => {
 
   createWindows();
 });
-
+ipcMain.on("activate-set-timer", (event, value) => {
+  event.reply("set-timer", value);
+});
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();

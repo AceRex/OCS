@@ -5,18 +5,16 @@ import SetTimePage from "./SetTimePage.tsx";
 
 function App() {
   const time = useSelector((state) => state.util.time);
-  const setTime = useSelector((state) => state.util.setTime);
   const agenda = useSelector((state) => state.util.agenda);
-  const [countdown, setCountDown] = useState(Number(0.1) * 60);
+  const [countdown, setCountDown] = useState(Number(time) * 60);
   const [bgChange, setBgChange] = useState(false);
-  let dispatch = useDispatch();
-  console.log(agenda.length);
-
-  const timer = useRef();
+  const [timeUp, setTimeUp] = useState(false);
+  const dispatch = useDispatch();
+  const timer = useRef(null);
 
   const formatTime = (time) => {
     if (isNaN(time)) {
-      return "Time Up";
+      return "Set Timer";
     }
 
     let hr = Math.floor(time / 3600);
@@ -32,23 +30,48 @@ function App() {
     if (sec < 10) {
       sec = "0" + sec;
     }
-    return hr + ":" + min + ":" + sec;
+    return `${hr}:${min}:${sec}`;
   };
 
   useEffect(() => {
-    electron.Timer.setTimer();
-    timer.current = setInterval(() => {
-      setCountDown((prev) => prev - 1);
-    }, 1000);
-    if (countdown <= 0) {
+    electron.Timer.setTimer(0.1, (response) => {
+      if (response.error) {
+        console.log(response.error);
+      } else {
+        dispatch(utilAction.setTime(response));
+      }
+    });
+  }, [dispatch]);
+
+  useEffect(() => {
+    setCountDown(Number(time) * 60);
+  }, [time]);
+
+  useEffect(() => {
+    if (timer.current) {
       clearInterval(timer.current);
-      setCountDown("Time Up");
-    } else if (countdown <= 10) {
-      setBgChange(true);
     }
-    return () => {
-      clearInterval(timer.current);
-    };
+
+    timer.current = setInterval(() => {
+      setCountDown((prevCountdown) => {
+        if (prevCountdown <= 1) {
+          clearInterval(timer.current);
+          setTimeUp(true);
+          return 0;
+        }
+        return prevCountdown - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer.current);
+  }, [time]);
+
+  useEffect(() => {
+    if (countdown <= 10) {
+      setBgChange(true);
+    } else {
+      setBgChange(false);
+    }
   }, [countdown]);
 
   return (
@@ -60,9 +83,10 @@ function App() {
             bgChange ? "bg-red text-light" : "bg-green text-primary"
           }  p-10 rounded-lg w-[100%] text-center mb-4`}
         >
-          <p className="capitalize">current timer{time}</p>
+          <p className="capitalize">current timer</p>
           <p className={"text-6xl w-[90%] m-auto font-extrabold"}>
-            {formatTime(countdown)}
+            {timeUp ? "Time Up!!!" : formatTime(countdown)}
+            {typeof(time)}
           </p>
         </div>
         <div
