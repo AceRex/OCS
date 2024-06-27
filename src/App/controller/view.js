@@ -11,7 +11,7 @@ function App() {
   const [timeUp, setTimeUp] = useState(false);
   const timer = useRef(null);
 
-  const dispatch = useDispatch()
+  const dispatch = useDispatch();
 
   const formatTime = (timeToFormat) => {
     if (isNaN(timeToFormat)) {
@@ -72,7 +72,9 @@ function App() {
   const handleStart = (time) => {
     dispatch(utilAction.setTime(time));
   };
-
+  const handleDeleteFromList = (id) => {
+    dispatch(utilAction.delAgenda({id}));
+  };
   return (
     <section className="w-[100vw] h-[100vh] flex flex-row p-4 gap-4">
       <SetTimePage />
@@ -92,16 +94,23 @@ function App() {
             agenda.length >= 1 ? "bg-primary" : "hidden"
           }`}
         >
-          {agenda?.map(({ time, agenda, anchor }, index) => (
+          {agenda?.map(({ _id, time, agenda, anchor }) => (
             <li
-              className="font-bold text-light flex flex-row gap-3 p-5 items-center justify-between list-none bg-ash border border-light/30 rounded-lg"
-              key={index}
+              className={`font-bold text-light flex flex-row gap-3 p-5 items-center justify-between list-none bg-ash border border-light/30 rounded-lg`}
+              key={_id}
               onClick={() => handleStart(time)}
             >
               <p className="font-bold capitalize text-sm">{agenda}</p>
-              <p className="font-light capitalize text-start text-sm truncate">{anchor}</p>
+              <p className="font-light capitalize text-start text-sm truncate">
+                {anchor}
+              </p>
               <p className="font-extrabold text-2xl ">{formatTime(time)}</p>
-              <p className="font-black text-sm text-red ">X</p>
+              <p
+                className="font-black text-sm text-red "
+                onClick={() => handleDeleteFromList(_id)}
+              >
+                X
+              </p>
             </li>
           ))}
         </div>

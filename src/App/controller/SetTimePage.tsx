@@ -23,7 +23,12 @@ export default function SetTimePage() {
   };
   const handleClick = () => {
     dispatch(
-      utilAction.setAgenda({ time: timer, agenda: label, anchor: inCharge })
+      utilAction.setAgenda({
+        _id: Date.now(),
+        time: timer,
+        agenda: label,
+        anchor: inCharge,
+      })
     );
     setTimer(0);
     setLabel("");

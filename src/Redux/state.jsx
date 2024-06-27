@@ -17,10 +17,22 @@ const utilSlice = createSlice({
     setAgenda: (state, action) => {
       const newAgenda = action.payload;
       state.agenda.push({
+        _id: newAgenda._id,
         time: newAgenda.time,
         agenda: newAgenda.agenda,
         anchor: newAgenda.anchor,
       });
+    },
+    delAgenda(state, action) {
+      const existingItem = state.agenda.find(
+        (item) => item._id === action.payload.id
+      );
+      console.log(existingItem);
+      if (existingItem) {
+        state.agenda = state.agenda.filter(
+          (item) => item._id !== action.payload.id
+        );
+      }
     },
   },
 });

@@ -4,13 +4,6 @@ exports.createTemplate = (app) => {
       label: process.platform === "darwin" ? app.getName() : "Menu",
       submenu: [
         {
-          label: "Set Time",
-          click: () => {
-            win.webContents.send("setTimer", true);
-          },
-          accelerator: "Ctrl+Shift+T",
-        },
-        {
           type: "separator",
         },
         {
