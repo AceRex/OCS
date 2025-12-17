@@ -4,45 +4,59 @@ import { utilAction } from "../../Redux/state";
 
 export default function SetTimePage() {
   let dispatch = useDispatch();
-  const [timer, setTimer] = useState(0);
+  const [hours, setHours] = useState(0);
+  const [minutes, setMinutes] = useState(0);
   const [label, setLabel] = useState("");
   const [inCharge, setInCharge] = useState("");
 
-  const handleTimeValue = (e: any) => {
-    e.preventDefault();
-    const inputValue = e.target.value;
-
-    const [hours, minutes] = inputValue.split(":").map(Number);
-
-    const totalTimeInSeconds = hours * 3600 + minutes * 60;
-
-    setTimer(totalTimeInSeconds);
-  };
   const handleClose = () => {
-    dispatch(utilAction.setTime(timer));
+    const totalTimeInSeconds = hours * 3600 + minutes * 60;
+    dispatch(utilAction.setTime(totalTimeInSeconds));
   };
   const handleClick = () => {
+    const totalTimeInSeconds = hours * 3600 + minutes * 60;
     dispatch(
       utilAction.setAgenda({
         _id: Date.now(),
-        time: timer,
+        time: totalTimeInSeconds,
         agenda: label,
         anchor: inCharge,
       })
     );
-    setTimer(0);
+    setHours(0);
+    setMinutes(0);
     setLabel("");
     setInCharge("");
   };
   return (
-    <div className="w-[50%] bg-ash/20 rounded-lg p-4 text-light">
-      <div className="w-[70%] m-auto mb-5">
-        {/* @ts-ignore */}
-        <input
-          type="time"
-          onChange={handleTimeValue}
-          className="w-[100%] bg-primary/0 border border-light/30 text-center rounded-lg font-semibold p-4 text-8xl text-light"
-        />
+    <div className="w-[50%] bg-ash/20 rounded-2xl p-4 text-light">
+      <div className="w-full m-auto mb-5 flex flex-row items-center justify-center bg-primary border border-light/30 rounded-2xl p-4">
+        <div className="w-[50%] flex flex-col justify-center items-center rounded-2xl bg-ash/20 p-2">
+          <input
+            name="HH"
+            type="number"
+            min="0"
+            value={hours}
+            onChange={(e) => setHours(Number(e.target.value))}
+            placeholder="HH"
+            className="w-full h-[100%] bg-primary/0 text-center font-semibold text-8xl text-light focus:outline-none appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+          />
+          <p className="font-extrabold text-ash">HOURS</p>
+        </div>
+        <span className="text-8xl text-light font-semibold pb-4">:</span>
+        <div className="w-[50%] flex flex-col justify-center items-center rounded-lg bg-ash/20 p-2">
+          <input
+            type="number"
+            min="0"
+            max="59"
+            value={minutes}
+            onChange={(e) => setMinutes(Number(e.target.value))}
+            placeholder="MM"
+            className="w-full h-[100%] bg-primary/0 text-center font-semibold text-8xl text-light focus:outline-none appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+          />
+          <p className="font-extrabold text-ash">MINUTES</p>
+
+        </div>
       </div>
       <div className="w-[80%] m-auto mt-8 flex flex-col gap-6">
         <div className="flex flex-row gap-3 items-center">
@@ -71,7 +85,7 @@ export default function SetTimePage() {
           onClick={handleClose}
           className="p-2 bg-ash hover:bg-opacity-90 rounded-lg w-[30%]"
         >
-          Start Timer
+          Quick Start
         </button>
         <button
           onClick={handleClick}

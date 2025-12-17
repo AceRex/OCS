@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import SetTimePage from "./SetTimePage.tsx";
 import { utilAction } from "../../Redux/state.jsx";
+import { PiEmpty } from "react-icons/pi";
+
 
 function App() {
   const time = useSelector((state) => state.util.time);
@@ -73,46 +75,63 @@ function App() {
     dispatch(utilAction.setTime(time));
   };
   const handleDeleteFromList = (id) => {
-    dispatch(utilAction.delAgenda({id}));
+    dispatch(utilAction.delAgenda({ id }));
   };
   return (
     <section className="w-[100vw] h-[100vh] flex flex-row p-4 gap-4">
       <SetTimePage />
-      <div className="w-[50%] bg-ash/20 rounded-lg p-4">
+      <div className="w-[50%] bg-ash/20 rounded-2xl p-4 space-y-4">
         <div
-          className={`${
-            bgChange ? "bg-red text-light" : "bg-green text-primary"
-          }  p-10 rounded-lg w-[100%] text-center mb-4`}
+          className={`${bgChange ? "bg-red text-light" : "bg-green text-primary"
+            }  p-10 rounded-lg w-[100%] text-center`}
         >
-          <p className="capitalize">current timer</p>
+          <p className="capitalize">current timer preview</p>
           <p className={"text-6xl w-[90%] m-auto font-extrabold"}>
             {timeUp && formatTime(countdown)}
           </p>
         </div>
         <div
-          className={`m-auto flex flex-col gap-4 p-4 h-[77%] overflow-y-scroll  rounded-lg ${
-            agenda.length >= 1 ? "bg-primary" : "hidden"
-          }`}
+          className={`m-auto flex flex-col gap-4 p-4 h-[78%] overflow-y-scroll rounded-2xl bg-primary`}
         >
-          {agenda?.map(({ _id, time, agenda, anchor }) => (
-            <li
-              className={`font-bold text-light flex flex-row gap-3 p-5 items-center justify-between list-none bg-ash border border-light/30 rounded-lg`}
-              key={_id}
-              onClick={() => handleStart(time)}
-            >
-              <p className="font-bold capitalize text-sm">{agenda}</p>
-              <p className="font-light capitalize text-start text-sm truncate">
-                {anchor}
-              </p>
-              <p className="font-extrabold text-2xl ">{formatTime(time)}</p>
-              <p
-                className="font-black text-sm text-red "
-                onClick={() => handleDeleteFromList(_id)}
-              >
-                X
-              </p>
-            </li>
-          ))}
+
+          {agenda?.length === 0 ? <div className="font-normal flex flex-col h-full items-center justify-center gap-2 p-2 text-center rounded-md text-ash/60"><PiEmpty size={40} /> <p className="text-xl">No timers added yet</p></div> : agenda?.map(({ _id, time: itemTime, agenda, anchor }) => {
+            const isActive = itemTime === time;
+            return (
+              <>
+                <p className="font-normal p-2 text-xs text-center bg-ash/20 rounded-md text-ash">Click on the first timer to start this sequence</p>
+                <div
+                  key={_id}
+                  className={`relative rounded-lg ${isActive ? "p-2 overflow-hidden" : ""
+                    }`}
+                >
+                  {isActive && (
+                    <div className="absolute inset-[-500%] animate-[spin_5s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,#0000_0%,#0AEF76_50%,#0000_100%)]" />
+                  )}
+                  <li
+                    className={`font-bold text-light flex flex-row gap-3 p-4 items-center justify-between list-none bg-ash border rounded-lg relative z-10 ${isActive ? "border-transparent" : "border-light/30"
+                      }`}
+                    onClick={() => handleStart(itemTime)}
+                  >
+                    <p className="font-bold capitalize text-sm">{agenda}</p>
+                    <p className="font-light capitalize text-start text-sm truncate">
+                      {anchor}
+                    </p>
+                    <p className="font-extrabold text-2xl ">{formatTime(itemTime)}</p>
+                    <p
+                      className="font-black text-sm text-red cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteFromList(_id);
+                      }}
+                    >
+                      X
+                    </p>
+                  </li>
+                </div>
+              </>
+
+            );
+          })}
         </div>
       </div>
     </section>

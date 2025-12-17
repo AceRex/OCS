@@ -1,6 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import "../../output.css";
+import "../../index.css";
 import App from "./view.js";
 import { Provider } from "react-redux";
 import store from "../../Redux/slice.tsx";
