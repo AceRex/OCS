@@ -1,141 +1,31 @@
-import React, { useEffect, useRef, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
-import SetTimePage from "./SetTimePage.tsx";
-import { utilAction } from "../../Redux/state.jsx";
-import { PiEmpty } from "react-icons/pi";
-
+import React, { useState } from "react";
+import Sidebar from "./Sidebar";
+import TimerController from "./TimerController";
+import BibleController from "./BibleController";
+import PresentationController from "./PresentationController";
 
 function App() {
-  const time = useSelector((state) => state.util.time);
-  const agenda = useSelector((state) => state.util.agenda);
-  const isEventMode = useSelector((state) => state.util.isEventMode);
-  const [countdown, setCountDown] = useState(time);
-  const [bgChange, setBgChange] = useState(false);
-  const [timeUp, setTimeUp] = useState(false);
-  const timer = useRef(null);
+  const [activeTab, setActiveTab] = useState('timer');
 
-  const dispatch = useDispatch();
-
-  const formatTime = (timeToFormat) => {
-    if (isNaN(timeToFormat)) {
-      return "Set Timer";
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'timer':
+        return <TimerController />;
+      case 'bible':
+        return <BibleController />;
+      case 'presentation':
+        return <PresentationController />;
+      default:
+        return <div className="text-light p-10">Select a module</div>;
     }
-
-    let hr = Math.floor(timeToFormat / 3600);
-    let min = Math.floor((timeToFormat % 3600) / 60);
-    let sec = Math.floor(timeToFormat % 60);
-
-    if (hr < 10) {
-      hr = "0" + hr;
-    }
-    if (min < 10) {
-      min = "0" + min;
-    }
-    if (sec < 10) {
-      sec = "0" + sec;
-    }
-    return `${hr}:${min}:${sec}`;
   };
 
-  useEffect(() => {
-    electron.Timer.setTimer({ time, isEventMode });
-  }, [time, isEventMode]);
-
-  useEffect(() => {
-    setCountDown(time);
-  }, [time]);
-
-  useEffect(() => {
-    if (timer.current) {
-      clearInterval(timer.current);
-    }
-
-    timer.current = setInterval(() => {
-      setCountDown((prevCountdown) => {
-        if (prevCountdown <= 1) {
-          clearInterval(timer.current);
-          setTimeUp(true);
-          return 0;
-        }
-        return prevCountdown - 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(timer.current);
-  }, [time]);
-
-  useEffect(() => {
-    if (countdown <= 10) {
-      setBgChange(true);
-    } else {
-      setBgChange(false);
-    }
-  }, [countdown]);
-
-  const handleStart = (time) => {
-    dispatch(utilAction.setEventMode(false));
-    dispatch(utilAction.setTime(time));
-  };
-  const handleDeleteFromList = (id) => {
-    dispatch(utilAction.delAgenda({ id }));
-  };
   return (
-    <section className="w-[100vw] h-[100vh] flex flex-row p-4 gap-4">
-      <SetTimePage />
-      <div className="w-[60%] bg-ash/20 rounded-2xl p-4 space-y-4">
-        <div
-          className={`${bgChange ? "bg-red text-light" : "bg-green text-primary"
-            }  p-10 rounded-lg w-[100%] text-center`}
-        >
-          <p className="capitalize">current timer preview</p>
-          <p className={"text-6xl w-[90%] m-auto font-extrabold"}>
-            {timeUp && formatTime(countdown)}
-          </p>
-        </div>
-        <div
-          className={`m-auto flex flex-col gap-4 p-4 h-[78%] overflow-y-scroll rounded-2xl bg-primary`}
-        >
-
-          {agenda?.length === 0 ? <div className="font-normal flex flex-col h-full items-center justify-center gap-2 p-2 text-center rounded-md text-ash/60"><PiEmpty size={40} /> <p className="text-xl">No timers added yet</p></div> : agenda?.map(({ _id, time: itemTime, agenda, anchor }) => {
-            const isActive = itemTime === time;
-            return (
-              <>
-                <p className="font-normal p-2 text-xs text-center bg-ash/20 rounded-md text-ash">Click on the first timer to start this sequence</p>
-                <div
-                  key={_id}
-                  className={`relative rounded-lg ${isActive ? "p-2 overflow-hidden" : ""
-                    }`}
-                >
-                  {isActive && (
-                    <div className="absolute inset-[-500%] animate-[spin_5s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,#0000_0%,#0AEF76_50%,#0000_100%)]" />
-                  )}
-                  <li
-                    className={`font-bold text-light flex flex-row gap-3 p-4 items-center justify-between list-none bg-ash border rounded-lg relative z-10 ${isActive ? "border-transparent" : "border-light/30"
-                      }`}
-                    onClick={() => handleStart(itemTime)}
-                  >
-                    <p className="font-bold capitalize text-sm">{agenda}</p>
-                    <p className="font-light capitalize text-start text-sm truncate">
-                      {anchor}
-                    </p>
-                    <p className="font-extrabold text-2xl ">{formatTime(itemTime)}</p>
-                    <p
-                      className="font-black text-sm text-red cursor-pointer"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDeleteFromList(_id);
-                      }}
-                    >
-                      X
-                    </p>
-                  </li>
-                </div>
-              </>
-
-            );
-          })}
-        </div>
-      </div>
+    <section className="w-[100vw] h-[100vh] flex flex-row bg-primary overflow-hidden">
+      <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
+      <main className="flex-1 h-full overflow-hidden p-4">
+        {renderContent()}
+      </main>
     </section>
   );
 }

@@ -31,6 +31,10 @@ function createWindows() {
     viewWindow.webContents.send("set-timer", value);
   });
 
+  ipcMain.on("activate_set_content", (event, value) => {
+    viewWindow.webContents.send("set-content", value);
+  });
+
   const controllerWindow = new BrowserWindow({
     width: primaryDisplay.bounds.width,
     height: primaryDisplay.bounds.height,
@@ -46,7 +50,7 @@ function createWindows() {
       preload: path.join(__dirname, "preload.js"),
     },
   });
-  controllerWindow.webContents.openDevTools();
+  // controllerWindow.webContents.openDevTools();
 
   viewWindow.loadFile("view.html");
   controllerWindow.loadFile("controller.html");
@@ -62,6 +66,37 @@ function createWindows() {
   viewWindow.show();
   controllerWindow.show();
 }
+
+// ------ BIBLE DATABASE HANDLERS ------
+const sqlite3 = require('sqlite3').verbose();
+const dbPath = path.join(__dirname, 'src/Bible/bibles.db');
+const db = new sqlite3.Database(dbPath, (err) => {
+  if (err) console.error("Database opening error: ", err);
+});
+
+ipcMain.handle("bible-get-books", async (event) => {
+  return new Promise((resolve, reject) => {
+    db.all("SELECT * FROM books ORDER BY id", [], (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows);
+    });
+  });
+});
+
+ipcMain.handle("bible-get-chapter", async (event, { version, bookId, chapter }) => {
+  return new Promise((resolve, reject) => {
+    // book_id in DB is 0-indexed based on my python script
+    db.all(
+      "SELECT text FROM verses WHERE version = ? AND book_id = ? AND chapter = ? ORDER BY verse",
+      [version, bookId, chapter],
+      (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows.map(r => r.text));
+      }
+    );
+  });
+});
+// -------------------------------------
 
 app.whenReady().then(() => {
   const template = require("./menu.js").createTemplate(app);
