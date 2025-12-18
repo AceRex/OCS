@@ -1,10 +1,10 @@
 import React, { useEffect, useRef, useState } from "react";
-import { useSelector } from "react-redux";
 
 function App() {
   const [countdown, setCountDown] = useState(0);
   const [bgChange, setBgChange] = useState(false);
   const [timeUp, setTimeUp] = useState(false);
+  const [isEventMode, setIsEventMode] = useState(false);
   const timer = useRef(null);
 
   const formatTime = (timeToFormat) => {
@@ -29,13 +29,19 @@ function App() {
   };
   useEffect(() => {
     electron.Timer.onSetTimer((value) => {
-      setCountDown(value);
+      if (typeof value === "object" && value !== null) {
+        setCountDown(value.time);
+        setIsEventMode(value.isEventMode || false);
+      } else {
+        setCountDown(value);
+        setIsEventMode(false);
+      }
     });
 
     return () => {
       electron.Timer.removeSetTimerListener();
     };
-  }, [countdown]);
+  }, []);
   useEffect(() => {
     if (timer.current) {
       clearInterval(timer.current);
@@ -63,17 +69,25 @@ function App() {
   }, [countdown]);
 
   return (
-    <div className="relative">
-      <section className="p-[14em] max-lg:p-[0.5em]">
-        <section
-          className={`${
-            bgChange ? "bg-red text-light" : "bg-green text-primary"
-          } p-12 flex rounded-lg`}
-        >
-          <p className="text-[170px] font-extrabold">
-            {timeUp && formatTime(countdown)}
-          </p>
-        </section>
+    <div className="h-full flex flex-col justify-center items-center">
+      <section className="max-lg:p-[0.5em]">
+        {isEventMode ? (
+          <section className="bg-blue-600 text-light p-12 flex flex-col items-center justify-center rounded-2xl shadow-2xl border-4 border-blue-400">
+            <p className="text-4xl font-bold uppercase tracking-widest mb-4">Event Starts In</p>
+            <p className="text-[170px] font-extrabold leading-none">
+              {timeUp && formatTime(countdown)}
+            </p>
+          </section>
+        ) : (
+          <section
+            className={`${bgChange ? "bg-red text-light" : "bg-green text-primary"
+              } p-12 flex rounded-2xl`}
+          >
+            <p className="text-[170px] font-extrabold">
+              {timeUp && formatTime(countdown)}
+            </p>
+          </section>
+        )}
       </section>
     </div>
   );

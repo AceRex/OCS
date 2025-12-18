@@ -8,6 +8,7 @@ import { PiEmpty } from "react-icons/pi";
 function App() {
   const time = useSelector((state) => state.util.time);
   const agenda = useSelector((state) => state.util.agenda);
+  const isEventMode = useSelector((state) => state.util.isEventMode);
   const [countdown, setCountDown] = useState(time);
   const [bgChange, setBgChange] = useState(false);
   const [timeUp, setTimeUp] = useState(false);
@@ -37,8 +38,8 @@ function App() {
   };
 
   useEffect(() => {
-    electron.Timer.setTimer(time);
-  }, [time]);
+    electron.Timer.setTimer({ time, isEventMode });
+  }, [time, isEventMode]);
 
   useEffect(() => {
     setCountDown(time);
@@ -72,6 +73,7 @@ function App() {
   }, [countdown]);
 
   const handleStart = (time) => {
+    dispatch(utilAction.setEventMode(false));
     dispatch(utilAction.setTime(time));
   };
   const handleDeleteFromList = (id) => {
@@ -80,7 +82,7 @@ function App() {
   return (
     <section className="w-[100vw] h-[100vh] flex flex-row p-4 gap-4">
       <SetTimePage />
-      <div className="w-[50%] bg-ash/20 rounded-2xl p-4 space-y-4">
+      <div className="w-[60%] bg-ash/20 rounded-2xl p-4 space-y-4">
         <div
           className={`${bgChange ? "bg-red text-light" : "bg-green text-primary"
             }  p-10 rounded-lg w-[100%] text-center`}

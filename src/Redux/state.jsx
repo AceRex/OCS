@@ -6,8 +6,12 @@ const utilSlice = createSlice({
     setTime: false,
     time: 0,
     agenda: [],
+    isEventMode: false,
   },
   reducers: {
+    setEventMode: (state, action) => {
+      state.isEventMode = action.payload;
+    },
     setTimeState: (state, action) => {
       state.setTime = action.payload;
     },
