@@ -26,6 +26,10 @@ export default function BibleController() {
     useEffect(() => {
         if (books.length === 0) return;
 
+        // Critical: Clear verses immediately to prevent "Auto-Present" from showing stale data
+        // from the previous chapter while the new one is loading.
+        setVerses([]);
+
         electron.Bible.getChapter(selectedVersion, selectedBookIndex, selectedChapterIndex + 1)
             .then(setVerses)
             .catch(console.error);
@@ -112,8 +116,9 @@ export default function BibleController() {
     return (
         <div className="flex flex-col w-full h-full gap-4 text-light/90">
             {/* Header / Config */}
-            <div className="flex flex-row gap-4 bg-ash/20 p-4 rounded-xl items-center">
-                <div className="flex flex-col gap-1 w-1/4">
+            <div className="flex flex-row gap-4 bg-ash/20 p-4 rounded-xl items-center relative">
+
+                <div className="flex flex-col gap-1 w-1/5">
                     <label className="text-xs font-bold text-ash uppercase">Version</label>
                     <select
                         value={selectedVersion}
@@ -128,7 +133,7 @@ export default function BibleController() {
                     </select>
                 </div>
 
-                <div className="flex flex-col gap-1 w-1/4">
+                <div className="flex flex-col gap-1 w-1/5">
                     <label className="text-xs font-bold text-ash uppercase">Book</label>
                     <select
                         value={selectedBookIndex}
@@ -146,7 +151,7 @@ export default function BibleController() {
                     </select>
                 </div>
 
-                <div className="flex flex-col gap-1 w-1/4">
+                <div className="flex flex-col gap-1 w-1/5">
                     <label className="text-xs font-bold text-ash uppercase">Chapter</label>
                     <select
                         value={selectedChapterIndex}
@@ -161,8 +166,21 @@ export default function BibleController() {
                     </select>
                 </div>
 
-                <div className="flex-1 text-right opacity-50 text-sm">
-                    {currentBook.name} {selectedChapterIndex + 1} ({selectedVersion.toUpperCase()})
+                <div className="flex-1 flex flex-col items-end gap-2">
+                    <div className="text-right opacity-50 text-sm">
+                        {currentBook.name} {selectedChapterIndex + 1} ({selectedVersion.toUpperCase()})
+                    </div>
+                    {selectedVerseIndices.size > 0 && (
+                        <button
+                            onClick={() => {
+                                setSelectedVerseIndices(new Set());
+                                electron.Presentation.setContent(null);
+                            }}
+                            className="bg-red/80 hover:bg-red text-white text-xs font-bold py-2 px-4 rounded transition-colors uppercase tracking-wider"
+                        >
+                            Stop Presenting
+                        </button>
+                    )}
                 </div>
             </div>
 

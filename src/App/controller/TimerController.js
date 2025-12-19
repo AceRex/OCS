@@ -65,7 +65,7 @@ export default function TimerController() {
         }
 
         electron.Timer.setTimer({ time: timeToSend, isEventMode, isPaused, theme });
-    }, [time, isEventMode, isPaused, theme]);
+    }, [time, isEventMode, isPaused, theme, countdown, activeId]);
 
     useEffect(() => {
         setCountDown(time);

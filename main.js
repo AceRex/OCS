@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, screen, ipcMain } = require("electron");
+const { app, BrowserWindow, Menu, screen, ipcMain, session } = require("electron");
 const path = require("path");
 
 function createWindows() {
@@ -26,13 +26,17 @@ function createWindows() {
     },
   });
 
-  // viewWindow.webContents.openDevTools();
+  // IPC Handlers that depend on viewWindow
   ipcMain.on("activate_set_timer", (event, value) => {
     viewWindow.webContents.send("set-timer", value);
   });
 
   ipcMain.on("activate_set_content", (event, value) => {
     viewWindow.webContents.send("set-content", value);
+  });
+
+  ipcMain.on("activate_set_style", (event, value) => {
+    viewWindow.webContents.send("set-style", value);
   });
 
   const controllerWindow = new BrowserWindow({
@@ -50,7 +54,6 @@ function createWindows() {
       preload: path.join(__dirname, "preload.js"),
     },
   });
-  // controllerWindow.webContents.openDevTools();
 
   viewWindow.loadFile("view.html");
   controllerWindow.loadFile("controller.html");
@@ -85,7 +88,6 @@ ipcMain.handle("bible-get-books", async (event) => {
 
 ipcMain.handle("bible-get-chapter", async (event, { version, bookId, chapter }) => {
   return new Promise((resolve, reject) => {
-    // book_id in DB is 0-indexed based on my python script
     db.all(
       "SELECT text FROM verses WHERE version = ? AND book_id = ? AND chapter = ? ORDER BY verse",
       [version, bookId, chapter],
@@ -99,6 +101,15 @@ ipcMain.handle("bible-get-chapter", async (event, { version, bookId, chapter }) 
 // -------------------------------------
 
 app.whenReady().then(() => {
+  // GRANT MICROPHONE ACCESS AUTOMATICALLY
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
+    if (permission === 'media') {
+      callback(true);
+    } else {
+      callback(false);
+    }
+  });
+
   const template = require("./menu.js").createTemplate(app);
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
