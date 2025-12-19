@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import SetTimePage from "./SetTimePage.tsx";
 import { utilAction } from "../../Redux/state.jsx";
-import { PiEmpty, PiPlus, PiPencil, PiPause, PiStop, PiPlay, PiTrash, PiCheck, PiGear } from "react-icons/pi";
+import { PiEmpty, PiPlus, PiPencil, PiPause, PiStop, PiPlay, PiTrash, PiCheck, PiGear, PiClock } from "react-icons/pi";
 
 export default function TimerController() {
     const time = useSelector((state) => state.util.time);
@@ -150,6 +150,7 @@ export default function TimerController() {
 
     return (
         <section className="w-full h-full flex flex-row gap-4 relative">
+
             <div className="absolute top-2 right-2 z-50">
                 <button onClick={() => setIsSettingsOpen(!isSettingsOpen)} className="p-3 bg-ash/40 hover:bg-ash/60 rounded-full text-light transition-all">
                     <PiGear size={24} />

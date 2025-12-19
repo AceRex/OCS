@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 
 function App() {
-  const [countdown, setCountDown] = useState(0);
+  const [countdown, setCountDown] = useState(null);
   const [bgChange, setBgChange] = useState(false);
   const [timeUp, setTimeUp] = useState(false);
   const [isEventMode, setIsEventMode] = useState(false);
@@ -35,20 +35,37 @@ function App() {
     return `${hr}:${min}:${sec}`;
   };
 
+  const [activeId, setActiveId] = useState(null);
+
   useEffect(() => {
     // Timer Listener
     electron.Timer.onSetTimer((value) => {
+      let newTime, newEventMode, newTheme;
+
       if (typeof value === "object" && value !== null) {
-        setCountDown(value.time);
-        setIsEventMode(value.isEventMode || false);
-        setTheme(value.theme || "default");
-        // Clear presentation when timer is explicitly updated?
-        // Let's keep them separate but timer usually takes precedence if "Event Mode" is active?
-        // No, let users manage it.
+        newTime = value.time;
+        newEventMode = value.isEventMode || false;
+        newTheme = value.theme || "default";
       } else {
-        setCountDown(value);
-        setIsEventMode(false);
+        newTime = value;
+        newEventMode = false;
+        newTheme = "default";
       }
+
+      setIsEventMode(newEventMode);
+      setTheme(newTheme);
+
+      setCountDown(prev => {
+        if (newTime === 0 && prev === null) {
+          setTimeUp(false);
+          return null;
+        }
+
+        if (newTime === 0) setTimeUp(true);
+        else setTimeUp(false);
+
+        return newTime;
+      });
     });
 
     if (electron.Presentation) {
@@ -76,6 +93,15 @@ function App() {
       videoRef.current.play();
     }
   }, [presentationStyle.backgroundVideo]);
+
+  // Background change effect for last 10 seconds
+  useEffect(() => {
+    if (countdown <= 10 && countdown > 0) {
+      setBgChange(true);
+    } else {
+      setBgChange(false);
+    }
+  }, [countdown]);
 
   const renderBibleContent = () => {
     if (!presentationContent || !presentationContent.data) return null;
@@ -142,104 +168,85 @@ function App() {
     );
   };
 
-  useEffect(() => {
-    if (countdown <= 10 && countdown > 0) {
-      setBgChange(true);
-    } else {
-      setBgChange(false);
-    }
-  }, [countdown]);
+  const renderEvent = () => (
+    <div className={`w-full h-full flex flex-col items-center justify-center ${bgChange ? "bg-red" : "bg-primary"}`}>
+      <h1 className="text-light text-[4vw] font-bold uppercase mb-4 tracking-widest">Event Timer</h1>
+      <div className={`text-[12vw] font-bold ${bgChange ? "text-light" : "text-green"}`}>{formatTime(countdown)}</div>
+    </div>
+  );
 
-  const renderEvent = () => {
-    return (
-      <div className={`w-full h-full flex flex-col items-center justify-center ${bgChange ? "bg-red" : "bg-primary"}`}>
-        <h1 className="text-light text-[4vw] font-bold uppercase mb-4 tracking-widest">Event Timer</h1>
-        <div className={`text-[12vw] font-bold ${bgChange ? "text-light" : "text-green"}`}>
-          {formatTime(countdown)}
-        </div>
+  const renderDefault = () => (
+    <div className={`w-full rounded-2xl  flex items-center p-4 justify-center transition-colors duration-300 ${bgChange ? "bg-red animate-pulse" : "bg-green"}`}>
+      <p className={`text-[14vw] font-bold leading-none tracking-tight ${bgChange ? "text-light" : "text-primary"}`}>{formatTime(countdown)}</p>
+    </div>
+  );
+
+  const renderDigital = () => (
+    <div className={`w-full h-full flex items-center justify-center transition-colors duration-300 ${bgChange ? "bg-red" : ""}`}>
+      <p className={`text-[12vw] font-mono leading-none tracking-tight ${bgChange ? "text-light" : "text-green"}`} style={{ fontFamily: '"Courier New", Courier, monospace' }}>{formatTime(countdown)}</p>
+    </div>
+  );
+
+  const renderMinimal = () => (
+    <div className={`w-full h-full flex items-center justify-center transition-colors duration-300 ${bgChange ? "bg-red" : ""}`}>
+      <p className={`text-[16vw] font-light leading-none tracking-tight ${bgChange ? "text-light" : "text-light"}`}>{formatTime(countdown)}</p>
+    </div>
+  );
+
+  const renderPill = () => (
+    <div className={`w-full h-full flex items-center justify-center transition-colors duration-300 ${bgChange ? "bg-red" : ""}`}>
+      <div className={`px-16 py-6 rounded-full border-[0.8vw] flex items-center justify-center ${bgChange ? "border-light text-light" : "border-green text-green"}`}>
+        <p className="text-[13vw] font-bold leading-none tracking-tight">{formatTime(countdown)}</p>
       </div>
-    );
-  };
+    </div>
+  );
 
-  const renderDefault = () => {
-    return (
-      <div className={`w-full rounded-2xl  flex items-center p-4 justify-center transition-colors duration-300 ${bgChange ? "bg-red animate-pulse" : "bg-green"}`}>
-        <p className={`text-[14vw] font-bold leading-none tracking-tight ${bgChange ? "text-light" : "text-primary"}`}>
-          {formatTime(countdown)}
-        </p>
+  const renderFooterTimer = () => (
+    <div className={`absolute bottom-0 left-0 w-full h-[15vh] flex items-center justify-center z-20 ${bgChange ? "bg-red" : "bg-black/50 backdrop-blur-md"}`}>
+      <p className={`text-[8vh] font-bold ${bgChange ? "text-light" : "text-green"}`}>{formatTime(countdown)}</p>
+    </div>
+  );
+
+  const renderIdleScreen = () => (
+    <div className="w-full h-full flex items-center justify-center bg-primary">
+      <div className="flex flex-col items-center animate-pulse">
+        <h1 className="text-[15vw] font-black text-light tracking-tighter leading-none opacity-20">OCS</h1>
+        <p className="text-light/30 text-2xl font-medium tracking-[1em] uppercase mt-4">Service is Starting</p>
       </div>
-    );
-  };
+    </div>
+  );
 
-  const renderDigital = () => {
-    return (
-      <div className={`w-full h-full flex items-center justify-center transition-colors duration-300 ${bgChange ? "bg-red" : ""}`}>
-        <p className={`text-[12vw] font-mono leading-none tracking-tight ${bgChange ? "text-light" : "text-green"}`} style={{ fontFamily: '"Courier New", Courier, monospace' }}>
-          {formatTime(countdown)}
-        </p>
-      </div>
-    );
-  };
+  const renderTimeUp = () => (
+    <div className="w-full rounded-2xl flex items-center justify-center bg-red animate-pulse">
+      <h1 className="text-[12vw] font-black text-light uppercase tracking-tight leading-none">TIME UP</h1>
+    </div>
+  );
 
-  const renderMinimal = () => {
-    return (
-      <div className={`w-full h-full flex items-center justify-center transition-colors duration-300 ${bgChange ? "bg-red" : ""}`}>
-        <p className={`text-[16vw] font-light leading-none tracking-tight ${bgChange ? "text-light" : "text-light"}`}>
-          {formatTime(countdown)}
-        </p>
-      </div>
-    );
-  };
-
-  const renderPill = () => {
-    return (
-      <div className={`w-full h-full flex items-center justify-center transition-colors duration-300 ${bgChange ? "bg-red" : ""}`}>
-        <div className={`px-16 py-6 rounded-full border-[0.8vw] flex items-center justify-center ${bgChange ? "border-light text-light" : "border-green text-green"}`}>
-          <p className="text-[13vw] font-bold leading-none tracking-tight">
-            {formatTime(countdown)}
-          </p>
-        </div>
-      </div>
-    );
-  };
-
-  const renderFooterTimer = () => {
-    return (
-      <div className={`absolute bottom-0 left-0 w-full h-[15vh] flex items-center justify-center z-20 ${bgChange ? "bg-red" : "bg-black/50 backdrop-blur-md"}`}>
-        <p className={`text-[8vh] font-bold ${bgChange ? "text-light" : "text-green"}`}>
-          {formatTime(countdown)}
-        </p>
-      </div>
-    );
-  };
-
-  // Check valid presentation state
-  const isPresenting = presentationContent && presentationContent.type === 'bible' && presentationContent.data;
+  const isPresenting = presentationContent && (presentationContent.type === 'bible' || presentationContent.type === 'custom') && presentationContent.data;
   const showSplitTimer = isPresenting && countdown > 0;
 
   return (
     <div className="h-full flex flex-col justify-center items-center w-full bg-primary overflow-hidden">
       <section className={`w-full h-full flex flex-col items-center justify-center relative ${showSplitTimer ? '' : 'max-lg:p-[0.5em]'}`}>
-
-        {/* Main Content Area */}
         <div className={`w-full ${showSplitTimer ? 'h-[100vh] flex-1' : 'h-full flex flex-col items-center justify-center flex-1'} transition-all duration-500`}>
           {isPresenting ? renderBibleContent() : (
-            !showSplitTimer && ( // Only render full timers if not split
-              isEventMode ? renderEvent() : (
-                <>
-                  {theme === 'default' && renderDefault()}
-                  {theme === 'digital' && renderDigital()}
-                  {theme === 'minimal' && renderMinimal()}
-                  {theme === 'pill' && renderPill()}
-                </>
+            !showSplitTimer && (
+              countdown === null ? renderIdleScreen() : (
+                countdown === 0 ? renderTimeUp() : (
+                  isEventMode ? renderEvent() : (
+                    <>
+                      {theme === 'default' && renderDefault()}
+                      {theme === 'digital' && renderDigital()}
+                      {theme === 'minimal' && renderMinimal()}
+                      {theme === 'pill' && renderPill()}
+                    </>
+                  )
+                )
               )
             )
           )}
         </div>
-
-        {/* Footer Timer Area */}
         {showSplitTimer && renderFooterTimer()}
-
       </section>
     </div>
   );

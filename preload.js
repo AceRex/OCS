@@ -37,5 +37,10 @@ contextBridge.exposeInMainWorld("electron", {
     removeSetStyleListener: () => {
       ipcRenderer.removeAllListeners("set-style");
     }
+  },
+  Media: {
+    import: () => ipcRenderer.invoke("media-import"),
+    list: () => ipcRenderer.invoke("media-list"),
+    delete: (filename) => ipcRenderer.invoke("media-delete", filename)
   }
 });
