@@ -4,10 +4,12 @@ import os
 
 def convert_to_sqlite():
     db_path = 'src/Bible/bibles.db'
-    if os.path.exists(db_path):
-        os.remove(db_path)
+    temp_db_path = 'src/Bible/bibles_temp.db'
     
-    conn = sqlite3.connect(db_path)
+    if os.path.exists(temp_db_path):
+        os.remove(temp_db_path)
+    
+    conn = sqlite3.connect(temp_db_path)
     c = conn.cursor()
     
     # Create normalized schema
@@ -33,10 +35,12 @@ def convert_to_sqlite():
         )
     ''')
 
-    versions = {
-        'kjv': 'src/Bible/en_kjv.json',
-        'bbe': 'src/Bible/en_bbe.json'
-    }
+    versions = {}
+    bible_dir = 'src/Bible'
+    for filename in os.listdir(bible_dir):
+        if filename.startswith('en_') and filename.endswith('.json'):
+            version_code = filename[3:-5]
+            versions[version_code] = os.path.join(bible_dir, filename)
 
     print("Starting conversion...")
 
@@ -67,6 +71,14 @@ def convert_to_sqlite():
     
     conn.commit()
     conn.close()
+
+    if os.path.exists(db_path):
+        try:
+            os.remove(db_path)
+        except OSError as e:
+            print(f"Error removing old DB: {e}")
+    
+    os.rename(temp_db_path, db_path)
     
     # Size comparison
     sqlite_size = os.path.getsize(db_path)

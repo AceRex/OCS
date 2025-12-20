@@ -2,7 +2,15 @@ import React, { useState, useEffect } from 'react';
 
 const versions = {
     kjv: "King James Version",
-    bbe: "Bible in Basic English"
+    bbe: "Bible in Basic English",
+    asv: "American Standard Version",
+    web: "World English Bible",
+    net: "New English Translation",
+    geneva: "Geneva Bible",
+    tyndale: "Tyndale Bible",
+    coverdale: "Coverdale Bible",
+    bishops: "Bishops' Bible",
+    kjv_strongs: "KJV w/ Strong's",
 };
 
 export default function BibleController() {
@@ -192,7 +200,7 @@ export default function BibleController() {
                         <div
                             key={index}
                             onClick={(e) => handleVerseClick(index, e)}
-                            className={`flex gap-4 p-2 rounded transition-all group cursor-pointer border ${isSelected ? 'bg-blue-600/20 border-blue-500' : 'hover:bg-white/5 border-transparent'}`}
+                            className={`flex gap-4 p-2 rounded transition-all group cursor-pointer ${isSelected ? 'bg-blue-600/20' : 'hover:bg-white/5  '}`}
                         >
                             <span className={`font-bold min-w-[24px] text-right pt-1 text-sm ${isSelected ? 'text-blue-400' : 'text-blue-400/60 group-hover:text-blue-400'}`}>{index + 1}</span>
                             <p className={`text-lg leading-relaxed ${isSelected ? 'text-white' : 'text-light/80'}`}>{verse}</p>

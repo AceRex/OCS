@@ -128,7 +128,7 @@ function App() {
 
     return (
       <section
-        className="w-full h-full min-h-[50vh] flex flex-col items-center justify-center p-16 text-center animate-in fade-in duration-500 relative overflow-hidden"
+        className={`w-full h-full min-h-[50vh] flex flex-col items-center justify-center p-16 ${countdown > 0 ? "pb-[18vh]" : ""} text-center animate-in fade-in duration-500 relative overflow-hidden`}
         style={styleObj}
       >
         {/* Background Media Layer */}
@@ -246,8 +246,9 @@ function App() {
             )
           )}
         </div>
-        {showSplitTimer && renderFooterTimer()}
       </section>
+      {showSplitTimer && renderFooterTimer()}
+
     </div>
   );
 }
