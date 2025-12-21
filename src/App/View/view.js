@@ -37,7 +37,12 @@ function App() {
 
   const [activeId, setActiveId] = useState(null);
 
+
+
   useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const mode = searchParams.get('mode'); // 'speaker' or 'general'
+
     // Timer Listener
     electron.Timer.onSetTimer((value) => {
       let newTime, newEventMode, newTheme;
@@ -50,6 +55,18 @@ function App() {
         newTime = value;
         newEventMode = false;
         newTheme = "default";
+      }
+
+      // Logic:
+      // Speaker View: ALWAYS updates.
+      // General View: Updates ONLY if it's an "Event Mode" (Start Service) timer.
+      if (mode === 'general' && !newEventMode) {
+        // If we are in general view, and this is NOT an event mode timer,
+        // we ignore it (essentially wiping the countdown state so it doesn't show).
+        // Unless we want to clear it explicitly?
+        setCountDown(null);
+        setIsEventMode(false);
+        return;
       }
 
       setIsEventMode(newEventMode);
@@ -170,7 +187,7 @@ function App() {
 
   const renderEvent = () => (
     <div className={`w-full h-full flex flex-col items-center justify-center ${bgChange ? "bg-red" : "bg-primary"}`}>
-      <h1 className="text-light text-[4vw] font-bold uppercase mb-4 tracking-widest">Event Timer</h1>
+      <h1 className="text-light text-[4vw] font-bold uppercase mb-4 tracking-widest">Event Starts In</h1>
       <div className={`text-[12vw] font-bold ${bgChange ? "text-light" : "text-green"}`}>{formatTime(countdown)}</div>
     </div>
   );
@@ -202,8 +219,8 @@ function App() {
   );
 
   const renderFooterTimer = () => (
-    <div className={`absolute bottom-0 left-0 w-full h-[15vh] flex items-center justify-center z-20 ${bgChange ? "bg-red" : "bg-black/50 backdrop-blur-md"}`}>
-      <p className={`text-[8vh] font-bold ${bgChange ? "text-light" : "text-green"}`}>{formatTime(countdown)}</p>
+    <div className={`absolute bottom-0 left-0 w-full h-[15vh] flex items-center justify-center z-20 ${bgChange ? "bg-red" : "bg-green backdrop-blur-md"}`}>
+      <p className={`text-[8vh] font-bold ${bgChange ? "text-light" : "text-primary"}`}>{formatTime(countdown)}</p>
     </div>
   );
 
@@ -222,17 +239,28 @@ function App() {
     </div>
   );
 
+  // Debug check
+  if (!window.electron) return <div style={{ color: 'red', fontSize: 50, backgroundColor: 'white' }}>ELECTRON PRELOAD FAILED</div>;
+
   const isPresenting = presentationContent && (presentationContent.type === 'bible' || presentationContent.type === 'custom') && presentationContent.data;
   const showSplitTimer = isPresenting && countdown > 0;
 
   return (
-    <div className="h-full flex flex-col justify-center items-center w-full bg-primary overflow-hidden">
+    <div className="h-full flex flex-col justify-center items-center w-full bg-primary overflow-hidden" style={{ color: 'white' }}>
       <section className={`w-full h-full flex flex-col items-center justify-center relative ${showSplitTimer ? '' : 'max-lg:p-[0.5em]'}`}>
         <div className={`w-full ${showSplitTimer ? 'h-[100vh] flex-1' : 'h-full flex flex-col items-center justify-center flex-1'} transition-all duration-500`}>
           {isPresenting ? renderBibleContent() : (
             !showSplitTimer && (
-              countdown === null ? renderIdleScreen() : (
-                countdown === 0 ? renderTimeUp() : (
+              countdown === null ? (
+                <div className="w-full h-full flex items-center justify-center bg-primary" style={{ backgroundColor: '#282828' }}>
+                  <div className="flex flex-col items-center animate-pulse">
+                    <h1 className="text-[15vw] font-black text-light tracking-tighter leading-none opacity-20" style={{ color: '#F6F3F1' }}>OCS</h1>
+                    <p className="text-light/30 text-2xl font-medium tracking-[1em] uppercase mt-4" style={{ color: '#F6F3F1' }}>Service is Starting</p>
+                  </div>
+                </div>
+              ) : (
+                // If countdown is 0 (Time Up) AND we are in Event Mode, show Idle Screen instead of "TIME UP"
+                countdown === 0 ? (isEventMode ? renderIdleScreen() : renderTimeUp()) : (
                   isEventMode ? renderEvent() : (
                     <>
                       {theme === 'default' && renderDefault()}
@@ -248,7 +276,6 @@ function App() {
         </div>
       </section>
       {showSplitTimer && renderFooterTimer()}
-
     </div>
   );
 }

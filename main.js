@@ -65,78 +65,110 @@ ipcMain.handle("media-delete", async (event, fileUrl) => {
 // ----------------------------
 
 function createWindows() {
-  // ... existing createWindows code ...
   const displays = screen.getAllDisplays();
   const primaryDisplay = screen.getPrimaryDisplay();
   const secondaryDisplay = displays.length > 1 ? displays[1] : null;
+  const tertiaryDisplay = displays.length > 2 ? displays[2] : null;
 
-  const viewWindow = new BrowserWindow({
-    width: secondaryDisplay
-      ? secondaryDisplay.bounds.width
-      : primaryDisplay.bounds.width,
-    height: secondaryDisplay
-      ? secondaryDisplay.bounds.height
-      : primaryDisplay.bounds.height,
-    x: secondaryDisplay ? secondaryDisplay.bounds.x : 0,
-    y: secondaryDisplay ? secondaryDisplay.bounds.y : 0,
-    title: "OCS",
-    backgroundColor: "white",
+  // 1. Speaker Window (Stage Display) - Shows Timer + Bible
+  const speakerWindow = new BrowserWindow({
+    width: secondaryDisplay ? secondaryDisplay.bounds.width : 800,
+    height: secondaryDisplay ? secondaryDisplay.bounds.height : 600,
+    x: secondaryDisplay ? secondaryDisplay.bounds.x : 50,
+    y: secondaryDisplay ? secondaryDisplay.bounds.y : 50,
+    title: "OCS Speaker View",
+    backgroundColor: "black",
     show: false,
     webPreferences: {
       nodeIntegration: false,
-      worldSafeExecuteJavaScript: false,
       contextIsolation: true,
       preload: path.join(__dirname, "preload.js"),
     },
   });
 
-  // IPC Handlers that depend on viewWindow
-  // IPC Handlers that depend on viewWindow
-  ipcMain.on("activate_set_timer", (event, value) => {
-    viewWindow.webContents.send("set-timer", value);
-    controllerWindow.webContents.send("set-timer", value);
+  // 2. General Window (Projector) - Shows Bible ONLY
+  const generalWindow = new BrowserWindow({
+    width: tertiaryDisplay ? tertiaryDisplay.bounds.width : (secondaryDisplay ? secondaryDisplay.bounds.width : 800),
+    height: tertiaryDisplay ? tertiaryDisplay.bounds.height : (secondaryDisplay ? secondaryDisplay.bounds.height : 600),
+    x: tertiaryDisplay ? tertiaryDisplay.bounds.x : (secondaryDisplay ? secondaryDisplay.bounds.x + 50 : 100),
+    y: tertiaryDisplay ? tertiaryDisplay.bounds.y : (secondaryDisplay ? secondaryDisplay.bounds.y + 50 : 100),
+    title: "OCS General View",
+    backgroundColor: "black",
+    show: false,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, "preload.js"),
+    },
   });
 
-  ipcMain.on("activate_set_content", (event, value) => {
-    viewWindow.webContents.send("set-content", value);
-    controllerWindow.webContents.send("set-content", value);
-  });
-
-  ipcMain.on("activate_set_style", (event, value) => {
-    viewWindow.webContents.send("set-style", value);
-    controllerWindow.webContents.send("set-style", value);
-  });
-
+  // 3. Controller Window
   const controllerWindow = new BrowserWindow({
     width: primaryDisplay.bounds.width,
     height: primaryDisplay.bounds.height,
     x: primaryDisplay.bounds.x,
     y: primaryDisplay.bounds.y,
-    title: "OCS",
+    title: "OCS Controller",
     backgroundColor: "white",
     show: false,
     webPreferences: {
       nodeIntegration: false,
-      worldSafeExecuteJavaScript: false,
       contextIsolation: true,
       preload: path.join(__dirname, "preload.js"),
     },
   });
 
-  viewWindow.loadFile("view.html");
+  // Load Content with Modes
+  speakerWindow.loadFile("view.html", { search: "mode=speaker" });
+  generalWindow.loadFile("view.html", { search: "mode=general" });
   controllerWindow.loadFile("controller.html");
 
+  // IPC Handlers
+  ipcMain.on("activate_set_timer", (event, value) => {
+    // Timer -> Speaker View (Always)
+    if (!speakerWindow.isDestroyed()) speakerWindow.webContents.send("set-timer", value);
+    // Timer -> General View (Always - view.js now checks 'mode' and 'isEventMode' to decide whether to show it)
+    if (!generalWindow.isDestroyed()) generalWindow.webContents.send("set-timer", value);
+    if (!controllerWindow.isDestroyed()) controllerWindow.webContents.send("set-timer", value);
+  });
+
+  ipcMain.on("activate_set_content", (event, value) => {
+    // Content -> Both Views
+    if (!speakerWindow.isDestroyed()) speakerWindow.webContents.send("set-content", value);
+    if (!generalWindow.isDestroyed()) generalWindow.webContents.send("set-content", value);
+    if (!controllerWindow.isDestroyed()) controllerWindow.webContents.send("set-content", value);
+  });
+
+  ipcMain.on("activate_set_style", (event, value) => {
+    // Style -> Both Views
+    if (!speakerWindow.isDestroyed()) speakerWindow.webContents.send("set-style", value);
+    if (!generalWindow.isDestroyed()) generalWindow.webContents.send("set-style", value);
+    if (!controllerWindow.isDestroyed()) controllerWindow.webContents.send("set-style", value);
+  });
+
+  // Window Management
   if (secondaryDisplay) {
-    viewWindow.setFullScreen(true);
-  } else {
-    viewWindow.setFullScreen(true);
-    viewWindow.setAlwaysOnTop(true, "screen-saver");
-    controllerWindow.setAlwaysOnTop(true);
+    speakerWindow.setFullScreen(true);
+  }
+  if (tertiaryDisplay) {
+    generalWindow.setFullScreen(true);
+  } else if (!secondaryDisplay) {
+    // Dev mode on single screen
+    // speakerWindow.show(); 
+    // generalWindow.show();
+    // Let them just appear as windows
   }
 
-  viewWindow.show();
+  speakerWindow.show();
+  generalWindow.show();
   controllerWindow.show();
+
+  // Close app when controller closes
+  controllerWindow.on('closed', () => {
+    app.quit();
+  });
 }
+
 
 // ------ BIBLE DATABASE HANDLERS ------
 const sqlite3 = require('sqlite3').verbose();

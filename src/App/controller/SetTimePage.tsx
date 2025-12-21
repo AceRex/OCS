@@ -4,8 +4,8 @@ import { utilAction } from "../../Redux/state";
 
 export default function SetTimePage() {
   let dispatch = useDispatch();
-  const [hours, setHours] = useState(0);
-  const [minutes, setMinutes] = useState(0);
+  const [hours, setHours] = useState<number | string>(0);
+  const [minutes, setMinutes] = useState<number | string>(0);
   const [label, setLabel] = useState("");
   const [inCharge, setInCharge] = useState("");
   const [eventTime, setEventTime] = useState("");
@@ -26,12 +26,12 @@ export default function SetTimePage() {
     dispatch(utilAction.setTime(diffInSeconds));
   };
   const handleClose = () => {
-    const totalTimeInSeconds = hours * 3600 + minutes * 60;
+    const totalTimeInSeconds = Number(hours) * 3600 + Number(minutes) * 60;
     dispatch(utilAction.setEventMode(false));
     dispatch(utilAction.setTime(totalTimeInSeconds));
   };
   const handleClick = () => {
-    const totalTimeInSeconds = hours * 3600 + minutes * 60;
+    const totalTimeInSeconds = Number(hours) * 3600 + Number(minutes) * 60;
     dispatch(
       utilAction.setAgenda({
         _id: Date.now(),
@@ -54,7 +54,8 @@ export default function SetTimePage() {
             type="number"
             min="0"
             value={hours}
-            onChange={(e) => setHours(Number(e.target.value))}
+            onClick={() => setHours("")}
+            onChange={(e) => setHours(e.target.value === "" ? "" : Number(e.target.value))}
             placeholder="HH"
             className="w-full h-[100%] bg-primary/0 text-center font-semibold text-8xl text-light focus:outline-none appearance-none [&::-webkit-inner-spin-button]:appearance-none"
           />
@@ -67,7 +68,8 @@ export default function SetTimePage() {
             min="0"
             max="59"
             value={minutes}
-            onChange={(e) => setMinutes(Number(e.target.value))}
+            onClick={() => setMinutes("")}
+            onChange={(e) => setMinutes(e.target.value === "" ? "" : Number(e.target.value))}
             placeholder="MM"
             className="w-full h-[100%] bg-primary/0 text-center font-semibold text-8xl text-light focus:outline-none appearance-none [&::-webkit-inner-spin-button]:appearance-none"
           />

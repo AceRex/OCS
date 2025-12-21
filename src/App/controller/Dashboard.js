@@ -37,7 +37,7 @@ export default function Dashboard({ onNavigate }) {
         },
         {
             id: 'intercom',
-            label: 'Walkie-Talkie',
+            label: 'Inapp Communication',
             icon: PiMicrophone,
             gradient: 'from-[#00b09b] to-[#96c93d]',
             description: 'Push-to-talk team communication'

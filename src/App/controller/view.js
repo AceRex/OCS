@@ -11,16 +11,16 @@ import PreviewModal from "./PreviewModal";
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [previewMode, setPreviewMode] = useState(null); // 'speaker', 'general', or null
 
   return (
     <section className="w-[100vw] h-[100vh] flex flex-row bg-primary overflow-hidden">
       <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
       <main className="flex-1 h-full flex flex-col overflow-hidden relative">
         <Topbar
-          onGoLive={() => setIsPreviewOpen(true)}
-          isPreviewOpen={isPreviewOpen}
-          onTogglePreview={() => setIsPreviewOpen(!isPreviewOpen)}
+          onGoLive={() => setPreviewMode('speaker')} // Default to speaker for Go Live? Or remove? Topbar.js uses this differently.
+          previewMode={previewMode}
+          onSetPreviewMode={setPreviewMode}
         />
 
         <div className="flex-1 overflow-hidden p-4 relative">
@@ -72,7 +72,11 @@ function App() {
           </div>
         </div>
 
-        <PreviewModal isOpen={isPreviewOpen} onClose={() => setIsPreviewOpen(false)} />
+        <PreviewModal
+          isOpen={!!previewMode}
+          mode={previewMode}
+          onClose={() => setPreviewMode(null)}
+        />
       </main>
     </section>
   );

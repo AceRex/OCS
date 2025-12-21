@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { PiX } from "react-icons/pi";
 
-export default function PreviewModal({ isOpen, onClose }) {
+export default function PreviewModal({ isOpen, onClose, mode }) {
     const [countdown, setCountDown] = useState(null);
     const [bgChange, setBgChange] = useState(false);
     const [timeUp, setTimeUp] = useState(false);
@@ -42,6 +42,14 @@ export default function PreviewModal({ isOpen, onClose }) {
                 newTheme = "default";
             }
 
+            // General View Preview Logic: Ignore standard timers
+            // If mode is 'general' and it's NOT an event mode timer, we reset/hide the local countdown
+            if (mode === 'general' && !newEventMode) {
+                setCountDown(null);
+                setIsEventMode(false);
+                return;
+            }
+
             setIsEventMode(newEventMode);
             setTheme(newTheme);
 
@@ -67,7 +75,7 @@ export default function PreviewModal({ isOpen, onClose }) {
             electron.Presentation.removeSetContentListener();
             electron.Presentation.removeSetStyleListener();
         };
-    }, []);
+    }, [mode]); // Re-run listener logic if mode changes
 
     useEffect(() => {
         if (countdown <= 10 && countdown > 0) {
@@ -122,7 +130,7 @@ export default function PreviewModal({ isOpen, onClose }) {
 
     const renderEvent = () => (
         <div className={`w-full h-full flex flex-col items-center justify-center ${bgChange ? "bg-red" : "bg-primary"}`}>
-            <h1 className="text-light text-xl font-bold uppercase mb-2 tracking-widest">Event Timer</h1>
+            <h1 className="text-light text-xl font-bold uppercase mb-2 tracking-widest">Event Starts In</h1>
             <div className={`text-6xl font-bold ${bgChange ? "text-light" : "text-green"}`}>{formatTime(countdown)}</div>
         </div>
     );
@@ -158,7 +166,7 @@ export default function PreviewModal({ isOpen, onClose }) {
             <div className="bg-primary border border-white/10 w-[80vw] max-w-[800px] aspect-video rounded-2xl shadow-2xl flex flex-col overflow-hidden relative animate-in zoom-in-95 duration-200">
                 {/* Header */}
                 <div className="h-12 bg-white/5 flex items-center justify-between px-4 border-b border-white/5">
-                    <span className="text-sm font-bold text-light uppercase tracking-widest">Audience View Preview</span>
+                    <span className="text-sm font-bold text-light uppercase tracking-widest">{mode === 'speaker' ? 'Speaker' : 'General'} View Preview</span>
                     <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-full text-light transition-colors">
                         <PiX size={18} />
                     </button>
@@ -171,7 +179,8 @@ export default function PreviewModal({ isOpen, onClose }) {
                             {isPresenting ? renderBibleContent() : (
                                 !showSplitTimer && (
                                     countdown === null ? renderIdleScreen() : (
-                                        countdown === 0 ? renderTimeUp() : (
+                                        // Match View.js logic: If Time Up AND Event Mode -> Show Idle Screen
+                                        countdown === 0 ? (isEventMode ? renderIdleScreen() : renderTimeUp()) : (
                                             isEventMode ? renderEvent() : renderDefault()
                                         )
                                     )
