@@ -67,6 +67,51 @@ export default function TimerController() {
         electron.Timer.setTimer({ time: timeToSend, isEventMode, isPaused, theme });
     }, [time, isEventMode, isPaused, theme, countdown, activeId]);
 
+    // Listener for Mobile Actions
+    useEffect(() => {
+        if (window.electron && window.electron.Network) {
+            const removeListener = window.electron.Network.onMobileAction((action) => {
+                console.log("Timer action:", action);
+                if (action.type === 'set-timer') {
+                    dispatch(utilAction.setEventMode(false));
+                    dispatch(utilAction.setTime(action.payload.time));
+                    dispatch(utilAction.setPaused(false));
+                    dispatch(utilAction.setActiveId(null));
+                }
+                else if (action.type === 'stop-timer') {
+                    dispatch(utilAction.setTime(0));
+                    dispatch(utilAction.setPaused(false));
+                    dispatch(utilAction.setActiveId(null));
+                }
+                else if (action.type === 'toggle-pause') {
+                    // We need current state to toggle, but listener captures state at bind time if used directly.
+                    // Better to rely on the functional update or the Redux state via a thunk, but here distinct actions are safer.
+                    // Let's assume the mobile sends explicit 'pause' or 'resume' or just toggles locally and sends the status?
+                    // Simplify: Mobile sends 'toggle-pause'.
+                    // We can despatch a toggle action if it exists, or set based on current.
+                    // Since we can't easily access current updated state inside this closure without dependencies which cause re-binds...
+                    // We will use the functional dispatch if available, or just dispatch setPaused with a callback? No.
+                    // Let's just trust Redux store access via thunk if we had it, but we use toolkit slice.
+                    // Actually, we can just use the store directly or a ref for current paused state?
+                    // Let's stick to explicit actions if possible. Mobile can send 'set-paused' { paused: true/false }
+                }
+                else if (action.type === 'set-paused') {
+                    dispatch(utilAction.setPaused(action.payload.paused));
+                }
+                else if (action.type === 'add-agenda') {
+                    dispatch(utilAction.setAgenda(action.payload));
+                }
+                else if (action.type === 'delete-agenda') {
+                    dispatch(utilAction.delAgenda(action.payload));
+                }
+                else if (action.type === 'edit-agenda') {
+                    dispatch(utilAction.editAgenda(action.payload));
+                }
+            });
+            return () => removeListener();
+        }
+    }, [dispatch]); // Empty dep array for listener? No, dispatch is stable.
+
     useEffect(() => {
         setCountDown(time);
     }, [time]);

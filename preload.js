@@ -42,5 +42,23 @@ contextBridge.exposeInMainWorld("electron", {
     import: () => ipcRenderer.invoke("media-import"),
     list: () => ipcRenderer.invoke("media-list"),
     delete: (filename) => ipcRenderer.invoke("media-delete", filename)
+  },
+  Network: {
+    getServerInfo: () => ipcRenderer.invoke('get-server-info'),
+    onMobileConnected: (callback) => {
+      const listener = (event, val) => callback(val);
+      ipcRenderer.on('mobile-connected', listener);
+      return () => ipcRenderer.removeListener('mobile-connected', listener);
+    },
+    onMobileDisconnected: (callback) => {
+      const listener = (event, val) => callback(val);
+      ipcRenderer.on('mobile-disconnected', listener);
+      return () => ipcRenderer.removeListener('mobile-disconnected', listener);
+    },
+    onMobileAction: (callback) => {
+      const listener = (event, val) => callback(val);
+      ipcRenderer.on('mobile-action', listener);
+      return () => ipcRenderer.removeListener('mobile-action', listener);
+    }
   }
 });

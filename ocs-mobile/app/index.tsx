@@ -5,7 +5,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import {
   Clock, Book, Monitor, SquaresFour,
   MusicNotes, Microphone, Camera, Broadcast, Gear,
-  House, CaretRight
+  House, CaretRight, Link
 } from 'phosphor-react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -17,6 +17,14 @@ export default function Dashboard() {
   const numColumns = width < 380 ? 1 : 2;
 
   const cards = [
+    {
+      id: 'connect',
+      label: 'Connect',
+      icon: Link,
+      gradient: ['#FF416C', '#FF4B2B'], // Red/Pink Gradient
+      iconColor: '#ffffff',
+      description: 'Host Setup'
+    },
     {
       id: 'timer',
       label: 'Timer',

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { useSocketStore } from './socketStore';
 
 export interface AgendaItem {
     _id: number;
@@ -30,6 +31,7 @@ interface TimerState {
     // Composite actions
     stopTimer: () => void;
     togglePause: () => void;
+    startTimer: (time: number) => void;
 }
 
 export const useTimerStore = create<TimerState>((set) => ({
@@ -40,20 +42,56 @@ export const useTimerStore = create<TimerState>((set) => ({
     isEventMode: false,
     theme: 'default',
 
-    setTime: (time) => set({ time }),
+    setTime: (time) => {
+        set({ time });
+    },
     setAgenda: (agenda) => set({ agenda }),
-    addAgendaItem: (item) => set((state) => ({ agenda: [...state.agenda, item] })),
-    deleteAgendaItem: (id) => set((state) => ({ agenda: state.agenda.filter(i => i._id !== id) })),
-    editAgendaItem: (id, updates) => set((state) => ({
-        agenda: state.agenda.map(i => i._id === id ? { ...i, ...updates } : i)
-    })),
+    addAgendaItem: (item) => {
+        set((state) => ({ agenda: [...state.agenda, item] }));
+        const socket = useSocketStore.getState().socket;
+        if (socket) socket.emit('mobile-action', { type: 'add-agenda', payload: item });
+    },
+    deleteAgendaItem: (id) => {
+        set((state) => ({ agenda: state.agenda.filter(i => i._id !== id) }));
+        const socket = useSocketStore.getState().socket;
+        if (socket) socket.emit('mobile-action', { type: 'delete-agenda', payload: { id } });
+    },
+    editAgendaItem: (id, updates) => {
+        set((state) => ({
+            agenda: state.agenda.map(i => i._id === id ? { ...i, ...updates } : i)
+        }));
+        const socket = useSocketStore.getState().socket;
+        if (socket) socket.emit('mobile-action', { type: 'edit-agenda', payload: { _id: id, ...updates } });
+    },
     setActiveId: (activeId) => set({ activeId }),
-    setIsPaused: (isPaused) => set({ isPaused }),
+    setIsPaused: (isPaused) => {
+        set({ isPaused });
+        const socket = useSocketStore.getState().socket;
+        if (socket) socket.emit('mobile-action', { type: 'set-paused', payload: { paused: isPaused } });
+    },
     setEventMode: (isEventMode) => set({ isEventMode }),
     setTheme: (theme) => set({ theme }),
     decrementTime: () => set((state) => ({ time: Math.max(0, state.time - 1) })),
 
-    stopTimer: () => set({ time: 0, activeId: null, isPaused: false, isEventMode: false }),
-    togglePause: () => set((state) => ({ isPaused: !state.isPaused })),
+    stopTimer: () => {
+        set({ time: 0, activeId: null, isPaused: false, isEventMode: false });
+        const socket = useSocketStore.getState().socket;
+        if (socket) socket.emit('mobile-action', { type: 'stop-timer' });
+    },
+    togglePause: () => {
+        set((state) => {
+            const newPaused = !state.isPaused;
+            const socket = useSocketStore.getState().socket;
+            if (socket) socket.emit('mobile-action', { type: 'set-paused', payload: { paused: newPaused } });
+            return { isPaused: newPaused };
+        });
+    },
+
+    // Explicit action to start timer and sync
+    startTimer: (time: number) => {
+        set({ time, isPaused: false, activeId: null, isEventMode: false });
+        const socket = useSocketStore.getState().socket;
+        if (socket) socket.emit('mobile-action', { type: 'set-timer', payload: { time } });
+    }
 }));
 

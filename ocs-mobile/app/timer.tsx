@@ -13,7 +13,8 @@ export default function TimerPage() {
     const {
         time, agenda, activeId, isPaused, isEventMode,
         setTime, setAgenda, addAgendaItem, deleteAgendaItem, editAgendaItem,
-        setActiveId, setIsPaused, setEventMode, togglePause, stopTimer, decrementTime
+        setActiveId, setIsPaused, setEventMode, togglePause, stopTimer, decrementTime,
+        startTimer
     } = useTimerStore();
 
     // Local state for inputs
@@ -66,9 +67,7 @@ export default function TimerPage() {
         const totalSeconds = (Number(hours) || 0) * 3600 + (Number(minutes) || 0) * 60;
         if (totalSeconds === 0) return;
 
-        stopTimer(); // specific logic: clear active ID
-        setEventMode(false);
-        setTime(totalSeconds);
+        startTimer(totalSeconds);
         // inputs remain for potential "Add to list"
     };
 
@@ -107,15 +106,13 @@ export default function TimerPage() {
 
         const diff = Math.floor((target.getTime() - now.getTime()) / 1000);
 
-        stopTimer();
+        startTimer(diff);
         setEventMode(true);
-        setTime(diff);
     };
 
     // --- List Item Actions ---
     const handleItemStart = (item: AgendaItem) => {
-        stopTimer();
-        setTime(item.time);
+        startTimer(item.time);
         setActiveId(item._id);
         setActiveMenuId(null);
     };

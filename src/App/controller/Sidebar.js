@@ -1,7 +1,7 @@
 import React from 'react';
 import {
     PiClock, PiBook, PiMonitor, PiSquaresFour, PiHouse,
-    PiMusicNotes, PiMicrophone, PiCamera, PiBroadcast, PiGear
+    PiMusicNotes, PiMicrophone, PiCamera, PiBroadcast, PiGear, PiDeviceMobile
 } from "react-icons/pi";
 
 export default function Sidebar({ activeTab, onTabChange }) {
@@ -14,6 +14,7 @@ export default function Sidebar({ activeTab, onTabChange }) {
         { id: 'intercom', label: 'Talk', icon: PiMicrophone },
         { id: 'camera', label: 'Cam', icon: PiCamera },
         { id: 'stream', label: 'Live', icon: PiBroadcast },
+        { id: 'mobile', label: 'Remote', icon: PiDeviceMobile },
         { id: 'settings', label: 'Settings', icon: PiGear },
         { id: 'apps', label: 'More', icon: PiSquaresFour },
     ];

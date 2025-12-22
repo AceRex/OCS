@@ -64,6 +64,78 @@ ipcMain.handle("media-delete", async (event, fileUrl) => {
 });
 // ----------------------------
 
+// ------ SERVER SETUP ------
+const express = require('express');
+const http = require('http');
+const { Server } = require("socket.io");
+const cors = require('cors');
+const ip = require('ip');
+
+const serverApp = express();
+serverApp.use(cors());
+const server = http.createServer(serverApp);
+const io = new Server(server, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
+
+const PORT = 4000;
+let serverIp = ip.address(); // Get initial IP
+let connectedDevices = [];
+
+// Update IP if network changes (optional, but good practice)
+// For now, static check on startup is fine.
+
+io.on('connection', (socket) => {
+  console.log('a user connected', socket.id);
+
+  const device = { id: socket.id, ip: socket.handshake.address };
+  connectedDevices.push(device);
+
+  const windows = BrowserWindow.getAllWindows();
+  const controller = windows.find(w => w.getTitle() === "OCS Controller");
+
+  if (controller && !controller.isDestroyed()) {
+    controller.webContents.send('mobile-connected', device);
+  }
+
+  socket.on('disconnect', () => {
+    console.log('user disconnected');
+
+    connectedDevices = connectedDevices.filter(d => d.id !== socket.id);
+
+    if (controller && !controller.isDestroyed()) {
+      controller.webContents.send('mobile-disconnected', { id: socket.id });
+    }
+  });
+
+  // Handle commands from mobile (e.g., trigger slide, start timer)
+  socket.on('mobile-action', (action) => {
+    console.log("Action received from mobile:", action);
+    // Forward to all windows or specific ones based on action
+    // For now, broadcast to all windows so they can handle it
+    BrowserWindow.getAllWindows().forEach(w => {
+      if (!w.isDestroyed()) {
+        w.webContents.send('mobile-action', action);
+      }
+    });
+  });
+});
+
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log(`Local IP: ${serverIp}`);
+});
+
+ipcMain.handle('get-server-info', () => {
+  // Refresh IP in case it changed
+  serverIp = ip.address();
+  return { ip: serverIp, port: PORT, devices: connectedDevices };
+});
+// --------------------------
+
 function createWindows() {
   const displays = screen.getAllDisplays();
   const primaryDisplay = screen.getPrimaryDisplay();

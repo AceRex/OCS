@@ -9,6 +9,8 @@ import Dashboard from "./Dashboard";
 import Topbar from "./Topbar";
 import PreviewModal from "./PreviewModal";
 
+import MobileConnectController from "./MobileConnectController";
+
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [previewMode, setPreviewMode] = useState(null); // 'speaker', 'general', or null
@@ -61,6 +63,10 @@ function App() {
               <div className="p-4 bg-white/10 rounded-full"><span className="text-4xl">📡</span></div>
               Live Stream Module Coming Soon
             </div>
+          </div>
+
+          <div className={`w-full h-full ${activeTab === 'mobile' ? 'block' : 'hidden'}`}>
+            <MobileConnectController />
           </div>
 
           <div className={`w-full h-full ${activeTab === 'settings' ? 'block' : 'hidden'}`}>
