@@ -30,6 +30,9 @@ export default function BibleController() {
         electron.Bible.getBooks().then(setBooks).catch(console.error);
     }, []);
 
+    // Pending selection for remote sync
+    const pendingSelection = React.useRef(null);
+
     // Fetch Verses when selection changes
     useEffect(() => {
         if (books.length === 0) return;
@@ -39,10 +42,49 @@ export default function BibleController() {
         setVerses([]);
 
         electron.Bible.getChapter(selectedVersion, selectedBookIndex, selectedChapterIndex + 1)
-            .then(setVerses)
+            .then((newVerses) => {
+                setVerses(newVerses);
+                // Handle pending remote selection
+                if (pendingSelection.current) {
+                    const { bookIndex, chapterIndex, indices } = pendingSelection.current;
+                    // Verify we are on the right chapter (async race check)
+                    if (bookIndex === selectedBookIndex && chapterIndex === selectedChapterIndex) {
+                        const newSet = new Set(indices);
+                        setSelectedVerseIndices(newSet);
+                        // We need to call presentVerses but it relies on 'verses' state which is closed over?
+                        // No, 'presentVerses' uses 'verses' from closure. 'setVerses' updates state for NEXT render.
+                        // We cannot call 'presentVerses' immediately with old 'verses'.
+                        // We must wait for render?
+                        // Actually, we can reuse logic or pass newVerses explicitly.
+                        // Let's refactor presentVerses to accept verses optionally.
+                        presentVerses(newSet, newVerses);
+                    }
+                    pendingSelection.current = null;
+                }
+            })
             .catch(console.error);
 
     }, [selectedVersion, selectedBookIndex, selectedChapterIndex, books]);
+
+    // Listen for Mobile Actions
+    useEffect(() => {
+        if (window.electron && window.electron.Network) {
+            const removeListener = window.electron.Network.onMobileAction((action) => {
+                if (action.type === 'bible-present') {
+                    const { version, bookIndex, chapterIndex, indices } = action.payload;
+
+                    // Update Navigation
+                    setSelectedVersion(version);
+                    setSelectedBookIndex(bookIndex);
+                    setSelectedChapterIndex(chapterIndex);
+
+                    // Queue selection
+                    pendingSelection.current = { bookIndex, chapterIndex, indices };
+                }
+            });
+            return () => removeListener();
+        }
+    }, []);
 
     const currentBook = books[selectedBookIndex];
 
@@ -53,16 +95,25 @@ export default function BibleController() {
     }, [selectedBookIndex, selectedChapterIndex, selectedVersion]);
 
     // Presentation Logic
-    const presentVerses = (indices) => {
+    const presentVerses = (indices, currentVerses = verses) => {
         if (indices.size === 0) {
             electron.Presentation.setContent(null);
             return;
         }
 
         const sortedIndices = Array.from(indices).sort((a, b) => a - b);
-        const verseText = sortedIndices.map(i => verses[i]).join(' ');
+        const verseText = sortedIndices.map(i => currentVerses[i]).join(' ');
 
-        const bookName = currentBook.name;
+        // Use keys to find book if we used internal state? currentBook is stable in render.
+        // If we just navigated, currentBook might be stale in THIS closure if we changed index?
+        // Yes, if we set selectedBookIndex, re-render hasn't happened yet.
+        // BUT, if we set state in 'onMobileAction', we trigger re-render.
+        // The fetch effect runs after re-render.
+        // So 'currentBook' inside the fetch .then() closure? No, fetch effect uses 'books' and 'indices' from scope.
+        // Actually, inside the Effect, 'currentBook' (derived const) is from the render scope that triggered the effect.
+        // So it is correct!
+        const scopeBook = books[selectedBookIndex];
+        const bookName = scopeBook ? scopeBook.name : "";
         const chapterNum = selectedChapterIndex + 1;
 
         let verseRef = `${bookName} ${chapterNum}:`;

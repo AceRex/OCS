@@ -28,13 +28,14 @@ export default function TimerController() {
     const dispatch = useDispatch();
 
     const formatTime = (timeToFormat) => {
-        if (isNaN(timeToFormat)) {
+        const totalSeconds = Number(timeToFormat);
+        if (isNaN(totalSeconds) || !isFinite(totalSeconds)) {
             return "Set Timer";
         }
 
-        let hr = Math.floor(timeToFormat / 3600);
-        let min = Math.floor((timeToFormat % 3600) / 60);
-        let sec = Math.floor(timeToFormat % 60);
+        let hr = Math.floor(totalSeconds / 3600);
+        let min = Math.floor((totalSeconds % 3600) / 60);
+        let sec = Math.floor(totalSeconds % 60);
 
         if (hr < 10) {
             hr = "0" + hr;
@@ -74,7 +75,7 @@ export default function TimerController() {
                 console.log("Timer action:", action);
                 if (action.type === 'set-timer') {
                     dispatch(utilAction.setEventMode(false));
-                    dispatch(utilAction.setTime(action.payload.time));
+                    dispatch(utilAction.setTime(Number(action.payload.time) || 0));
                     dispatch(utilAction.setPaused(false));
                     dispatch(utilAction.setActiveId(null));
                 }
@@ -84,16 +85,7 @@ export default function TimerController() {
                     dispatch(utilAction.setActiveId(null));
                 }
                 else if (action.type === 'toggle-pause') {
-                    // We need current state to toggle, but listener captures state at bind time if used directly.
-                    // Better to rely on the functional update or the Redux state via a thunk, but here distinct actions are safer.
-                    // Let's assume the mobile sends explicit 'pause' or 'resume' or just toggles locally and sends the status?
-                    // Simplify: Mobile sends 'toggle-pause'.
-                    // We can despatch a toggle action if it exists, or set based on current.
-                    // Since we can't easily access current updated state inside this closure without dependencies which cause re-binds...
-                    // We will use the functional dispatch if available, or just dispatch setPaused with a callback? No.
-                    // Let's just trust Redux store access via thunk if we had it, but we use toolkit slice.
-                    // Actually, we can just use the store directly or a ref for current paused state?
-                    // Let's stick to explicit actions if possible. Mobile can send 'set-paused' { paused: true/false }
+                    // Handled locally usually?
                 }
                 else if (action.type === 'set-paused') {
                     dispatch(utilAction.setPaused(action.payload.paused));
@@ -147,7 +139,7 @@ export default function TimerController() {
 
     const handleStart = (item) => {
         dispatch(utilAction.setEventMode(false));
-        dispatch(utilAction.setTime(item.time));
+        dispatch(utilAction.setTime(Number(item.time) || 0));
         dispatch(utilAction.setActiveId(item._id));
         dispatch(utilAction.setPaused(false));
         setActiveMenuId(null);
@@ -168,11 +160,12 @@ export default function TimerController() {
     };
 
     const handleAddTime = (id, currentAmount) => {
-        dispatch(utilAction.editAgenda({ _id: id, time: currentAmount + 60 })); // Add 1 minute to the list item
+        const addAmount = 60;
+        dispatch(utilAction.editAgenda({ _id: id, time: Number(currentAmount || 0) + addAmount })); // Add 1 minute to the list item
 
         if (activeId === id) {
             // If it's the active timer, add 1 minute to the running countdown
-            dispatch(utilAction.setTime(countdown + 60));
+            dispatch(utilAction.setTime(Number(countdown || 0) + addAmount));
         }
     };
 

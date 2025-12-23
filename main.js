@@ -81,6 +81,14 @@ const io = new Server(server, {
   }
 });
 
+
+// ------ BIBLE DATABASE HANDLERS ------
+const sqlite3 = require('sqlite3').verbose();
+const dbPath = path.join(__dirname, 'src/Bible/bibles.db');
+const db = new sqlite3.Database(dbPath, (err) => {
+  if (err) console.error("Database opening error: ", err);
+});
+
 const PORT = 4000;
 let serverIp = ip.address(); // Get initial IP
 let connectedDevices = [];
@@ -111,11 +119,35 @@ io.on('connection', (socket) => {
     }
   });
 
-  // Handle commands from mobile (e.g., trigger slide, start timer)
-  socket.on('mobile-action', (action) => {
+  // Handle commands from mobile
+  socket.on('mobile-action', async (action) => {
     console.log("Action received from mobile:", action);
-    // Forward to all windows or specific ones based on action
-    // For now, broadcast to all windows so they can handle it
+
+    if (action.type === 'bible-get-books') {
+      db.all("SELECT * FROM books ORDER BY id", [], (err, rows) => {
+        if (!err) {
+          socket.emit('mobile-data', { type: 'bible-books', payload: rows });
+        }
+      });
+      return;
+    }
+
+    if (action.type === 'bible-get-chapter') {
+      const { version, bookId, chapter } = action.payload;
+      db.all(
+        "SELECT text FROM verses WHERE version = ? AND book_id = ? AND chapter = ? ORDER BY verse",
+        [version, bookId, chapter],
+        (err, rows) => {
+          if (!err) {
+            const verses = rows.map(r => r.text);
+            socket.emit('mobile-data', { type: 'bible-chapter', payload: verses });
+          }
+        }
+      );
+      return;
+    }
+
+    // Forward other actions (timer, bible-present) to windows
     BrowserWindow.getAllWindows().forEach(w => {
       if (!w.isDestroyed()) {
         w.webContents.send('mobile-action', action);
@@ -242,12 +274,6 @@ function createWindows() {
 }
 
 
-// ------ BIBLE DATABASE HANDLERS ------
-const sqlite3 = require('sqlite3').verbose();
-const dbPath = path.join(__dirname, 'src/Bible/bibles.db');
-const db = new sqlite3.Database(dbPath, (err) => {
-  if (err) console.error("Database opening error: ", err);
-});
 
 ipcMain.handle("bible-get-books", async (event) => {
   return new Promise((resolve, reject) => {
