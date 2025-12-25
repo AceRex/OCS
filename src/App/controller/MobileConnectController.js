@@ -45,30 +45,30 @@ export default function MobileConnectController() {
     }, []);
 
     return (
-        <div className="w-full h-full p-8 flex flex-col gap-6 bg-[#1a1a1a] text-white animate-fade-in">
-            <header className="flex items-center gap-4 mb-4 border-b border-white/10 pb-4">
-                <div className="p-3 bg-blue-500/20 text-blue-400 rounded-full">
+        <div className="w-full h-full p-8 flex flex-col gap-6 animate-fade-in">
+            <header className="flex items-center gap-4 mb-4">
+                <div className="p-3 text-ash/70 rounded-full">
                     <PiDeviceMobile size={32} />
                 </div>
                 <div>
-                    <h1 className="text-2xl font-bold flex items-center gap-3">
+                    <h1 className="text-2xl font-bold flex items-center gap-3 text-ash/70">
                         Mobile Connection
                         <button
                             onClick={refreshInfo}
-                            className="p-1.5 bg-white/5 hover:bg-white/10 rounded-lg transition-colors border border-white/5"
+                            className="p-1.5 bg-white hover:bg-white/10 rounded-lg transition-colors border border-white/5"
                             title="Refresh Server Info"
                         >
-                            <PiArrowsClockwise className="text-white/50 hover:text-white" size={16} />
+                            <PiArrowsClockwise className="text-light hover:text-white" size={16} />
                         </button>
                     </h1>
-                    <p className="text-white/50 text-sm">Connect your mobile device to control OCS remotely</p>
+                    <p className="text-ash/60 text-sm">Connect your mobile device to control OCS remotely</p>
                 </div>
             </header>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8 h-full">
                 {/* Connection Card */}
-                <div className="bg-white/5 border border-white/10 rounded-2xl p-8 flex flex-col items-center justify-center text-center gap-6 shadow-xl">
-                    <div className="text-sm font-medium uppercase tracking-widest text-white/40">Network Address</div>
+                <div className="bg-white/5 border border-ash/70 rounded-2xl p-8 flex flex-col items-center justify-center text-center gap-6 shadow-xl">
+                    <div className="text-sm font-medium uppercase tracking-widest text-light">Network Address</div>
 
                     <div className="flex flex-col items-center gap-2">
                         <div className="text-6xl font-mono font-bold text-blue-400 select-all">
@@ -79,7 +79,7 @@ export default function MobileConnectController() {
                         </div>
                     </div>
 
-                    <div className="w-full max-w-md bg-white/5 rounded-xl p-4 text-left border border-white/5">
+                    <div className="w-full max-w-md bg-white/5 rounded-xl p-8 text-left border border-white/5">
                         <h3 className="text-white/80 font-bold mb-2 flex items-center gap-2">
                             <PiWarning className="text-yellow-500" /> Instructions:
                         </h3>
@@ -94,7 +94,7 @@ export default function MobileConnectController() {
 
                 {/* Status Card */}
                 <div className="flex flex-col gap-6">
-                    <div className="bg-white/5 border border-white/10 rounded-2xl p-6 flex-1">
+                    <div className="bg-white/5 border border-ash/70 rounded-2xl p-6 flex-1">
                         <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
                             Connected Devices
                             <span className="bg-white/10 text-xs px-2 py-1 rounded-full">{connectedDevices.length}</span>
