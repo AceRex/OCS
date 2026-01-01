@@ -87,10 +87,17 @@ function App() {
 
     if (window.electron.Presentation) {
       window.electron.Presentation.onSetContent((value) => {
+        if (value.target && Array.isArray(value.target)) {
+             // If target is specified, respect it. If strict filtering is needed:
+             if (!value.target.includes(mode) && !value.target.includes('all')) return;
+        }
         console.log("View received content:", value);
         setPresentationContent(value);
       });
       window.electron.Presentation.onSetStyle((value) => {
+        if (value.target && Array.isArray(value.target)) {
+             if (!value.target.includes(mode) && !value.target.includes('all')) return;
+        }
         console.log("View received style:", value);
         setPresentationStyle(prev => ({ ...prev, ...value }));
       });
@@ -123,20 +130,34 @@ function App() {
   }, [countdown]);
 
   const renderPresentation = () => {
-    const { backgroundColor, textColor, fontFamily, backgroundImage, backgroundVideo } = presentationStyle;
+    const { backgroundColor, textColor, fontFamily, backgroundImage, backgroundVideo, backgroundX, backgroundY, backgroundWidth, backgroundHeight } = presentationStyle;
     const hasContent = presentationContent && presentationContent.data;
     const isCustomLayers = hasContent && presentationContent.type === 'custom_layers';
+
+    const bgStyle = {
+        left: `${backgroundX || 50}%`,
+        top: `${backgroundY || 50}%`,
+        transform: 'translate(-50%, -50%)',
+        width: `${backgroundWidth || 100}%`,
+        height: `${backgroundHeight || 100}%`,
+        minWidth: '10px',
+        objectFit: 'fill'
+    };
 
     return (
       <section
         className={`w-full h-full flex flex-col items-center justify-center text-center relative overflow-hidden ${isCustomLayers ? 'p-0' : 'p-16'}`}
-        style={{ backgroundColor: (!backgroundImage && !backgroundVideo) ? (backgroundColor || '#000000') : '#000000' }}
+        style={{ 
+            backgroundColor: (!backgroundImage && !backgroundVideo) ? (backgroundColor || '#000000') : '#000000',
+            containerType: 'size' 
+        }}
       >
         {/* Background Media */}
         {backgroundVideo ? (
           <video
             ref={videoRef}
-            className="absolute inset-0 w-full h-full object-cover z-0"
+            className="absolute z-0"
+            style={bgStyle}
             autoPlay loop muted playsInline
           >
             <source src={backgroundVideo} />
@@ -144,7 +165,8 @@ function App() {
         ) : backgroundImage ? (
           <img
             src={backgroundImage}
-            className="absolute inset-0 w-full h-full object-cover z-0"
+            className="absolute z-0"
+            style={bgStyle}
             alt="bg"
           />
         ) : null}
@@ -174,7 +196,7 @@ function App() {
                         >
                             {layer.type === 'text' ? (
                                 <p style={{
-                                    fontSize: `${layer.style?.fontSize || 5}vw`,
+                                    fontSize: `${layer.style?.fontSize || 5}cqw`,
                                     color: layer.style?.color || '#ffffff',
                                     fontFamily: (layer.style?.fontFamily === 'serif') ? 'serif' : 'sans-serif',
                                     textShadow: '0 2px 10px rgba(0,0,0,0.5)',
