@@ -44,7 +44,7 @@ function App() {
     const mode = searchParams.get('mode'); // 'speaker' or 'general'
 
     // Timer Listener
-    electron.Timer.onSetTimer((value) => {
+    window.electron.Timer.onSetTimer((value) => {
       let newTime, newEventMode, newTheme;
 
       if (typeof value === "object" && value !== null) {
@@ -85,20 +85,22 @@ function App() {
       });
     });
 
-    if (electron.Presentation) {
-      electron.Presentation.onSetContent((value) => {
+    if (window.electron.Presentation) {
+      window.electron.Presentation.onSetContent((value) => {
+        console.log("View received content:", value);
         setPresentationContent(value);
       });
-      electron.Presentation.onSetStyle((value) => {
+      window.electron.Presentation.onSetStyle((value) => {
+        console.log("View received style:", value);
         setPresentationStyle(prev => ({ ...prev, ...value }));
       });
     }
 
     return () => {
-      electron.Timer.removeSetTimerListener();
-      if (electron.Presentation) {
-        electron.Presentation.removeSetContentListener();
-        electron.Presentation.removeSetStyleListener();
+      window.electron.Timer.removeSetTimerListener();
+      if (window.electron.Presentation) {
+        window.electron.Presentation.removeSetContentListener();
+        window.electron.Presentation.removeSetStyleListener();
       }
     };
   }, []);
@@ -120,35 +122,17 @@ function App() {
     }
   }, [countdown]);
 
-  const renderBibleContent = () => {
-    if (!presentationContent || !presentationContent.data) return null;
-
-    const { title, body } = presentationContent.data;
-    const safeBody = body || "";
-    const length = safeBody.length;
-
-    let fontSize = 'text-[5vw]';
-    if (length > 400) fontSize = 'text-[2.5vw]';
-    else if (length > 250) fontSize = 'text-[3vw]';
-    else if (length > 150) fontSize = 'text-[4vw]';
-    else if (length > 80) fontSize = 'text-[4.5vw]';
-
+  const renderPresentation = () => {
     const { backgroundColor, textColor, fontFamily, backgroundImage, backgroundVideo } = presentationStyle;
-
-    const styleObj = {
-      backgroundColor: (!backgroundImage && !backgroundVideo) ? backgroundColor : 'transparent',
-      color: textColor,
-      fontFamily: fontFamily === 'serif' ? 'ui-serif, Georgia, Cambria, "Times New Roman", Times, serif' :
-        fontFamily === 'sans' ? 'ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif' :
-          fontFamily
-    };
+    const hasContent = presentationContent && presentationContent.data;
+    const isCustomLayers = hasContent && presentationContent.type === 'custom_layers';
 
     return (
       <section
-        className={`w-full h-full min-h-[50vh] flex flex-col items-center justify-center p-16 ${countdown > 0 ? "pb-[18vh]" : ""} text-center animate-in fade-in duration-500 relative overflow-hidden`}
-        style={styleObj}
+        className={`w-full h-full flex flex-col items-center justify-center text-center relative overflow-hidden ${isCustomLayers ? 'p-0' : 'p-16'}`}
+        style={{ backgroundColor: (!backgroundImage && !backgroundVideo) ? (backgroundColor || '#000000') : '#000000' }}
       >
-        {/* Background Media Layer */}
+        {/* Background Media */}
         {backgroundVideo ? (
           <video
             ref={videoRef}
@@ -165,22 +149,67 @@ function App() {
           />
         ) : null}
 
-        {/* Overlay for readability if media exists */}
+        {/* Overlay */}
         {(backgroundVideo || backgroundImage) && (
-          <div className="absolute inset-0 w-full h-full bg-black/40 z-1" />
+          <div className="absolute inset-0 w-full h-full bg-black/10 z-[1]" />
         )}
 
-        {/* Content Layer */}
-        <div className="flex-1 flex flex-col items-center justify-center gap-8 z-10 relative w-full">
-          <p className={`${fontSize} font-bold leading-tight max-w-[95%] transition-all duration-300 drop-shadow-lg`}>
-            {safeBody}
-          </p>
+        {/* Content Logic */}
+        <div className="w-full h-full z-10 relative">
+            {hasContent && isCustomLayers && (
+                 <div className="w-full h-full relative">
+                    {presentationContent.data.layers.map((layer, idx) => (
+                        <div 
+                            key={layer.id || idx}
+                            className="absolute flex items-center justify-center text-center"
+                            style={{
+                                left: `${layer.x || 50}%`,
+                                top: `${layer.y || 50}%`,
+                                transform: 'translate(-50%, -50%)',
+                                width: layer.type === 'image' ? `${layer.style?.width || 30}%` : 'auto',
+                                zIndex: 10,
+                                minWidth: '10px', 
+                                minHeight: '10px'
+                            }}
+                        >
+                            {layer.type === 'text' ? (
+                                <p style={{
+                                    fontSize: `${layer.style?.fontSize || 5}vw`,
+                                    color: layer.style?.color || '#ffffff',
+                                    fontFamily: (layer.style?.fontFamily === 'serif') ? 'serif' : 'sans-serif',
+                                    textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                                    fontWeight: 'bold',
+                                    whiteSpace: 'pre-wrap',
+                                    lineHeight: 1.2
+                                }}>{layer.content || ""}</p>
+                            ) : (
+                                <img src={layer.content} className="w-full h-auto rounded-lg shadow-xl" alt="layer" />
+                            )}
+                        </div>
+                    ))}
+                 </div>
+            )}
+            
+            {hasContent && !isCustomLayers && (
+                 <div className="w-full h-full flex flex-col items-center justify-center gap-8">
+                     <p 
+                        className="font-bold leading-tight max-w-[95%] transition-all duration-300 drop-shadow-lg"
+                        style={{
+                            fontSize: presentationContent.data.body && presentationContent.data.body.length > 150 ? '4vw' : '5vw',
+                            color: textColor,
+                            fontFamily: fontFamily === 'serif' ? 'serif' : 'sans-serif'
+                        }}
+                     >
+                        {presentationContent.data.body}
+                     </p>
+                     {presentationContent.data.title && (
+                        <div className="mb-8 text-[3vw] font-medium opacity-80 uppercase tracking-widest drop-shadow-md" style={{ color: textColor }}>
+                            {presentationContent.data.title}
+                        </div>
+                     )}
+                 </div>
+            )}
         </div>
-        {title && (
-          <div className="mb-8 text-[3vw] font-medium opacity-80 uppercase tracking-widest z-10 relative drop-shadow-md">
-            {title}
-          </div>
-        )}
       </section>
     );
   };
@@ -242,14 +271,14 @@ function App() {
   // Debug check
   if (!window.electron) return <div style={{ color: 'red', fontSize: 50, backgroundColor: 'white' }}>ELECTRON PRELOAD FAILED</div>;
 
-  const isPresenting = presentationContent && (presentationContent.type === 'bible' || presentationContent.type === 'custom') && presentationContent.data;
+  const isPresenting = presentationContent && ['bible', 'custom', 'custom_layers'].includes(presentationContent.type) && presentationContent.data;
   const showSplitTimer = isPresenting && countdown > 0;
 
   return (
-    <div className="h-full flex flex-col justify-center items-center w-full bg-primary overflow-hidden" style={{ color: 'white' }}>
+    <div className="h-screen flex flex-col justify-center items-center w-full bg-primary overflow-hidden" style={{ color: 'white' }}>
       <section className={`w-full h-full flex flex-col items-center justify-center relative ${showSplitTimer ? '' : 'max-lg:p-[0.5em]'}`}>
-        <div className={`w-full ${showSplitTimer ? 'h-[100vh] flex-1' : 'h-full flex flex-col items-center justify-center flex-1'} transition-all duration-500`}>
-          {isPresenting ? renderBibleContent() : (
+        <div className={`w-full ${showSplitTimer ? 'h-[100vh] flex-1' : 'h-screen flex flex-col items-center justify-center flex-1'} transition-all duration-500`}>
+          {isPresenting ? renderPresentation() : (
             !showSplitTimer && (
               countdown === null ? (
                 <div className="w-full h-full flex items-center justify-center bg-primary" style={{ backgroundColor: '#282828' }}>

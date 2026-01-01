@@ -12,6 +12,9 @@
     height: 100vh;
     @apply bg-primary flex justify-center content-center;
   }
+  #root {
+    @apply w-full h-full;
+  }
   input[type="time"]::-webkit-calendar-picker-indicator {
     display: none;
 }
