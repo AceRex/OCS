@@ -124,24 +124,51 @@ io.on('connection', (socket) => {
     console.log("Action received from mobile:", action);
 
     if (action.type === 'bible-get-books') {
-      db.all("SELECT * FROM books ORDER BY id", [], (err, rows) => {
-        if (!err) {
-          socket.emit('mobile-data', { type: 'bible-books', payload: rows });
+      console.log("Fetching books for mobile...");
+      db.all("SELECT * FROM books ORDER BY id", [], (err, books) => {
+        if (err) {
+          console.error("Error fetching books:", err);
+          return;
         }
+
+        // Get chapter counts (using KJV as standard structure)
+        db.all("SELECT book_id, MAX(chapter) as count FROM verses WHERE version='kjv' GROUP BY book_id", [], (err2, counts) => {
+          if (err2) {
+            console.error("Error fetching chapter counts:", err2);
+            // Fallback: send books without explicit chapters (mobile might default to 150)
+            socket.emit('mobile-data', { type: 'bible-books', payload: books });
+            return;
+          }
+
+          const booksWithChapters = books.map(b => {
+            const c = counts.find(x => x.book_id === b.id);
+            return {
+              ...b,
+              chapters: c ? c.count : 50 // Default to 50 if counts match fails
+            };
+          });
+
+          console.log(`Sending ${booksWithChapters.length} books with chapter counts to mobile`);
+          socket.emit('mobile-data', { type: 'bible-books', payload: booksWithChapters });
+        });
       });
       return;
     }
 
     if (action.type === 'bible-get-chapter') {
       const { version, bookId, chapter } = action.payload;
+      console.log(`Fetching chapter for mobile: ${version} ${bookId}:${chapter}`);
       db.all(
         "SELECT text FROM verses WHERE version = ? AND book_id = ? AND chapter = ? ORDER BY verse",
         [version, bookId, chapter],
         (err, rows) => {
-          if (!err) {
-            const verses = rows.map(r => r.text);
-            socket.emit('mobile-data', { type: 'bible-chapter', payload: verses });
+          if (err) {
+            console.error("Error fetching chapter:", err);
+            return;
           }
+          console.log(`Sending ${rows.length} verses to mobile`);
+          const verses = rows.map(r => r.text);
+          socket.emit('mobile-data', { type: 'bible-chapter', payload: verses });
         }
       );
       return;
@@ -165,6 +192,11 @@ ipcMain.handle('get-server-info', () => {
   // Refresh IP in case it changed
   serverIp = ip.address();
   return { ip: serverIp, port: PORT, devices: connectedDevices };
+});
+
+ipcMain.on('bible-sync', (event, state) => {
+  // Broadcast to all connected mobile clients
+  io.emit('mobile-data', { type: 'bible-sync', payload: state });
 });
 // --------------------------
 

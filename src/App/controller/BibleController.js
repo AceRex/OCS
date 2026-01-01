@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { PiCaretDown, PiMagnifyingGlass, PiCheck } from "react-icons/pi";
 
 const versions = {
     kjv: "King James Version",
@@ -13,6 +14,82 @@ const versions = {
     kjv_strongs: "KJV w/ Strong's",
 };
 
+// Custom Searchable Dropdown Component
+const SearchableDropdown = ({ options, value, onChange, label, placeholder = "Search...", className = "" }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const [search, setSearch] = useState("");
+    const dropdownRef = useRef(null);
+
+    // Close when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, []);
+
+    // Filter options
+    const filteredOptions = options.filter(opt =>
+        opt.label.toLowerCase().includes(search.toLowerCase())
+    );
+
+    const selectedLabel = options.find(opt => opt.value === value)?.label || value;
+
+    return (
+        <div className={`flex flex-col gap-1 relative ${className}`} ref={dropdownRef}>
+            <label className="text-xs font-bold text-ash uppercase">{label}</label>
+            <button
+                onClick={() => setIsOpen(!isOpen)}
+                className="bg-primary border border-light/20 rounded p-2 text-light outline-none flex items-center justify-between hover:border-light/40 transition-colors text-left truncate"
+            >
+                <span className="truncate pr-2">{selectedLabel}</span>
+                <PiCaretDown className={`text-ash transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isOpen && (
+                <div className="absolute top-full mt-1 left-0 w-full bg-[#1a1a1a] border border-light/10 rounded-lg shadow-2xl z-50 flex flex-col max-h-60 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
+                    <div className="p-2 border-b border-light/5 sticky top-0 bg-[#1a1a1a]">
+                        <div className="flex items-center gap-2 bg-white/5 rounded px-2 py-1.5 border border-light/10">
+                            <PiMagnifyingGlass className="text-ash" />
+                            <input
+                                autoFocus
+                                type="text"
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                placeholder={placeholder}
+                                className="bg-transparent text-sm text-light outline-none w-full placeholder:text-ash/50"
+                            />
+                        </div>
+                    </div>
+                    <div className="overflow-y-auto flex-1 p-1">
+                        {filteredOptions.length > 0 ? filteredOptions.map((opt) => (
+                            <button
+                                key={opt.value}
+                                onClick={() => {
+                                    onChange(opt.value);
+                                    setIsOpen(false);
+                                    setSearch("");
+                                }}
+                                className={`w-full text-left px-3 py-2 rounded text-sm flex items-center justify-between ${value === opt.value ? 'bg-blue-500/20 text-blue-400' : 'text-light/80 hover:bg-white/5'}`}
+                            >
+                                <span className="truncate">{opt.label}</span>
+                                {value === opt.value && <PiCheck />}
+                            </button>
+                        )) : (
+                            <div className="p-4 text-center text-ash text-xs">
+                                No results found
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
 export default function BibleController() {
     const [selectedVersion, setSelectedVersion] = useState('kjv');
     const [books, setBooks] = useState([]);
@@ -25,20 +102,30 @@ export default function BibleController() {
     // Selection State
     const [selectedVerseIndices, setSelectedVerseIndices] = useState(new Set());
 
+    // Sync State to Mobile
+    useEffect(() => {
+        if (window.electron && window.electron.Bible && window.electron.Bible.sync) {
+            window.electron.Bible.sync({
+                version: selectedVersion,
+                bookIndex: selectedBookIndex,
+                chapterIndex: selectedChapterIndex
+            });
+        }
+    }, [selectedVersion, selectedBookIndex, selectedChapterIndex]);
+
     // Fetch Books on Mount
     useEffect(() => {
         electron.Bible.getBooks().then(setBooks).catch(console.error);
     }, []);
 
     // Pending selection for remote sync
-    const pendingSelection = React.useRef(null);
+    const pendingSelection = useRef(null);
 
     // Fetch Verses when selection changes
     useEffect(() => {
         if (books.length === 0) return;
 
         // Critical: Clear verses immediately to prevent "Auto-Present" from showing stale data
-        // from the previous chapter while the new one is loading.
         setVerses([]);
 
         electron.Bible.getChapter(selectedVersion, selectedBookIndex, selectedChapterIndex + 1)
@@ -51,12 +138,6 @@ export default function BibleController() {
                     if (bookIndex === selectedBookIndex && chapterIndex === selectedChapterIndex) {
                         const newSet = new Set(indices);
                         setSelectedVerseIndices(newSet);
-                        // We need to call presentVerses but it relies on 'verses' state which is closed over?
-                        // No, 'presentVerses' uses 'verses' from closure. 'setVerses' updates state for NEXT render.
-                        // We cannot call 'presentVerses' immediately with old 'verses'.
-                        // We must wait for render?
-                        // Actually, we can reuse logic or pass newVerses explicitly.
-                        // Let's refactor presentVerses to accept verses optionally.
                         presentVerses(newSet, newVerses);
                     }
                     pendingSelection.current = null;
@@ -69,24 +150,51 @@ export default function BibleController() {
     // Listen for Mobile Actions
     useEffect(() => {
         if (window.electron && window.electron.Network) {
+            console.log("Setting up mobile listener with state:", selectedVersion, selectedBookIndex, selectedChapterIndex);
             const removeListener = window.electron.Network.onMobileAction((action) => {
                 if (action.type === 'bible-present') {
-                    const { version, bookIndex, chapterIndex, indices } = action.payload;
+                    console.log("Bible Present Action:", action.payload);
 
-                    // Update Navigation
-                    setSelectedVersion(version);
-                    setSelectedBookIndex(bookIndex);
-                    setSelectedChapterIndex(chapterIndex);
+                    const version = action.payload.version;
+                    const bookIndex = Number(action.payload.bookIndex);
+                    const chapterIndex = Number(action.payload.chapterIndex);
+                    const indices = action.payload.indices.map(Number);
 
-                    // Queue selection
-                    pendingSelection.current = { bookIndex, chapterIndex, indices };
+                    // Check if we need to navigate
+                    const needsNav =
+                        (version && version !== selectedVersion) ||
+                        (bookIndex !== selectedBookIndex) ||
+                        (chapterIndex !== selectedChapterIndex);
+
+                    if (needsNav) {
+                        console.log("Navigating to:", version, bookIndex, chapterIndex);
+                        if (version) setSelectedVersion(version);
+                        setSelectedBookIndex(bookIndex);
+                        setSelectedChapterIndex(chapterIndex);
+
+                        // Queue selection for after fetch
+                        pendingSelection.current = { bookIndex, chapterIndex, indices };
+                    } else {
+                        console.log("Already on correct page, presenting immediately.");
+                        // We are on the correct page, present immediately
+                        const newSet = new Set(indices);
+                        setSelectedVerseIndices(newSet);
+                        // Pass 'verses' explicitly to ensure we use current state closure
+                        presentVerses(newSet, verses);
+                    }
                 }
             });
             return () => removeListener();
         }
-    }, []);
+    }, [selectedVersion, selectedBookIndex, selectedChapterIndex, verses]); // Added verses to closure to be safe
+
 
     const currentBook = books[selectedBookIndex];
+
+    // Calculate correct chapter count
+    // Fallback to 150 if chapters property is missing or 0
+    const totalChapters = (currentBook && currentBook.chapters) ? currentBook.chapters : 150;
+    const chaptersList = Array.from({ length: totalChapters }, (_, i) => i);
 
     // Scroll top
     useEffect(() => {
@@ -102,16 +210,9 @@ export default function BibleController() {
         }
 
         const sortedIndices = Array.from(indices).sort((a, b) => a - b);
-        const verseText = sortedIndices.map(i => currentVerses[i]).join(' ');
+        // Safety check
+        const verseText = sortedIndices.map(i => currentVerses[i] || "").join(' ');
 
-        // Use keys to find book if we used internal state? currentBook is stable in render.
-        // If we just navigated, currentBook might be stale in THIS closure if we changed index?
-        // Yes, if we set selectedBookIndex, re-render hasn't happened yet.
-        // BUT, if we set state in 'onMobileAction', we trigger re-render.
-        // The fetch effect runs after re-render.
-        // So 'currentBook' inside the fetch .then() closure? No, fetch effect uses 'books' and 'indices' from scope.
-        // Actually, inside the Effect, 'currentBook' (derived const) is from the render scope that triggered the effect.
-        // So it is correct!
         const scopeBook = books[selectedBookIndex];
         const bookName = scopeBook ? scopeBook.name : "";
         const chapterNum = selectedChapterIndex + 1;
@@ -172,93 +273,111 @@ export default function BibleController() {
 
     if (!currentBook) return <div className="text-light p-4">Loading Bible Data...</div>;
 
-    return (
-        <div className="flex flex-col w-full h-full gap-4 text-light/90">
-            {/* Header / Config */}
-            <div className="flex flex-row gap-4 bg-ash/20 p-4 rounded-xl items-center relative">
+    // Prepare Options for Dropdowns
+    const versionOptions = Object.entries(versions).map(([key, name]) => ({
+        value: key,
+        label: name
+    }));
 
-                <div className="flex flex-col gap-1 w-1/5">
-                    <label className="text-xs font-bold text-ash uppercase">Version</label>
-                    <select
+    const bookOptions = books.map((book, index) => ({
+        value: index,
+        label: book.name
+    }));
+
+    const chapterOptions = chaptersList.map((i) => ({
+        value: i,
+        label: (i + 1).toString() // Display as 1-indexed
+    }));
+
+    return (
+        <div className="flex flex-col w-full h-full gap-2 text-light/90">
+            {/* Header / Config */}
+            <div className="flex flex-row gap-2 bg-ash/20 p-2 rounded-xl items-center relative z-20 h-16">
+
+                <div className="flex-1 min-w-[120px]">
+                    <SearchableDropdown
+                        label="Version"
+                        options={versionOptions}
                         value={selectedVersion}
-                        onChange={(e) => setSelectedVersion(e.target.value)}
-                        className="bg-primary border border-light/20 rounded p-2 text-light outline-none"
-                    >
-                        {Object.entries(versions).map(([key, name]) => (
-                            <option key={key} value={key}>
-                                {name}
-                            </option>
-                        ))}
-                    </select>
+                        onChange={setSelectedVersion}
+                        placeholder="Version"
+                    />
                 </div>
 
-                <div className="flex flex-col gap-1 w-1/5">
-                    <label className="text-xs font-bold text-ash uppercase">Book</label>
-                    <select
+                <div className="flex-[2] min-w-[150px]">
+                    <SearchableDropdown
+                        label="Book"
+                        options={bookOptions}
                         value={selectedBookIndex}
-                        onChange={(e) => {
-                            setSelectedBookIndex(Number(e.target.value));
+                        onChange={(val) => {
+                            setSelectedBookIndex(val);
                             setSelectedChapterIndex(0);
                         }}
-                        className="bg-primary border border-light/20 rounded p-2 text-light outline-none"
-                    >
-                        {books.map((book, index) => (
-                            <option key={book.abbrev} value={index}>
-                                {book.name}
-                            </option>
-                        ))}
-                    </select>
+                        placeholder="Book"
+                    />
                 </div>
 
-                <div className="flex flex-col gap-1 w-1/5">
-                    <label className="text-xs font-bold text-ash uppercase">Chapter</label>
-                    <select
+                <div className="flex-1 min-w-[80px]">
+                    <SearchableDropdown
+                        label="Ch"
+                        options={chapterOptions}
                         value={selectedChapterIndex}
-                        onChange={(e) => setSelectedChapterIndex(Number(e.target.value))}
-                        className="bg-primary border border-light/20 rounded p-2 text-light outline-none"
-                    >
-                        {Array.from({ length: 150 }, (_, i) => i).map((i) => (
-                            <option key={i} value={i}>
-                                {i + 1}
-                            </option>
-                        ))}
-                    </select>
+                        onChange={setSelectedChapterIndex}
+                        placeholder="#"
+                    />
                 </div>
 
-                <div className="flex-1 flex flex-col items-end gap-2">
-                    <div className="text-right opacity-50 text-sm">
-                        {currentBook.name} {selectedChapterIndex + 1} ({selectedVersion.toUpperCase()})
-                    </div>
+                <div className="flex-1 min-w-[80px]">
+                    <SearchableDropdown
+                        label="Vs"
+                        options={verses.map((_, i) => ({ value: i, label: (i + 1).toString() }))}
+                        value={-1}
+                        onChange={(val) => {
+                            const el = document.getElementById(`verse-${val}`);
+                            if (el) {
+                                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                handleVerseClick(val, { shiftKey: false, ctrlKey: false, metaKey: false });
+                            }
+                        }}
+                        placeholder="#"
+                    />
+                </div>
+
+                <div className="flex-none flex flex-col items-end justify-center pl-2 border-l border-white/5 ml-1">
                     {selectedVerseIndices.size > 0 && (
                         <button
                             onClick={() => {
                                 setSelectedVerseIndices(new Set());
                                 electron.Presentation.setContent(null);
                             }}
-                            className="bg-red/80 hover:bg-red text-white text-xs font-bold py-2 px-4 rounded transition-colors uppercase tracking-wider"
+                            className="bg-red/80 hover:bg-red text-white text-[10px] font-bold py-1.5 px-3 rounded-md transition-colors uppercase tracking-wider shadow-lg shadow-red/20 whitespace-nowrap"
                         >
-                            Stop Presenting
+                            Stop
                         </button>
                     )}
                 </div>
             </div>
 
             {/* Content */}
-            <div id="verse-container" className="flex-1 bg-ash/10 rounded-xl p-6 overflow-y-auto space-y-4">
+            <div id="verse-container" className="flex-1 bg-ash/10 rounded-xl p-6 overflow-y-auto space-y-4 relative z-0">
                 {verses.length > 0 ? verses.map((verse, index) => {
                     const isSelected = selectedVerseIndices.has(index);
                     return (
                         <div
                             key={index}
+                            id={`verse-${index}`}
                             onClick={(e) => handleVerseClick(index, e)}
-                            className={`flex gap-4 p-2 rounded transition-all group cursor-pointer ${isSelected ? 'bg-blue-600/20' : 'hover:bg-white/5  '}`}
+                            className={`flex gap-4 p-3 rounded-lg transition-all group cursor-pointer border ${isSelected ? 'bg-blue-600/20 border-blue-500/30' : 'border-transparent hover:bg-white/5'}`}
                         >
-                            <span className={`font-bold min-w-[24px] text-right pt-1 text-sm ${isSelected ? 'text-blue-400' : 'text-blue-400/60 group-hover:text-blue-400'}`}>{index + 1}</span>
+                            <span className={`font-bold min-w-[24px] text-right pt-1 text-sm ${isSelected ? 'text-blue-400' : 'text-ash/50 group-hover:text-ash/80'}`}>{index + 1}</span>
                             <p className={`text-lg leading-relaxed ${isSelected ? 'text-white' : 'text-light/80'}`}>{verse}</p>
                         </div>
                     );
                 }) : (
-                    <div className="text-center opacity-50 mt-10">No verses found for this chapter.</div>
+                    <div className="md:h-[400px] flex items-center justify-center flex-col gap-4 opacity-50">
+                        <PiMagnifyingGlass size={48} className="text-ash" />
+                        <p>No verses found for this chapter.</p>
+                    </div>
                 )}
             </div>
         </div>

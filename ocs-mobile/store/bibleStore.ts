@@ -63,16 +63,23 @@ export const useBibleStore = create<BibleState>((set, get) => ({
     },
 
     presentVerse: (verseIndex, text) => {
+        // OR use useSocketStore if socket is not in this store? 
+        // socket is in socketStore, not here? 
+        // Wait, socketStore is imported. 
+        // But get() gets THIS store's state. 
+        // Correct approach:
         const socket = useSocketStore.getState().socket;
+
         if (socket) {
-            // We need to match desktop logic. 
-            // Desktop expects `presentVerses` logic.
-            // Desktop BibleController handles selection. 
-            // We can emit 'bible-present' with payload.
-            // Payload: { indices: [verseIndex] } (simplified for single click)
+            const state = get();
             socket.emit('mobile-action', {
                 type: 'bible-present',
-                payload: { indices: [verseIndex] }
+                payload: {
+                    indices: [verseIndex],
+                    version: state.selectedVersion,
+                    bookIndex: state.selectedBookIndex,
+                    chapterIndex: state.selectedChapterIndex
+                }
             });
         }
     }

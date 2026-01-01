@@ -16,7 +16,8 @@ contextBridge.exposeInMainWorld("electron", {
   },
   Bible: {
     getBooks: () => ipcRenderer.invoke('bible-get-books'),
-    getChapter: (version, bookId, chapter) => ipcRenderer.invoke('bible-get-chapter', { version, bookId, chapter })
+    getChapter: (version, bookId, chapter) => ipcRenderer.invoke('bible-get-chapter', { version, bookId, chapter }),
+    sync: (state) => ipcRenderer.send('bible-sync', state)
   },
   Presentation: {
     setContent: (content) => ipcRenderer.send("activate_set_content", content),

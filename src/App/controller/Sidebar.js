@@ -20,8 +20,7 @@ export default function Sidebar({ activeTab, onTabChange }) {
     ];
 
     return (
-        <aside className="w-20 h-full bg-[#1e1e1e] flex flex-col items-center py-2 overflow-hidden">
-            {/* <div className="text-light/50 text-xs font-bold uppercase tracking-widest mb-2">OCS</div> */}
+        <aside className="w-20 h-full bg-[#1e1e1e] flex flex-col items-center justify-center space-y-4 py-2 overflow-hidden">
             {tabs.map((tab) => {
                 const Icon = tab.icon;
                 const isActive = activeTab === tab.id;
@@ -29,9 +28,9 @@ export default function Sidebar({ activeTab, onTabChange }) {
                     <button
                         key={tab.id}
                         onClick={() => onTabChange(tab.id)}
-                        className={`flex-1 flex flex-col items-center justify-center w-full transition-all group min-h-0`}
+                        className={`flex flex-col items-center justify-center w-full transition-all group `}
                     >
-                        <div className={`flex flex-col items-center justify-center w-full h-full ${isActive ? 'border-r-light border-r-2 bg-ash/20' : 'border-r- border-r-0'}  transition-colors`}>
+                        <div className={`flex p-2 flex-col items-center justify-center w-full h-full ${isActive ? 'border-r-light border-r-2 bg-ash/20' : 'border-r- border-r-0'}  transition-colors`}>
                             <div className={`p-1 transition-colors ${isActive ? 'text-light' : ' text-ash group-hover:bg-white/10 group-hover:text-gray-200'}`}>
                                 <Icon size={20} className="shrink-0" />
                             </div>
