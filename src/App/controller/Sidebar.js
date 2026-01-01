@@ -30,8 +30,8 @@ export default function Sidebar({ activeTab, onTabChange }) {
                         onClick={() => onTabChange(tab.id)}
                         className={`flex flex-col items-center justify-center w-full transition-all group `}
                     >
-                        <div className={`flex p-2 flex-col items-center justify-center w-full h-full ${isActive ? 'border-r-light border-r-2 bg-ash/20' : 'border-r- border-r-0'}  transition-colors`}>
-                            <div className={`p-1 transition-colors ${isActive ? 'text-light' : ' text-ash group-hover:bg-white/10 group-hover:text-gray-200'}`}>
+                        <div className={`flex p-2 flex-col items-center justify-center w-full h-full transition-colors`}>
+                            <div className={`p-1 transition-colors ${isActive ? 'text-light/70' : ' text-ash group-hover:text-gray-200'}`}>
                                 <Icon size={20} className="shrink-0" />
                             </div>
                             <span className={`text-[9px] font-medium leading-none mt-1 ${isActive ? 'text-light' : 'text-ash group-hover:text-gray-300'}`}>
