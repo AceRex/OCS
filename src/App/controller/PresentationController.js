@@ -8,6 +8,13 @@ import {
 export default function PresentationController() {
     const [mediaFiles, setMediaFiles] = useState([]);
     
+    const [activeTab, setActiveTab] = useState('media'); // 'media', 'text', 'presentation'
+    
+    const [presentations, setPresentations] = useState([]);
+    const [selectedPresentation, setSelectedPresentation] = useState(null);
+    const [presContextMenu, setPresContextMenu] = useState({ visible: false, x: 0, y: 0, presentation: null });
+    const [pageContextMenu, setPageContextMenu] = useState({ visible: false, x: 0, y: 0, pageIndex: null });
+
     // Slide State
     const [background, setBackground] = useState({ url: null, type: 'image', x: 50, y: 50, width: 100, height: 100 }); 
     const [layers, setLayers] = useState([
@@ -22,6 +29,7 @@ export default function PresentationController() {
     const [resizeHandle, setResizeHandle] = useState(null); // 'se' (southeast) only for now or 'all'
     const [dragStart, setDragStart] = useState({ x: 0, y: 0, initialVal: 0 }); // Mouse Start + Initial Layer Val
     const [draggingId, setDraggingId] = useState(null);
+    const [contextMenu, setContextMenu] = useState({ visible: false, x: 0, y: 0, fileUrl: null, isVideo: false });
     
     const canvasRef = useRef(null);
 
@@ -29,6 +37,68 @@ export default function PresentationController() {
     useEffect(() => {
         refreshMedia();
     }, []);
+
+    const handleContextMenu = (e, fileUrl, isVideo) => {
+        e.preventDefault();
+        setContextMenu({
+            visible: true,
+            x: e.clientX,
+            y: e.clientY,
+            fileUrl,
+            isVideo
+        });
+    };
+
+    const closeContextMenu = () => {
+        if (contextMenu.visible) {
+            setContextMenu({ ...contextMenu, visible: false });
+        }
+    };
+
+    useEffect(() => {
+        const handleClick = () => {
+            closeContextMenu();
+            setPresContextMenu(prev => ({ ...prev, visible: false }));
+            setPageContextMenu(prev => ({ ...prev, visible: false }));
+        };
+        window.addEventListener('click', handleClick);
+        return () => window.removeEventListener('click', handleClick);
+    }, [contextMenu.visible, presContextMenu.visible, pageContextMenu.visible]);
+
+    const handleRemoveMedia = async (fileUrl) => {
+        if (window.electron && window.electron.Media && window.electron.Media.delete) {
+            try {
+                await window.electron.Media.delete(fileUrl);
+            } catch (e) {
+                console.error(e);
+            }
+        }
+        setMediaFiles(prev => prev.filter(url => url !== fileUrl));
+        closeContextMenu();
+    };
+
+
+    // Handle Keyboard Delete
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            if (e.key === 'Backspace' || e.key === 'Delete') {
+                if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+                
+                if (selectedLayerId) {
+                    if (selectedLayerId === 'bg') {
+                        setBackground({ url: null, type: 'image', x: 50, y: 50, width: 100, height: 100 });
+                        setSelectedLayerId(null);
+                    } else {
+                        setLayers(prev => prev.filter(l => l.id !== selectedLayerId));
+                        setSelectedLayerId(null);
+                    }
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [selectedLayerId]);
 
     const refreshMedia = async () => {
         if (window.electron && window.electron.Media) {
@@ -46,6 +116,59 @@ export default function PresentationController() {
         }
     };
 
+    const handleImportPresentation = async () => {
+        if (window.electron && window.electron.Media && window.electron.Media.importPresentation) {
+            const result = await window.electron.Media.importPresentation();
+            if (result) {
+                // result.pages contains an array of file:// URLs to the extracted slide images
+                setPresentations(prev => [...prev, {
+                    id: Date.now(),
+                    title: result.filename,
+                    fileUrl: result.fileUrl,
+                    pages: result.pages || []
+                }]);
+            }
+        }
+    };
+
+    const handleDeletePresentation = async (presentation) => {
+        if (window.electron && window.electron.Media && window.electron.Media.deletePresentation) {
+            await window.electron.Media.deletePresentation(presentation.fileUrl);
+        }
+        setPresentations(prev => prev.filter(p => p.id !== presentation.id));
+        if (selectedPresentation && selectedPresentation.id === presentation.id) {
+            setSelectedPresentation(null);
+        }
+        setPresContextMenu({ ...presContextMenu, visible: false });
+    };
+
+    const handleShowPresentation = (presentation) => {
+        setSelectedPresentation(presentation);
+        setPresContextMenu({ ...presContextMenu, visible: false });
+    };
+
+    const handlePresentPage = (pageIndex) => {
+        if (!selectedPresentation) return;
+        if (window.electron && window.electron.Presentation) {
+            const targetArr = [];
+            if (targets.general) targetArr.push('general');
+            if (targets.speaker) targetArr.push('speaker');
+            const slideImageUrl = selectedPresentation.pages[pageIndex];
+            window.electron.Presentation.setContent({
+                type: 'slide_index',
+                data: { 
+                    presentationTitle: selectedPresentation.title, 
+                    slideIndex: pageIndex, 
+                    fileUrl: selectedPresentation.fileUrl,
+                    slideImageUrl: slideImageUrl
+                },
+                target: targetArr
+            });
+        }
+        setPageContextMenu({ ...pageContextMenu, visible: false });
+    };
+
+
     // --- Layer Management ---
     const addLayer = (type, content) => {
         const newId = `${type}-${Date.now()}`;
@@ -55,7 +178,15 @@ export default function PresentationController() {
             content, 
             x: 50, // % Center
             y: 50,
-            style: type === 'text' ? { fontSize: 5, color: '#ffffff' } : { width: 30 }
+            style: type === 'text' ? { 
+                fontSize: 5, 
+                color: '#ffffff', 
+                fontFamily: 'sans-serif', 
+                fontWeight: 'normal', 
+                textTransform: 'none', 
+                lineHeight: 1.2,
+                shadow: null
+            } : { width: 30, shadow: null }
         };
         setLayers(prev => [...prev, newLayer]);
         setSelectedLayerId(newId);
@@ -255,6 +386,8 @@ export default function PresentationController() {
     const toggleTarget = (key) => setTargets(prev => ({ ...prev, [key]: !prev[key] }));
     const selectedLayer = layers.find(l => l.id === selectedLayerId);
 
+    
+
     return (
         <div 
             className="h-full w-full bg-[#0d0d0d] flex flex-col overflow-hidden text-light font-sans select-none"
@@ -287,7 +420,7 @@ export default function PresentationController() {
                     </div>
 
                     {/* Canvas Container */}
-                    <div className="flex-1 relative flex items-center justify-center bg-black/50 p-6 overflow-hidden">
+                    <div className="flex-1 relative flex items-center justify-center bg-black/50 p-2 overflow-hidden">
                         <div 
                             ref={canvasRef}
                             onMouseDown={(e) => handleMouseDown(e, 'bg')}
@@ -378,7 +511,7 @@ export default function PresentationController() {
                                                 <div 
                                                     key={h}
                                                     onMouseDown={(e) => handleMouseDown(e, layer.id, h)}
-                                                    className={`absolute w-3.5 h-3.5 bg-blue-500 border border-white rounded-full z-50 shadow-sm ${posClass} ${cursorClass}`}
+                                                    className={`absolute w-3 h-3 bg-blue-500 border border-white rounded-full z-50 shadow-sm ${posClass} ${cursorClass}`}
                                                 ></div>
                                             );
                                         })}
@@ -387,18 +520,31 @@ export default function PresentationController() {
                                     
                                     {layer.type === 'text' ? (
                                         <p 
-                                            className="font-bold whitespace-pre-wrap text-center px-2 py-1 relative z-10"
+                                            className="whitespace-pre-wrap text-center px-2 py-1 relative z-10"
                                             style={{ 
                                                 fontSize: `${layer.style.fontSize}cqw`, 
-                                                lineHeight: 1.2,
+                                                lineHeight: layer.style.lineHeight || 1.2,
                                                 color: layer.style.color,
-                                                textShadow: '0 2px 10px rgba(0,0,0,0.5)'
+                                                fontFamily: layer.style.fontFamily === 'serif' ? 'Georgia, serif' : (layer.style.fontFamily === 'mono' ? '"Courier New", monospace' : 'system-ui, sans-serif'),
+                                                fontWeight: layer.style.fontWeight || 'normal',
+                                                textTransform: layer.style.textTransform || 'none',
+                                                textShadow: layer.style.shadow
+                                                    ? `${layer.style.shadow.x||0}px ${layer.style.shadow.y||0}px ${layer.style.shadow.blur||10}px ${layer.style.shadow.color||'rgba(0,0,0,0.6)'}`
+                                                    : 'none'
                                             }}
                                         >
                                             {layer.content}
                                         </p>
                                     ) : (
-                                        <img src={layer.content} className="w-full h-auto rounded-lg shadow-xl relative z-10 pointer-events-none" />
+                                        <img 
+                                            src={layer.content} 
+                                            className="w-full h-auto rounded-lg relative z-10 pointer-events-none" 
+                                            style={{
+                                                boxShadow: layer.style.shadow
+                                                    ? `${layer.style.shadow.x||0}px ${layer.style.shadow.y||0}px ${layer.style.shadow.blur||10}px ${layer.style.shadow.color||'rgba(0,0,0,0.6)'}`
+                                                    : 'none'
+                                            }}
+                                        />
                                     )}
                                 </div>
                             ))}
@@ -420,43 +566,277 @@ export default function PresentationController() {
                     </div>
                 </div>
 
-                {/* RIGHT: MEDIA LIBRARY (Flex 1) */}
+                {/* RIGHT: TABS LIBRARY (Flex 1) */}
                 <div className="flex-1 bg-[#141414] m-2 ml-0 rounded-2xl border border-white/5 flex flex-col overflow-hidden w-full max-w-sm">
-                     <div className="h-12 border-b border-white/5 flex items-center justify-between px-4 bg-[#1a1a1a]">
-                         <span className="text-xs font-bold uppercase tracking-widest text-white/50 flex items-center gap-2">
-                             <PiFolder size={16}/> Media Library
-                         </span>
-                         <button onClick={handleImport} className="text-blue-400 hover:text-blue-300 bg-blue-400/10 p-2 rounded-lg transition-colors"><PiPlus size={16}/></button>
+                     {/* TAB HEADER */}
+                     <div className="flex border-b border-white/5 bg-[#1a1a1a]">
+                         {[ 
+                             { id: 'media', icon: PiImage, label: 'Media' },
+                             { id: 'text', icon: PiTextT, label: 'Text' },
+                             { id: 'presentation', icon: PiFolder, label: 'Templates' },
+                         ].map(tab => (
+                             <button
+                                 key={tab.id}
+                                 onClick={() => { setActiveTab(tab.id); if (tab.id !== 'presentation') setSelectedPresentation(null); }}
+                                 className={`flex-1 flex items-center justify-center gap-2 py-3 text-xs font-bold uppercase tracking-wider transition-colors ${activeTab === tab.id ? 'bg-white/5 text-blue-400 border-b-2 border-blue-500' : 'text-white/40 hover:bg-white/5 hover:text-white/70'}`}
+                             >
+                                 <tab.icon size={16} /> {tab.label}
+                             </button>
+                         ))}
                      </div>
                      
-                     <div className="flex-1 overflow-y-auto p-3 grid grid-cols-2 gap-3 content-start">
-                         {mediaFiles.map((fileUrl, index) => {
-                                const isVideo = fileUrl.endsWith('.mp4');
-                                return (
-                                    <div key={index} className="aspect-square bg-gray-800 rounded-xl relative group overflow-hidden border border-white/5 hover:border-white/20 transition-all">
-                                         {isVideo ? (
-                                            <video src={fileUrl} className="absolute inset-0 w-full h-full object-cover opacity-60" muted />
-                                         ) : (
-                                            <img src={fileUrl} className="absolute inset-0 w-full h-full object-cover opacity-60" alt="thumb"/>
-                                         )}
-                                         
-                                         <div className="absolute inset-0 bg-black/80 opacity-0 group-hover:opacity-100 transition-all flex flex-col items-center justify-center gap-2 p-2">
-                                             <button 
-                                                onClick={() => setBg(fileUrl)}
-                                                className="w-full py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-[10px] font-bold uppercase tracking-wide"
-                                             >
-                                                Set BG
-                                             </button>
-                                             <button 
-                                                onClick={() => addLayer(isVideo ? 'video' : 'image', fileUrl)}
-                                                className="w-full py-1.5 bg-white/10 hover:bg-white/20 rounded-lg text-[10px] font-bold uppercase tracking-wide"
-                                             >
-                                                Add Layer
-                                             </button>
+                     {/* TAB CONTENT */}
+                     <div className="flex-1 overflow-y-auto p-3 content-start">
+                         
+                         {/* MEDIA TAB */}
+                         {activeTab === 'media' && (
+                             <div className="flex flex-col gap-3">
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-[10px] uppercase text-white/40 font-bold tracking-widest">Imported Assets</span>
+                                    <button onClick={handleImport} className="text-blue-400 hover:text-blue-300 bg-blue-400/10 p-1.5 rounded transition-colors"><PiPlus size={14}/></button>
+                                </div>
+                                <div className="grid grid-cols-3 gap-2">
+                                    {mediaFiles.map((fileUrl, index) => {
+                                        const isVideo = fileUrl.endsWith('.mp4');
+                                        return (
+                                            <div 
+                                                key={index} 
+                                                className="aspect-square w-full h-[100px] bg-gray-800 rounded-xl relative overflow-hidden border border-white/5 hover:border-white/20 transition-all cursor-pointer"
+                                                onContextMenu={(e) => handleContextMenu(e, fileUrl, isVideo)}
+                                                onDoubleClick={() => addLayer(isVideo ? 'video' : 'image', fileUrl)}
+                                            >
+                                                {isVideo ? (
+                                                    <video src={fileUrl} className="absolute inset-0 w-full h-full object-cover opacity-70 hover:opacity-100 transition-opacity" muted />
+                                                ) : (
+                                                    <img src={fileUrl} className="absolute inset-0 w-full h-full object-cover opacity-70 hover:opacity-100 transition-opacity" alt="thumb"/>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                             </div>
+                         )}
+
+                         {/* TEXT TAB */}
+                         {activeTab === 'text' && (
+                             <div className="flex flex-col gap-6">
+                                 <button onClick={() => addLayer('text', 'New Text Element')} className="w-full flex items-center justify-center gap-2 text-xs font-bold uppercase bg-blue-500 hover:bg-blue-600 text-white p-3 rounded-xl transition-all shadow-lg active:scale-95">
+                                     <PiTextT size={16}/> Add New Text
+                                 </button>
+                                 
+                                 {selectedLayer && selectedLayer.type === 'text' ? (
+                                     <div className="flex flex-col gap-4 border-t border-white/10 pt-4">
+                                         {/* Edit Box */}
+                                         <div className="flex flex-col gap-2">
+                                             <label className="text-[10px] uppercase font-bold text-white/30 tracking-wider">Content</label>
+                                             <textarea 
+                                                 value={selectedLayer.content} 
+                                                 onChange={e => updateLayer(selectedLayer.id, {content:e.target.value})} 
+                                                 className="bg-black/40 text-sm p-3 rounded-lg border border-white/10 outline-none focus:border-blue-500 h-20 resize-none transition-all"
+                                             />
                                          </div>
-                                    </div>
-                                );
-                            })}
+
+                                         <div className="grid grid-cols-2 gap-4">
+                                            {/* Font Family */}
+                                            <div className="flex flex-col gap-2">
+                                                <label className="text-[10px] uppercase font-bold text-white/30 tracking-wider">Font Type</label>
+                                                <select 
+                                                    value={selectedLayer.style.fontFamily || 'sans-serif'} 
+                                                    onChange={e => updateLayer(selectedLayer.id, { style: { ...selectedLayer.style, fontFamily: e.target.value }})}
+                                                    className="bg-black/40 text-xs p-2 rounded border border-white/10 outline-none focus:border-blue-500 text-white/80"
+                                                >
+                                                    <option value="sans-serif">Sans Serif</option>
+                                                    <option value="serif">Serif</option>
+                                                    <option value="monospace">Monospace</option>
+                                                    <option value="system-ui">System Default</option>
+                                                </select>
+                                            </div>
+                                            {/* Font Weight */}
+                                            <div className="flex flex-col gap-2">
+                                                <label className="text-[10px] uppercase font-bold text-white/30 tracking-wider">Weight</label>
+                                                <select 
+                                                    value={selectedLayer.style.fontWeight || 'normal'} 
+                                                    onChange={e => updateLayer(selectedLayer.id, { style: { ...selectedLayer.style, fontWeight: e.target.value }})}
+                                                    className="bg-black/40 text-xs p-2 rounded border border-white/10 outline-none focus:border-blue-500 text-white/80"
+                                                >
+                                                    <option value="normal">Normal</option>
+                                                    <option value="bold">Bold</option>
+                                                    <option value="100">Thin</option>
+                                                    <option value="900">Black</option>
+                                                </select>
+                                            </div>
+                                            {/* Text Transform */}
+                                            <div className="flex flex-col gap-2">
+                                                <label className="text-[10px] uppercase font-bold text-white/30 tracking-wider">Casing</label>
+                                                <select 
+                                                    value={selectedLayer.style.textTransform || 'none'} 
+                                                    onChange={e => updateLayer(selectedLayer.id, { style: { ...selectedLayer.style, textTransform: e.target.value }})}
+                                                    className="bg-black/40 text-xs p-2 rounded border border-white/10 outline-none focus:border-blue-500 text-white/80"
+                                                >
+                                                    <option value="none">Normal</option>
+                                                    <option value="uppercase">UPPERCASE</option>
+                                                    <option value="lowercase">lowercase</option>
+                                                    <option value="capitalize">Capitalize</option>
+                                                </select>
+                                            </div>
+                                            {/* Line Height */}
+                                            <div className="flex flex-col gap-2">
+                                                <label className="text-[10px] uppercase font-bold text-white/30 tracking-wider">Line Height</label>
+                                                <select 
+                                                    value={selectedLayer.style.lineHeight || 1.2} 
+                                                    onChange={e => updateLayer(selectedLayer.id, { style: { ...selectedLayer.style, lineHeight: parseFloat(e.target.value) }})}
+                                                    className="bg-black/40 text-xs p-2 rounded border border-white/10 outline-none focus:border-blue-500 text-white/80"
+                                                >
+                                                    <option value={1}>Tight (1.0)</option>
+                                                    <option value={1.2}>Normal (1.2)</option>
+                                                    <option value={1.5}>Relaxed (1.5)</option>
+                                                    <option value={2}>Double (2.0)</option>
+                                                </select>
+                                            </div>
+                                         </div>
+                                         
+                                         {/* Color */}
+                                         <div className="flex flex-col gap-2">
+                                             <label className="text-[10px] uppercase font-bold text-white/30 tracking-wider">Color Preset</label>
+                                             <div className="flex gap-2 flex-wrap">
+                                                 {['#ffffff', '#000000', '#F53C11', '#0AEF76', '#3b82f6', '#F59E0B', '#ec4899', '#8b5cf6', '#14b8a6'].map(c => (
+                                                     <button 
+                                                         key={c} 
+                                                         onClick={() => updateLayer(selectedLayer.id, {style:{...selectedLayer.style, color: c}})} 
+                                                         className={`w-6 h-6 rounded-full border transition-transform hover:scale-110 shadow-sm ${selectedLayer.style.color === c ? 'border-white scale-110 ring-2 ring-white/20' : 'border-white/10'}`} 
+                                                         style={{backgroundColor: c}} 
+                                                     />
+                                                 ))}
+                                             </div>
+                                         </div>
+
+                                         <div className="h-px bg-white/5 my-2"></div>
+
+                                         {/* Drop Shadow Controls */}
+                                         <div className="flex flex-col gap-3">
+                                            <div className="flex items-center justify-between">
+                                                <label className="text-[10px] uppercase font-bold text-white/30 tracking-wider">Drop Shadow</label>
+                                                <button 
+                                                    onClick={() => updateLayer(selectedLayer.id, {style: { ...selectedLayer.style, shadow: selectedLayer.style.shadow ? null : { blur: 10, x: 0, y: 2, color: 'rgba(0,0,0,0.6)' } }})}
+                                                    className={`text-[10px] px-2 py-0.5 rounded transition-colors ${selectedLayer.style.shadow ? 'bg-blue-500/20 text-blue-400' : 'bg-white/10 text-white/40 hover:bg-white/20'}`}
+                                                >
+                                                    {selectedLayer.style.shadow ? 'Enabled' : 'Disabled'}
+                                                </button>
+                                            </div>
+
+                                            {selectedLayer.style.shadow && (
+                                                <div className="grid grid-cols-2 gap-4 bg-black/20 p-3 rounded-lg border border-white/5">
+                                                    <div className="flex flex-col gap-1">
+                                                        <label className="text-[9px] uppercase text-white/40">Blur Radius ({selectedLayer.style.shadow.blur}px)</label>
+                                                        <input 
+                                                            type="range" min="0" max="50" 
+                                                            value={selectedLayer.style.shadow.blur || 0}
+                                                            onChange={e => updateLayer(selectedLayer.id, {style: { ...selectedLayer.style, shadow: { ...selectedLayer.style.shadow, blur: parseInt(e.target.value) } }})}
+                                                            className="accent-blue-500"
+                                                        />
+                                                    </div>
+                                                    <div className="flex flex-col gap-1">
+                                                        <label className="text-[9px] uppercase text-white/40">X Offset ({selectedLayer.style.shadow.x}px)</label>
+                                                        <input 
+                                                            type="range" min="-50" max="50" 
+                                                            value={selectedLayer.style.shadow.x || 0}
+                                                            onChange={e => updateLayer(selectedLayer.id, {style: { ...selectedLayer.style, shadow: { ...selectedLayer.style.shadow, x: parseInt(e.target.value) } }})}
+                                                            className="accent-blue-500"
+                                                        />
+                                                    </div>
+                                                    <div className="flex flex-col gap-1">
+                                                        <label className="text-[9px] uppercase text-white/40">Y Offset ({selectedLayer.style.shadow.y}px)</label>
+                                                        <input 
+                                                            type="range" min="-50" max="50" 
+                                                            value={selectedLayer.style.shadow.y || 0}
+                                                            onChange={e => updateLayer(selectedLayer.id, {style: { ...selectedLayer.style, shadow: { ...selectedLayer.style.shadow, y: parseInt(e.target.value) } }})}
+                                                            className="accent-blue-500"
+                                                        />
+                                                    </div>
+                                                    <div className="flex flex-col gap-1">
+                                                        <label className="text-[9px] uppercase text-white/40">Color</label>
+                                                        <input 
+                                                            type="color"
+                                                            value={
+                                                                // Convert rgba to hex if possible for color picker, or just handle basic hex strings.
+                                                                // For simplicity since color picker requires hex, we'll store hex or intercept here.
+                                                                selectedLayer.style.shadow.color && selectedLayer.style.shadow.color.startsWith('#') 
+                                                                    ? selectedLayer.style.shadow.color 
+                                                                    : '#000000'
+                                                            }
+                                                            onChange={e => updateLayer(selectedLayer.id, {style: { ...selectedLayer.style, shadow: { ...selectedLayer.style.shadow, color: e.target.value } }})}
+                                                            className="w-full h-5 rounded cursor-pointer bg-transparent"
+                                                        />
+                                                    </div>
+                                                </div>
+                                            )}
+                                         </div>
+                                     </div>
+                                 ) : (
+                                     <div className="text-center text-white/20 text-xs mt-10">Select a text layer on the canvas to format it.</div>
+                                 )}
+                             </div>
+                         )}
+
+                         {/* PRESENTATION TAB */}
+                         {activeTab === 'presentation' && (
+                             <div className="flex flex-col gap-4">
+                                {selectedPresentation ? (
+                                    <>
+                                        <div className="flex items-center gap-2 mb-2">
+                                            <button onClick={() => setSelectedPresentation(null)} className="text-blue-400 hover:text-blue-300 text-xs font-bold uppercase p-1">← Back</button>
+                                            <span className="text-xs font-bold text-white/60 truncate">{selectedPresentation.title}</span>
+                                        </div>
+                                        {selectedPresentation.pages.length === 0 ? (
+                                            <div className="text-white/20 text-xs text-center mt-4">No slides detected in this file.</div>
+                                        ) : (
+                                            <div className="grid grid-cols-2 gap-3">
+                                                {selectedPresentation.pages.map((pageUrl, pageIdx) => (
+                                                    <div 
+                                                        key={pageIdx} 
+                                                        className="aspect-video bg-[#111] rounded-lg relative overflow-hidden border border-white/10 hover:border-blue-500 cursor-pointer transition-all group"
+                                                        onContextMenu={(e) => { e.preventDefault(); setPageContextMenu({ visible: true, x: e.clientX, y: e.clientY, pageIndex: pageIdx }); }}
+                                                        onClick={() => handlePresentPage(pageIdx)}
+                                                    >
+                                                        <img 
+                                                            src={pageUrl} 
+                                                            className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" 
+                                                            alt={`Slide ${pageIdx + 1}`}
+                                                        />
+                                                        <div className="absolute bottom-1 right-1 bg-black/60 px-1.5 py-0.5 rounded text-[8px] font-mono text-white/80">
+                                                            {pageIdx + 1}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </>
+                                ) : (
+                                    <>
+                                        <div className="flex justify-between items-center mb-2">
+                                            <span className="text-[10px] uppercase text-white/40 font-bold tracking-widest">Available Presentations</span>
+                                            <button onClick={handleImportPresentation} className="text-blue-400 hover:text-blue-300 bg-blue-400/10 p-1.5 rounded transition-colors"><PiPlus size={14}/></button>
+                                        </div>
+                                        {presentations.map(p => (
+                                            <div 
+                                                key={p.id}
+                                                onClick={() => setSelectedPresentation(p)}
+                                                onContextMenu={(e) => { e.preventDefault(); setPresContextMenu({ visible: true, x: e.clientX, y: e.clientY, presentation: p }); }}
+                                                className="p-4 bg-white/5 hover:bg-white/10 border border-white/5 rounded-xl cursor-pointer transition-colors flex items-center gap-3"
+                                            >
+                                                <PiFolder size={20} className="text-yellow-500/80" />
+                                                <div className="flex flex-col overflow-hidden">
+                                                    <span className="text-sm font-bold text-white/80 truncate">{p.title}</span>
+                                                    <span className="text-[10px] text-white/40">{p.pages.length} Slide{p.pages.length !== 1 ? 's' : ''}</span>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {presentations.length === 0 && <div className="text-white/20 text-xs text-center mt-4">No presentations found. Click + to import.</div>}
+                                    </>
+                                )}
+                             </div>
+                         )}
+
                      </div>
                 </div>
             </div>
@@ -494,18 +874,7 @@ export default function PresentationController() {
                      <div className="flex-1 flex p-6 gap-10 items-start overflow-x-auto">
                          {selectedLayer ? (
                              <>
-                                {selectedLayer.type === 'text' && (
-                                    <div className="flex flex-col gap-3 w-80 shrink-0">
-                                        <label className="text-[10px] uppercase font-bold text-white/30 tracking-wider">Content</label>
-                                        <textarea 
-                                            value={selectedLayer.content} 
-                                            onChange={e => updateLayer(selectedLayer.id, {content:e.target.value})} 
-                                            className="bg-black/40 text-sm p-4 rounded-xl border border-white/10 outline-none focus:border-blue-500 h-24 resize-none leading-relaxed transition-all"
-                                            placeholder="Enter text here..."
-                                        />
-                                    </div>
-                                )}
-                                
+
                                 <div className="flex flex-col gap-6 w-64 shrink-0">
                                     <div className="flex flex-col gap-2">
                                         <div className="flex justify-between">
@@ -522,21 +891,7 @@ export default function PresentationController() {
                                         />
                                     </div>
 
-                                    {selectedLayer.type === 'text' && (
-                                        <div className="flex flex-col gap-2">
-                                            <label className="text-[10px] uppercase font-bold text-white/30 tracking-wider font-mono">Color</label>
-                                            <div className="flex gap-3">
-                                                {['#ffffff', '#000000', '#F53C11', '#0AEF76', '#3b82f6', '#F59E0B'].map(c => (
-                                                    <button 
-                                                        key={c} 
-                                                        onClick={() => updateLayer(selectedLayer.id, {style:{...selectedLayer.style, color: c}})} 
-                                                        className={`w-8 h-8 rounded-full border transition-transform hover:scale-110 shadow-sm ${selectedLayer.style.color === c ? 'border-white scale-110 shadow-lg ring-2 ring-white/20' : 'border-white/10'}`} 
-                                                        style={{backgroundColor: c}} 
-                                                    />
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
+
                                 </div>
                              </>
                          ) : (
@@ -548,6 +903,70 @@ export default function PresentationController() {
                      </div>
                 </div>
             </div>
+            {/* Context Menu */}
+            {contextMenu.visible && (
+                <div 
+                    className="fixed z-[100] bg-[#1a1a1a] border border-white/10 rounded-lg shadow-2xl py-1 flex flex-col min-w-[160px] text-xs font-medium"
+                    style={{ left: contextMenu.x, top: contextMenu.y }}
+                >
+                    <button 
+                        className="px-4 py-2 text-left text-white/80 hover:bg-blue-600/20 hover:text-blue-400 transition-colors"
+                        onClick={() => { setBg(contextMenu.fileUrl); closeContextMenu(); }}
+                    >
+                        Set Background
+                    </button>
+                    <button 
+                        className="px-4 py-2 text-left text-white/80 hover:bg-white/10 transition-colors"
+                        onClick={() => { addLayer(contextMenu.isVideo ? 'video' : 'image', contextMenu.fileUrl); closeContextMenu(); }}
+                    >
+                        Add Layer
+                    </button>
+                    <div className="h-px bg-white/10 my-1"></div>
+                    <button 
+                        className="px-4 py-2 text-left text-white/80 hover:bg-red-500/20 hover:text-red-400 transition-colors"
+                        onClick={() => handleRemoveMedia(contextMenu.fileUrl)}
+                    >
+                        Remove
+                    </button>
+                </div>
+            )}
+            {/* Presentation Context Menu */}
+            {presContextMenu.visible && (
+                <div 
+                    className="fixed z-[101] bg-[#1a1a1a] border border-white/10 rounded-lg shadow-2xl py-1 flex flex-col min-w-[150px] text-xs font-medium"
+                    style={{ left: presContextMenu.x, top: presContextMenu.y }}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <button 
+                        className="px-4 py-2 text-left text-white/80 hover:bg-blue-600/20 hover:text-blue-400 transition-colors"
+                        onClick={() => handleShowPresentation(presContextMenu.presentation)}
+                    >
+                        Show Slides
+                    </button>
+                    <div className="h-px bg-white/10 my-1"></div>
+                    <button 
+                        className="px-4 py-2 text-left text-white/80 hover:bg-red-500/20 hover:text-red-400 transition-colors"
+                        onClick={() => handleDeletePresentation(presContextMenu.presentation)}
+                    >
+                        Delete
+                    </button>
+                </div>
+            )}
+            {/* Page Context Menu */}
+            {pageContextMenu.visible && (
+                <div 
+                    className="fixed z-[101] bg-[#1a1a1a] border border-white/10 rounded-lg shadow-2xl py-1 flex flex-col min-w-[150px] text-xs font-medium"
+                    style={{ left: pageContextMenu.x, top: pageContextMenu.y }}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <button 
+                        className="px-4 py-2 text-left text-white/80 hover:bg-blue-600/20 hover:text-blue-400 transition-colors"
+                        onClick={() => handlePresentPage(pageContextMenu.pageIndex)}
+                    >
+                        Show
+                    </button>
+                </div>
+            )}
         </div>
     );
 }

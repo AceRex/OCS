@@ -1,6 +1,7 @@
 const { app, BrowserWindow, Menu, screen, ipcMain, session, dialog } = require("electron");
 const path = require("path");
 const fs = require("fs");
+const yauzl = require("yauzl");
 
 // Media Dictionary Setup
 const mediaPath = path.join(app.getPath('userData'), 'media');
@@ -14,8 +15,9 @@ ipcMain.handle("media-import", async (event) => {
   const { canceled, filePaths } = await dialog.showOpenDialog(window, {
     properties: ['openFile'],
     filters: [
+      { name: 'Media', extensions: ['jpg', 'png', 'gif', 'jpeg', 'webp', 'mp4', 'webm', 'ogg', 'mov', 'avi'] },
       { name: 'Images', extensions: ['jpg', 'png', 'gif', 'jpeg', 'webp'] },
-      { name: 'Videos', extensions: ['mp4', 'webm', 'ogg'] }
+      { name: 'Videos', extensions: ['mp4', 'webm', 'ogg', 'mov', 'avi'] }
     ]
   });
 
@@ -27,11 +29,6 @@ ipcMain.handle("media-import", async (event) => {
 
   try {
     fs.copyFileSync(sourcePath, destPath);
-    // Return full file path so renderer can use it directly?
-    // Or just filename? Filename implies we need a way to serve it.
-    // Since we enabled local file access (conceptually), format as file:// URL logic?
-    // Let's return the filename, and let the renderer construct the URL or we construct it.
-    // Constructing full URL is safer.
     return `file://${destPath}`;
   } catch (err) {
     console.error("Failed to copy file", err);
@@ -39,10 +36,107 @@ ipcMain.handle("media-import", async (event) => {
   }
 });
 
+const { convertPptxToPng } = require('pptx-glimpse');
+
+ipcMain.handle("media-import-presentation", async (event) => {
+  const window = BrowserWindow.fromWebContents(event.sender);
+  const { canceled, filePaths } = await dialog.showOpenDialog(window, {
+    properties: ['openFile'],
+    filters: [
+      { name: 'Presentations', extensions: ['ppt', 'pptx'] }
+    ]
+  });
+
+  if (canceled || filePaths.length === 0) return null;
+
+  const sourcePath = filePaths[0];
+  const filename = path.basename(sourcePath);
+  const destPath = path.join(mediaPath, filename);
+
+  try {
+    fs.copyFileSync(sourcePath, destPath);
+    
+    // Create a folder for the slide images
+    const slidesDir = path.join(mediaPath, `${filename}_slides`);
+    if (!fs.existsSync(slidesDir)) {
+      fs.mkdirSync(slidesDir, { recursive: true });
+    }
+
+    // Extract slides to images using pptx-glimpse
+    const buffer = fs.readFileSync(destPath);
+    const pngBuffers = await convertPptxToPng(buffer);
+    
+    const slideUrls = [];
+    pngBuffers.forEach((buf, i) => {
+      const slidePath = path.join(slidesDir, `slide_${i + 1}.png`);
+      fs.writeFileSync(slidePath, buf);
+      slideUrls.push(`file://${slidePath}`);
+    });
+
+    return { 
+        fileUrl: `file://${destPath}`, 
+        filename, 
+        slideCount: pngBuffers.length,
+        pages: slideUrls 
+    };
+  } catch (err) {
+    console.error("Failed to copy presentation or convert slides", err);
+    return null;
+  }
+});
+
+// Count slides in a PPTX file by reading its ZIP structure
+function countPptxSlides(filePath) {
+  return new Promise((resolve) => {
+    let count = 0;
+    yauzl.open(filePath, { lazyEntries: true }, (err, zipfile) => {
+      if (err) { resolve(0); return; }
+      zipfile.readEntry();
+      zipfile.on('entry', (entry) => {
+        // PPTX slides are at ppt/slides/slide1.xml, slide2.xml etc.
+        if (/^ppt\/slides\/slide\d+\.xml$/.test(entry.fileName)) {
+          count++;
+        }
+        zipfile.readEntry();
+      });
+      zipfile.on('end', () => resolve(count));
+      zipfile.on('error', () => resolve(count));
+    });
+  });
+}
+
+ipcMain.handle("presentation-delete", async (event, fileUrl) => {
+  try {
+    const filePath = fileUrl.replace('file://', '');
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.error("Failed to delete presentation", err);
+    return false;
+  }
+});
+
+
+
 ipcMain.handle("media-list", async () => {
   try {
     const files = fs.readdirSync(mediaPath);
-    return files.map(file => `file://${path.join(mediaPath, file)}`);
+    // Sort files by modification time descending (newest first)
+    const sortedFiles = files
+        .filter(file => !file.startsWith('.')) // hide hidden files
+        .map(file => {
+            const filePath = path.join(mediaPath, file);
+            return {
+                name: file,
+                time: fs.statSync(filePath).mtime.getTime()
+            };
+        })
+        .sort((a, b) => b.time - a.time)
+        .map(f => `file://${path.join(mediaPath, f.name)}`);
+    return sortedFiles;
   } catch (err) {
     return [];
   }

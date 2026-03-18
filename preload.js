@@ -41,8 +41,10 @@ contextBridge.exposeInMainWorld("electron", {
   },
   Media: {
     import: () => ipcRenderer.invoke("media-import"),
+    importPresentation: () => ipcRenderer.invoke("media-import-presentation"),
     list: () => ipcRenderer.invoke("media-list"),
-    delete: (filename) => ipcRenderer.invoke("media-delete", filename)
+    delete: (filename) => ipcRenderer.invoke("media-delete", filename),
+    deletePresentation: (fileUrl) => ipcRenderer.invoke("presentation-delete", fileUrl)
   },
   Network: {
     getServerInfo: () => ipcRenderer.invoke('get-server-info'),

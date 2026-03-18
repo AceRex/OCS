@@ -179,40 +179,57 @@ function App() {
         {/* Content Logic */}
         <div className="w-full h-full z-10 relative">
             {hasContent && isCustomLayers && (
-                 <div className="w-full h-full relative">
-                    {presentationContent.data.layers.map((layer, idx) => (
-                        <div 
-                            key={layer.id || idx}
-                            className="absolute flex items-center justify-center text-center"
-                            style={{
-                                left: `${layer.x || 50}%`,
-                                top: `${layer.y || 50}%`,
-                                transform: 'translate(-50%, -50%)',
-                                width: layer.type === 'image' ? `${layer.style?.width || 30}%` : 'auto',
-                                zIndex: 10,
-                                minWidth: '10px', 
-                                minHeight: '10px'
-                            }}
-                        >
-                            {layer.type === 'text' ? (
-                                <p style={{
-                                    fontSize: `${layer.style?.fontSize || 5}cqw`,
-                                    color: layer.style?.color || '#ffffff',
-                                    fontFamily: (layer.style?.fontFamily === 'serif') ? 'serif' : 'sans-serif',
-                                    textShadow: '0 2px 10px rgba(0,0,0,0.5)',
-                                    fontWeight: 'bold',
-                                    whiteSpace: 'pre-wrap',
-                                    lineHeight: 1.2
-                                }}>{layer.content || ""}</p>
-                            ) : (
-                                <img src={layer.content} className="w-full h-auto rounded-lg shadow-xl" alt="layer" />
-                            )}
-                        </div>
-                    ))}
+                 <div className="w-full h-full relative" style={{ containerType: 'size' }}>
+                    {presentationContent.data.layers.map((layer, idx) => {
+                        // Build shadow string from layer.style.shadow if it exists
+                        const shadowStyle = layer.style?.shadow
+                            ? `${layer.style.shadow.x || 0}px ${layer.style.shadow.y || 0}px ${layer.style.shadow.blur || 10}px ${layer.style.shadow.color || 'rgba(0,0,0,0.6)'}`
+                            : null;
+
+                        return (
+                            <div 
+                                key={layer.id || idx}
+                                className="absolute flex items-center justify-center text-center"
+                                style={{
+                                    left: `${layer.x || 50}%`,
+                                    top: `${layer.y || 50}%`,
+                                    transform: 'translate(-50%, -50%)',
+                                    width: layer.type === 'image' ? `${layer.style?.width || 30}%` : 'auto',
+                                    zIndex: 10,
+                                    minWidth: '10px', 
+                                    minHeight: '10px'
+                                }}
+                            >
+                                {layer.type === 'text' ? (
+                                    <p style={{
+                                        fontSize: `${layer.style?.fontSize || 5}cqw`,
+                                        color: layer.style?.color || '#ffffff',
+                                        fontFamily: layer.style?.fontFamily === 'serif' ? 'Georgia, serif' : (layer.style?.fontFamily === 'mono' ? '"Courier New", monospace' : 'system-ui, sans-serif'),
+                                        fontWeight: layer.style?.fontWeight || 'normal',
+                                        textTransform: layer.style?.textTransform || 'none',
+                                        lineHeight: layer.style?.lineHeight || 1.2,
+                                        whiteSpace: 'pre-wrap',
+                                        textShadow: shadowStyle || '0 2px 10px rgba(0,0,0,0.3)',
+                                    }}>{layer.content || ""}</p>
+                                ) : (
+                                    <img 
+                                        src={layer.content} 
+                                        className="w-full h-auto pointer-events-none" 
+                                        style={{ 
+                                            boxShadow: shadowStyle,
+                                            display: 'block'
+                                        }}
+                                        alt="layer" 
+                                    />
+                                )}
+                            </div>
+                        );
+                    })}
                  </div>
             )}
+
             
-            {hasContent && !isCustomLayers && (
+            {hasContent && !isCustomLayers && presentationContent.type !== 'slide_index' && (
                  <div className="w-full h-full flex flex-col items-center justify-center gap-8">
                      <p 
                         className="font-bold leading-tight max-w-[95%] transition-all duration-300 drop-shadow-lg"
@@ -229,6 +246,16 @@ function App() {
                             {presentationContent.data.title}
                         </div>
                      )}
+                 </div>
+            )}
+            
+            {hasContent && presentationContent.type === 'slide_index' && (
+                 <div className="w-full h-full flex items-center justify-center">
+                    <img 
+                        src={presentationContent.data.slideImageUrl} 
+                        className="w-full h-full object-contain" 
+                        alt={`Slide ${presentationContent.data.slideIndex + 1}`}
+                    />
                  </div>
             )}
         </div>
@@ -293,7 +320,7 @@ function App() {
   // Debug check
   if (!window.electron) return <div style={{ color: 'red', fontSize: 50, backgroundColor: 'white' }}>ELECTRON PRELOAD FAILED</div>;
 
-  const isPresenting = presentationContent && ['bible', 'custom', 'custom_layers'].includes(presentationContent.type) && presentationContent.data;
+  const isPresenting = presentationContent && ['bible', 'custom', 'custom_layers', 'slide_index'].includes(presentationContent.type) && presentationContent.data;
   const showSplitTimer = isPresenting && countdown > 0;
 
   return (
