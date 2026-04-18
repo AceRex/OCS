@@ -239,7 +239,7 @@ function App() {
                             fontFamily: fontFamily === 'serif' ? 'serif' : 'sans-serif'
                         }}
                      >
-                        {presentationContent.data.body}
+                        <span dangerouslySetInnerHTML={{ __html: presentationContent.data.body }} />
                      </p>
                      {presentationContent.data.title && (
                         <div className="mb-8 text-[3vw] font-medium opacity-80 uppercase tracking-widest drop-shadow-md" style={{ color: textColor }}>
