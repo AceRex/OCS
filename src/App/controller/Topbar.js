@@ -19,22 +19,28 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
   const [debugText, setDebugText] = useState("");
   const [voiceStatus, setVoiceStatus] = useState("initializing"); // initializing, ready, listening, transcribing, error
   const [lastTranscript, setLastTranscript] = useState("");
+  const [activeVerseContext, setActiveVerseContext] = useState("");
+  const [downloadProgress, setDownloadProgress] = useState(0);
   
   const workerRef = React.useRef(null);
   const audioCtxRef = React.useRef(null);
-  const rollingBufferRef = React.useRef(new Float32Array(16000 * 5)); // 5 seconds is enough context for Bible verses
+  const streamRef = React.useRef(null);
+  const rollingBufferRef = React.useRef(new Float32Array(16000 * 5)); // 5s preview buffer
+  const speechBufferRef = React.useRef([]); // Dynamic collection of speech chunks
+  const preRollBufferRef = React.useRef([]); // Short history to catch word starts
+  const workletNodeRef = React.useRef(null);
   const bufferPtrRef = React.useRef(0);
   const isProcessingRef = React.useRef(false);
   const lastTriggeredTimeRef = React.useRef(0);
   const currentRefStateRef = React.useRef(null); // { bookIndex, chapter, verse }
   const currentVerseTitleRef = React.useRef("");
   const currentVerseFullTextRef = React.useRef("");
-  const streamRef = React.useRef(null);
-  const workletNodeRef = React.useRef(null);
+  const highlightCacheRef = React.useRef({}); // { [verseRef]: { [word]: timestamp } }
   const sourceNodeRef = React.useRef(null);
   const activeWatchdogRef = React.useRef(null);
   const isSpeakingRef = React.useRef(false);
   const lastSpeechTimeRef = React.useRef(0);
+  const firstSpeechTimeRef = React.useRef(0); // For emergency 15s trigger
   const [rmsVolume, setRmsVolume] = useState(0);
   const [isSpeakingUI, setIsSpeakingUI] = useState(false);
 
@@ -65,25 +71,42 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
           isProcessingRef.current = false;
           setVoiceStatus("listening");
           
+          const debugInfo = msg.debug || {};
+          const duration = (debugInfo.duration || 0).toFixed(1);
+          setDebugText(`AI heard ${duration}s | vol=${(debugInfo.vol || 0).toFixed(3)} | Heard: "${text}"`);
+          
           if (!text) {
-              setDebugText("Monitoring - Silence");
               return;
           }
           
-          setDebugText(`AI Heard: "${text}"`);
+          // Broad alias list — Whisper-tiny often mishears "media" as these words
+          const triggerKeywords = [
+            'media', 'meeting', 'meter', 'medium', 'video', 'median',
+            'media,', 'meeting,', // with punctuation
+            'me the', 'need a', 'meet a', // space-split mishears
+          ];
           
-          const mediaMatch = lowerText.match(/\bmedia\b/i);
-          const nextMatch = lowerText.match(/\b(next verse|next one|forward|previous verse|go back|last verse)\b/i);
+          let triggerIdx = -1;
+          let triggerLen = 0;
+          for (const kw of triggerKeywords) {
+            const idx = lowerText.indexOf(kw);
+            if (idx !== -1) {
+              triggerIdx = idx;
+              triggerLen = kw.length;
+              break;
+            }
+          }
 
-          if (mediaMatch) {
-            const startIdx = mediaMatch.index;
-            // Strip punctuation and "media" keyword to get the raw command
-            const actualCommand = lowerText.substring(startIdx + 5)
+          const nextMatch = lowerText.match(/\b(next verse|next one|next|forward|previous verse|go back|last verse|go to next|go next)\b/i);
+
+          if (triggerIdx !== -1) {
+            // Strip punctuation and trigger keyword to get the raw command
+            const actualCommand = lowerText.substring(triggerIdx + triggerLen)
                                           .replace(/[.,:;!?]/g, ' ')
                                           .trim();
             handleVoiceCommand(actualCommand, true); 
           } else if (nextMatch) {
-            // Trigger navigation even without the "Media" keyword
+            // Trigger navigation even without the trigger keyword
             handleVoiceCommand(nextMatch[0], true);
           }
       } else if (msg.status === 'error') {
@@ -108,6 +131,192 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
     };
   }, []);
 
+  const levenshtein = (a, b) => {
+    if (a.length === 0) return b.length;
+    if (b.length === 0) return a.length;
+    const matrix = [];
+    for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+    for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+    for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+            if (b.charAt(i - 1) === a.charAt(j - 1)) matrix[i][j] = matrix[i - 1][j - 1];
+            else matrix[i][j] = Math.min(matrix[i - 1][j - 1] + 1, matrix[i][j - 1] + 1, matrix[i - 1][j] + 1);
+        }
+    }
+    return matrix[b.length][a.length];
+  };
+
+  const getPhoneticCode = (word) => {
+    if (!word) return "";
+    let code = word.toUpperCase().replace(/[^A-Z]/g, '');
+    if (code.length === 0) return "";
+
+    // 1. Basic Sound Conversions (Simplified Metaphone/Soundex)
+    code = code.replace(/PH/g, 'F')
+               .replace(/KN|GN|PN|AE|WR/g, (m) => m[1])
+               .replace(/SH|SI|TI/g, 'X')
+               .replace(/CH/g, 'X')
+               .replace(/TH/g, 'T')
+               .replace(/WH/g, 'W')
+               .replace(/C|S|Z/g, 'S')
+               .replace(/G|K|Q/g, 'K')
+               .replace(/D|T/g, 'T');
+
+    // 2. Remove Vowels (except the first character)
+    const first = code[0];
+    const rest = code.substring(1).replace(/[AEIOUY]/g, '');
+    
+    // 3. Remove duplicates and return a compressed sound-hash
+    let final = first + rest;
+    return final.split('').filter((char, i, arr) => i === 0 || char !== arr[i-1]).join('');
+  };
+
+  const getFuzzyMatch = (vocalWord, currentText) => {
+    if (!vocalWord || !currentText) return null;
+    const wordsInVerse = currentText.toLowerCase().replace(/[.,:;!?(){}\[\]]/g, '').split(/\s+/).filter(w => w.length > 0);
+    
+    const vocalClean = vocalWord.toLowerCase();
+    const vocalPhonetic = getPhoneticCode(vocalClean);
+
+    let bestMatch = null;
+    let minDistance = 2; // Threshold for Levenshtein
+
+    // Step 1: Exact Match (Fast path)
+    if (wordsInVerse.includes(vocalClean)) return vocalClean;
+
+    // Step 2: Combined Scoring (Looks like + Sounds like)
+    for (const vWord of wordsInVerse) {
+        if (vWord.length < 3) continue; 
+
+        // Sound-alike check (Metaphone)
+        if (vocalPhonetic && getPhoneticCode(vWord) === vocalPhonetic) {
+            return vWord; // High-priority sound match
+        }
+
+        // Look-alike check (Levenshtein)
+        const distance = levenshtein(vocalClean, vWord);
+        if (distance < minDistance) {
+            minDistance = distance;
+            bestMatch = vWord;
+        }
+    }
+    return bestMatch;
+  };
+
+  const getTokens = (text) => {
+    // Splits by spaces or punctuation while PRESERVING them in the array
+    return text.split(/(\s+|[.,:;!?(){}\[\]])/).filter(t => t !== undefined && t.length > 0);
+  };
+
+  const pruneHighlights = () => {
+    const now = Date.now();
+    const TTL = 5 * 60 * 1000; // 5 minutes
+    const cache = highlightCacheRef.current;
+    
+    Object.keys(cache).forEach(verseRef => {
+        const data = cache[verseRef];
+        // Prune single words
+        if (data.words) {
+            Object.keys(data.words).forEach(word => {
+                if (now - data.words[word] > TTL) delete data.words[word];
+            });
+        }
+        // Prune ranges
+        if (data.ranges) {
+            data.ranges = data.ranges.filter(r => now - r.timestamp < TTL);
+        }
+        
+        const hasWords = data.words && Object.keys(data.words).length > 0;
+        const hasRanges = data.ranges && data.ranges.length > 0;
+        if (!hasWords && !hasRanges) {
+            delete cache[verseRef];
+        }
+    });
+  };
+
+  const applyHighlights = (verseTitle, rawText) => {
+    if (!verseTitle || !rawText) return rawText;
+    
+    const key = verseTitle.toUpperCase();
+    const cache = highlightCacheRef.current[key];
+    if (!cache) return rawText;
+
+    const tokens = getTokens(rawText);
+    const highlightedIndices = new Set();
+
+    // 1. Mark Range Tokens
+    if (cache.ranges && cache.ranges.length > 0) {
+        cache.ranges.forEach(range => {
+            const start = Math.max(0, range.start);
+            const end = Math.min(tokens.length - 1, range.end);
+            for (let i = start; i <= end; i++) {
+                highlightedIndices.add(i);
+            }
+        });
+    }
+
+    // 2. Mark Individual Word Tokens
+    if (cache.words && Object.keys(cache.words).length > 0) {
+        tokens.forEach((token, idx) => {
+            const clean = token.toLowerCase().replace(/[.,:;!?(){}\[\]]/g, '').trim();
+            if (clean && cache.words[clean]) {
+                highlightedIndices.add(idx);
+            }
+        });
+    }
+
+    // 3. Build HTML with persistent <mark> tags
+    let html = "";
+    let inMark = false;
+    // Premium bright yellow highlight
+    const markStyle = 'background-color: #ffd700; color: #000; padding: 2px 4px; border-radius: 4px; font-weight: bold; margin: 0;';
+
+    tokens.forEach((token, idx) => {
+        const shouldBeHighlighted = highlightedIndices.has(idx);
+
+        if (shouldBeHighlighted && !inMark) {
+            html += `<mark style="${markStyle}">`;
+            inMark = true;
+        } else if (!shouldBeHighlighted && inMark) {
+            html += '</mark>';
+            inMark = false;
+        }
+        html += token;
+    });
+
+    if (inMark) html += '</mark>';
+    return html;
+  };
+
+  useEffect(() => {
+    // Prune expired highlights every 30 seconds
+    const pruneInterval = setInterval(() => {
+        pruneHighlights();
+    }, 30000);
+
+    // Sync voice engine with manual UI selections
+    let removePresentationListener = null;
+    if (window.electron && window.electron.Presentation) {
+        removePresentationListener = window.electron.Presentation.onSetContent((value) => {
+            if (value && value.type === 'bible' && value.data) {
+                const { title, body } = value.data;
+                // Only update internal refs if this is a CLEAN text selection (manual click)
+                if (body && !body.includes('<mark')) {
+                    currentVerseTitleRef.current = title;
+                    currentVerseFullTextRef.current = body;
+                    setActiveVerseContext(title); // Sync UI visibility
+                    console.log("[SYNC] Topbar Context Updated:", title);
+                }
+            }
+        });
+    }
+
+    return () => {
+        clearInterval(pruneInterval);
+        if (removePresentationListener) removePresentationListener();
+    };
+  }, []);
+
   useEffect(() => {
       let interval = null;
 
@@ -120,7 +329,9 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
         workletNodeRef.current = null;
         sourceNodeRef.current = null;
         isProcessingRef.current = false;
+        speechBufferRef.current = []; // Clear speech accumulation
         setVoiceStatus("ready");
+        setDebugText("System Stopped");
       };
 
       const startVoice = async () => {
@@ -144,6 +355,10 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
              const hpFilter = audioCtx.createBiquadFilter();
              hpFilter.type = "highpass";
              hpFilter.frequency.value = 100;
+             
+             // Software Pre-Amp (2.0x Boost)
+             const gainNode = audioCtx.createGain();
+             gainNode.gain.value = 2.0; 
 
              // 3. Load Worklet
              await audioCtx.audioWorklet.addModule(new URL('../workers/audio.processor.js', import.meta.url));
@@ -153,8 +368,9 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
              const workletNode = new AudioWorkletNode(audioCtx, 'audio-processor');
              workletNodeRef.current = workletNode;
 
-             // Connect chain: Source -> HP Filter -> AI Processor
-             source.connect(hpFilter);
+             // Connect chain: Source -> 2x Boost -> HP Filter -> AI Processor
+             source.connect(gainNode);
+             gainNode.connect(hpFilter);
              hpFilter.connect(workletNode);
 
              workletNode.port.onmessage = (event) => {
@@ -167,61 +383,85 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
 
                 // Update VAD state
                 setRmsVolume(rms);
-                const now = Date.now();
-                if (isSpeaking) {
-                   isSpeakingRef.current = true;
-                   lastSpeechTimeRef.current = now;
-                   setIsSpeakingUI(true);
-                } else {
-                   // Stay "Speaking" for 1.5s after noise stops
-                   if (now - lastSpeechTimeRef.current > 800) {
-                       isSpeakingRef.current = false;
-                       setIsSpeakingUI(false);
-                   }
-                }
+                 const now = Date.now();
+                 // 1. Maintain Pre-Roll History (500ms ≈ 4 chunks)
+                 preRollBufferRef.current.push(new Float32Array(audio));
+                 if (preRollBufferRef.current.length > 5) {
+                    preRollBufferRef.current.shift();
+                 }
+
+                 // 2. Logic for Speech Capture
+                 if (isSpeaking) {
+                    // Start of speech detection
+                    if (!isSpeakingRef.current) {
+                        isSpeakingRef.current = true;
+                        setIsSpeakingUI(true);
+                        firstSpeechTimeRef.current = now;
+                        // PREPEND Pre-roll for clean "Attack"
+                        speechBufferRef.current = [...preRollBufferRef.current];
+                    }
+                    lastSpeechTimeRef.current = now;
+                    speechBufferRef.current.push(new Float32Array(audio));
+
+                    // EMERGENCY FORCE-TRIGGER (15s Max)
+                    if (now - firstSpeechTimeRef.current > 15000) {
+                        console.warn("AI Force Trigger: Max speech duration reached");
+                        setDebugText("AI: Forced Release (Noise/Length Limit)");
+                        // Reuse the trigger logic below by spoofing a silence transition
+                        lastSpeechTimeRef.current = now - 2000; 
+                    }
+                 } else if (isSpeakingRef.current) {
+                    // Capture the "Tail" during silence wait
+                    speechBufferRef.current.push(new Float32Array(audio));
+
+                    // Reactive Silence Detection (1.5s pause triggers AI)
+                    if (now - lastSpeechTimeRef.current > 1500) {
+                        isSpeakingRef.current = false;
+                        setIsSpeakingUI(false);
+                        
+                        // TRIGGER TRANSCRIPTION IMMEDIATELY ON SILENCE
+                        if (!isProcessingRef.current && workerRef.current && speechBufferRef.current.length > 0) {
+                            isProcessingRef.current = true;
+                            setVoiceStatus("transcribing");
+                            
+                            const watchdog = setTimeout(() => {
+                                if (isProcessingRef.current) {
+                                    isProcessingRef.current = false;
+                                    setVoiceStatus("listening");
+                                    speechBufferRef.current = []; 
+                                }
+                            }, 8000);
+                            activeWatchdogRef.current = watchdog;
+
+                            const totalLength = speechBufferRef.current.reduce((acc, chunk) => acc + chunk.length, 0);
+                            const finalAudio = new Float32Array(totalLength);
+                            let offset = 0;
+                            speechBufferRef.current.forEach(chunk => {
+                                finalAudio.set(chunk, offset);
+                                offset += chunk.length;
+                            });
+                            
+                            speechBufferRef.current = [];
+
+                            workerRef.current.postMessage({ 
+                                type: 'transcribe', 
+                                audio: finalAudio,
+                                prompt: currentVerseFullTextRef.current || ""
+                            });
+                        }
+                    }
+                 }
              };
 
-             source.connect(workletNode);
+
              
              // 4. Ensure engine is active
              await audioCtx.resume();
-             
+             console.log("[VOICE] Signal Cleaned. SampleRate:", audioCtx.sampleRate);
              setVoiceStatus("listening");
              setDebugText("Monitoring - Listening...");
 
-             // 5. Intelligent Recursive Feedback Loop
-             const runInference = () => {
-                if (!isListening || !workerRef.current) return;
-                if (isProcessingRef.current) return;
-
-                // VAD Check: Skip if silent
-                if (!isSpeakingRef.current) {
-                    setDebugText("VAD: Silence - Sleeping...");
-                    return;
-                }
-                
-                isProcessingRef.current = true;
-                setVoiceStatus("transcribing");
-                
-                // Watchdog: If worker takes > 8s, reset the flag
-                const watchdog = setTimeout(() => {
-                    if (isProcessingRef.current) {
-                        console.warn("AI Watchdog triggered - Resetting lane");
-                        isProcessingRef.current = false;
-                        setVoiceStatus("listening");
-                    }
-                }, 8000);
-
-                const audioData = new Float32Array(rollingBufferRef.current);
-                setDebugText(`AI: Analyzing ${audioData.length} samples...`);
-                workerRef.current.postMessage({ type: 'transcribe', audio: audioData });
-                
-                // Store watchdog to clear if needed
-                activeWatchdogRef.current = watchdog;
-             };
-
-             // Initial kick-off
-             interval = setInterval(runInference, 500); // Check every 0.5s for activity for hyper-responsiveness
+             // Removed Interval for Stability (Now uses Reactive Transition Trigger)
 
 
           } catch (err) {
@@ -258,13 +498,35 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
         command = command.replace(regex, wordNumbers[word]);
     });
 
-    // 1a. Check for Highlight command
-    // Added "i like", "i life", and "mark the word" for better AI matching
+    const rangeMatch = command.match(/\b(?:mark|highlight) from (.+) to (.+)\b/i);
+    if (rangeMatch && currentVerseFullTextRef.current) {
+        return performRangeHighlight(rangeMatch[1].trim(), rangeMatch[2].trim());
+    }
+
+    // 1b. Check for Highlight command
     const hlMatch = command.match(/\b(highlight|yellow|mark the word|mark|i\s+like|i\s+life|highly)\b\s+(.+)\b/i);
     if (hlMatch) {
-        const wordsToHighlight = hlMatch[2].trim();
-        if (currentVerseFullTextRef.current && wordsToHighlight) {
-            return performHighlight(wordsToHighlight);
+        const wordsToMark = hlMatch[2].trim();
+        if (currentVerseFullTextRef.current && wordsToMark) {
+            return performHighlight(wordsToMark);
+        }
+    }
+
+    // 1c. Check for Unmark command
+    const unmarkMatch = command.match(/\b(remove the word|unmark the word|clear the word|unmark|remove highlight|unhighlight|delete mark|on mark|off mark|unmar|clear)\b\s+(.+)\b/i);
+    if (unmarkMatch) {
+        const wordsToUnmark = unmarkMatch[2].trim();
+        if (currentVerseFullTextRef.current && wordsToUnmark) {
+            return performUnmark(wordsToUnmark);
+        }
+    }
+
+    // 1d. Check for Clear highlights command
+    if (command.includes('clear highlights') || command.includes('unmark all')) {
+        if (currentVerseTitleRef.current) {
+            highlightCacheRef.current[currentVerseTitleRef.current] = { words: {}, ranges: [] };
+            updateDisplay();
+            return;
         }
     }
 
@@ -415,14 +677,18 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
               const sortedIndices = Array.from(indices).sort((a,b) => a-b);
               const resultText = sortedIndices.map(i => verses[i] || "").join(' ');
               setDebugText(`[4/4] Sending to screens: ${verseRef}`);
-              window.electron.Presentation.setContent({
-                  type: 'bible',
-                  data: { title: verseRef, body: resultText }
-              });
               
               // Track current state for relative navigation and highlighting
               currentVerseTitleRef.current = verseRef;
               currentVerseFullTextRef.current = resultText;
+
+              // Apply cached highlights before sending
+              const finalHTML = applyHighlights(verseRef, resultText);
+
+              window.electron.Presentation.setContent({
+                  type: 'bible',
+                  data: { title: verseRef, body: finalHTML }
+              });
               
               // Track current state for relative navigation
               currentRefStateRef.current = {
@@ -507,10 +773,6 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
         const verseText = finalVerses[targetVerse - 1] || "";
 
         setDebugText(`[NAV] Showing: ${newVerseRef}`);
-        window.electron.Presentation.setContent({
-            type: 'bible',
-            data: { title: newVerseRef, body: verseText }
-        });
 
         currentRefStateRef.current = {
             bookIndex: targetBookIndex,
@@ -521,6 +783,14 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
         
         currentVerseTitleRef.current = newVerseRef;
         currentVerseFullTextRef.current = verseText;
+
+        // Apply highlights before presenting
+        const finalHTML = applyHighlights(newVerseRef, verseText);
+
+        window.electron.Presentation.setContent({
+            type: 'bible',
+            data: { title: newVerseRef, body: finalHTML }
+        });
     } catch (err) {
         console.error("Navigation error", err);
     }
@@ -528,37 +798,134 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
 
   const performHighlight = (phrase) => {
     if (!currentVerseFullTextRef.current) return;
+    pruneHighlights();
     
-    // Split phrase by "and" or spaces to catch multiple words
-    const words = phrase.split(/\s+(?:and)\s+|\s+/i).filter(w => w.length > 0);
-    setDebugText(`[HL] Highlighting: ${words.join(', ')}`);
+    const vocalWords = phrase.split(/\s+(?:and)\s+|\s+/i).filter(w => w.length > 0);
+    const title = currentVerseTitleRef.current;
     
-    let updatedText = currentVerseFullTextRef.current;
+    if (!highlightCacheRef.current[title]) {
+        highlightCacheRef.current[title] = { words: {}, ranges: [] };
+    }
+    const verseCache = highlightCacheRef.current[title];
+    if (!verseCache.words) verseCache.words = {};
 
-    words.forEach(word => {
-        // Clean word of punctuation for matching
-        const cleanWord = word.replace(/[.,!?]/g, '').trim();
-        if (!cleanWord || cleanWord.length < 2) return;
-
-        // Use regex to wrap word in mark tags
-        const escapedWord = cleanWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        const regex = new RegExp(`(${escapedWord})`, 'gi');
-        
-        updatedText = updatedText.replace(
-            regex, 
-            '<mark style="background-color: #ffd700; color: #000; padding: 0 4px; border-radius: 4px; font-weight: bold;">$1</mark>'
-        );
+    const marked = [];
+    vocalWords.forEach(vocal => {
+        const fuzzy = getFuzzyMatch(vocal, currentVerseFullTextRef.current);
+        if (fuzzy) {
+            verseCache.words[fuzzy] = Date.now();
+            marked.push(fuzzy);
+        }
     });
-    
-    // Update memory so we can highlight something else on top
-    currentVerseFullTextRef.current = updatedText;
 
+    setDebugText(`[MARK] ${marked.join(', ')}`);
+    updateDisplay();
+  };
+
+  const performRangeHighlight = (startVocal, endVocal) => {
+    if (!currentVerseFullTextRef.current) return;
+    pruneHighlights();
+
+    const text = currentVerseFullTextRef.current;
+    const title = currentVerseTitleRef.current;
+    const key = title.toUpperCase();
+    
+    // 1. Get tokens
+    const tokens = getTokens(text);
+    const tokensClean = tokens.map(t => t.toLowerCase().replace(/[.,:;!?(){}\[\]]/g, '').trim());
+
+    // 2. Find fuzzy matches
+    const startMatch = getFuzzyMatch(startVocal, text);
+    const isToEnd = endVocal.match(/\b(the end|last|last word|the last)\b/i);
+    const endMatch = isToEnd ? null : getFuzzyMatch(endVocal, text);
+
+    if (!startMatch || (!endMatch && !isToEnd)) {
+        setDebugText(`[RANGE] Error: Could not find ${!startMatch ? startVocal : endVocal}`);
+        return;
+    }
+
+    // 3. Find token indices
+    const startIdx = tokensClean.indexOf(startMatch);
+    let endIdx;
+    if (isToEnd) {
+        endIdx = tokens.length - 1;
+    } else {
+        // Find the end match AFTER the start index
+        endIdx = tokensClean.indexOf(endMatch, startIdx);
+        if (endIdx === -1) endIdx = tokensClean.lastIndexOf(endMatch);
+    }
+
+    if (startIdx === -1 || (endIdx === -1 && !isToEnd)) {
+        setDebugText(`[RANGE] Index Error: ${startIdx} -> ${endIdx}`);
+        return;
+    }
+
+    const finalStart = Math.min(startIdx, endIdx);
+    let finalEnd = Math.max(startIdx, endIdx);
+
+    // 4. Trail-Swallow: Include punctuation immediately following the end word
+    while (finalEnd + 1 < tokens.length) {
+        const nextToken = tokens[finalEnd + 1];
+        if (nextToken.match(/^[.,:;!?(){}\[\]]+$/)) {
+            finalEnd++;
+        } else {
+            break;
+        }
+    }
+
+    // 5. Update Cache
+    if (!highlightCacheRef.current[key]) {
+        highlightCacheRef.current[key] = { words: {}, ranges: [] };
+    }
+    const verseCache = highlightCacheRef.current[key];
+    if (!verseCache.ranges) verseCache.ranges = [];
+
+    verseCache.ranges.push({
+        start: finalStart,
+        end: finalEnd,
+        timestamp: Date.now()
+    });
+
+    setDebugText(`[RANGE] Success: Marked indices ${finalStart} to ${finalEnd}`);
+    updateDisplay();
+  };
+
+  const performUnmark = (phrase) => {
+    if (!currentVerseFullTextRef.current) return;
+    const vocalWords = phrase.split(/\s+(?:and)\s+|\s+/i).filter(w => w.length > 0);
+    const title = currentVerseTitleRef.current;
+    const key = (title || "").toUpperCase();
+    const verseCache = highlightCacheRef.current[key];
+    if (!verseCache) return;
+
+    const unmarked = [];
+    vocalWords.forEach(vWord => {
+        const cleanVocal = vWord.replace(/[.,!?]/g, '').trim().toLowerCase();
+        const fuzzy = getFuzzyMatch(cleanVocal, currentVerseFullTextRef.current);
+        const target = fuzzy || cleanVocal;
+        
+        // Check single words
+        if (verseCache.words && verseCache.words[target]) {
+            delete verseCache.words[target];
+            unmarked.push(target);
+        }
+        // Check if this word is in any ranges and prune them? 
+        // For now, let's just support clearing ranges via 'clear highlights'.
+    });
+
+    setDebugText(`[UNMARK] ${unmarked.join(', ')}`);
+    updateDisplay();
+  };
+
+  const updateDisplay = () => {
+    const title = currentVerseTitleRef.current;
+    const rawText = currentVerseFullTextRef.current;
+    if (!title || !rawText) return;
+
+    const finalHTML = applyHighlights(title, rawText);
     window.electron.Presentation.setContent({
         type: 'bible',
-        data: { 
-            title: currentVerseTitleRef.current, 
-            body: updatedText 
-        }
+        data: { title, body: finalHTML }
     });
   };
 
@@ -724,9 +1091,10 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
 
           <button
             onClick={() => {
-                setIsListening(false);
-                setTimeout(() => setIsListening(true), 200);
-                setDebugText("System Resyncing...");
+              // Cycle off then on to re-initialize the audio engine
+              setIsListening(false);
+              setDebugText("Engine Rebooting...");
+              setTimeout(() => setIsListening(true), 400);
             }}
             className="flex items-center justify-center text-blue-500 gap-2 bg-blue-500/10 hover:bg-blue-500/20 px-3 py-2 rounded-lg font-medium transition-all text-xs"
             title="Re-initialize Microphone and AI"
@@ -758,13 +1126,19 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
           </div>
           
           <div className="flex-1 flex gap-4 overflow-hidden">
-               <div className="flex items-center gap-1 min-w-[80px]">
-                  <div className={`w-1 h-3 rounded-full transition-colors ${isSpeakingUI ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)]' : 'bg-white/10'}`} />
-                  <span className="text-white/30 uppercase text-[8px]">RMS: {(rmsVolume * 100).toFixed(1)}%</span>
+               <div className="flex items-center gap-1 min-w-[80px] border-r border-white/5 pr-4">
+                  <span className={`text-[8px] px-1 rounded ${isSpeakingUI ? 'bg-green-500 text-black' : 'bg-white/10 text-white/30'}`}>
+                    {isSpeakingUI ? 'VOICE' : 'WAITING'}
+                  </span>
+                  <span className="text-white/30 uppercase text-[8px] ml-1">vol: {(rmsVolume * 100).toFixed(1)}%</span>
                </div>
               <div className="text-blue-400 whitespace-nowrap">
-                  <span className="text-white/30 mr-1">HEARD:</span>
+                  <span className="text-white/30 mr-1 italic underline">HEARD:</span>
                   {lastTranscript || "None"}
+              </div>
+               <div className="text-yellow-400 whitespace-nowrap border-x border-white/5 px-4 mx-2">
+                  <span className="text-white/30 mr-1 italic">CONTEXT:</span>
+                  {activeVerseContext || "NONE"}
               </div>
               <div className="text-red-400 whitespace-nowrap overflow-hidden text-ellipsis">
                   <span className="text-white/30 mr-1">LOG:</span>
