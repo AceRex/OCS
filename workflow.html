@@ -1,0 +1,1209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>OCS Workflows</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #0b0f1a;
+    color: #e2e8f0;
+    padding: 40px 32px;
+    min-height: 100vh;
+  }
+
+  h1 {
+    font-size: 28px;
+    font-weight: 600;
+    color: #f8fafc;
+    margin-bottom: 4px;
+  }
+
+  .subtitle {
+    font-size: 14px;
+    color: #64748b;
+    margin-bottom: 40px;
+  }
+
+  .workflow-section {
+    margin-bottom: 56px;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .section-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+
+  .section-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #f1f5f9;
+  }
+
+  .section-desc {
+    font-size: 13px;
+    color: #64748b;
+    margin-top: 2px;
+  }
+
+  /* Flow diagram */
+  .flow {
+    display: flex;
+    align-items: flex-start;
+    gap: 0;
+    overflow-x: auto;
+    padding-bottom: 8px;
+  }
+
+  .flow-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0;
+    flex-shrink: 0;
+  }
+
+  .flow-node {
+    border-radius: 12px;
+    padding: 14px 16px;
+    text-align: center;
+    min-width: 130px;
+    max-width: 150px;
+    position: relative;
+  }
+
+  .node-label {
+    font-size: 12px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+
+  .node-sub {
+    font-size: 10px;
+    opacity: 0.7;
+    line-height: 1.4;
+  }
+
+  .node-tag {
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    opacity: 0.6;
+    margin-bottom: 6px;
+  }
+
+  /* Arrow */
+  .flow-arrow {
+    display: flex;
+    align-items: center;
+    padding: 0 4px;
+    margin-top: 24px;
+    flex-shrink: 0;
+  }
+
+  .arrow-line {
+    height: 2px;
+    width: 28px;
+  }
+
+  .arrow-head {
+    width: 0;
+    height: 0;
+    border-top: 5px solid transparent;
+    border-bottom: 5px solid transparent;
+  }
+
+  .arrow-label {
+    font-size: 9px;
+    color: #475569;
+    position: absolute;
+    white-space: nowrap;
+    top: -14px;
+    left: 50%;
+    transform: translateX(-50%);
+  }
+
+  .arrow-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+
+  /* Decision diamond */
+  .flow-decision {
+    width: 110px;
+    height: 70px;
+    background: #1e293b;
+    border: 2px solid #f59e0b;
+    transform: rotate(45deg);
+    margin: 10px 20px;
+    flex-shrink: 0;
+    position: relative;
+  }
+
+  .decision-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) rotate(-45deg);
+    font-size: 10px;
+    font-weight: 600;
+    color: #fbbf24;
+    text-align: center;
+    white-space: nowrap;
+    width: 90px;
+  }
+
+  /* Color themes */
+  .blue { background: #1e3a5f; border: 1.5px solid #3b82f6; color: #93c5fd; }
+  .purple { background: #2d1b69; border: 1.5px solid #7c3aed; color: #c4b5fd; }
+  .green { background: #14532d; border: 1.5px solid #22c55e; color: #86efac; }
+  .amber { background: #451a03; border: 1.5px solid #f59e0b; color: #fcd34d; }
+  .red { background: #450a0a; border: 1.5px solid #ef4444; color: #fca5a5; }
+  .gray { background: #1e293b; border: 1.5px solid #475569; color: #94a3b8; }
+  .teal { background: #0f3460; border: 1.5px solid #14b8a6; color: #5eead4; }
+  .pink { background: #4a044e; border: 1.5px solid #ec4899; color: #f9a8d4; }
+
+  .arrow-blue .arrow-line { background: #3b82f6; }
+  .arrow-blue .arrow-head { border-left-color: #3b82f6; }
+  .arrow-purple .arrow-line { background: #7c3aed; }
+  .arrow-purple .arrow-head { border-left-color: #7c3aed; }
+  .arrow-green .arrow-line { background: #22c55e; }
+  .arrow-green .arrow-head { border-left-color: #22c55e; }
+  .arrow-amber .arrow-line { background: #f59e0b; }
+  .arrow-amber .arrow-head { border-left-color: #f59e0b; }
+  .arrow-red .arrow-line { background: #ef4444; }
+  .arrow-red .arrow-head { border-left-color: #ef4444; }
+  .arrow-gray .arrow-line { background: #475569; }
+  .arrow-gray .arrow-head { border-left-color: #475569; }
+  .arrow-teal .arrow-line { background: #14b8a6; }
+  .arrow-teal .arrow-head { border-left-color: #14b8a6; }
+
+  /* Branch flow layout */
+  .branch-flow {
+    display: grid;
+    gap: 16px;
+  }
+
+  .branch-row {
+    display: flex;
+    align-items: center;
+    gap: 0;
+  }
+
+  /* Vertical flow */
+  .vflow {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0;
+  }
+
+  .vflow-item {
+    display: flex;
+    align-items: center;
+    width: 100%;
+  }
+
+  .vflow-node-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
+  .vflow-arrow {
+    width: 2px;
+    height: 24px;
+    margin: 0 auto;
+  }
+
+  .vflow-arrow-head {
+    width: 0;
+    height: 0;
+    border-left: 5px solid transparent;
+    border-right: 5px solid transparent;
+    margin: 0 auto;
+  }
+
+  .vflow-node {
+    border-radius: 12px;
+    padding: 12px 16px;
+    min-width: 200px;
+  }
+
+  /* Step lists */
+  .step-list {
+    margin-top: 20px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 12px;
+  }
+
+  .step-card {
+    background: #111827;
+    border: 1px solid #1e293b;
+    border-radius: 12px;
+    padding: 16px;
+    display: flex;
+    gap: 12px;
+  }
+
+  .step-num {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+
+  .step-content h4 {
+    font-size: 13px;
+    font-weight: 600;
+    color: #f1f5f9;
+    margin-bottom: 4px;
+  }
+
+  .step-content p {
+    font-size: 12px;
+    color: #64748b;
+    line-height: 1.5;
+  }
+
+  .step-content .timing {
+    font-size: 10px;
+    font-weight: 600;
+    margin-top: 6px;
+    padding: 2px 8px;
+    border-radius: 20px;
+    display: inline-block;
+  }
+
+  .divider {
+    height: 1px;
+    background: #1e293b;
+    margin: 40px 0;
+  }
+
+  /* Legend */
+  .legend {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    color: #94a3b8;
+  }
+
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+  }
+
+  /* Outcome badges */
+  .outcome-row {
+    display: flex;
+    gap: 12px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+  }
+
+  .outcome {
+    border-radius: 10px;
+    padding: 10px 14px;
+    font-size: 12px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .outcome-icon { font-size: 14px; }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 32px;
+    border-bottom: 1px solid #1e293b;
+    padding-bottom: 0;
+  }
+
+  .tab {
+    padding: 10px 18px;
+    font-size: 13px;
+    font-weight: 500;
+    color: #475569;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: all 0.15s;
+    border-radius: 8px 8px 0 0;
+  }
+
+  .tab.active {
+    color: #818cf8;
+    border-bottom-color: #818cf8;
+    background: #1e1b4b22;
+  }
+
+  .tab-content { display: none; }
+  .tab-content.active { display: block; }
+
+  /* Responsive stacking */
+  .flow-wrap {
+    overflow-x: auto;
+    padding: 4px 0 12px;
+  }
+
+  .flow-inner {
+    display: inline-flex;
+    align-items: flex-start;
+    min-width: max-content;
+  }
+</style>
+</head>
+<body>
+
+<h1>OCS — Organised Church Service</h1>
+<p class="subtitle">System Workflows · Version 2.0 · April 2026</p>
+
+<!-- TABS -->
+<div class="tabs">
+  <div class="tab active" onclick="showTab('voice')">🎙 Voice Command</div>
+  <div class="tab" onclick="showTab('setup')">⚙️ Service Day Setup</div>
+  <div class="tab" onclick="showTab('mobile')">📱 Mobile Connection</div>
+  <div class="tab" onclick="showTab('crash')">🔄 Crash Recovery</div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     WORKFLOW 1 — VOICE COMMAND
+══════════════════════════════════════════ -->
+<div id="tab-voice" class="tab-content active">
+
+  <div class="workflow-section">
+    <div class="section-header">
+      <div class="section-icon" style="background:#1e1b4b;">🎙</div>
+      <div>
+        <div class="section-title">Voice Command Flow</div>
+        <div class="section-desc">From spoken word to projected verse — fully offline, target &lt; 3 seconds total</div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#3b82f6;"></div> Audio pipeline</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#7c3aed;"></div> AI / ASR</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#22c55e;"></div> Command execution</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f59e0b;"></div> Decision point</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#ef4444;"></div> Rejection / error path</div>
+    </div>
+
+    <!-- ROW 1: Audio capture -->
+    <p style="font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Phase 1 — Audio Capture</p>
+    <div class="flow-wrap"><div class="flow-inner">
+      <div class="flow-item">
+        <div class="flow-node blue">
+          <div class="node-tag">Input</div>
+          <div class="node-label">Microphone</div>
+          <div class="node-sub">16kHz · Noise suppression · High-pass 100Hz filter · 2× gain</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-blue"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#3b82f6;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node blue">
+          <div class="node-tag">AudioWorklet</div>
+          <div class="node-label">VAD Engine</div>
+          <div class="node-sub">RMS per 2048 chunks. Speech if RMS &gt; 0.005</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-blue"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#3b82f6;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node blue">
+          <div class="node-tag">Buffer</div>
+          <div class="node-label">Pre-roll Buffer</div>
+          <div class="node-sub">500ms pre-roll prepended to prevent clipped starts</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-blue"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#3b82f6;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node amber">
+          <div class="node-tag">Decision</div>
+          <div class="node-label">Trigger Timing</div>
+          <div class="node-sub">Short ≤5 words: 200ms · Long: 900ms · Force: 15s</div>
+        </div>
+      </div>
+    </div></div>
+
+    <div style="margin:16px 0 10px;padding-left:12px;border-left:2px solid #1e293b;">
+      <div style="font-size:11px;color:#475569;margin-bottom:6px;">Three trigger paths:</div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <div style="background:#451a03;border:1px solid #f59e0b;border-radius:8px;padding:8px 12px;font-size:11px;color:#fcd34d;">⚡ Mid-speech probe at 1.5s → fires immediately if "OCS" detected</div>
+        <div style="background:#1e293b;border:1px solid #475569;border-radius:8px;padding:8px 12px;font-size:11px;color:#94a3b8;">⏱ Short utterance → 200ms silence threshold</div>
+        <div style="background:#1e293b;border:1px solid #475569;border-radius:8px;padding:8px 12px;font-size:11px;color:#94a3b8;">⏳ Long utterance → 900ms silence threshold</div>
+      </div>
+    </div>
+
+    <!-- ROW 2: ASR -->
+    <p style="font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:1px;margin:20px 0 10px;">Phase 2 — Transcription (Whisper Base · Offline · Web Worker)</p>
+    <div class="flow-wrap"><div class="flow-inner">
+      <div class="flow-item">
+        <div class="flow-node purple">
+          <div class="node-tag">Whisper ASR</div>
+          <div class="node-label">Transcription</div>
+          <div class="node-sub">@xenova/transformers · Web Worker · No network</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-purple"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#7c3aed;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node amber">
+          <div class="node-tag">Gate</div>
+          <div class="node-label">Confidence Check</div>
+          <div class="node-sub">Score &lt; 0.65 → discard silently. Log to debug bar.</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-purple"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#7c3aed;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node purple">
+          <div class="node-tag">Trigger check</div>
+          <div class="node-label">Keyword detect</div>
+          <div class="node-sub">"OCS" + aliases. No trigger → discard.</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-purple"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#7c3aed;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node purple">
+          <div class="node-tag">NLP</div>
+          <div class="node-label">Command Parser</div>
+          <div class="node-sub">Number conversion · Book alias match · 3-pass fuzzy</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-purple"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#7c3aed;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node amber">
+          <div class="node-tag">Guard</div>
+          <div class="node-label">Dedup Check</div>
+          <div class="node-sub">Same verse within 10s → block re-send</div>
+        </div>
+      </div>
+    </div></div>
+
+    <!-- ROW 3: Execution -->
+    <p style="font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:1px;margin:20px 0 10px;">Phase 3 — Command Execution</p>
+    <div class="flow-wrap"><div class="flow-inner">
+      <div class="flow-item">
+        <div class="flow-node green">
+          <div class="node-tag">SQLite</div>
+          <div class="node-label">Verse Lookup</div>
+          <div class="node-sub">bibles.db · &lt; 50ms · Offline</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-green"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#22c55e;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node green">
+          <div class="node-tag">IPC</div>
+          <div class="node-label">Broadcast</div>
+          <div class="node-sub">activate_set_content → Speaker View + General View</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-green"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#22c55e;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node green">
+          <div class="node-tag">Display</div>
+          <div class="node-label">Verse Renders</div>
+          <div class="node-sub">General View · Speaker View · Controller preview</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-green"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#22c55e;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node teal">
+          <div class="node-tag">Feedback</div>
+          <div class="node-label">Confirmation</div>
+          <div class="node-sub">✅ Chime + green flash · ❌ tone + amber + "Did you mean?"</div>
+        </div>
+      </div>
+    </div></div>
+
+    <div class="outcome-row">
+      <div class="outcome" style="background:#14532d;border:1px solid #22c55e;color:#86efac;"><span class="outcome-icon">✅</span> Verse displayed on all screens in &lt; 3s total</div>
+      <div class="outcome" style="background:#450a0a;border:1px solid #ef4444;color:#fca5a5;"><span class="outcome-icon">⚠️</span> Low confidence → silently discarded, debug bar logged</div>
+      <div class="outcome" style="background:#451a03;border:1px solid #f59e0b;color:#fcd34d;"><span class="outcome-icon">❓</span> Unrecognised → "Did you mean X?" prompt shown</div>
+      <div class="outcome" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;"><span class="outcome-icon">🔁</span> Duplicate → blocked silently, grey flash shown</div>
+    </div>
+
+    <!-- Step cards -->
+    <div class="step-list">
+      <div class="step-card">
+        <div class="step-num" style="background:#1e3a5f;color:#93c5fd;">1</div>
+        <div class="step-content">
+          <h4>Continuous listening</h4>
+          <p>AudioWorklet samples mic at 16kHz. VAD checks RMS every 2048 samples. Filters HVAC rumble with 100Hz high-pass.</p>
+          <div class="timing" style="background:#1e3a5f;color:#93c5fd;">Always on</div>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num" style="background:#2d1b69;color:#c4b5fd;">2</div>
+        <div class="step-content">
+          <h4>Speech detected</h4>
+          <p>RMS exceeds 0.005. Pre-roll buffer prepended. Chunk accumulation begins. Mid-speech probe fires at 1.5s.</p>
+          <div class="timing" style="background:#2d1b69;color:#c4b5fd;">t = 0ms</div>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num" style="background:#2d1b69;color:#c4b5fd;">3</div>
+        <div class="step-content">
+          <h4>Silence detected → transcribe</h4>
+          <p>Silence threshold met (200ms short / 900ms long). Audio sent to Whisper worker. Watchdog starts 5s timer.</p>
+          <div class="timing" style="background:#2d1b69;color:#c4b5fd;">t ≈ 200–900ms</div>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num" style="background:#451a03;color:#fcd34d;">4</div>
+        <div class="step-content">
+          <h4>Confidence gate</h4>
+          <p>Whisper returns transcript + confidence score. Score below 0.65 → discard. Score above → continue to keyword check.</p>
+          <div class="timing" style="background:#451a03;color:#fcd34d;">t ≈ 1–2s</div>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num" style="background:#2d1b69;color:#c4b5fd;">5</div>
+        <div class="step-content">
+          <h4>Command parsed</h4>
+          <p>Numbers converted (three → 3). Book names fuzzy-matched (3-pass). Verse reference extracted. Dedup guard checked.</p>
+          <div class="timing" style="background:#2d1b69;color:#c4b5fd;">t ≈ 2–2.5s</div>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num" style="background:#14532d;color:#86efac;">6</div>
+        <div class="step-content">
+          <h4>Verse displayed</h4>
+          <p>SQLite lookup (&lt;50ms). IPC broadcast to Speaker View and General View. Chime + green flash confirms success.</p>
+          <div class="timing" style="background:#14532d;color:#86efac;">t &lt; 3s total</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     WORKFLOW 2 — SERVICE DAY SETUP
+══════════════════════════════════════════ -->
+<div id="tab-setup" class="tab-content">
+  <div class="workflow-section">
+    <div class="section-header">
+      <div class="section-icon" style="background:#14532d;">⚙️</div>
+      <div>
+        <div class="section-title">Service Day Setup Flow</div>
+        <div class="section-desc">From arrival to service-ready — target: operator fully set up in under 15 minutes</div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#22c55e;"></div> Operator action</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#3b82f6;"></div> System action (automatic)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f59e0b;"></div> Check / verify</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#7c3aed;"></div> Pre-service prep</div>
+    </div>
+
+    <!-- Phase 1: Arrive -->
+    <p style="font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Phase 1 — Arrival & Hardware (0–5 min)</p>
+    <div class="flow-wrap"><div class="flow-inner">
+      <div class="flow-item">
+        <div class="flow-node green">
+          <div class="node-tag">Operator</div>
+          <div class="node-label">Power on laptop</div>
+          <div class="node-sub">Connect HDMI to projector and stage monitor</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-green"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#22c55e;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node blue">
+          <div class="node-tag">System</div>
+          <div class="node-label">Launch OCS</div>
+          <div class="node-sub">Detect monitors. Auto-assign windows. Load SQLite Bible.</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-blue"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#3b82f6;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node blue">
+          <div class="node-tag">Auto</div>
+          <div class="node-label">Restore session?</div>
+          <div class="node-sub">If prior crash: prompt to restore last session state</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-blue"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#3b82f6;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node amber">
+          <div class="node-tag">Verify</div>
+          <div class="node-label">Display check</div>
+          <div class="node-sub">OCS logo shows on projector and stage monitor. Adjust if needed.</div>
+        </div>
+      </div>
+    </div></div>
+
+    <!-- Phase 2: Audio -->
+    <p style="font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:1px;margin:20px 0 10px;">Phase 2 — Audio & Voice Setup (5–8 min)</p>
+    <div class="flow-wrap"><div class="flow-inner">
+      <div class="flow-item">
+        <div class="flow-node green">
+          <div class="node-tag">Operator</div>
+          <div class="node-label">Connect mic</div>
+          <div class="node-sub">USB or 3.5mm mic at operator desk</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-green"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#22c55e;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node green">
+          <div class="node-tag">Settings</div>
+          <div class="node-label">Select mic input</div>
+          <div class="node-sub">Mic selector shows all inputs. Live RMS level test confirms correct device.</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-blue"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#3b82f6;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node blue">
+          <div class="node-tag">Auto</div>
+          <div class="node-label">Load Whisper</div>
+          <div class="node-sub">AI model loads from cache in &lt; 10s. Progress bar in debug bar.</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-amber"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#f59e0b;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node amber">
+          <div class="node-tag">Test</div>
+          <div class="node-label">Voice test</div>
+          <div class="node-sub">Say "OCS John three sixteen" → confirm verse appears on displays</div>
+        </div>
+      </div>
+    </div></div>
+
+    <!-- Phase 3: Content -->
+    <p style="font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:1px;margin:20px 0 10px;">Phase 3 — Content Prep (8–12 min)</p>
+    <div class="flow-wrap"><div class="flow-inner">
+      <div class="flow-item">
+        <div class="flow-node purple">
+          <div class="node-tag">Operator</div>
+          <div class="node-label">Load service plan</div>
+          <div class="node-sub">Open saved .ocs file or build new Order of Service</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-purple"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#7c3aed;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node purple">
+          <div class="node-tag">Queue</div>
+          <div class="node-label">Add sermon verses</div>
+          <div class="node-sub">Paste sermon notes → OCS auto-imports verse references into queue</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-purple"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#7c3aed;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node purple">
+          <div class="node-tag">Media</div>
+          <div class="node-label">Import PPTX / video</div>
+          <div class="node-sub">Slides convert to PNG. Media added to library. Schedule if needed.</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-purple"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#7c3aed;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node purple">
+          <div class="node-tag">Timers</div>
+          <div class="node-label">Set timer presets</div>
+          <div class="node-sub">Load saved presets or set worship / sermon timer durations</div>
+        </div>
+      </div>
+    </div></div>
+
+    <!-- Phase 4: Mobile -->
+    <p style="font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:1px;margin:20px 0 10px;">Phase 4 — Mobile & Final Check (12–15 min)</p>
+    <div class="flow-wrap"><div class="flow-inner">
+      <div class="flow-item">
+        <div class="flow-node green">
+          <div class="node-tag">Worship leader</div>
+          <div class="node-label">Scan QR code</div>
+          <div class="node-sub">OCS Mobile connects over Wi-Fi LAN. Confirms in device list.</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-green"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#22c55e;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node amber">
+          <div class="node-tag">Checklist</div>
+          <div class="node-label">Pre-service verify</div>
+          <div class="node-sub">Displays ✅ · Voice ✅ · Queue ✅ · Mobile ✅ · Timers ✅</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-green"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#22c55e;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node green">
+          <div class="node-tag">Ready</div>
+          <div class="node-label">Service begins</div>
+          <div class="node-sub">Reset display to OCS logo. Await worship leader cue.</div>
+        </div>
+      </div>
+    </div></div>
+
+    <div class="step-list">
+      <div class="step-card">
+        <div class="step-num" style="background:#14532d;color:#86efac;">1</div>
+        <div class="step-content">
+          <h4>Power on & connect displays</h4>
+          <p>Plug HDMI cables to projector and stage monitor before launching OCS so monitors are detected on startup.</p>
+          <div class="timing" style="background:#14532d;color:#86efac;">0–2 min</div>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num" style="background:#1e3a5f;color:#93c5fd;">2</div>
+        <div class="step-content">
+          <h4>Launch OCS</h4>
+          <p>App auto-detects monitors, loads Bible database, and checks for a previous session to restore.</p>
+          <div class="timing" style="background:#1e3a5f;color:#93c5fd;">2–3 min</div>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num" style="background:#1e3a5f;color:#93c5fd;">3</div>
+        <div class="step-content">
+          <h4>Configure mic & test voice</h4>
+          <p>Select mic input, watch RMS meter confirm signal, wait for Whisper to load, run a test voice command.</p>
+          <div class="timing" style="background:#1e3a5f;color:#93c5fd;">3–8 min</div>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num" style="background:#2d1b69;color:#c4b5fd;">4</div>
+        <div class="step-content">
+          <h4>Build service queue</h4>
+          <p>Load saved .ocs plan or paste sermon notes. Verify verse references. Add any PPTX or video files.</p>
+          <div class="timing" style="background:#2d1b69;color:#c4b5fd;">8–12 min</div>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num" style="background:#14532d;color:#86efac;">5</div>
+        <div class="step-content">
+          <h4>Connect mobile companion</h4>
+          <p>Worship leader scans QR code on their phone. Verify device appears in the connected devices list.</p>
+          <div class="timing" style="background:#14532d;color:#86efac;">12–13 min</div>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num" style="background:#451a03;color:#fcd34d;">6</div>
+        <div class="step-content">
+          <h4>Final checklist & stand by</h4>
+          <p>Verify all 5 checklist items green. Reset to OCS logo screen. Operator is service-ready.</p>
+          <div class="timing" style="background:#451a03;color:#fcd34d;">13–15 min</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     WORKFLOW 3 — MOBILE CONNECTION
+══════════════════════════════════════════ -->
+<div id="tab-mobile" class="tab-content">
+  <div class="workflow-section">
+    <div class="section-header">
+      <div class="section-icon" style="background:#0f3460;">📱</div>
+      <div>
+        <div class="section-title">Mobile Companion Connection Flow</div>
+        <div class="section-desc">Worship leader connects phone to desktop OCS over local Wi-Fi — no internet required</div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#14b8a6;"></div> Desktop (OCS Controller)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#3b82f6;"></div> Mobile app action</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#22c55e;"></div> Connected state</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#ef4444;"></div> Error / retry path</div>
+    </div>
+
+    <p style="font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Connection Handshake</p>
+    <div class="flow-wrap"><div class="flow-inner">
+      <div class="flow-item">
+        <div class="flow-node teal">
+          <div class="node-tag">Desktop</div>
+          <div class="node-label">Express server starts</div>
+          <div class="node-sub">Port 4000 · 0.0.0.0 · Socket.IO ready · LAN only</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-teal"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#14b8a6;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node teal">
+          <div class="node-tag">Desktop</div>
+          <div class="node-label">Display QR code</div>
+          <div class="node-sub">Shows IP:port as QR in Remote panel. Also shows IP text for manual entry.</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-blue"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#3b82f6;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node blue">
+          <div class="node-tag">Mobile</div>
+          <div class="node-label">Scan QR / enter IP</div>
+          <div class="node-sub">OCS Mobile app. Same Wi-Fi network required. Socket.IO client connects.</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-green"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#22c55e;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node green">
+          <div class="node-tag">Handshake</div>
+          <div class="node-label">Connection established</div>
+          <div class="node-sub">Desktop shows device IP in connected list. Mobile shows "Connected" banner.</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-green"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#22c55e;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node green">
+          <div class="node-tag">Sync</div>
+          <div class="node-label">State sync</div>
+          <div class="node-sub">Desktop sends current verse, queue, and timer state to mobile.</div>
+        </div>
+      </div>
+    </div></div>
+
+    <p style="font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:1px;margin:20px 0 10px;">During Service — Remote Control Loop</p>
+    <div class="flow-wrap"><div class="flow-inner">
+      <div class="flow-item">
+        <div class="flow-node blue">
+          <div class="node-tag">Mobile action</div>
+          <div class="node-label">Worship leader taps</div>
+          <div class="node-sub">Select verse · Advance queue · Start timer · Black screen</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-blue"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#3b82f6;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node teal">
+          <div class="node-tag">Socket.IO</div>
+          <div class="node-label">Event emitted</div>
+          <div class="node-sub">LAN · &lt; 50ms round trip · No cloud hop</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-teal"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#14b8a6;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node teal">
+          <div class="node-tag">Desktop</div>
+          <div class="node-label">Receives event</div>
+          <div class="node-sub">Validates command · Executes · Broadcasts via IPC to all windows</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-green"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#22c55e;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node green">
+          <div class="node-tag">Feedback</div>
+          <div class="node-label">Haptic + visual</div>
+          <div class="node-sub">Mobile vibrates. Display updates. Mobile content preview syncs.</div>
+        </div>
+      </div>
+    </div></div>
+
+    <p style="font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:1px;margin:20px 0 10px;">Disconnection & Retry</p>
+    <div class="flow-wrap"><div class="flow-inner">
+      <div class="flow-item">
+        <div class="flow-node red">
+          <div class="node-tag">Error</div>
+          <div class="node-label">Wi-Fi drops</div>
+          <div class="node-sub">Socket disconnects. Mobile shows "Reconnecting…" banner.</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-red"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#ef4444;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node amber">
+          <div class="node-tag">Retry loop</div>
+          <div class="node-label">Auto-reconnect</div>
+          <div class="node-sub">Retries every 5s. Max 12 attempts (60s). Shows attempt count.</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-green"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#22c55e;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node green">
+          <div class="node-tag">Recovered</div>
+          <div class="node-label">Reconnected</div>
+          <div class="node-sub">State re-synced from desktop. Haptic confirmation. Service continues.</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-red"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#ef4444;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node red">
+          <div class="node-tag">Timeout</div>
+          <div class="node-label">Manual re-entry</div>
+          <div class="node-sub">After 60s: prompt to re-scan QR or re-enter IP manually.</div>
+        </div>
+      </div>
+    </div></div>
+
+    <div class="step-list">
+      <div class="step-card">
+        <div class="step-num" style="background:#0f3460;color:#5eead4;">1</div>
+        <div class="step-content">
+          <h4>Desktop starts local server</h4>
+          <p>Express + Socket.IO starts automatically on app launch. Binds to port 4000 on LAN. No configuration needed.</p>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num" style="background:#1e3a5f;color:#93c5fd;">2</div>
+        <div class="step-content">
+          <h4>Open Remote panel</h4>
+          <p>Operator opens the Remote tab in the Controller Window. QR code and IP address are displayed.</p>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num" style="background:#1e3a5f;color:#93c5fd;">3</div>
+        <div class="step-content">
+          <h4>Worship leader scans QR</h4>
+          <p>Opens OCS Mobile on phone. Taps Scan. Points camera at QR code. App connects automatically.</p>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num" style="background:#14532d;color:#86efac;">4</div>
+        <div class="step-content">
+          <h4>Full state synced to mobile</h4>
+          <p>Current verse, service queue, timer state all pushed to mobile instantly on connect.</p>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num" style="background:#14532d;color:#86efac;">5</div>
+        <div class="step-content">
+          <h4>Remote actions work in real time</h4>
+          <p>Every tap on mobile fires instantly to desktop over LAN. Haptic feedback confirms each command.</p>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num" style="background:#450a0a;color:#fca5a5;">6</div>
+        <div class="step-content">
+          <h4>Auto-reconnect if dropped</h4>
+          <p>If Wi-Fi drops, mobile retries every 5 seconds. Desktop continues working normally throughout.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
+     WORKFLOW 4 — CRASH RECOVERY
+══════════════════════════════════════════ -->
+<div id="tab-crash" class="tab-content">
+  <div class="workflow-section">
+    <div class="section-header">
+      <div class="section-icon" style="background:#450a0a;">🔄</div>
+      <div>
+        <div class="section-title">Crash Recovery Flow</div>
+        <div class="section-desc">Operator back to exactly where they were in under 10 seconds — critical for live service</div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#22c55e;"></div> Normal operation</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#ef4444;"></div> Crash event</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f59e0b;"></div> Recovery decision</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#3b82f6;"></div> Restore process</div>
+    </div>
+
+    <p style="font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Phase 1 — Continuous Auto-Save (During Normal Service)</p>
+    <div class="flow-wrap"><div class="flow-inner">
+      <div class="flow-item">
+        <div class="flow-node green">
+          <div class="node-tag">Normal ops</div>
+          <div class="node-label">Service running</div>
+          <div class="node-sub">Operator displaying verses, controlling timers, advancing queue</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-green"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#22c55e;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node blue">
+          <div class="node-tag">Every 30s</div>
+          <div class="node-label">Auto-save state</div>
+          <div class="node-sub">Current verse · Translation · All timers · Queue position · Active media · Display styles</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-blue"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#3b82f6;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node blue">
+          <div class="node-tag">Disk</div>
+          <div class="node-label">session.ocs written</div>
+          <div class="node-sub">Atomic write to userData. Retained 7 days then auto-pruned.</div>
+        </div>
+      </div>
+    </div></div>
+
+    <p style="font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:1px;margin:20px 0 10px;">Phase 2 — Crash Event</p>
+    <div class="flow-wrap"><div class="flow-inner">
+      <div class="flow-item">
+        <div class="flow-node red">
+          <div class="node-tag">Crash</div>
+          <div class="node-label">App quits unexpectedly</div>
+          <div class="node-sub">Power cut · OS kill · Renderer crash · Uncaught exception</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-red"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#ef4444;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node red">
+          <div class="node-tag">Impact</div>
+          <div class="node-label">Displays go blank</div>
+          <div class="node-sub">All windows closed. Congregation sees nothing. Clock is ticking.</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-red"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#ef4444;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node green">
+          <div class="node-tag">Operator</div>
+          <div class="node-label">Re-launch OCS</div>
+          <div class="node-sub">Double-click app or dock icon. Target: app interactive in &lt; 5s</div>
+        </div>
+      </div>
+    </div></div>
+
+    <p style="font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:1px;margin:20px 0 10px;">Phase 3 — Recovery Decision & Restore</p>
+    <div class="flow-wrap"><div class="flow-inner">
+      <div class="flow-item">
+        <div class="flow-node blue">
+          <div class="node-tag">On launch</div>
+          <div class="node-label">Detect session file</div>
+          <div class="node-sub">session.ocs found in userData. Age &lt; 7 days.</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-amber"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#f59e0b;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node amber">
+          <div class="node-tag">Prompt</div>
+          <div class="node-label">Restore session?</div>
+          <div class="node-sub">"OCS was interrupted. Restore to where you left off?" [Restore] [Start Fresh]</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-blue"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#3b82f6;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node blue">
+          <div class="node-tag">Restore</div>
+          <div class="node-label">State loaded</div>
+          <div class="node-sub">Verse re-pushed to displays. Queue position restored. Timers restored (paused). Media re-loaded.</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-green"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#22c55e;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node green">
+          <div class="node-tag">Recovery</div>
+          <div class="node-label">Service continues</div>
+          <div class="node-sub">Displays showing correct verse. Operator back in control. &lt; 10s total downtime.</div>
+        </div>
+      </div>
+    </div></div>
+
+    <p style="font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:1px;margin:20px 0 10px;">Alternate Path — Start Fresh</p>
+    <div class="flow-wrap"><div class="flow-inner">
+      <div class="flow-item">
+        <div class="flow-node amber">
+          <div class="node-tag">Operator choice</div>
+          <div class="node-label">"Start Fresh" tapped</div>
+          <div class="node-sub">Operator chooses not to restore. Fresh state loaded.</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-amber"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#f59e0b;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node blue">
+          <div class="node-tag">Session file</div>
+          <div class="node-label">Archive old session</div>
+          <div class="node-sub">Previous session file moved to archive. Not deleted — available to review later.</div>
+        </div>
+      </div>
+      <div class="flow-arrow arrow-green"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#22c55e;"></div></div>
+      <div class="flow-item">
+        <div class="flow-node green">
+          <div class="node-tag">Manual</div>
+          <div class="node-label">Operator navigates</div>
+          <div class="node-sub">Uses voice commands or queue to return to the correct verse manually.</div>
+        </div>
+      </div>
+    </div></div>
+
+    <div class="step-list">
+      <div class="step-card">
+        <div class="step-num" style="background:#14532d;color:#86efac;">1</div>
+        <div class="step-content">
+          <h4>Auto-save runs every 30s</h4>
+          <p>During normal service, OCS silently writes the full service state to disk. Operator never sees or triggers this.</p>
+          <div class="timing" style="background:#14532d;color:#86efac;">Continuous</div>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num" style="background:#450a0a;color:#fca5a5;">2</div>
+        <div class="step-content">
+          <h4>Crash occurs</h4>
+          <p>App quits for any reason. Worst case: up to 30 seconds of changes lost. Displays go blank immediately.</p>
+          <div class="timing" style="background:#450a0a;color:#fca5a5;">t = 0</div>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num" style="background:#1e3a5f;color:#93c5fd;">3</div>
+        <div class="step-content">
+          <h4>Re-launch OCS</h4>
+          <p>Operator double-clicks the app. App becomes interactive in under 5 seconds. Session file is detected.</p>
+          <div class="timing" style="background:#1e3a5f;color:#93c5fd;">t = 0–5s</div>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num" style="background:#451a03;color:#fcd34d;">4</div>
+        <div class="step-content">
+          <h4>Restore prompt shown</h4>
+          <p>"Restore session?" dialog appears immediately. One tap on [Restore] begins full state restoration.</p>
+          <div class="timing" style="background:#451a03;color:#fcd34d;">t = 5–6s</div>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num" style="background:#1e3a5f;color:#93c5fd;">5</div>
+        <div class="step-content">
+          <h4>State restored to all windows</h4>
+          <p>Correct verse pushed back to General View and Speaker View. Queue position, timers, and media all restored.</p>
+          <div class="timing" style="background:#1e3a5f;color:#93c5fd;">t = 6–9s</div>
+        </div>
+      </div>
+      <div class="step-card">
+        <div class="step-num" style="background:#14532d;color:#86efac;">6</div>
+        <div class="step-content">
+          <h4>Service continues</h4>
+          <p>Congregation sees the correct content again. Total downtime under 10 seconds. Service resumes without interruption.</p>
+          <div class="timing" style="background:#14532d;color:#86efac;">t &lt; 10s</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="outcome-row">
+      <div class="outcome" style="background:#14532d;border:1px solid #22c55e;color:#86efac;"><span class="outcome-icon">✅</span> Restore path: &lt; 10s total downtime</div>
+      <div class="outcome" style="background:#451a03;border:1px solid #f59e0b;color:#fcd34d;"><span class="outcome-icon">⚠️</span> Fresh start: operator manually navigates back to verse</div>
+      <div class="outcome" style="background:#1e293b;border:1px solid #475569;color:#94a3b8;"><span class="outcome-icon">📁</span> Old session always archived — never lost</div>
+    </div>
+  </div>
+</div>
+
+<script>
+function showTab(name) {
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
+
+</body>
+</html>

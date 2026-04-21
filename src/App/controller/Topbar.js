@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useDispatch, useSelector } from "react-redux";
 import {
   PiBroadcast,
   PiEye,
@@ -9,6 +10,7 @@ import {
 } from "react-icons/pi";
 import { MdOutlineConnectedTv, MdOutlineResetTv } from "react-icons/md";
 import MobileConnectController from "./MobileConnectController";
+import { utilAction } from "../../Redux/state.jsx";
 
 export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
@@ -41,8 +43,32 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
   const isSpeakingRef = React.useRef(false);
   const lastSpeechTimeRef = React.useRef(0);
   const firstSpeechTimeRef = React.useRef(0); // For emergency 15s trigger
+  const midSpeechProbeTimerRef = React.useRef(null); // Timer to fire keyword probe mid-speech
+  const probeTriggeredRef = React.useRef(false); // Prevent duplicate triggers from probe
+  const speechChunkCountRef = React.useRef(0); // Rough word-count estimate (chunks spoken)
   const [rmsVolume, setRmsVolume] = useState(0);
   const [isSpeakingUI, setIsSpeakingUI] = useState(false);
+  const [didYouMean, setDidYouMean] = useState(null); // { text, candidate }
+  const [voiceEvents, setVoiceEvents] = useState([]); // last 10 voice events
+  const [lastConfidence, setLastConfidence] = useState(null); // 0–1 or null
+  const voiceEventsRef = React.useRef([]);
+  const CONFIDENCE_THRESHOLD = 0.65; // FR-3.13
+
+  // Redux — for timer and queue voice commands
+  const dispatch = useDispatch();
+  const agenda = useSelector((state) => state.util.agenda);
+  const isPaused = useSelector((state) => state.util.isPaused);
+  const activeId = useSelector((state) => state.util.activeId);
+  const agendaRef = React.useRef(agenda);
+  const isPausedRef = React.useRef(isPaused);
+  const activeIdRef = React.useRef(activeId);
+  React.useEffect(() => { agendaRef.current = agenda; }, [agenda]);
+  React.useEffect(() => { isPausedRef.current = isPaused; }, [isPaused]);
+  React.useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+
+  // Track active Bible version for translation switch command
+  const currentBibleVersionRef = React.useRef('kjv');
+
 
   useEffect(() => {
     if (window.electron && window.electron.Bible) {
@@ -67,25 +93,39 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
 
           const text = msg.text.trim();
           const lowerText = text.toLowerCase();
-          setLastTranscript(text);
-          isProcessingRef.current = false;
-          setVoiceStatus("listening");
-          
+          const confidence = typeof msg.confidence === 'number' ? msg.confidence : 0.85;
           const debugInfo = msg.debug || {};
           const duration = (debugInfo.duration || 0).toFixed(1);
-          setDebugText(`AI heard ${duration}s | vol=${(debugInfo.vol || 0).toFixed(3)} | Heard: "${text}"`);
-          
-          if (!text) {
+
+          setLastTranscript(text);
+          setLastConfidence(confidence);
+          isProcessingRef.current = false;
+          setVoiceStatus("listening");
+
+          // --- FR-3.13: Confidence Gate ---
+          if (confidence < CONFIDENCE_THRESHOLD) {
+              const msg2 = `LOW CONFIDENCE — ignored (score: ${confidence.toFixed(2)})`;
+              setDebugText(msg2);
+              pushVoiceEvent(`⚠️ ${msg2}`);
               return;
           }
-          
-          // Broad alias list — Whisper-tiny often mishears "media" as these words
+
+          setDebugText(`AI heard ${duration}s | conf=${confidence.toFixed(2)} | Heard: "${text}"`);
+          pushVoiceEvent(`🎙 HEARD: "${text}"`);
+
+          if (!text) return;
+
+          // --- FR-3.6: Dual trigger keywords — "OCS" and "Media" both work ---
           const triggerKeywords = [
+            // OCS variants
+            'ocs', 'o.c.s', 'o-c-s', 'o c s',
+            'oasis', 'obvious', 'osiris', 'ocean',
+            'oh see', 'oh-see', 'ok see', 'oc-s', 'oc s',
+            // Media variants
             'media', 'meeting', 'meter', 'medium', 'video', 'median',
-            'media,', 'meeting,', // with punctuation
-            'me the', 'need a', 'meet a', // space-split mishears
+            'me the', 'need a', 'meet a',
           ];
-          
+
           let triggerIdx = -1;
           let triggerLen = 0;
           for (const kw of triggerKeywords) {
@@ -100,14 +140,51 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
           const nextMatch = lowerText.match(/\b(next verse|next one|next|forward|previous verse|go back|last verse|go to next|go next)\b/i);
 
           if (triggerIdx !== -1) {
-            // Strip punctuation and trigger keyword to get the raw command
             const actualCommand = lowerText.substring(triggerIdx + triggerLen)
                                           .replace(/[.,:;!?]/g, ' ')
                                           .trim();
-            handleVoiceCommand(actualCommand, true); 
+            handleVoiceCommand(actualCommand, true);
           } else if (nextMatch) {
-            // Trigger navigation even without the trigger keyword
             handleVoiceCommand(nextMatch[0], true);
+          }
+      } else if (msg.status === 'probe_result') {
+          // Mid-speech probe returned — if keyword found and user is STILL speaking, fire now.
+          if (msg.hasKeyword && isSpeakingRef.current && !isProcessingRef.current && !probeTriggeredRef.current) {
+              probeTriggeredRef.current = true;
+              setDebugText(`[PROBE] "OCS" / "Media" detected mid-speech — firing early transcription`);
+              if (midSpeechProbeTimerRef.current) {
+                  clearTimeout(midSpeechProbeTimerRef.current);
+                  midSpeechProbeTimerRef.current = null;
+              }
+              isSpeakingRef.current = false;
+              setIsSpeakingUI(false);
+              isProcessingRef.current = true;
+              setVoiceStatus("transcribing");
+
+              const watchdog = setTimeout(() => {
+                  if (isProcessingRef.current) {
+                      isProcessingRef.current = false;
+                      setVoiceStatus("listening");
+                      speechBufferRef.current = [];
+                  }
+              }, 5000);
+              activeWatchdogRef.current = watchdog;
+
+              const totalLength = speechBufferRef.current.reduce((acc, chunk) => acc + chunk.length, 0);
+              const finalAudio = new Float32Array(totalLength);
+              let off = 0;
+              speechBufferRef.current.forEach(chunk => {
+                  finalAudio.set(chunk, off);
+                  off += chunk.length;
+              });
+              speechBufferRef.current = [];
+              speechChunkCountRef.current = 0;
+
+              workerRef.current.postMessage({
+                  type: 'transcribe',
+                  audio: finalAudio,
+                  prompt: currentVerseFullTextRef.current || ""
+              });
           }
       } else if (msg.status === 'error') {
           isProcessingRef.current = false;
@@ -129,6 +206,48 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
     return () => {
       if (workerRef.current) workerRef.current.terminate();
     };
+  }, []);
+
+  // --- FR-3.18: Audio feedback helper (Web Audio API) ---
+  const playFeedback = React.useCallback((type) => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const master = ctx.createGain();
+      master.gain.value = 0.12;
+      master.connect(ctx.destination);
+
+      const tone = (freq, start, dur) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.connect(gain); gain.connect(master);
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.8, start);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+        osc.start(start); osc.stop(start + dur + 0.05);
+      };
+
+      if (type === 'success') {
+        // Pleasant two-tone ascending chime — C5 → E5
+        tone(523, ctx.currentTime, 0.15);
+        tone(659, ctx.currentTime + 0.13, 0.22);
+      } else if (type === 'error') {
+        // Low warning tone — A3
+        tone(220, ctx.currentTime, 0.28);
+      } else if (type === 'warn') {
+        // Neutral amber tone — E4
+        tone(330, ctx.currentTime, 0.22);
+      }
+      setTimeout(() => ctx.close().catch(() => {}), 900);
+    } catch (_) { /* audio feedback is non-critical */ }
+  }, []);
+
+  // Rolling voice-event log (max 10 entries) — FR-3.25
+  const pushVoiceEvent = React.useCallback((msg) => {
+    const ts = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const entry = `${ts} ${msg}`;
+    voiceEventsRef.current = [entry, ...voiceEventsRef.current].slice(0, 10);
+    setVoiceEvents([...voiceEventsRef.current]);
   }, []);
 
   const levenshtein = (a, b) => {
@@ -390,65 +509,102 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
                     preRollBufferRef.current.shift();
                  }
 
+                 // Helper: immediately fire transcription from accumulated buffer
+                 const fireTranscription = () => {
+                    if (isProcessingRef.current || !workerRef.current || speechBufferRef.current.length === 0) return;
+                    // Cancel any pending mid-speech probe timer
+                    if (midSpeechProbeTimerRef.current) {
+                        clearTimeout(midSpeechProbeTimerRef.current);
+                        midSpeechProbeTimerRef.current = null;
+                    }
+                    isSpeakingRef.current = false;
+                    setIsSpeakingUI(false);
+                    probeTriggeredRef.current = false;
+                    isProcessingRef.current = true;
+                    setVoiceStatus("transcribing");
+
+                    const watchdog = setTimeout(() => {
+                        if (isProcessingRef.current) {
+                            isProcessingRef.current = false;
+                            setVoiceStatus("listening");
+                            speechBufferRef.current = [];
+                        }
+                    }, 3000); // FR-3.12: 3s watchdog (was 5s)
+                    activeWatchdogRef.current = watchdog;
+
+                    const totalLength = speechBufferRef.current.reduce((acc, chunk) => acc + chunk.length, 0);
+                    const finalAudio = new Float32Array(totalLength);
+                    let offset = 0;
+                    speechBufferRef.current.forEach(chunk => {
+                        finalAudio.set(chunk, offset);
+                        offset += chunk.length;
+                    });
+                    speechBufferRef.current = [];
+                    speechChunkCountRef.current = 0;
+
+                    workerRef.current.postMessage({
+                        type: 'transcribe',
+                        audio: finalAudio,
+                        prompt: currentVerseFullTextRef.current || ""
+                    });
+                 };
+
                  // 2. Logic for Speech Capture
                  if (isSpeaking) {
                     // Start of speech detection
                     if (!isSpeakingRef.current) {
                         isSpeakingRef.current = true;
+                        probeTriggeredRef.current = false;
                         setIsSpeakingUI(true);
                         firstSpeechTimeRef.current = now;
+                        speechChunkCountRef.current = 0;
                         // PREPEND Pre-roll for clean "Attack"
                         speechBufferRef.current = [...preRollBufferRef.current];
+
+                        // Schedule mid-speech keyword probe at 1.0s (was 1.5s)
+                        midSpeechProbeTimerRef.current = setTimeout(() => {
+                            midSpeechProbeTimerRef.current = null;
+                            if (!isSpeakingRef.current || isProcessingRef.current || probeTriggeredRef.current) return;
+                            if (!workerRef.current || speechBufferRef.current.length === 0) return;
+
+                            // Build a snapshot of the audio so far for the probe
+                            const snapLen = speechBufferRef.current.reduce((a, c) => a + c.length, 0);
+                            const snapAudio = new Float32Array(snapLen);
+                            let snapOffset = 0;
+                            speechBufferRef.current.forEach(chunk => {
+                                snapAudio.set(chunk, snapOffset);
+                                snapOffset += chunk.length;
+                            });
+
+                            // Post a lightweight probe — result handled in workerRef.current.onmessage
+                            workerRef.current.postMessage({ type: 'probe', audio: snapAudio });
+                        }, 1000);
                     }
                     lastSpeechTimeRef.current = now;
                     speechBufferRef.current.push(new Float32Array(audio));
+                    speechChunkCountRef.current++;
 
                     // EMERGENCY FORCE-TRIGGER (15s Max)
                     if (now - firstSpeechTimeRef.current > 15000) {
                         console.warn("AI Force Trigger: Max speech duration reached");
                         setDebugText("AI: Forced Release (Noise/Length Limit)");
-                        // Reuse the trigger logic below by spoofing a silence transition
-                        lastSpeechTimeRef.current = now - 2000; 
+                        fireTranscription();
                     }
                  } else if (isSpeakingRef.current) {
                     // Capture the "Tail" during silence wait
                     speechBufferRef.current.push(new Float32Array(audio));
 
-                    // Reactive Silence Detection (1.5s pause triggers AI)
-                    if (now - lastSpeechTimeRef.current > 1500) {
-                        isSpeakingRef.current = false;
-                        setIsSpeakingUI(false);
-                        
-                        // TRIGGER TRANSCRIPTION IMMEDIATELY ON SILENCE
-                        if (!isProcessingRef.current && workerRef.current && speechBufferRef.current.length > 0) {
-                            isProcessingRef.current = true;
-                            setVoiceStatus("transcribing");
-                            
-                            const watchdog = setTimeout(() => {
-                                if (isProcessingRef.current) {
-                                    isProcessingRef.current = false;
-                                    setVoiceStatus("listening");
-                                    speechBufferRef.current = []; 
-                                }
-                            }, 8000);
-                            activeWatchdogRef.current = watchdog;
+                    // Estimate word count: each audio chunk is ~128ms at 16kHz/2048 buffer.
+                    // Average spoken word is ~300ms → ~2.3 chunks per word.
+                    // ≤5 words ≈ ≤12 chunks. We trigger immediately for short commands.
+                    const estimatedWords = Math.round(speechChunkCountRef.current / 2.3);
+                    const silenceElapsed = now - lastSpeechTimeRef.current;
 
-                            const totalLength = speechBufferRef.current.reduce((acc, chunk) => acc + chunk.length, 0);
-                            const finalAudio = new Float32Array(totalLength);
-                            let offset = 0;
-                            speechBufferRef.current.forEach(chunk => {
-                                finalAudio.set(chunk, offset);
-                                offset += chunk.length;
-                            });
-                            
-                            speechBufferRef.current = [];
+                    const shouldFireImmediate = estimatedWords <= 5 && silenceElapsed >= 100; // fast-fire short commands
+                    const shouldFireNormal = silenceElapsed > 700; // standard silence gate (was 900ms)
 
-                            workerRef.current.postMessage({ 
-                                type: 'transcribe', 
-                                audio: finalAudio,
-                                prompt: currentVerseFullTextRef.current || ""
-                            });
-                        }
+                    if ((shouldFireImmediate || shouldFireNormal) && !probeTriggeredRef.current) {
+                        fireTranscription();
                     }
                  }
              };
@@ -482,65 +638,205 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
   }, [isListening]);
 
   const handleVoiceCommand = async (text, isAuto = false) => {
-    // text here should be the part AFTER "media"
     let command = text.trim().toLowerCase();
-    
-    // 1. Convert word-numbers to digits (e.g., "one" -> "1")
+
+    // ── 1. Word-number conversion (FR-3.16) ─────────────────────────────────
     const wordNumbers = {
-        'one': '1', 'two': '2', 'three': '3', 'four': '4', 'five': '5',
-        'six': '6', 'seven': '7', 'eight': '8', 'nine': '9', 'ten': '10',
-        'eleven': '11', 'twelve': '12', 'thirteen': '13', 'fourteen': '14', 'fifteen': '15',
-        'twenty': '20', 'thirty': '30', 'forty': '40', 'fifty': '50'
+        'zero': '0', 'one': '1', 'two': '2', 'three': '3', 'four': '4',
+        'five': '5', 'six': '6', 'seven': '7', 'eight': '8', 'nine': '9',
+        'ten': '10', 'eleven': '11', 'twelve': '12', 'thirteen': '13',
+        'fourteen': '14', 'fifteen': '15', 'sixteen': '16', 'seventeen': '17',
+        'eighteen': '18', 'nineteen': '19', 'twenty': '20', 'thirty': '30',
+        'forty': '40', 'fifty': '50', 'sixty': '60',
+        'twenty-one': '21', 'twenty-two': '22', 'twenty-three': '23',
+        'twenty-four': '24', 'twenty-five': '25', 'twenty-six': '26',
+        'twenty-seven': '27', 'twenty-eight': '28', 'twenty-nine': '29',
+        'thirty-one': '31', 'thirty-two': '32', 'forty-five': '45',
     };
-    
+    // Compound "twenty one" (space form)
+    command = command.replace(/\btwenty\s+(\w+)\b/g, (_, rest) => wordNumbers['twenty-' + rest] || ('twenty ' + rest));
+    command = command.replace(/\bthirty\s+(\w+)\b/g, (_, rest) => wordNumbers['thirty-' + rest] || ('thirty ' + rest));
+    command = command.replace(/\bforty\s+(\w+)\b/g, (_, rest) => wordNumbers['forty-' + rest] || ('forty ' + rest));
     Object.keys(wordNumbers).forEach(word => {
-        const regex = new RegExp('\\b' + word + '\\b', 'g');
-        command = command.replace(regex, wordNumbers[word]);
+        command = command.replace(new RegExp('\\b' + word + '\\b', 'g'), wordNumbers[word]);
     });
 
-    const rangeMatch = command.match(/\b(?:mark|highlight) from (.+) to (.+)\b/i);
-    if (rangeMatch && currentVerseFullTextRef.current) {
-        return performRangeHighlight(rangeMatch[1].trim(), rangeMatch[2].trim());
+    // ── Helper: log and give feedback ───────────────────────────────────────
+    const ok = (msg) => { setDebugText(`✅ ${msg}`); pushVoiceEvent(`✅ ${msg}`); playFeedback('success'); };
+    const warn = (msg) => { setDebugText(`⚠️ ${msg}`); pushVoiceEvent(`⚠️ ${msg}`); playFeedback('warn'); };
+
+    // ════════════════════════════════════════════════════════════════════════
+    // COMMAND DISPATCHING — ordered most-specific → least-specific
+    // ════════════════════════════════════════════════════════════════════════
+
+    // ── A. BLACK SCREEN (FR-3.14) ────────────────────────────────────────────
+    if (/\b(black screen|blank screen|black out|blackout|hide screen|clear screen)\b/i.test(command)) {
+        window.electron.Presentation.setContent(null);
+        ok('Black screen');
+        return;
     }
 
-    // 1b. Check for Highlight command
+    // ── B. SHOW LOGO (FR-3.14) ──────────────────────────────────────────────
+    if (/\b(show logo|display logo|logo screen|ocs logo)\b/i.test(command)) {
+        window.electron.Presentation.setContent({ type: 'logo' });
+        ok('Show logo');
+        return;
+    }
+
+    // ── C. SWITCH TRANSLATION (FR-3.14) ────────────────────────────────────
+    const translationMap = {
+        'kjv': 'kjv', 'king james': 'kjv', 'king james version': 'kjv',
+        'bbe': 'bbe', 'basic english': 'bbe', 'bible basic english': 'bbe',
+        'asv': 'asv', 'american standard': 'asv',
+        'web': 'web', 'world english': 'web',
+        'net': 'net', 'new english': 'net',
+        'geneva': 'geneva',
+        'tyndale': 'tyndale',
+        'coverdale': 'coverdale',
+        'bishops': 'bishops', "bishop's": 'bishops',
+        'strongs': 'kjv_strongs', "strong's": 'kjv_strongs', 'kjv strongs': 'kjv_strongs',
+    };
+    const switchMatch = command.match(/\b(?:switch to|change to|use|switch translation|change translation)\s+(.+)/i);
+    if (switchMatch) {
+        const requested = switchMatch[1].trim().replace(/[.,:;!?]/g, '').toLowerCase();
+        const versionKey = translationMap[requested] || Object.keys(translationMap).find(k => requested.includes(k));
+        if (versionKey) {
+            const version = translationMap[versionKey];
+            currentBibleVersionRef.current = version;
+            // Re-fetch current verse in new translation
+            if (currentRefStateRef.current) {
+                const { bookIndex, chapter, verse } = currentRefStateRef.current;
+                try {
+                    const verses = await window.electron.Bible.getChapter(version, bookIndex, chapter);
+                    if (verses && verses.length > 0) {
+                        const verseText = verses[verse - 1] || '';
+                        const verseRef = currentVerseTitleRef.current;
+                        window.electron.Presentation.setContent({ type: 'bible', data: { title: verseRef, body: verseText } });
+                    }
+                } catch (_) {}
+            }
+            if (window.electron.Bible.sync) {
+                const { bookIndex, chapter } = currentRefStateRef.current || { bookIndex: 0, chapter: 1 };
+                window.electron.Bible.sync({ version, bookIndex, chapterIndex: chapter - 1 });
+            }
+            ok(`Translation: ${version.toUpperCase()}`);
+        } else {
+            warn(`Unknown translation: "${requested}"`);
+        }
+        return;
+    }
+
+    // ── D. TIMER COMMANDS (FR-3.14) ─────────────────────────────────────────
+    // D1. Set timer — "set timer forty-five minutes" / "set timer 10 minutes 30 seconds"
+    const setTimerMatch = command.match(/\b(?:set timer|set the timer|timer)\s+(.+)/i);
+    if (setTimerMatch) {
+        const durationText = setTimerMatch[1];
+        let totalSeconds = 0;
+        const hrMatch = durationText.match(/(\d+)\s*(?:hour|hr)/i);
+        const minMatch = durationText.match(/(\d+)\s*(?:minute|min)/i);
+        const secMatch = durationText.match(/(\d+)\s*(?:second|sec)/i);
+        if (hrMatch) totalSeconds += parseInt(hrMatch[1]) * 3600;
+        if (minMatch) totalSeconds += parseInt(minMatch[1]) * 60;
+        if (secMatch) totalSeconds += parseInt(secMatch[1]);
+        // Fallback: bare number = minutes
+        if (!hrMatch && !minMatch && !secMatch) {
+            const bare = durationText.match(/(\d+)/);
+            if (bare) totalSeconds = parseInt(bare[1]) * 60;
+        }
+        if (totalSeconds > 0) {
+            dispatch(utilAction.setEventMode(false));
+            dispatch(utilAction.setTime(totalSeconds));
+            dispatch(utilAction.setPaused(false));
+            dispatch(utilAction.setActiveId(null));
+            ok(`Timer set: ${Math.floor(totalSeconds / 60)}m ${totalSeconds % 60}s`);
+        } else {
+            warn('Could not parse timer duration');
+        }
+        return;
+    }
+
+    // D2. Start / Resume timer
+    if (/\b(start timer|resume timer|play timer|unpause timer|start the timer)\b/i.test(command)) {
+        dispatch(utilAction.setPaused(false));
+        ok('Timer started');
+        return;
+    }
+
+    // D3. Pause timer
+    if (/\b(pause timer|pause the timer|stop timer|halt timer)\b/i.test(command)) {
+        dispatch(utilAction.setPaused(true));
+        ok('Timer paused');
+        return;
+    }
+
+    // D4. Stop / Reset timer
+    if (/\b(stop timer|reset timer|clear timer|cancel timer)\b/i.test(command)) {
+        dispatch(utilAction.setTime(0));
+        dispatch(utilAction.setPaused(false));
+        dispatch(utilAction.setActiveId(null));
+        ok('Timer stopped');
+        return;
+    }
+
+    // ── E. NEXT QUEUE ITEM (FR-3.14) ────────────────────────────────────────
+    if (/\b(next item|next queue|next agenda|next segment|next service item)\b/i.test(command)) {
+        const list = agendaRef.current || [];
+        if (list.length === 0) { warn('No agenda items'); return; }
+        const currentIdx = list.findIndex(i => i._id === activeIdRef.current);
+        const nextItem = list[currentIdx + 1] || list[0]; // wrap to first
+        dispatch(utilAction.setEventMode(false));
+        dispatch(utilAction.setTime(Number(nextItem.time) || 0));
+        dispatch(utilAction.setActiveId(nextItem._id));
+        dispatch(utilAction.setPaused(false));
+        ok(`Queue: ${nextItem.agenda || 'Next item'}`);
+        return;
+    }
+
+    // ── F. HIGHLIGHT RANGE (FR-3.21-22) ─────────────────────────────────────
+    const rangeMatch = command.match(/\b(?:mark|highlight) from (.+?) to (?:the end|end)\b/i);
+    const rangeMatch2 = command.match(/\b(?:mark|highlight) from (.+) to (.+)\b/i);
+    if (rangeMatch && currentVerseFullTextRef.current) {
+        return performRangeHighlight(rangeMatch[1].trim(), null); // to end
+    }
+    if (rangeMatch2 && currentVerseFullTextRef.current) {
+        return performRangeHighlight(rangeMatch2[1].trim(), rangeMatch2[2].trim());
+    }
+
+    // ── G. HIGHLIGHT WORD (FR-3.21) ─────────────────────────────────────────
     const hlMatch = command.match(/\b(highlight|yellow|mark the word|mark|i\s+like|i\s+life|highly)\b\s+(.+)\b/i);
     if (hlMatch) {
         const wordsToMark = hlMatch[2].trim();
-        if (currentVerseFullTextRef.current && wordsToMark) {
-            return performHighlight(wordsToMark);
-        }
+        if (currentVerseFullTextRef.current && wordsToMark) return performHighlight(wordsToMark);
     }
 
-    // 1c. Check for Unmark command
-    const unmarkMatch = command.match(/\b(remove the word|unmark the word|clear the word|unmark|remove highlight|unhighlight|delete mark|on mark|off mark|unmar|clear)\b\s+(.+)\b/i);
+    // ── H. UNMARK WORD (FR-3.21) ─────────────────────────────────────────────
+    const unmarkMatch = command.match(/\b(remove the word|unmark the word|clear the word|unmark|remove highlight|unhighlight|delete mark|on mark|off mark|unmar)\b\s+(.+)\b/i);
     if (unmarkMatch) {
         const wordsToUnmark = unmarkMatch[2].trim();
-        if (currentVerseFullTextRef.current && wordsToUnmark) {
-            return performUnmark(wordsToUnmark);
-        }
+        if (currentVerseFullTextRef.current && wordsToUnmark) return performUnmark(wordsToUnmark);
     }
 
-    // 1d. Check for Clear highlights command
-    if (command.includes('clear highlights') || command.includes('unmark all')) {
+    // ── I. CLEAR ALL HIGHLIGHTS (FR-3.21) ───────────────────────────────────
+    if (/\b(clear highlights|unmark all|remove all highlights|clear all marks)\b/i.test(command)) {
         if (currentVerseTitleRef.current) {
             highlightCacheRef.current[currentVerseTitleRef.current] = { words: {}, ranges: [] };
             updateDisplay();
-            return;
+            ok('Highlights cleared');
         }
+        return;
     }
 
-    // 1b. Check for relative navigation commands
-    if (command.includes('next') || command.includes('forward')) {
-        if (currentRefStateRef.current) {
-            return navigateRelative(1);
-        }
+    // ── J. NEXT / PREVIOUS VERSE (FR-3.14) ──────────────────────────────────
+    // Must check AFTER timer/queue so "next item" doesn't match here
+    if (/\b(next verse|next one|forward|go forward)\b/i.test(command) ||
+        (command === 'next' && currentRefStateRef.current)) {
+        if (currentRefStateRef.current) return navigateRelative(1);
     }
-    if (command.includes('previous') || command.includes('back') || command.includes('last')) {
-        if (currentRefStateRef.current) {
-            return navigateRelative(-1);
-        }
+    if (/\b(previous verse|previous|go back|last verse|back one)\b/i.test(command)) {
+        if (currentRefStateRef.current) return navigateRelative(-1);
     }
+
+
 
     let matchedBook = null;
     let remainingText = "";
@@ -572,6 +868,7 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
     setDebugText(`[1/4] Target: "${command}" (Auto: ${isAuto})`);
 
     const bookAliases = {
+        // Standard abbreviations
         'gen': 'Genesis', 'ex': 'Exodus', 'lev': 'Leviticus', 'num': 'Numbers', 'deut': 'Deuteronomy',
         'josh': 'Joshua', 'judg': 'Judges', 'sam': 'Samuel', 'kings': 'Kings', 'chron': 'Chronicles',
         'ps': 'Psalms', 'psalm': 'Psalms', 'prov': 'Proverbs', 'eccl': 'Ecclesiastes', 'isa': 'Isaiah',
@@ -580,7 +877,25 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
         'hag': 'Haggai', 'zech': 'Zechariah', 'mal': 'Malachi', 'matt': 'Matthew', 'rom': 'Romans',
         'cor': 'Corinthians', 'gal': 'Galatians', 'eph': 'Ephesians', 'phil': 'Philippians',
         'col': 'Colossians', 'thess': 'Thessalonians', 'tim': 'Timothy', 'tit': 'Titus',
-        'philem': 'Philemon', 'heb': 'Hebrews', 'jam': 'James', 'pet': 'Peter', 'rev': 'Revelation'
+        'philem': 'Philemon', 'heb': 'Hebrews', 'jam': 'James', 'pet': 'Peter', 'rev': 'Revelation',
+        // FR-3.15: Common mispronunciations / regional variants
+        'revelations': 'Revelation',     // "Revelations" → Revelation
+        'revelation': 'Revelation',
+        'sams': 'Psalms',                // "Sams" → Psalms
+        'filemon': 'Philemon',           // "Filemon" → Philemon
+        'philemon': 'Philemon',
+        'deutronomy': 'Deuteronomy',     // dropped vowel
+        'deuteronomy': 'Deuteronomy',
+        'isaiah': 'Isaiah',
+        'genisis': 'Genesis',            // common spelling error
+        'mathew': 'Matthew',             // single 't'
+        'corinthian': 'Corinthians',
+        'ephesian': 'Ephesians',
+        'philippian': 'Philippians',
+        'thessalonian': 'Thessalonians',
+        'colossian': 'Colossians',
+        'hebrews': 'Hebrews',
+        'obadiah': 'Obadiah',
     };
     
     // Check for aliases before formal match
@@ -676,7 +991,10 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
             if (indices.size > 0) {
               const sortedIndices = Array.from(indices).sort((a,b) => a-b);
               const resultText = sortedIndices.map(i => verses[i] || "").join(' ');
-              setDebugText(`[4/4] Sending to screens: ${verseRef}`);
+              setDebugText(`✅ Sent: ${verseRef}`);
+              pushVoiceEvent(`✅ Displayed: ${verseRef}`);
+              playFeedback('success');
+              setDidYouMean(null); // clear any previous suggestion
               
               // Track current state for relative navigation and highlighting
               currentVerseTitleRef.current = verseRef;
@@ -717,7 +1035,19 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
     } else if (matchedBook) {
        setDebugText(`Error: Could not find numbers in [${remainingText}]`);
     } else {
-       setDebugText(`Error: No book matched in [${command}]`);
+       // FR-3.19: "Did you mean?" — find closest book by Levenshtein
+       const firstWord = command.split(' ')[0];
+       let bestCandidate = null;
+       let bestDist = Infinity;
+       for (const b of booksRef.current) {
+         const dist = levenshtein(firstWord, b.name.toLowerCase());
+         if (dist < bestDist) { bestDist = dist; bestCandidate = b.name; }
+       }
+       const suggestion = bestDist <= 5 ? bestCandidate : null;
+       setDebugText(`No book matched in [${command}]${suggestion ? ` — did you mean ${suggestion}?` : ''}`);
+       pushVoiceEvent(`❌ No book: "${command}"`);
+       playFeedback('error');
+       if (suggestion) setDidYouMean({ text: command, candidate: suggestion });
     }
   };
 
@@ -836,7 +1166,7 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
 
     // 2. Find fuzzy matches
     const startMatch = getFuzzyMatch(startVocal, text);
-    const isToEnd = endVocal.match(/\b(the end|last|last word|the last)\b/i);
+    const isToEnd = !endVocal || (endVocal && endVocal.match(/\b(the end|last|last word|the last)\b/i));
     const endMatch = isToEnd ? null : getFuzzyMatch(endVocal, text);
 
     if (!startMatch || (!endMatch && !isToEnd)) {
@@ -1113,42 +1443,89 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
         </div>
       </div>
 
-      {/* Global Voice Console - Fixed at bottom for debugging */}
-      <div className="fixed bottom-0 left-0 right-0 h-8 bg-black/90 border-t border-white/10 flex items-center px-4 gap-4 z-[9999] font-mono text-[10px] pointer-events-none">
-          <div className="flex items-center gap-2 border-r border-white/10 pr-4">
-              <div className={`w-2 h-2 rounded-full ${
-                voiceStatus === 'ready' ? 'bg-green-500' : 
-                voiceStatus === 'listening' ? 'bg-red-500 animate-pulse' : 
-                voiceStatus === 'transcribing' ? 'bg-blue-500 animate-spin' : 
-                voiceStatus === 'error' ? 'bg-red-700' : 'bg-yellow-500'
-              }`} />
-              <span className="text-white/70 uppercase">Status: {voiceStatus}</span>
+      {/* FR-3.19: Did You Mean? Banner */}
+      {didYouMean && (
+        <div className="fixed bottom-8 left-0 right-0 flex items-center justify-center z-[9998] pointer-events-auto">
+          <div className="flex items-center gap-3 bg-amber-500/20 border border-amber-500/50 rounded-xl px-5 py-2 shadow-lg backdrop-blur-sm font-mono text-xs text-amber-300">
+            <span className="text-amber-400">❓</span>
+            <span>Did you mean <strong className="text-white">{didYouMean.candidate}</strong>?</span>
+            <button
+              onClick={() => { handleVoiceCommand(`${didYouMean.candidate} ${didYouMean.text.replace(didYouMean.text.split(' ')[0], '').trim()}`, true); setDidYouMean(null); }}
+              className="bg-amber-500 text-black px-3 py-0.5 rounded-lg text-[10px] font-bold hover:bg-amber-400 transition-colors"
+            >Yes</button>
+            <button
+              onClick={() => setDidYouMean(null)}
+              className="text-white/40 hover:text-white/70 transition-colors"
+            >Dismiss</button>
           </div>
-          
-          <div className="flex-1 flex gap-4 overflow-hidden">
-               <div className="flex items-center gap-1 min-w-[80px] border-r border-white/5 pr-4">
-                  <span className={`text-[8px] px-1 rounded ${isSpeakingUI ? 'bg-green-500 text-black' : 'bg-white/10 text-white/30'}`}>
-                    {isSpeakingUI ? 'VOICE' : 'WAITING'}
-                  </span>
-                  <span className="text-white/30 uppercase text-[8px] ml-1">vol: {(rmsVolume * 100).toFixed(1)}%</span>
-               </div>
-              <div className="text-blue-400 whitespace-nowrap">
-                  <span className="text-white/30 mr-1 italic underline">HEARD:</span>
-                  {lastTranscript || "None"}
-              </div>
-               <div className="text-yellow-400 whitespace-nowrap border-x border-white/5 px-4 mx-2">
-                  <span className="text-white/30 mr-1 italic">CONTEXT:</span>
-                  {activeVerseContext || "NONE"}
-              </div>
-              <div className="text-red-400 whitespace-nowrap overflow-hidden text-ellipsis">
-                  <span className="text-white/30 mr-1">LOG:</span>
-                  {debugText || "Idle"}
-              </div>
+        </div>
+      )}
+
+      {/* FR-3.25: Global Voice Console - Fixed at bottom */}
+      <div className="fixed bottom-0 left-0 right-0 bg-black/95 border-t border-white/10 z-[9999] font-mono">
+        {/* Main status row */}
+        <div className="flex items-center h-8 px-4 gap-4 pointer-events-none">
+          {/* Engine status */}
+          <div className="flex items-center gap-2 border-r border-white/10 pr-4 flex-shrink-0">
+            <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+              voiceStatus === 'ready' ? 'bg-green-500' :
+              voiceStatus === 'listening' ? 'bg-red-500 animate-pulse' :
+              voiceStatus === 'transcribing' ? 'bg-blue-500 animate-ping' :
+              voiceStatus === 'error' ? 'bg-red-700' : 'bg-yellow-500 animate-pulse'
+            }`} />
+            <span className="text-white/70 uppercase text-[10px]">AI: {voiceStatus}</span>
           </div>
 
-          <div className="text-white/30 whitespace-nowrap">
-              BOOKS: {books.length} | ID: {books.length > 0 ? books[0].id : "N/A"}
+          {/* VAD + volume */}
+          <div className="flex items-center gap-2 border-r border-white/5 pr-4 flex-shrink-0">
+            <span className={`text-[8px] px-1.5 rounded font-bold ${
+              isSpeakingUI ? 'bg-green-500 text-black' : 'bg-white/10 text-white/30'
+            }`}>{isSpeakingUI ? 'VOICE' : 'WAIT'}</span>
+            <span className="text-white/30 text-[9px]">VOL {(rmsVolume * 100).toFixed(0)}%</span>
           </div>
+
+          {/* Confidence badge */}
+          {lastConfidence !== null && (
+            <div className="flex items-center gap-1 border-r border-white/5 pr-4 flex-shrink-0">
+              <span className="text-white/30 text-[9px]">CONF</span>
+              <span className={`text-[9px] font-bold ${
+                lastConfidence >= CONFIDENCE_THRESHOLD ? 'text-green-400' : 'text-red-400'
+              }`}>{(lastConfidence * 100).toFixed(0)}%</span>
+            </div>
+          )}
+
+          {/* HEARD */}
+          <div className="flex items-center gap-1 border-r border-white/5 pr-4 min-w-0 flex-shrink">
+            <span className="text-white/30 text-[9px] italic flex-shrink-0">HEARD:</span>
+            <span className="text-blue-400 text-[9px] truncate">{lastTranscript || '—'}</span>
+          </div>
+
+          {/* CONTEXT */}
+          <div className="flex items-center gap-1 border-r border-white/5 pr-4 flex-shrink-0">
+            <span className="text-white/30 text-[9px] italic">CTX:</span>
+            <span className="text-yellow-400 text-[9px]">{activeVerseContext || 'NONE'}</span>
+          </div>
+
+          {/* LOG */}
+          <div className="flex-1 overflow-hidden">
+            <span className="text-white/20 text-[9px] mr-1">LOG:</span>
+            <span className="text-red-400 text-[9px] truncate">{debugText || 'Idle'}</span>
+          </div>
+
+          {/* Books count */}
+          <div className="text-white/20 text-[9px] flex-shrink-0">BOOKS: {books.length}</div>
+        </div>
+
+        {/* Event log strip — FR-3.25 last 10 events */}
+        {voiceEvents.length > 0 && (
+          <div className="border-t border-white/5 px-4 py-0.5 flex items-center gap-3 overflow-x-auto pointer-events-none">
+            {voiceEvents.slice(0, 5).map((ev, i) => (
+              <span key={i} className={`text-[8px] whitespace-nowrap ${
+                i === 0 ? 'text-white/60' : 'text-white/20'
+              }`}>{ev}</span>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Connect Modal */}
