@@ -17,7 +17,13 @@ contextBridge.exposeInMainWorld("electron", {
   Bible: {
     getBooks: () => ipcRenderer.invoke('bible-get-books'),
     getChapter: (version, bookId, chapter) => ipcRenderer.invoke('bible-get-chapter', { version, bookId, chapter }),
-    sync: (state) => ipcRenderer.send('bible-sync', state)
+    sync: (state) => ipcRenderer.send('bible-sync', state),
+    /** Pass 3 — keyword content search (Smart Bible Matcher) */
+    searchVerses: (query, version, limit) => ipcRenderer.invoke('bible-search-verses', { query, version: version || 'kjv', limit: limit || 5 }),
+  },
+  Voice: {
+    /** Returns { running: bool, port: number } for debug bar */
+    getSidecarStatus: () => ipcRenderer.invoke('voice-sidecar-status'),
   },
   Presentation: {
     setContent: (content) => ipcRenderer.send("activate_set_content", content),

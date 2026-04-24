@@ -2,6 +2,108 @@ const { app, BrowserWindow, Menu, screen, ipcMain, session, dialog } = require("
 const path = require("path");
 const fs = require("fs");
 const yauzl = require("yauzl");
+const { spawn, execSync } = require("child_process");
+
+// ── Python Voice Sidecar ──────────────────────────────────────────────────────
+// Spawns voice_server/server.py as a local HTTP server on 127.0.0.1:5421.
+// Falls back gracefully if Python is not installed (WASM engine activates).
+let voiceSidecarProcess = null;
+const SIDECAR_PORT = 5421;
+const SIDECAR_SCRIPT = path.join(__dirname, 'voice_server', 'server.py');
+
+function detectPython() {
+  // 1. Prefer the isolated venv we created in voice_server/.venv — packages guaranteed present
+  const venvPython = path.join(__dirname, 'voice_server', '.venv', 'bin', 'python');
+  if (fs.existsSync(venvPython)) {
+    try {
+      const ver = execSync(`"${venvPython}" --version 2>&1`, { timeout: 3000 }).toString().trim();
+      console.log(`[Sidecar] Using venv Python: ${ver}`);
+      return venvPython;
+    } catch (_) {}
+  }
+
+  // 2. Fall back to system Python 3.9–3.13 (faster-whisper compatible range)
+  const candidates = ['python3.13', 'python3.12', 'python3.11', 'python3.10', 'python3.9', 'python3', 'python'];
+  for (const cmd of candidates) {
+    try {
+      const ver = execSync(`${cmd} --version 2>&1`, { timeout: 3000 }).toString().trim();
+      const m = ver.match(/Python 3\.(\d+)/);
+      if (!m) continue;
+      const minor = parseInt(m[1], 10);
+      if (minor >= 9 && minor <= 13) {
+        console.log(`[Sidecar] Found compatible system Python ${cmd}: ${ver}`);
+        return cmd;
+      }
+      if (minor >= 14) {
+        console.warn(`[Sidecar] ${cmd} (${ver}) is incompatible with faster-whisper. Run: python3.12 -m venv voice_server/.venv && voice_server/.venv/bin/pip install -r voice_server/requirements.txt`);
+      }
+    } catch (_) {}
+  }
+  return null;
+}
+
+function startVoiceSidecar() {
+  const pythonCmd = detectPython();
+  if (!pythonCmd) {
+    console.warn('[Sidecar] Python 3.9+ not found — voice engine will use WASM fallback');
+    return;
+  }
+  if (!fs.existsSync(SIDECAR_SCRIPT)) {
+    console.warn('[Sidecar] voice_server/server.py not found — skipping');
+    return;
+  }
+
+  const modelCacheDir = path.join(app.getPath('userData'), 'ocs_whisper_cache');
+  if (!fs.existsSync(modelCacheDir)) fs.mkdirSync(modelCacheDir, { recursive: true });
+
+  voiceSidecarProcess = spawn(pythonCmd, [SIDECAR_SCRIPT], {
+    env: { ...process.env, OCS_MODEL_CACHE: modelCacheDir },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  voiceSidecarProcess.stdout.on('data', (d) => process.stdout.write(`[PY] ${d}`));
+  voiceSidecarProcess.stderr.on('data', (d) => process.stderr.write(`[PY ERR] ${d}`));
+
+  voiceSidecarProcess.on('exit', (code, signal) => {
+    console.log(`[Sidecar] Exited (code=${code}, signal=${signal})`);
+    voiceSidecarProcess = null;
+
+    if (app.isQuitting) return;
+
+    if (code !== 0) {
+      app.sidecarRestartCount++;
+      if (app.sidecarRestartCount >= MAX_SIDECAR_RESTARTS) {
+        console.error(
+          `[Sidecar] ❌ Stopped after ${MAX_SIDECAR_RESTARTS} failed attempts.\n` +
+          `[Sidecar] ⚠️  Missing Python packages. Run this in Terminal:\n` +
+          `[Sidecar]    python3 -m pip install numpy flask scipy noisereduce faster-whisper\n` +
+          `[Sidecar] Voice engine will use WASM fallback until packages are installed.`
+        );
+        return; // Stop retrying
+      }
+      // Exponential back-off: 5s, 10s, 20s...
+      const delay = Math.min(5000 * Math.pow(2, app.sidecarRestartCount - 1), 60000);
+      console.warn(`[Sidecar] Restarting in ${delay / 1000}s (attempt ${app.sidecarRestartCount}/${MAX_SIDECAR_RESTARTS})...`);
+      setTimeout(() => {
+        if (!app.isQuitting) startVoiceSidecar();
+      }, delay);
+    } else {
+      // Clean exit (code 0) — reset counter
+      app.sidecarRestartCount = 0;
+    }
+  });
+
+  // Reset restart counter after process has been alive for 10s (healthy start)
+  const healthTimer = setTimeout(() => { app.sidecarRestartCount = 0; }, 10000);
+  voiceSidecarProcess.once('exit', () => clearTimeout(healthTimer));
+
+  console.log(`[Sidecar] Started (PID: ${voiceSidecarProcess.pid}) on port ${SIDECAR_PORT}`);
+}
+
+app.isQuitting = false;
+app.sidecarRestartCount = 0;
+const MAX_SIDECAR_RESTARTS = 5; // Stop retrying if packages are missing
+// ─────────────────────────────────────────────────────────────────────────────
 
 // Media Dictionary Setup
 const mediaPath = path.join(app.getPath('userData'), 'media');
@@ -422,6 +524,36 @@ ipcMain.handle("bible-get-chapter", async (event, { version, bookId, chapter }) 
     );
   });
 });
+
+// ── Bible Full-Text Search (Pass 3 of Smart Bible Matcher) ───────────────────
+// Searches verse text for keywords, returns top N matches with book/chapter/verse.
+ipcMain.handle("bible-search-verses", async (event, { query, version, limit }) => {
+  const v = version || 'kjv';
+  const n = Math.min(limit || 5, 20);
+  // Build a LIKE pattern for each word (up to 4 keywords)
+  const words = query.trim().split(/\s+/).filter(w => w.length >= 3).slice(0, 4);
+  if (words.length === 0) return [];
+
+  // Build SQL: all keywords must appear (AND logic via chained LIKE)
+  const conditions = words.map(() => "text LIKE ?").join(" AND ");
+  const params = words.map(w => `%${w}%`);
+
+  return new Promise((resolve, reject) => {
+    db.all(
+      `SELECT book_id, chapter, verse, text FROM verses WHERE version = ? AND ${conditions} ORDER BY book_id, chapter, verse LIMIT ?`,
+      [v, ...params, n],
+      (err, rows) => {
+        if (err) reject(err);
+        else resolve(rows);
+      }
+    );
+  });
+});
+
+// ── Sidecar health check (for debug bar in renderer) ─────────────────────────
+ipcMain.handle("voice-sidecar-status", async () => {
+  return { running: voiceSidecarProcess !== null && !voiceSidecarProcess.killed, port: SIDECAR_PORT };
+});
 // -------------------------------------
 
 app.whenReady().then(() => {
@@ -438,7 +570,19 @@ app.whenReady().then(() => {
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
 
+  // Start Python voice sidecar (non-blocking — app stays usable while it loads)
+  startVoiceSidecar();
+
   createWindows();
+});
+
+app.on("before-quit", () => {
+  app.isQuitting = true;
+  // Cleanly terminate the Python voice sidecar
+  if (voiceSidecarProcess && !voiceSidecarProcess.killed) {
+    console.log('[Sidecar] Shutting down Python voice server...');
+    voiceSidecarProcess.kill('SIGTERM');
+  }
 });
 
 app.on("window-all-closed", () => {

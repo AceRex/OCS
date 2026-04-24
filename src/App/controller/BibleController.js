@@ -121,6 +121,18 @@ export default function BibleController() {
     // Pending selection for remote sync
     const pendingSelection = useRef(null);
 
+    const scrollToVerse = (indices) => {
+        if (indices && indices.length > 0) {
+            setTimeout(() => {
+                const minIndex = Math.min(...indices);
+                const el = document.getElementById(`verse-${minIndex}`);
+                if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            }, 50);
+        }
+    };
+
     // Fetch Verses when selection changes
     useEffect(() => {
         if (books.length === 0) return;
@@ -133,12 +145,18 @@ export default function BibleController() {
                 setVerses(newVerses);
                 // Handle pending remote selection
                 if (pendingSelection.current) {
-                    const { bookIndex, chapterIndex, indices } = pendingSelection.current;
+                    const { bookIndex, chapterIndex, indices, fromVoice } = pendingSelection.current;
                     // Verify we are on the right chapter (async race check)
                     if (bookIndex === selectedBookIndex && chapterIndex === selectedChapterIndex) {
                         const newSet = new Set(indices);
                         setSelectedVerseIndices(newSet);
-                        presentVerses(newSet, newVerses);
+                        
+                        // Only auto-present if it didn't come from voice,
+                        // because voice already pushes its own custom HTML with highlights
+                        if (!fromVoice) {
+                            presentVerses(newSet, newVerses);
+                        }
+                        scrollToVerse(indices);
                     }
                     pendingSelection.current = null;
                 }
@@ -181,12 +199,42 @@ export default function BibleController() {
                         setSelectedVerseIndices(newSet);
                         // Pass 'verses' explicitly to ensure we use current state closure
                         presentVerses(newSet, verses);
+                        scrollToVerse(indices);
                     }
                 }
             });
             return () => removeListener();
         }
-    }, [selectedVersion, selectedBookIndex, selectedChapterIndex, verses]); // Added verses to closure to be safe
+    }, [selectedVersion, selectedBookIndex, selectedChapterIndex, verses]);
+
+    // Listen for Voice Commands (from Topbar.js)
+    useEffect(() => {
+        const handleVoiceSync = (e) => {
+            const { version, bookIndex, chapterIndex, indices } = e.detail;
+            
+            const needsNav = 
+                (version && version !== selectedVersion) ||
+                (bookIndex !== selectedBookIndex) ||
+                (chapterIndex !== selectedChapterIndex);
+
+            if (needsNav) {
+                if (version) setSelectedVersion(version);
+                setSelectedBookIndex(bookIndex);
+                setSelectedChapterIndex(chapterIndex);
+                // Queue selection to happen after the verses fetch
+                pendingSelection.current = { bookIndex, chapterIndex, indices, fromVoice: true };
+            } else {
+                // We are already on the correct page, just update selection in UI
+                const newSet = new Set(indices);
+                setSelectedVerseIndices(newSet);
+                // Do NOT call presentVerses here, because Topbar already pushed the HTML directly.
+                scrollToVerse(indices);
+            }
+        };
+
+        window.addEventListener('voice-bible-sync', handleVoiceSync);
+        return () => window.removeEventListener('voice-bible-sync', handleVoiceSync);
+    }, [selectedVersion, selectedBookIndex, selectedChapterIndex]);
 
 
     const currentBook = books[selectedBookIndex];

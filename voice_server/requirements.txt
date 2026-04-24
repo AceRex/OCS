@@ -1,0 +1,7 @@
+# OCS Voice Sidecar — Python dependencies
+# Install with: pip3 install -r requirements.txt
+faster-whisper
+noisereduce
+numpy
+flask
+scipy

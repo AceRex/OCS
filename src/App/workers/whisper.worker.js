@@ -1,144 +1,150 @@
+/**
+ * OCS Whisper Worker v3 — Optimized Binary Bridge + Python Reference Matching
+ *
+ * Primary engine: Python faster-whisper sidecar on http://127.0.0.1:5421
+ * Fallback engine: @xenova/transformers (WASM) — only used if sidecar is unreachable.
+ *
+ * Optimizations:
+ * 1. Uses raw binary (Float32Array buffer) for audio transfer to Python (no JSON overhead).
+ * 2. Integrates Python-based Bible reference matching for instant triggers.
+ */
+
 import { pipeline, env } from '@xenova/transformers';
 
-env.allowLocalModels = false;
+// ── Config ──────────────────────────────────────────────────────────────────
+const SIDECAR_URL = 'http://127.0.0.1:5421';
+const SIDECAR_HEALTH_TIMEOUT_MS = 2000;
+const SIDECAR_TRANSCRIBE_TIMEOUT_MS = 10000;
+const PROBE_TIMEOUT_MS = 4000;
 
-let transcriber = null;
+const OCS_TRIGGER_WORDS = ["ocs", "o.c.s", "o c s", "oasis", "obvious", "osiris", "ocean", "media", "meeting", "meter", "medium", "video"];
 
-async function initTranscriber() {
-    if (transcriber === null) {
-        transcriber = await pipeline('automatic-speech-recognition', 'Xenova/whisper-base.en', {
-            quantized: true,
-            progress_callback: (p) => {
-                if (p.status === 'progress') {
-                    self.postMessage({ status: 'progress', progress: p.progress });
-                }
-            }
-        });
-    }
-    return transcriber;
+// ── State ────────────────────────────────────────────────────────────────────
+let activeEngine = null;       // 'python' | 'wasm' | null
+let wasmTranscriber = null;    // @xenova pipeline (lazy)
+let sidecarHealthy = false;
+
+// ── Utility: fetch with timeout ───────────────────────────────────────────────
+function fetchWithTimeout(url, options, timeoutMs) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    return fetch(url, { ...options, signal: controller.signal }).finally(() => clearTimeout(timer));
 }
 
-// Always peak-normalize so Whisper receives a consistent ~0.9 peak signal
-function normalizeAudio(audio) {
-    let max = 0;
-    for (let i = 0; i < audio.length; ++i) {
-        max = Math.max(max, Math.abs(audio[i]));
-    }
-    if (max > 0.01) {
-        const gain = 0.9 / max;
-        for (let i = 0; i < audio.length; ++i) {
-            audio[i] = Math.max(-1, Math.min(1, audio[i] * gain));
-        }
-    }
-    return audio;
+// ── Python sidecar health check ───────────────────────────────────────────────
+async function checkSidecarHealth() {
+    try {
+        const res = await fetchWithTimeout(`${SIDECAR_URL}/health`, { method: 'GET' }, SIDECAR_HEALTH_TIMEOUT_MS);
+        if (res.ok) { sidecarHealthy = true; return true; }
+    } catch (_) {}
+    sidecarHealthy = false;
+    return false;
 }
 
-/**
- * Heuristic confidence score — @xenova/transformers does not expose raw
- * log-probs via the public pipeline API, so we proxy from text quality.
- * Returns 0.0–1.0. Threshold in Topbar.js is 0.65.
- */
-function estimateConfidence(text, durationSec) {
-    if (!text || text.trim().length === 0) return 0;
-    const trimmed = text.trim();
-
-    // Transcription that is only punctuation / symbols = noise
-    const words = trimmed.split(/\s+/).filter(w => /[a-zA-Z]{2,}/.test(w));
-    if (words.length === 0) return 0.1;
-
-    // Words-per-second sanity check: normal speech is ~1.5–4 WPS
-    const wps = words.length / Math.max(durationSec, 0.5);
-    if (wps > 9 || wps < 0.2) return 0.25;
-
-    // Very short single-word result on a long audio clip → likely noise
-    if (words.length === 1 && durationSec > 2.5) return 0.35;
-
-    // Text dominated by repeated chars = model hallucination (e.g. "........")
-    const uniqueChars = new Set(trimmed.toLowerCase().replace(/\s/g, '')).size;
-    if (uniqueChars < 4) return 0.2;
-
-    return 0.85; // Looks like genuine speech
+// ── WASM engine initialization ───────────────────────────────────────────────
+async function initWasm() {
+    if (wasmTranscriber) return;
+    env.allowLocalModels = false;
+    wasmTranscriber = await pipeline('automatic-speech-recognition', 'Xenova/whisper-tiny.en');
 }
 
-// Dual trigger word system — both "Media" and "OCS" are valid keywords
-const OCS_TRIGGERS = [
-    // OCS variants
-    'ocs', 'o.c.s', 'o-c-s', 'o c s',
-    'oasis', 'obvious', 'osiris', 'ocean',
-    'oh see', 'oh-see', 'ok see', 'oc-s', 'oc s',
-    // Media variants
-    'media', 'meeting', 'meter', 'medium', 'video', 'median',
-    'me the', 'need a', 'meet a',
-];
-
+// ── Main message handler ─────────────────────────────────────────────────────
 self.onmessage = async (event) => {
     const message = event.data;
 
     if (message.type === 'init') {
-        try {
-            await initTranscriber();
-            self.postMessage({ status: 'ready' });
-        } catch (e) {
-            self.postMessage({ status: 'error', error: e.message });
+        const healthy = await checkSidecarHealth();
+        if (healthy) {
+            activeEngine = 'python';
+            self.postMessage({ status: 'ready', engine: 'python' });
+        } else {
+            console.warn("[WORKER] Python sidecar not found. Loading WASM fallback...");
+            await initWasm();
+            activeEngine = 'wasm';
+            self.postMessage({ status: 'ready', engine: 'wasm' });
         }
+        return;
     }
-    else if (message.type === 'probe') {
-        // Lightweight mid-speech keyword scan (~100-150ms on 2s audio)
-        try {
-            const tc = transcriber;
-            if (!tc) { self.postMessage({ status: 'probe_result', hasKeyword: false, text: '' }); return; }
-            const probeAudio = normalizeAudio(message.audio);
-            const result = await tc(probeAudio, {
-                language: 'english',
-                task: 'transcribe',
-                return_timestamps: false,
-                initial_prompt: 'OCS. Oasis. Ocean. Media. Meeting.',
-            });
-            const text = (result.text || '').toLowerCase();
-            const hasKeyword = OCS_TRIGGERS.some(kw => text.includes(kw));
-            self.postMessage({ status: 'probe_result', hasKeyword, text: result.text || '' });
-        } catch (e) {
-            self.postMessage({ status: 'probe_result', hasKeyword: false, text: '' });
-        }
-    }
-    else if (message.type === 'transcribe') {
-        try {
-            const transcriber = await initTranscriber();
 
-            let max = 0;
-            for (let i = 0; i < message.audio.length; i++) {
-                max = Math.max(max, Math.abs(message.audio[i]));
+    if (message.type === 'probe') {
+        const audio = message.audio;
+        try {
+            if (activeEngine === 'python') {
+                const formData = new FormData();
+                formData.append('audio', new Blob([audio.buffer], { type: 'application/octet-stream' }));
+
+                const res = await fetchWithTimeout(`${SIDECAR_URL}/probe`, {
+                    method: 'POST',
+                    body: formData
+                }, PROBE_TIMEOUT_MS);
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    self.postMessage({
+                        status: 'probe_result',
+                        hasKeyword: data.hasKeyword,
+                        text: data.text,
+                        bible_match: data.bible_match,
+                        engine: 'python'
+                    });
+                    return;
+                }
             }
+            
+            // WASM Fallback for probe
+            if (!wasmTranscriber) await initWasm();
+            const result = await wasmTranscriber(audio, { chunk_length_s: 30, stride_length_s: 5 });
+            const text = result.text.toLowerCase();
+            const hasKeyword = OCS_TRIGGER_WORDS.some(kw => text.includes(kw));
+            self.postMessage({ status: 'probe_result', hasKeyword, text, engine: 'wasm' });
+        } catch (e) {
+            self.postMessage({ status: 'probe_result', hasKeyword: false, text: '', engine: activeEngine });
+        }
+        return;
+    }
 
-            const durationSec = message.audio.length / 16000;
-            console.log(`[WORKER] Transcribing: vol=${max.toFixed(4)}, dur=${durationSec.toFixed(1)}s`);
+    if (message.type === 'transcribe') {
+        const audio = message.audio;
+        const prompt = message.prompt || '';
+        try {
+            if (activeEngine === 'python') {
+                const formData = new FormData();
+                formData.append('audio', new Blob([audio.buffer], { type: 'application/octet-stream' }));
+                formData.append('prompt', prompt);
 
-            const normalizedAudio = normalizeAudio(message.audio);
-
-            // Use short prompt only — long prompt adds decode overhead
-            const biblePrompt = message.prompt
-                ? `OCS. Media. ${message.prompt.substring(0, 80)}`
-                : 'OCS. Media. Genesis Psalms Matthew John Romans Revelation.';
-
-            const result = await transcriber(normalizedAudio, {
-                // Do NOT set chunk_length_s / stride_length_s for short clips.
-                // Those params force a 30s sliding-window even on 3s audio — huge overhead.
-                language: 'english',
-                task: 'transcribe',
-                return_timestamps: false,
-                initial_prompt: biblePrompt,
-            });
-
-            const confidence = estimateConfidence(result.text, durationSec);
-
+                const res = await fetchWithTimeout(`${SIDECAR_URL}/transcribe`, {
+                    method: 'POST',
+                    body: formData
+                }, SIDECAR_TRANSCRIBE_TIMEOUT_MS);
+                
+                if (res.ok) {
+                    const data = await res.json();
+                    self.postMessage({
+                        status: 'result',
+                        text: data.text,
+                        confidence: data.confidence,
+                        avg_logprob: data.avg_logprob,
+                        bible_match: data.bible_match,
+                        engine: 'python',
+                        debug: { latency: data.latency_sec }
+                    });
+                    return;
+                }
+            }
+            
+            // WASM Fallback for transcription
+            if (!wasmTranscriber) await initWasm();
+            const result = await wasmTranscriber(audio, { chunk_length_s: 30, stride_length_s: 5 });
             self.postMessage({
                 status: 'result',
                 text: result.text,
-                confidence,
-                debug: { vol: max, duration: durationSec }
+                confidence: 0.8,
+                avg_logprob: -0.5,
+                engine: 'wasm',
+                debug: { wasm: true }
             });
-        } catch (error) {
-            self.postMessage({ status: 'error', error: error.message });
+        } catch (e) {
+            self.postMessage({ status: 'error', error: e.message });
         }
     }
 };

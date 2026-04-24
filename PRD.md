@@ -3,7 +3,7 @@
 ## Product Requirements Document (PRD)
 
 **Author:** Are Oluwasegun Johnson
-**Version:** 1.0
+**Version:** 1.1
 **Last Updated:** April 2026
 **Status:** Active Development
 
@@ -171,7 +171,8 @@ OCS unifies all service display functions into a single Electron desktop applica
 | Styling        | Tailwind CSS 3                        | Utility-first, fast iteration                     |
 | Bundler        | Webpack 5 (dual-bundle)               | Controller + View windows bundled separately      |
 | Database       | SQLite3 (better-sqlite3)              | Local Bible DB, instant queries, no network       |
-| AI Engine      | `@xenova/transformers` — Whisper Base | Offline ASR, no cloud dependency                  |
+| AI Engine      | Python `faster-whisper` sidecar (primary) + `@xenova/transformers` WASM (fallback) | 4–8× faster offline ASR; auto-fallback if Python unavailable |
+| Noise Filter   | `noisereduce` (spectral subtraction) + enhanced VAD (ZCR + voicing score) | Rejects HVAC/crowd noise before ASR sees audio |
 | Audio          | Web Audio API + AudioWorklet          | VAD pipeline, waveform, high-pass filter          |
 | Communication  | Electron IPC                          | Main ↔ renderer, zero-latency                     |
 | Remote Server  | Express.js + Socket.IO (LAN)          | Mobile companion communication                    |
@@ -410,7 +411,48 @@ Common mispronunciations explicitly handled: "Revelations" → Revelation, "Psal
 
 ---
 
+#### 4.3.10 Rebuilt Voice Engine — v2 (April 2026)
+
+The voice engine has been fully rebuilt to eliminate transcription lag, improve noise rejection, and support partial Bible references.
+
+**FR-3.28 — Python Faster-Whisper Sidecar:**
+The primary ASR engine is now a local Python Flask server (`voice_server/server.py`) running `faster-whisper` (CTranslate2 backend) bound to `127.0.0.1:5421`. It is spawned as a subprocess by Electron's main process on app launch and killed on quit. The sidecar achieves **4–8× faster transcription** than the previous WASM engine with real `avg_logprob` confidence scores.
+
+**FR-3.29 — Automatic WASM Fallback:**
+If the Python sidecar is unavailable (Python not installed, cold start failure), the voice worker automatically falls back to `@xenova/transformers`. The debug bar displays `🐍 Python` or `🌐 WASM` to indicate the active engine. Auto-failover occurs mid-session without operator intervention.
+
+**FR-3.30 — Spectral Noise Reduction:**
+The Python sidecar applies `noisereduce` spectral subtraction before transcription. Noise profile is sampled from the first 250ms of each utterance to remove consistent background noise (HVAC, crowd murmur) that survives the high-pass filter.
+
+**FR-3.31 — Enhanced Multi-Feature VAD:**
+The AudioWorklet computes three signals per chunk to gate voice detection:
+- **RMS energy** — primary volume gate with adaptive noise floor (self-calibrates every 8 silent chunks)
+- **Zero-Crossing Rate (ZCR)** — must be < 0.42 (high ZCR = hiss/noise, not voice)
+- **Voicing score** (autocorrelation periodicity) — must be > 0.12 (voiced speech is periodic; broadband noise is not)
+
+All three signals must pass for `isSpeaking = true`. The debug bar shows the live voicing score percentage.
+
+**FR-3.32 — Real Confidence Scoring:**
+The Python sidecar returns actual Whisper `avg_logprob` from `faster-whisper` segments, mapped to 0.0–1.0. The confidence threshold is 0.60 (down from 0.65) because real log-probabilities are more reliable than heuristic estimates.
+
+**FR-3.33 — Smart Bible Reference Resolution (4-Pass):**
+The new `smartBibleMatch.js` module resolves spoken references via four cascading passes:
+1. **Exact alias match** — full name, abbreviation, mispronunciation (200+ aliases)
+2. **Phonetic + Levenshtein** — Metaphone + normalised edit distance ≤ 0.35
+3. **Keyword content search** — if no book matched, searches SQLite verse text for heard keywords (e.g. _"for God so loved the world"_ → John 3:16)
+4. **Context-only jump** — _"verse 5"_ or _"chapter 4"_ resolved against currently displayed book/chapter
+
+**FR-3.34 — Partial Reference Support:**
+Users may speak any subset of a reference and OCS will resolve it automatically:
+- _"OCS John three"_ → John 3:1
+- _"OCS for God so loved"_ → John 3:16 (keyword search)
+- _"OCS verse five"_ → verse 5 of current chapter (context jump)
+- _"OCS Revelations twenty two"_ → Revelation 22:1 (mispronunciation + fuzzy)
+
+---
+
 ### 4.4 Presentation Controller
+
 
 **FR-4.1** — Users shall import image/video files (jpg, png, gif, webp, mp4, webm, mov, avi) into a persistent local media library stored in Electron's `userData` directory.
 

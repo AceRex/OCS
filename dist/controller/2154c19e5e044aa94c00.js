@@ -1,3 +1,5 @@
+"use strict";
+
 // AudioWorklet — Enhanced VAD with Spectral Energy Gating
 // Improvements over v1:
 //  1. Zero-Crossing Rate (ZCR): Human voice has moderate ZCR (~0.05-0.35).
@@ -29,9 +31,9 @@ class AudioProcessor extends AudioWorkletProcessor {
    * Voice: 0.05–0.35. Noise/hiss: > 0.40. Silence: near 0.
    */
   computeZCR(buffer) {
-    let crossings = 0;
-    for (let i = 1; i < buffer.length; i++) {
-      if ((buffer[i] >= 0) !== (buffer[i - 1] >= 0)) crossings++;
+    var crossings = 0;
+    for (var i = 1; i < buffer.length; i++) {
+      if (buffer[i] >= 0 !== buffer[i - 1] >= 0) crossings++;
     }
     return crossings / buffer.length;
   }
@@ -43,63 +45,53 @@ class AudioProcessor extends AudioWorkletProcessor {
    */
   computeVoicingScore(buffer) {
     // Only check a subset for performance (first 512 samples)
-    const N = Math.min(buffer.length, 512);
-    const maxLag = Math.min(N / 2, 160); // Up to ~100Hz at 16kHz
-    const minLag = 20; // ~800Hz — below typical voice, prevents noise peak
+    var N = Math.min(buffer.length, 512);
+    var maxLag = Math.min(N / 2, 160); // Up to ~100Hz at 16kHz
+    var minLag = 20; // ~800Hz — below typical voice, prevents noise peak
 
-    let r0 = 0;
-    for (let i = 0; i < N; i++) r0 += buffer[i] * buffer[i];
+    var r0 = 0;
+    for (var i = 0; i < N; i++) r0 += buffer[i] * buffer[i];
     if (r0 < 0.0001) return 0;
-
-    let maxR = 0;
-    for (let lag = minLag; lag < maxLag; lag++) {
-      let r = 0;
-      for (let i = 0; i < N - lag; i++) {
-        r += buffer[i] * buffer[i + lag];
+    var maxR = 0;
+    for (var lag = minLag; lag < maxLag; lag++) {
+      var r = 0;
+      for (var _i = 0; _i < N - lag; _i++) {
+        r += buffer[_i] * buffer[_i + lag];
       }
       if (r > maxR) maxR = r;
     }
-
     return Math.min(1, maxR / r0);
   }
-
   process(inputs, outputs, parameters) {
-    const input = inputs[0];
+    var input = inputs[0];
     if (!input || input.length === 0) return true;
-
-    const channelData = input[0];
-
-    for (let i = 0; i < channelData.length; i++) {
+    var channelData = input[0];
+    for (var i = 0; i < channelData.length; i++) {
       this.buffer[this.ptr++] = channelData[i];
-
       if (this.ptr >= this.bufferSize) {
         // ── 1. RMS Energy ────────────────────────────────────────────
-        let sum = 0;
-        for (let j = 0; j < this.buffer.length; j++) {
+        var sum = 0;
+        for (var j = 0; j < this.buffer.length; j++) {
           sum += this.buffer[j] * this.buffer[j];
         }
-        const rms = Math.sqrt(sum / this.buffer.length);
+        var rms = Math.sqrt(sum / this.buffer.length);
 
         // ── 2. Zero-Crossing Rate ────────────────────────────────────
-        const zcr = this.computeZCR(this.buffer);
+        var zcr = this.computeZCR(this.buffer);
 
         // ── 3. Voicing Score (periodicity) ───────────────────────────
-        const voicingScore = this.computeVoicingScore(this.buffer);
+        var voicingScore = this.computeVoicingScore(this.buffer);
 
         // ── 4. Adaptive noise floor update (during silence) ──────────
-        const isLikelySilent = rms < this.noiseFloor * 1.5;
+        var isLikelySilent = rms < this.noiseFloor * 1.5;
         if (isLikelySilent) {
           this.silenceChunkCount++;
           this.noiseFloorSamples.push(rms);
-
           if (this.silenceChunkCount >= this.NOISE_FLOOR_UPDATE_INTERVAL) {
             // Use median of recent silence samples as new noise floor
             this.noiseFloorSamples.sort((a, b) => a - b);
-            const newFloor = this.noiseFloorSamples[Math.floor(this.noiseFloorSamples.length / 2)];
-            this.noiseFloor = Math.max(
-              this.NOISE_FLOOR_MIN,
-              Math.min(this.NOISE_FLOOR_MAX, newFloor * 1.2)
-            );
+            var newFloor = this.noiseFloorSamples[Math.floor(this.noiseFloorSamples.length / 2)];
+            this.noiseFloor = Math.max(this.NOISE_FLOOR_MIN, Math.min(this.NOISE_FLOOR_MAX, newFloor * 1.2));
             this.silenceChunkCount = 0;
             this.noiseFloorSamples = [];
           }
@@ -109,24 +101,20 @@ class AudioProcessor extends AudioWorkletProcessor {
 
         // ── 5. Multi-feature VAD Decision ────────────────────────────
         // Primary: RMS must exceed the adaptive noise floor (with headroom)
-        const energyOk = rms > this.noiseFloor * 2.0;
+        var energyOk = rms > this.noiseFloor * 2.0;
 
         // Secondary: ZCR must be in the voice range (< 0.42)
         // High ZCR with low energy = white noise / hiss, not voice
-        const zcrOk = zcr < 0.42;
+        var zcrOk = zcr < 0.42;
 
         // Tertiary: Either voicing score is present OR energy is very strong
         // (loud transients — claps, door slams — get through but will be filtered
         //  by confidence gating in the whisper layer)
-        const periodicityOk = voicingScore > 0.12 || rms > this.noiseFloor * 6;
-
-        const isSpeaking = energyOk && zcrOk && periodicityOk;
+        var periodicityOk = voicingScore > 0.12 || rms > this.noiseFloor * 6;
+        var isSpeaking = energyOk && zcrOk && periodicityOk;
 
         // Compute a spectral confidence value for the debug bar
-        const spectralConfidence = isSpeaking
-          ? Math.min(1.0, (voicingScore * 0.5) + ((rms / (this.noiseFloor * 4)) * 0.5))
-          : 0;
-
+        var spectralConfidence = isSpeaking ? Math.min(1.0, voicingScore * 0.5 + rms / (this.noiseFloor * 4) * 0.5) : 0;
         this.port.postMessage({
           audio: this.buffer,
           isSpeaking,
@@ -134,9 +122,8 @@ class AudioProcessor extends AudioWorkletProcessor {
           zcr: Math.round(zcr * 100) / 100,
           voicingScore: Math.round(voicingScore * 100) / 100,
           spectralConfidence: Math.round(spectralConfidence * 100) / 100,
-          noiseFloor: Math.round(this.noiseFloor * 10000) / 10000,
+          noiseFloor: Math.round(this.noiseFloor * 10000) / 10000
         });
-
         this.ptr = 0;
         this.buffer = new Float32Array(this.bufferSize);
       }
@@ -144,5 +131,4 @@ class AudioProcessor extends AudioWorkletProcessor {
     return true;
   }
 }
-
 registerProcessor('audio-processor', AudioProcessor);

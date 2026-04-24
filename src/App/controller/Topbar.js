@@ -11,11 +11,63 @@ import {
 import { MdOutlineConnectedTv, MdOutlineResetTv } from "react-icons/md";
 import MobileConnectController from "./MobileConnectController";
 import { utilAction } from "../../Redux/state.jsx";
+import { smartBibleMatch, getBookSuggestions, wordNumbersToDigits, isLikelyBibleReference, phoneticCode, levenshtein } from "./smartBibleMatch.js";
+
+const TRANSLATION_MAP = {
+    'kjv': 'kjv', 'king james': 'kjv', 'king james version': 'kjv',
+    'bbe': 'bbe', 'basic english': 'bbe', 'bible basic english': 'bbe',
+    'asv': 'asv', 'american standard': 'asv',
+    'web': 'web', 'world english': 'web',
+    'net': 'net', 'new english': 'net',
+    'geneva': 'geneva',
+    'tyndale': 'tyndale',
+    'coverdale': 'coverdale',
+    'bishops': 'bishops', "bishop's": 'bishops',
+    'strongs': 'kjv_strongs', "strong's": 'kjv_strongs', 'kjv strongs': 'kjv_strongs',
+    'amp': 'amp', 'amplified': 'amp',
+};
+
+function resolveTranslation(requested) {
+    if (!requested) return null;
+    let reqLower = requested.toLowerCase().replace(/[.,:;!?]/g, '').trim();
+    // Common mishearings from whisper
+    reqLower = reqLower.replace(/\b(k j v|cage a v|kjv)\b/i, 'kjv');
+    
+    // 1. Exact or partial string match
+    let versionKey = TRANSLATION_MAP[reqLower] || Object.keys(TRANSLATION_MAP).find(k => reqLower.includes(k) || k.includes(reqLower));
+    
+    // 2. Phonetic & Fuzzy fallback
+    if (!versionKey) {
+        const reqPhonetic = phoneticCode(reqLower.replace(/\s/g, ''));
+        let bestDistance = Infinity;
+        
+        for (const key of Object.keys(TRANSLATION_MAP)) {
+            // Phonetic Match
+            const keyPhonetic = phoneticCode(key.replace(/\s/g, ''));
+            if (reqPhonetic && keyPhonetic && reqPhonetic === keyPhonetic) {
+                versionKey = key;
+                break; // Exact phonetic match is great
+            }
+            
+            // Levenshtein Match
+            const distance = levenshtein(reqLower, key);
+            // Dynamic threshold: longer words allow more errors (e.g., 'amplified' allows 3)
+            const threshold = Math.min(3, Math.max(1, Math.floor(key.length / 3)));
+            if (distance <= threshold && distance < bestDistance) {
+                bestDistance = distance;
+                versionKey = key;
+            }
+        }
+    }
+    
+    return versionKey ? TRANSLATION_MAP[versionKey] : null;
+}
 
 export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [isConnectModalOpen, setIsConnectModalOpen] = useState(false);
   const [isListening, setIsListening] = useState(false);
+  const [isFollowMode, setIsFollowMode] = useState(true);
   const [books, setBooks] = useState([]);
   const booksRef = React.useRef([]);
   const [debugText, setDebugText] = useState("");
@@ -46,13 +98,16 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
   const midSpeechProbeTimerRef = React.useRef(null); // Timer to fire keyword probe mid-speech
   const probeTriggeredRef = React.useRef(false); // Prevent duplicate triggers from probe
   const speechChunkCountRef = React.useRef(0); // Rough word-count estimate (chunks spoken)
+  const mediaCommandWindowRef = React.useRef(null); // 2.5s capture window timer after "Media" keyword detected
   const [rmsVolume, setRmsVolume] = useState(0);
   const [isSpeakingUI, setIsSpeakingUI] = useState(false);
-  const [didYouMean, setDidYouMean] = useState(null); // { text, candidate }
+  const [didYouMean, setDidYouMean] = useState(null); // { text, candidate } or { searchResults: [] }
   const [voiceEvents, setVoiceEvents] = useState([]); // last 10 voice events
   const [lastConfidence, setLastConfidence] = useState(null); // 0–1 or null
+  const [voiceEngine, setVoiceEngine] = useState(null); // 'python' | 'wasm' | null
+  const [spectralInfo, setSpectralInfo] = useState({ zcr: 0, voicingScore: 0, noiseFloor: 0 });
   const voiceEventsRef = React.useRef([]);
-  const CONFIDENCE_THRESHOLD = 0.65; // FR-3.13
+  const CONFIDENCE_THRESHOLD = 0.50; // FR-3.13 — lowered from 0.65; real logprobs from Python are accurate
 
   // Redux — for timer and queue voice commands
   const dispatch = useDispatch();
@@ -83,39 +138,51 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
     workerRef.current.onmessage = (event) => {
       const msg = event.data;
       if (msg.status === 'progress') {
-          setDebugText(`Loading AI: ${Math.round(msg.progress)}%`);
+          const engineLabel = msg.engine === 'wasm' ? '(WASM fallback)' : '';
+          setDebugText(`Loading AI ${engineLabel}: ${Math.round(msg.progress)}%`);
       } else if (msg.status === 'ready') {
-          console.log("Whisper worker ready");
+          console.log("Whisper worker ready, engine:", msg.engine);
+          setVoiceEngine(msg.engine || 'wasm');
           setVoiceStatus("ready");
+      } else if (msg.status === 'engine_switched') {
+          // Python sidecar went down mid-session — WASM fallback activated
+          setVoiceEngine('wasm');
+          pushVoiceEvent(`⚠️ Engine switched → WASM fallback`);
+          setDebugText('⚠️ Python sidecar lost — switched to WASM fallback');
       } else if (msg.status === 'result') {
           // Clear watchdog if it's still running
           if (activeWatchdogRef.current) clearTimeout(activeWatchdogRef.current);
 
-          const text = msg.text.trim();
+          const text = (msg.text || '').trim();
           const lowerText = text.toLowerCase();
           const confidence = typeof msg.confidence === 'number' ? msg.confidence : 0.85;
           const debugInfo = msg.debug || {};
           const duration = (debugInfo.duration || 0).toFixed(1);
 
-          setLastTranscript(text);
           setLastConfidence(confidence);
           isProcessingRef.current = false;
           setVoiceStatus("listening");
+          // Track engine from this result
+          if (msg.engine) setVoiceEngine(msg.engine);
 
           // --- FR-3.13: Confidence Gate ---
-          if (confidence < CONFIDENCE_THRESHOLD) {
-              const msg2 = `LOW CONFIDENCE — ignored (score: ${confidence.toFixed(2)})`;
-              setDebugText(msg2);
-              pushVoiceEvent(`⚠️ ${msg2}`);
+          if (!text || confidence < CONFIDENCE_THRESHOLD) {
+              const reason = !text ? 'EMPTY / SILENT' : `LOW CONF (${confidence.toFixed(2)})`;
+              setDebugText(`🚫 ${reason} — ignored`);
+              setLastTranscript(`⚠️ [${reason}]`);
+              pushVoiceEvent(`⚠️ ${reason}`);
               return;
           }
 
+          // Only update transcript display with real, accepted speech
+          setLastTranscript(text);
           setDebugText(`AI heard ${duration}s | conf=${confidence.toFixed(2)} | Heard: "${text}"`);
           pushVoiceEvent(`🎙 HEARD: "${text}"`);
 
           if (!text) return;
 
           // --- FR-3.6: Dual trigger keywords — "OCS" and "Media" both work ---
+          // Find whichever trigger appears EARLIEST in the transcript (position, not array order)
           const triggerKeywords = [
             // OCS variants
             'ocs', 'o.c.s', 'o-c-s', 'o c s',
@@ -130,62 +197,197 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
           let triggerLen = 0;
           for (const kw of triggerKeywords) {
             const idx = lowerText.indexOf(kw);
-            if (idx !== -1) {
+            if (idx !== -1 && (triggerIdx === -1 || idx < triggerIdx)) {
+              // Take the EARLIEST occurrence in the text (not first in the keyword array)
               triggerIdx = idx;
               triggerLen = kw.length;
-              break;
             }
           }
 
-          const nextMatch = lowerText.match(/\b(next verse|next one|next|forward|previous verse|go back|last verse|go to next|go next)\b/i);
+          const nextMatch = lowerText.match(/\b(next verse|next one|next|forward|previous verse|previous|go back|last verse|go to next|go next|back one)\b/i);
 
           if (triggerIdx !== -1) {
             const actualCommand = lowerText.substring(triggerIdx + triggerLen)
                                           .replace(/[.,:;!?]/g, ' ')
                                           .trim();
-            handleVoiceCommand(actualCommand, true);
+            handleVoiceCommand(actualCommand, true, msg.bible_match);
           } else if (nextMatch) {
             handleVoiceCommand(nextMatch[0], true);
+          } else if (msg.bible_match || isLikelyBibleReference(lowerText) || isFollowModeRef.current) {
+            // User just said something like "Genesis 1 verse 1" without a trigger word
+            // OR we are in Follow Mode and want to try matching everything they say
+            handleVoiceCommand(lowerText, true, msg.bible_match);
           }
       } else if (msg.status === 'probe_result') {
-          // Mid-speech probe returned — if keyword found and user is STILL speaking, fire now.
-          if (msg.hasKeyword && isSpeakingRef.current && !isProcessingRef.current && !probeTriggeredRef.current) {
-              probeTriggeredRef.current = true;
-              setDebugText(`[PROBE] "OCS" / "Media" detected mid-speech — firing early transcription`);
-              if (midSpeechProbeTimerRef.current) {
-                  clearTimeout(midSpeechProbeTimerRef.current);
-                  midSpeechProbeTimerRef.current = null;
-              }
-              isSpeakingRef.current = false;
-              setIsSpeakingUI(false);
-              isProcessingRef.current = true;
-              setVoiceStatus("transcribing");
+          // ── Continuous Mid-Speech Evaluation ──
+          if (!isSpeakingRef.current || isProcessingRef.current) return;
 
-              const watchdog = setTimeout(() => {
-                  if (isProcessingRef.current) {
-                      isProcessingRef.current = false;
-                      setVoiceStatus("listening");
-                      speechBufferRef.current = [];
+          const checkMidSpeech = async () => {
+              const text = msg.text || '';
+              let instantJumpTriggered = false;
+              let jumpCommand = text;
+
+              const midNextMatch = text.match(/\b(next verse|next one|next|forward|previous verse|previous|go back|last verse|go to next|go next|back one)\b/i);
+
+              const rawTranslationMatch = text.match(/\b(?:switch to|change to|use|switch translation|change translation|can i have|give me|put it in|change it to|switch it to|make it|read from)\s+([a-zA-Z\s]{2,20})\b/i);
+              let validTranslationMatch = null;
+              if (rawTranslationMatch) {
+                  const resolved = resolveTranslation(rawTranslationMatch[1]);
+                  if (resolved) {
+                      validTranslationMatch = `Change translation to ${resolved}`;
                   }
-              }, 5000);
-              activeWatchdogRef.current = watchdog;
+              }
 
-              const totalLength = speechBufferRef.current.reduce((acc, chunk) => acc + chunk.length, 0);
-              const finalAudio = new Float32Array(totalLength);
-              let off = 0;
-              speechBufferRef.current.forEach(chunk => {
-                  finalAudio.set(chunk, off);
-                  off += chunk.length;
-              });
-              speechBufferRef.current = [];
-              speechChunkCountRef.current = 0;
+              // 1. Navigation Commands ("Previous verse")
+              if (midNextMatch) {
+                  setDebugText(`[PROBE MATCH] Navigation detected! Executing...`);
+                  instantJumpTriggered = true;
+                  jumpCommand = midNextMatch[0];
+              }
+              // 2. Translation Commands ("Change to KJV")
+              else if (validTranslationMatch) {
+                  setDebugText(`[PROBE MATCH] Translation change detected! Executing...`);
+                  instantJumpTriggered = true;
+                  jumpCommand = validTranslationMatch;
+              }
+              // 3. Direct Bible Reference ("John 3 verse 16")
+              else if (msg.bible_match || isLikelyBibleReference(text)) {
+                  setDebugText(`[PROBE MATCH] Direct reference detected! Executing...`);
+                  instantJumpTriggered = true;
+                  // Pass the pre-matched reference to handleVoiceCommand if available
+                  if (msg.bible_match) {
+                      handleVoiceCommand(text, true, msg.bible_match);
+                      return; // Exit early since we handled it
+                  }
+              } 
+              // 4. Keyword Search Passage ("In the beginning God created")
+              else {
+                  // Pass 3 requires isMidSpeech = true to strictly require >= 4 words
+                  const matchResult = await smartBibleMatch(
+                      text,
+                      booksRef.current,
+                      window.electron?.Bible || null,
+                      currentRefStateRef.current,
+                      true 
+                  );
+                  
+                  if (matchResult && matchResult.matchType === 'keyword_search') {
+                      setDebugText(`[PROBE MATCH] Keyword passage detected! Executing...`);
+                      instantJumpTriggered = true;
+                  }
+              }
 
-              workerRef.current.postMessage({
-                  type: 'transcribe',
-                  audio: finalAudio,
-                  prompt: currentVerseFullTextRef.current || ""
-              });
-          }
+              if (instantJumpTriggered) {
+                  if (midSpeechProbeTimerRef.current) clearTimeout(midSpeechProbeTimerRef.current);
+                  if (mediaCommandWindowRef.current) clearTimeout(mediaCommandWindowRef.current);
+                  isSpeakingRef.current = false;
+                  setIsSpeakingUI(false);
+                  isProcessingRef.current = true;
+                  setVoiceStatus("transcribing");
+                  
+                  // Empty buffer to prevent duplicate 'fireTranscription'
+                  speechBufferRef.current = [];
+                  
+                  // Execute immediately
+                  handleVoiceCommand(jumpCommand, true);
+                  
+                  // Reset processing flag so it can listen again
+                  setTimeout(() => {
+                      if (isProcessingRef.current) {
+                          isProcessingRef.current = false;
+                          setVoiceStatus("listening");
+                      }
+                  }, 1000);
+                  return;
+              }
+
+              // 3. Fallback: "Media" trigger keyword detected (original 2.5s window logic)
+              if (msg.hasKeyword && !probeTriggeredRef.current) {
+                  probeTriggeredRef.current = true;
+                  setDebugText(`[PROBE] "Media" detected — opening 1.8s capture window for Bible passage...`);
+                  
+                  if (mediaCommandWindowRef.current) clearTimeout(mediaCommandWindowRef.current);
+                  
+                  mediaCommandWindowRef.current = setTimeout(() => {
+                      mediaCommandWindowRef.current = null;
+                      if (isProcessingRef.current) return;
+
+                      setDebugText(`[PROBE] 1.8s window elapsed — transcribing Media command...`);
+                      isSpeakingRef.current = false;
+                      setIsSpeakingUI(false);
+                      isProcessingRef.current = true;
+                      setVoiceStatus("transcribing");
+
+                      const watchdog = setTimeout(() => {
+                          if (isProcessingRef.current) {
+                              isProcessingRef.current = false;
+                              setVoiceStatus("listening");
+                              speechBufferRef.current = [];
+                          }
+                      }, 3000);
+                      activeWatchdogRef.current = watchdog;
+
+                      const totalLength = speechBufferRef.current.reduce((acc, chunk) => acc + chunk.length, 0);
+                      const finalAudio = new Float32Array(totalLength);
+                      let off = 0;
+                      speechBufferRef.current.forEach(chunk => {
+                          finalAudio.set(chunk, off);
+                          off += chunk.length;
+                      });
+                      speechBufferRef.current = [];
+                      speechChunkCountRef.current = 0;
+
+                      workerRef.current.postMessage({
+                          type: 'transcribe',
+                          audio: finalAudio,
+                          prompt: currentVerseFullTextRef.current || ""
+                      });
+                  }, 1800);
+              }
+
+              // 4. Schedule the next continuous probe!
+              if (isSpeakingRef.current && !isProcessingRef.current) {
+                   midSpeechProbeTimerRef.current = setTimeout(() => {
+                       midSpeechProbeTimerRef.current = null;
+                       // Only stop if we are actually processing/transcribing the FINAL result
+                       if (!isSpeakingRef.current || isProcessingRef.current) return;
+                       if (!workerRef.current || speechBufferRef.current.length === 0) return;
+                       
+                       // Optimization: Limit probe to the last ~4 seconds of audio for speed
+                       const MAX_PROBE_SAMPLES = 16000 * 4; 
+                       let snapLen = speechBufferRef.current.reduce((a, c) => a + c.length, 0);
+                       let startIndex = 0;
+                       
+                       if (snapLen > MAX_PROBE_SAMPLES) {
+                           startIndex = snapLen - MAX_PROBE_SAMPLES;
+                           snapLen = MAX_PROBE_SAMPLES;
+                       }
+
+                       const snapAudio = new Float32Array(snapLen);
+                       let currentOffset = 0;
+                       let totalProcessed = 0;
+                       
+                       speechBufferRef.current.forEach(chunk => {
+                           const chunkStart = totalProcessed;
+                           const chunkEnd = totalProcessed + chunk.length;
+                           
+                           if (chunkEnd > startIndex) {
+                               const startInChunk = Math.max(0, startIndex - chunkStart);
+                               const endInChunk = chunk.length;
+                               const lengthToCopy = endInChunk - startInChunk;
+                               
+                               snapAudio.set(chunk.subarray(startInChunk, endInChunk), currentOffset);
+                               currentOffset += lengthToCopy;
+                           }
+                           totalProcessed += chunk.length;
+                       });
+
+                       workerRef.current.postMessage({ type: 'probe', audio: snapAudio });
+                  }, 700);
+              }
+          };
+
+          checkMidSpeech();
       } else if (msg.status === 'error') {
           isProcessingRef.current = false;
           setDebugText("Worker Error: " + msg.error);
@@ -493,7 +695,7 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
              hpFilter.connect(workletNode);
 
              workletNode.port.onmessage = (event) => {
-                const { audio, isSpeaking, rms } = event.data;
+                const { audio, isSpeaking, rms, zcr, voicingScore, noiseFloor } = event.data;
                 const buffer = rollingBufferRef.current;
                 
                 // Shift and append
@@ -502,9 +704,14 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
 
                 // Update VAD state
                 setRmsVolume(rms);
+                // Update spectral info for debug bar
+                if (zcr !== undefined) {
+                  setSpectralInfo({ zcr, voicingScore: voicingScore || 0, noiseFloor: noiseFloor || 0 });
+                }
                  const now = Date.now();
                  // 1. Maintain Pre-Roll History (500ms ≈ 4 chunks)
                  preRollBufferRef.current.push(new Float32Array(audio));
+
                  if (preRollBufferRef.current.length > 5) {
                     preRollBufferRef.current.shift();
                  }
@@ -512,10 +719,14 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
                  // Helper: immediately fire transcription from accumulated buffer
                  const fireTranscription = () => {
                     if (isProcessingRef.current || !workerRef.current || speechBufferRef.current.length === 0) return;
-                    // Cancel any pending mid-speech probe timer
+                    // Cancel any pending mid-speech probe or media window timer
                     if (midSpeechProbeTimerRef.current) {
                         clearTimeout(midSpeechProbeTimerRef.current);
                         midSpeechProbeTimerRef.current = null;
+                    }
+                    if (mediaCommandWindowRef.current) {
+                        clearTimeout(mediaCommandWindowRef.current);
+                        mediaCommandWindowRef.current = null;
                     }
                     isSpeakingRef.current = false;
                     setIsSpeakingUI(false);
@@ -561,10 +772,10 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
                         // PREPEND Pre-roll for clean "Attack"
                         speechBufferRef.current = [...preRollBufferRef.current];
 
-                        // Schedule mid-speech keyword probe at 1.0s (was 1.5s)
+                        // Schedule mid-speech keyword probe
                         midSpeechProbeTimerRef.current = setTimeout(() => {
                             midSpeechProbeTimerRef.current = null;
-                            if (!isSpeakingRef.current || isProcessingRef.current || probeTriggeredRef.current) return;
+                            if (!isSpeakingRef.current || isProcessingRef.current) return;
                             if (!workerRef.current || speechBufferRef.current.length === 0) return;
 
                             // Build a snapshot of the audio so far for the probe
@@ -576,9 +787,9 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
                                 snapOffset += chunk.length;
                             });
 
-                            // Post a lightweight probe — result handled in workerRef.current.onmessage
+                            // Post a lightweight probe
                             workerRef.current.postMessage({ type: 'probe', audio: snapAudio });
-                        }, 1000);
+                        }, 700);
                     }
                     lastSpeechTimeRef.current = now;
                     speechBufferRef.current.push(new Float32Array(audio));
@@ -594,16 +805,21 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
                     // Capture the "Tail" during silence wait
                     speechBufferRef.current.push(new Float32Array(audio));
 
+                    // If a Media command 2.5s window is open, keep collecting — don't fire on silence.
+                    if (mediaCommandWindowRef.current) return;
+                    // If probe is still in-flight, don't compete with it
+                    if (probeTriggeredRef.current) return;
+
                     // Estimate word count: each audio chunk is ~128ms at 16kHz/2048 buffer.
                     // Average spoken word is ~300ms → ~2.3 chunks per word.
                     // ≤5 words ≈ ≤12 chunks. We trigger immediately for short commands.
                     const estimatedWords = Math.round(speechChunkCountRef.current / 2.3);
                     const silenceElapsed = now - lastSpeechTimeRef.current;
 
-                    const shouldFireImmediate = estimatedWords <= 5 && silenceElapsed >= 100; // fast-fire short commands
-                    const shouldFireNormal = silenceElapsed > 700; // standard silence gate (was 900ms)
+                    const shouldFireImmediate = estimatedWords <= 5 && silenceElapsed >= 200;
+                    const shouldFireNormal = silenceElapsed > 700;
 
-                    if ((shouldFireImmediate || shouldFireNormal) && !probeTriggeredRef.current) {
+                    if (shouldFireImmediate || shouldFireNormal) {
                         fireTranscription();
                     }
                  }
@@ -637,7 +853,7 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
       return () => stopVoice();
   }, [isListening]);
 
-  const handleVoiceCommand = async (text, isAuto = false) => {
+  const handleVoiceCommand = async (text, isAuto = false, preMatch = null) => {
     let command = text.trim().toLowerCase();
 
     // ── 1. Word-number conversion (FR-3.16) ─────────────────────────────────
@@ -684,24 +900,11 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
     }
 
     // ── C. SWITCH TRANSLATION (FR-3.14) ────────────────────────────────────
-    const translationMap = {
-        'kjv': 'kjv', 'king james': 'kjv', 'king james version': 'kjv',
-        'bbe': 'bbe', 'basic english': 'bbe', 'bible basic english': 'bbe',
-        'asv': 'asv', 'american standard': 'asv',
-        'web': 'web', 'world english': 'web',
-        'net': 'net', 'new english': 'net',
-        'geneva': 'geneva',
-        'tyndale': 'tyndale',
-        'coverdale': 'coverdale',
-        'bishops': 'bishops', "bishop's": 'bishops',
-        'strongs': 'kjv_strongs', "strong's": 'kjv_strongs', 'kjv strongs': 'kjv_strongs',
-    };
-    const switchMatch = command.match(/\b(?:switch to|change to|use|switch translation|change translation)\s+(.+)/i);
+    const switchMatch = command.match(/\b(?:switch to|change to|use|switch translation|change translation|can i have|give me|put it in|change it to|switch it to|make it|read from)\s+(.+)/i);
     if (switchMatch) {
-        const requested = switchMatch[1].trim().replace(/[.,:;!?]/g, '').toLowerCase();
-        const versionKey = translationMap[requested] || Object.keys(translationMap).find(k => requested.includes(k));
-        if (versionKey) {
-            const version = translationMap[versionKey];
+        const requested = switchMatch[1];
+        const version = resolveTranslation(requested);
+        if (version) {
             currentBibleVersionRef.current = version;
             // Re-fetch current verse in new translation
             if (currentRefStateRef.current) {
@@ -712,6 +915,15 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
                         const verseText = verses[verse - 1] || '';
                         const verseRef = currentVerseTitleRef.current;
                         window.electron.Presentation.setContent({ type: 'bible', data: { title: verseRef, body: verseText } });
+                        
+                        window.dispatchEvent(new CustomEvent('voice-bible-sync', {
+                            detail: {
+                                version,
+                                bookIndex,
+                                chapterIndex: chapter - 1,
+                                indices: [verse - 1]
+                            }
+                        }));
                     }
                 } catch (_) {}
             }
@@ -831,225 +1043,142 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
     if (/\b(next verse|next one|forward|go forward)\b/i.test(command) ||
         (command === 'next' && currentRefStateRef.current)) {
         if (currentRefStateRef.current) return navigateRelative(1);
+        else { warn('No verse context for "next" — open a verse first'); return; }
     }
     if (/\b(previous verse|previous|go back|last verse|back one)\b/i.test(command)) {
         if (currentRefStateRef.current) return navigateRelative(-1);
+        else { warn('No verse context for "previous" — open a verse first'); return; }
     }
 
 
+    // ── K. FOLLOW MODE COMMANDS ─────────────────────────────────────────────
+    if (/\b(start following|follow me|follow voice|enable follow|start follow)\b/i.test(command)) {
+        setIsFollowMode(true);
+        ok('Follow mode active');
+        return;
+    }
+    if (/\b(stop following|stop follow|disable follow|end follow)\b/i.test(command)) {
+        setIsFollowMode(false);
+        ok('Follow mode stopped');
+        return;
+    }
 
-    let matchedBook = null;
-    let remainingText = "";
+    // ── L. BIBLE REFERENCE — Smart 4-pass matcher (FR-3.14, FR-3.15) ────────
+    // Delegates to smartBibleMatch.js which handles:
+    //  Pass 1: Exact alias match        ("john 3 16", "gen 1")
+    //  Pass 2: Phonetic + Levenshtein   ("Jonah" heard as "Yona", "Filemon" → Philemon)
+    //  Pass 3: Keyword content search   ("for God so loved" → John 3:16)
+    //  Pass 4: Context-only jump        ("verse 5", "chapter 4" with active context)
     const currentBooks = booksRef.current || [];
+    setDebugText(`[MATCH] Resolving: "${command}"`);
 
-    // 1c. NEW: Priority Check for context-based jumps (e.g. "Media verse 26")
-    // We do this BEFORE stripping "verse" and "chapter" words
-    const isVerseOnly = command.match(/\b(?:go to |jump to |show |)verse\s+(\d+)\b/i);
-    const isChapterOnly = command.match(/\b(?:go to |jump to |show |)chapter\s+(\d+)\b/i);
-    
-    if ((isVerseOnly || isChapterOnly) && currentRefStateRef.current) {
-        const { bookIndex, bookName, chapter } = currentRefStateRef.current;
-        matchedBook = { id: currentBooks[bookIndex].id, name: bookName, internalBook: currentBooks[bookIndex] };
-        
-        if (isVerseOnly) {
-            remainingText = `${chapter} ${isVerseOnly[1]}`; 
-        } else {
-            remainingText = `${isChapterOnly[1]} 1`; 
-        }
-        setDebugText(`[JUMP] Context: ${bookName}. Target: ${isVerseOnly ? 'Verse' : 'Chapter'} ${isVerseOnly ? isVerseOnly[1] : isChapterOnly[1]}`);
-    }
+    const matchResult = preMatch || await smartBibleMatch(
+        command,
+        currentBooks,
+        window.electron?.Bible || null,
+        currentRefStateRef.current
+    );
 
-    // 1d. Strip filler phrases and keywords for the generic book search
-    command = command.replace(/\b(the book of|book of|read|please|open|to|go to|jump to|show)\b/g, ' ').trim();
-    command = command.replace(/\b(chapter|verse|verses|v)\b/g, ' ').trim();
-    command = command.replace(/\s+/g, ' ');
-    
-    console.log("Normalizing Voice Target:", command);
-    setDebugText(`[1/4] Target: "${command}" (Auto: ${isAuto})`);
+    if (matchResult) {
+        const { bookIndex, chapter, startVerse, endVerse, matchType, searchResults } = matchResult;
 
-    const bookAliases = {
-        // Standard abbreviations
-        'gen': 'Genesis', 'ex': 'Exodus', 'lev': 'Leviticus', 'num': 'Numbers', 'deut': 'Deuteronomy',
-        'josh': 'Joshua', 'judg': 'Judges', 'sam': 'Samuel', 'kings': 'Kings', 'chron': 'Chronicles',
-        'ps': 'Psalms', 'psalm': 'Psalms', 'prov': 'Proverbs', 'eccl': 'Ecclesiastes', 'isa': 'Isaiah',
-        'jer': 'Jeremiah', 'lam': 'Lamentations', 'ezek': 'Ezekiel', 'dan': 'Daniel', 'hos': 'Hosea',
-        'obad': 'Obadiah', 'mic': 'Micah', 'nah': 'Nahum', 'hab': 'Habakkuk', 'zeph': 'Zephaniah',
-        'hag': 'Haggai', 'zech': 'Zechariah', 'mal': 'Malachi', 'matt': 'Matthew', 'rom': 'Romans',
-        'cor': 'Corinthians', 'gal': 'Galatians', 'eph': 'Ephesians', 'phil': 'Philippians',
-        'col': 'Colossians', 'thess': 'Thessalonians', 'tim': 'Timothy', 'tit': 'Titus',
-        'philem': 'Philemon', 'heb': 'Hebrews', 'jam': 'James', 'pet': 'Peter', 'rev': 'Revelation',
-        // FR-3.15: Common mispronunciations / regional variants
-        'revelations': 'Revelation',     // "Revelations" → Revelation
-        'revelation': 'Revelation',
-        'sams': 'Psalms',                // "Sams" → Psalms
-        'filemon': 'Philemon',           // "Filemon" → Philemon
-        'philemon': 'Philemon',
-        'deutronomy': 'Deuteronomy',     // dropped vowel
-        'deuteronomy': 'Deuteronomy',
-        'isaiah': 'Isaiah',
-        'genisis': 'Genesis',            // common spelling error
-        'mathew': 'Matthew',             // single 't'
-        'corinthian': 'Corinthians',
-        'ephesian': 'Ephesians',
-        'philippian': 'Philippians',
-        'thessalonian': 'Thessalonians',
-        'colossian': 'Colossians',
-        'hebrews': 'Hebrews',
-        'obadiah': 'Obadiah',
-    };
-    
-    // Check for aliases before formal match
-    let searchCommand = command;
-    Object.keys(bookAliases).forEach(alias => {
-        if (searchCommand.startsWith(alias + ' ')) {
-            searchCommand = bookAliases[alias].toLowerCase() + searchCommand.substring(alias.length);
-        }
-    });
+        const bookName = currentBooks[bookIndex]?.name || '?';
+        const verseRef = `${bookName} ${chapter}:${startVerse}${endVerse !== startVerse ? '-' + endVerse : ''}`;
 
-    // 2. Fuzzy Matching Logic for Book Names (Only if not already matched by a jump)
-    if (!matchedBook) {
-        for (const b of currentBooks) {
-          const bName = b.name.toLowerCase();
-          const aliases = [
-            bName, 
-            bName.replace('1 ', '1st ').replace('2 ', '2nd ').replace('3 ', '3rd '), 
-            bName.replace('1 ', 'first ').replace('2 ', 'second ').replace('3 ', 'third '),
-            bName.replace(' ', '')
-          ];
-          
-          for (const alias of aliases) {
-            if (searchCommand.startsWith(alias)) {
-              if (!matchedBook || alias.length > matchedBook.name.length) {
-                matchedBook = { id: b.id, name: b.name, internalBook: b };
-                remainingText = searchCommand.substring(alias.length).trim();
-              }
-            }
-          }
-        }
-
-        // 2b. Secondary "Sounds Like" pass if no exact match (helps Tiny model)
-        if (!matchedBook) {
-            const words = searchCommand.split(' ');
-            const firstWord = words[0];
-            for (const b of currentBooks) {
-                const bName = b.name.toLowerCase();
-                // Simple check
-                if (firstWord.length >= 4 && (bName.startsWith(firstWord.substring(0, 4)) || firstWord.startsWith(bName.substring(0, 4)))) {
-                    matchedBook = { id: b.id, name: b.name, internalBook: b };
-                    remainingText = words.slice(1).join(' ');
-                    break;
-                }
-            }
-        }
-    }
-  
-    if (matchedBook && remainingText) {
-      setDebugText(`Matched Book: ${matchedBook.name}. Parsing: ${remainingText}`);
-      // Support Chapter only or Chapter:Verse
-      const numbersMatch = remainingText.match(/(\d+)(?:[\s:]+(\d+))?(?:[\s]+(?:to|through|and|-|_)[\s]+(\d+))?/i);
-      if (numbersMatch) {
-        const chapter = parseInt(numbersMatch[1], 10);
-        const startVerse = numbersMatch[2] ? parseInt(numbersMatch[2], 10) : 1; 
-        let endVerse = startVerse;
-        if (numbersMatch[3]) {
-          endVerse = parseInt(numbersMatch[3], 10);
-        }
-  
-        const verseRef = `${matchedBook.name} ${chapter}:${startVerse}${endVerse !== startVerse ? '-' + endVerse : ''}`;
-        
-        // Final deduplication check with 10s timeout
+        // Deduplication guard — FR-3.17
         const now = Date.now();
-        const isSameAsLast = currentVerseTitleRef.current === verseRef;
-        const wasRecent = (now - lastTriggeredTimeRef.current) < 10000;
-        
-        if (isAuto && isSameAsLast && wasRecent) {
+        if (isAuto && currentVerseTitleRef.current === verseRef && (now - lastTriggeredTimeRef.current) < 10000) {
             setDebugText(`[SKIP] Already showing ${verseRef}`);
             return;
         }
-        
         lastTriggeredTimeRef.current = now;
 
-        setDebugText(`[3/4] Fetching ${verseRef} from DB...`);
-  
-        try {
-          const bookIndex = currentBooks.findIndex(b => b.id === matchedBook.id);
-          if (bookIndex === -1) {
-             setDebugText("Error: Book index not found");
-             return;
-          }
-  
-          const verses = await window.electron.Bible.getChapter('kjv', bookIndex, chapter);
-          
-          if (verses && verses.length > 0) {
-            const indices = new Set();
-            for (let v = startVerse; v <= endVerse; v++) {
-              if (v - 1 >= 0 && v - 1 < verses.length) {
-                indices.add(v - 1);
-              }
+        // If matched by keyword search, show the top results as "Did you mean?" options
+        if (matchType === 'keyword_search' && searchResults && searchResults.length > 1) {
+            const candidates = searchResults.slice(1, 3).map(r => {
+                const b = currentBooks.find(bk => bk.id === r.book_id);
+                return b ? `${b.name} ${r.chapter}:${r.verse}` : null;
+            }).filter(Boolean);
+            if (candidates.length) {
+                setDidYouMean({ text: command, candidate: candidates[0], extraCandidates: candidates });
             }
-  
-            if (indices.size > 0) {
-              const sortedIndices = Array.from(indices).sort((a,b) => a-b);
-              const resultText = sortedIndices.map(i => verses[i] || "").join(' ');
-              setDebugText(`✅ Sent: ${verseRef}`);
-              pushVoiceEvent(`✅ Displayed: ${verseRef}`);
-              playFeedback('success');
-              setDidYouMean(null); // clear any previous suggestion
-              
-              // Track current state for relative navigation and highlighting
-              currentVerseTitleRef.current = verseRef;
-              currentVerseFullTextRef.current = resultText;
-
-              // Apply cached highlights before sending
-              const finalHTML = applyHighlights(verseRef, resultText);
-
-              window.electron.Presentation.setContent({
-                  type: 'bible',
-                  data: { title: verseRef, body: finalHTML }
-              });
-              
-              // Track current state for relative navigation
-              currentRefStateRef.current = {
-                bookIndex: bookIndex,
-                bookName: matchedBook.name,
-                chapter: chapter,
-                verse: startVerse
-              };
-              
-              if (window.electron.Bible.sync) {
-                window.electron.Bible.sync({ version: 'kjv', bookIndex: bookIndex, chapterIndex: chapter - 1 });
-              }
-            } else {
-                setDebugText(`Error: Verse range empty for ${verseRef}`);
-            }
-          } else {
-              setDebugText(`Error: DB returned 0 verses for ${verseRef}`);
-          }
-        } catch (err) {
-          console.error("Error setting Bible from voice", err);
-          setDebugText(`Error catch: ${err.message}`);
         }
-      } else {
-          setDebugText(`Error: No numbers matched in [${remainingText}]`);
-      }
-    } else if (matchedBook) {
-       setDebugText(`Error: Could not find numbers in [${remainingText}]`);
+
+        setDebugText(`[${matchType.toUpperCase()}] Fetching ${verseRef}...`);
+
+        try {
+            const verses = await window.electron.Bible.getChapter(
+                currentBibleVersionRef.current || 'kjv', bookIndex, chapter
+            );
+
+            if (verses && verses.length > 0) {
+                const indices = new Set();
+                for (let v = startVerse; v <= endVerse; v++) {
+                    if (v - 1 >= 0 && v - 1 < verses.length) indices.add(v - 1);
+                }
+
+                if (indices.size > 0) {
+                    const sortedIndices = Array.from(indices).sort((a, b) => a - b);
+                    const resultText = sortedIndices.map(i => verses[i] || '').join(' ');
+
+                    setDebugText(`✅ Sent: ${verseRef} [${matchType}]`);
+                    pushVoiceEvent(`✅ ${verseRef}`);
+                    playFeedback('success');
+                    if (matchType !== 'keyword_search') setDidYouMean(null);
+
+                    currentVerseTitleRef.current = verseRef;
+                    currentVerseFullTextRef.current = resultText;
+
+                    const finalHTML = applyHighlights(verseRef, resultText);
+                    window.electron.Presentation.setContent({
+                        type: 'bible',
+                        data: { title: verseRef, body: finalHTML }
+                    });
+
+                    currentRefStateRef.current = {
+                        bookIndex,
+                        bookName,
+                        chapter,
+                        verse: startVerse
+                    };
+
+                    window.dispatchEvent(new CustomEvent('voice-bible-sync', {
+                        detail: {
+                            version: currentBibleVersionRef.current || 'kjv',
+                            bookIndex,
+                            chapterIndex: chapter - 1,
+                            indices: sortedIndices
+                        }
+                    }));
+
+                    if (window.electron.Bible.sync) {
+                        window.electron.Bible.sync({
+                            version: currentBibleVersionRef.current || 'kjv',
+                            bookIndex,
+                            chapterIndex: chapter - 1
+                        });
+                    }
+                } else {
+                    setDebugText(`Error: Verse range empty for ${verseRef}`);
+                }
+            } else {
+                setDebugText(`Error: DB returned 0 verses for ${verseRef}`);
+            }
+        } catch (err) {
+            console.error('Error setting Bible from voice', err);
+            setDebugText(`Error: ${err.message}`);
+        }
     } else {
-       // FR-3.19: "Did you mean?" — find closest book by Levenshtein
-       const firstWord = command.split(' ')[0];
-       let bestCandidate = null;
-       let bestDist = Infinity;
-       for (const b of booksRef.current) {
-         const dist = levenshtein(firstWord, b.name.toLowerCase());
-         if (dist < bestDist) { bestDist = dist; bestCandidate = b.name; }
-       }
-       const suggestion = bestDist <= 5 ? bestCandidate : null;
-       setDebugText(`No book matched in [${command}]${suggestion ? ` — did you mean ${suggestion}?` : ''}`);
-       pushVoiceEvent(`❌ No book: "${command}"`);
-       playFeedback('error');
-       if (suggestion) setDidYouMean({ text: command, candidate: suggestion });
+        // No match found — FR-3.19: show top-3 "Did you mean?" suggestions
+        const suggestions = getBookSuggestions(command, currentBooks);
+        const suggestion = suggestions[0]?.name || null;
+        setDebugText(`No match: "${command}"${suggestion ? ` — did you mean ${suggestion}?` : ''}`);
+        pushVoiceEvent(`❌ No match: "${command}"`);
+        playFeedback('error');
+        if (suggestion) setDidYouMean({ text: command, candidate: suggestion });
     }
   };
+
 
   const navigateRelative = async (direction) => {
     if (!currentRefStateRef.current) return;
@@ -1259,6 +1388,16 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
     });
   };
 
+  // ── FOLLOW MODE LOGIC ────────────────────────────────────────────────────
+  const isFollowModeRef = React.useRef(false);
+  
+  useEffect(() => {
+    isFollowModeRef.current = isFollowMode;
+    if (isFollowMode) {
+        setDebugText("Follow Mode: Listening for scripture...");
+    }
+  }, [isFollowMode]);
+
   return (
     <>
       <div className="w-full h-16 bg-primary flex items-center justify-between px-6 shrink-0 relative z-40">
@@ -1313,6 +1452,7 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
             )}
           </div>
             
+
           <button
             onClick={() => {
               setDebugText("");
@@ -1464,29 +1604,44 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
       {/* FR-3.25: Global Voice Console - Fixed at bottom */}
       <div className="fixed bottom-0 left-0 right-0 bg-black/95 border-t border-white/10 z-[9999] font-mono">
         {/* Main status row */}
-        <div className="flex items-center h-8 px-4 gap-4 pointer-events-none">
-          {/* Engine status */}
-          <div className="flex items-center gap-2 border-r border-white/10 pr-4 flex-shrink-0">
+        <div className="flex items-center h-8 px-4 gap-3 pointer-events-none overflow-hidden">
+
+          {/* Engine badge — Python 🐍 or WASM 🌐 */}
+          <div className={`flex items-center gap-1.5 border-r border-white/10 pr-3 flex-shrink-0`}>
             <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
-              voiceStatus === 'ready' ? 'bg-green-500' :
-              voiceStatus === 'listening' ? 'bg-red-500 animate-pulse' :
+              voiceStatus === 'ready'        ? 'bg-green-500' :
+              voiceStatus === 'listening'    ? 'bg-red-500 animate-pulse' :
               voiceStatus === 'transcribing' ? 'bg-blue-500 animate-ping' :
-              voiceStatus === 'error' ? 'bg-red-700' : 'bg-yellow-500 animate-pulse'
+              voiceStatus === 'error'        ? 'bg-red-700' : 'bg-yellow-500 animate-pulse'
             }`} />
-            <span className="text-white/70 uppercase text-[10px]">AI: {voiceStatus}</span>
+            <span className="text-white/60 uppercase text-[10px]">{voiceStatus}</span>
+            {voiceEngine && (
+              <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded ml-1 ${
+                voiceEngine === 'python'
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                  : 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+              }`}>
+                {voiceEngine === 'python' ? '🐍 Python' : '🌐 WASM'}
+              </span>
+            )}
           </div>
 
-          {/* VAD + volume */}
-          <div className="flex items-center gap-2 border-r border-white/5 pr-4 flex-shrink-0">
+          {/* VAD + volume + spectral */}
+          <div className="flex items-center gap-2 border-r border-white/5 pr-3 flex-shrink-0">
             <span className={`text-[8px] px-1.5 rounded font-bold ${
               isSpeakingUI ? 'bg-green-500 text-black' : 'bg-white/10 text-white/30'
             }`}>{isSpeakingUI ? 'VOICE' : 'WAIT'}</span>
             <span className="text-white/30 text-[9px]">VOL {(rmsVolume * 100).toFixed(0)}%</span>
+            {spectralInfo.voicingScore > 0 && (
+              <span className={`text-[8px] ${spectralInfo.voicingScore > 0.3 ? 'text-green-400/60' : 'text-white/20'}`}>
+                V:{(spectralInfo.voicingScore * 100).toFixed(0)}%
+              </span>
+            )}
           </div>
 
           {/* Confidence badge */}
           {lastConfidence !== null && (
-            <div className="flex items-center gap-1 border-r border-white/5 pr-4 flex-shrink-0">
+            <div className="flex items-center gap-1 border-r border-white/5 pr-3 flex-shrink-0">
               <span className="text-white/30 text-[9px]">CONF</span>
               <span className={`text-[9px] font-bold ${
                 lastConfidence >= CONFIDENCE_THRESHOLD ? 'text-green-400' : 'text-red-400'
@@ -1495,19 +1650,19 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
           )}
 
           {/* HEARD */}
-          <div className="flex items-center gap-1 border-r border-white/5 pr-4 min-w-0 flex-shrink">
+          <div className="flex items-center gap-1 border-r border-white/5 pr-3 min-w-0 flex-shrink">
             <span className="text-white/30 text-[9px] italic flex-shrink-0">HEARD:</span>
             <span className="text-blue-400 text-[9px] truncate">{lastTranscript || '—'}</span>
           </div>
 
           {/* CONTEXT */}
-          <div className="flex items-center gap-1 border-r border-white/5 pr-4 flex-shrink-0">
+          <div className="flex items-center gap-1 border-r border-white/5 pr-3 flex-shrink-0">
             <span className="text-white/30 text-[9px] italic">CTX:</span>
             <span className="text-yellow-400 text-[9px]">{activeVerseContext || 'NONE'}</span>
           </div>
 
           {/* LOG */}
-          <div className="flex-1 overflow-hidden">
+          <div className="flex-1 overflow-hidden min-w-0">
             <span className="text-white/20 text-[9px] mr-1">LOG:</span>
             <span className="text-red-400 text-[9px] truncate">{debugText || 'Idle'}</span>
           </div>
@@ -1516,7 +1671,7 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
           <div className="text-white/20 text-[9px] flex-shrink-0">BOOKS: {books.length}</div>
         </div>
 
-        {/* Event log strip — FR-3.25 last 10 events */}
+        {/* Event log strip — FR-3.25 last 5 events */}
         {voiceEvents.length > 0 && (
           <div className="border-t border-white/5 px-4 py-0.5 flex items-center gap-3 overflow-x-auto pointer-events-none">
             {voiceEvents.slice(0, 5).map((ev, i) => (
@@ -1527,6 +1682,7 @@ export default function Topbar({ onGoLive, previewMode, onSetPreviewMode }) {
           </div>
         )}
       </div>
+
 
       {/* Connect Modal */}
       {isConnectModalOpen && (
