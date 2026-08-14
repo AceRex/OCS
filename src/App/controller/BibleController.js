@@ -1,3 +1,4 @@
+import { Button } from "../../../components/button";
 import React, { useState, useEffect, useRef } from 'react';
 import { PiCaretDown, PiMagnifyingGlass, PiCheck } from "react-icons/pi";
 
@@ -40,19 +41,19 @@ const SearchableDropdown = ({ options, value, onChange, label, placeholder = "Se
 
     return (
         <div className={`flex flex-col gap-1 relative ${className}`} ref={dropdownRef}>
-            <label className="text-xs font-bold text-ash uppercase">{label}</label>
+            <label className="text-[10px] font-semibold text-ash uppercase">{label}</label>
             <button
                 onClick={() => setIsOpen(!isOpen)}
-                className="bg-primary border border-light/20 rounded p-2 text-light outline-none flex items-center justify-between hover:border-light/40 transition-colors text-left truncate"
+                className="bg- border border-light/10 rounded-[12px] rounded p-2 text-light outline-none flex items-center justify-between hover:border-light/40 transition-colors text-left truncate"
             >
-                <span className="truncate pr-2">{selectedLabel}</span>
+                <span className="truncate pr-2 text-[14px]">{selectedLabel}</span>
                 <PiCaretDown className={`text-ash transition-transform ${isOpen ? 'rotate-180' : ''}`} />
             </button>
 
             {isOpen && (
                 <div className="absolute top-full mt-1 left-0 w-full bg-[#1a1a1a] border border-light/10 rounded-lg shadow-2xl z-50 flex flex-col max-h-60 overflow-hidden animate-in fade-in zoom-in-95 duration-100">
                     <div className="p-2 border-b border-light/5 sticky top-0 bg-[#1a1a1a]">
-                        <div className="flex items-center gap-2 bg-white/5 rounded px-2 py-1.5 border border-light/10">
+                        <div className="flex items-center gap-2 bg-white/5 rounded px-2 py-1.5">
                             <PiMagnifyingGlass className="text-ash" />
                             <input
                                 autoFocus
@@ -120,6 +121,10 @@ export default function BibleController() {
 
     // Pending selection for remote sync
     const pendingSelection = useRef(null);
+    /** When voice navigates the picker, skip clear-on-nav wipes for a short window.
+     *  A boolean flag is unsafe under React Strict Mode (effect double-invoke consumes
+     *  the flag on the first run and nulls content on the second). */
+    const skipPresentationClearUntilRef = useRef(0);
 
     const scrollToVerse = (indices) => {
         if (indices && indices.length > 0) {
@@ -150,9 +155,8 @@ export default function BibleController() {
                     if (bookIndex === selectedBookIndex && chapterIndex === selectedChapterIndex) {
                         const newSet = new Set(indices);
                         setSelectedVerseIndices(newSet);
-                        
-                        // Only auto-present if it didn't come from voice,
-                        // because voice already pushes its own custom HTML with highlights
+
+                        // If from voice, BroadcastEngine already pushed presentation with read-along tokens/range
                         if (!fromVoice) {
                             presentVerses(newSet, newVerses);
                         }
@@ -207,17 +211,21 @@ export default function BibleController() {
         }
     }, [selectedVersion, selectedBookIndex, selectedChapterIndex, verses]);
 
-    // Listen for Voice Commands (from Topbar.js)
+    // Listen for Voice Commands (BroadcastEngine → voice-bible-sync)
     useEffect(() => {
         const handleVoiceSync = (e) => {
             const { version, bookIndex, chapterIndex, indices } = e.detail;
-            
-            const needsNav = 
+
+            const needsNav =
                 (version && version !== selectedVersion) ||
                 (bookIndex !== selectedBookIndex) ||
                 (chapterIndex !== selectedChapterIndex);
 
             if (needsNav) {
+                // CRITICAL: book/chapter state change triggers clear-on-nav effect.
+                // Voice already called Presentation.setContent — must not wipe it.
+                // Hold skip for ~600ms so Strict Mode double-invoke cannot clear.
+                skipPresentationClearUntilRef.current = Date.now() + 600;
                 if (version) setSelectedVersion(version);
                 setSelectedBookIndex(bookIndex);
                 setSelectedChapterIndex(chapterIndex);
@@ -286,6 +294,19 @@ export default function BibleController() {
                 body: verseText
             }
         });
+
+        // Keep voice engine context in sync so "verse 20" works after manual selection
+        window.dispatchEvent(new CustomEvent('bible-context-sync', {
+            detail: {
+                version: selectedVersion,
+                bookIndex: selectedBookIndex,
+                chapter: chapterNum,
+                verse: sortedIndices[0] + 1,
+                endVerse: sortedIndices.length > 1 ? sortedIndices[sortedIndices.length - 1] + 1 : sortedIndices[0] + 1,
+                title: verseRef,
+                body: verseText,
+            },
+        }));
     };
 
     const handleVerseClick = (index, e) => {
@@ -313,9 +334,15 @@ export default function BibleController() {
         presentVerses(newSelection);
     };
 
-    // Clear selection when changing chapter/book
+    // Clear verse selection when changing chapter/book (manual picker browse).
+    // Must NOT wipe live AV output when the change was driven by voice-bible-sync.
     useEffect(() => {
         setSelectedVerseIndices(new Set());
+        if (Date.now() < skipPresentationClearUntilRef.current) {
+            console.log('[Bible] skip presentation clear (voice nav window)');
+            return;
+        }
+        console.log('[Bible] clear presentation on book/chapter/version change');
         electron.Presentation.setContent(null);
     }, [selectedBookIndex, selectedChapterIndex, selectedVersion]);
 
@@ -340,7 +367,30 @@ export default function BibleController() {
     return (
         <div className="flex flex-col w-full h-full gap-2 text-light/90">
             {/* Header / Config */}
-            <div className="flex flex-row gap-2 bg-ash/20 p-2 rounded-xl items-center relative z-20 h-16">
+            <div className='bg-white/10 p-4 rounded-xl flex flex-col gap-2'>
+                <div className='flex items-center justify-between'>
+                    <h5 className='text-[15px] font-semibold text-light/90'>Bible</h5>
+
+                    <div className="flex-none flex flex-col items-end justify-center pl-2 border-white/5 ml-1">
+                        <Button disabled={selectedVerseIndices.size === 0}>
+                            Stop
+                        </Button>
+                        {/* <button
+                            disabled={selectedVerseIndices.size === 0}
+                            onClick={() => {
+                                setSelectedVerseIndices(new Set());
+                                electron.Presentation.setContent(null);
+                            }}
+                            className="bg-red/80 hover:bg-red text-white text-[10px] font-bold py-1.5 px-3 rounded-md transition-colors uppercase tracking-wider shadow-lg shadow-red/20 whitespace-nowrap"
+                        >
+                            Stop
+                        </button> */}
+                    </div>
+                </div>
+                <div className=''>2</div>
+            </div>
+
+            <div className="flex flex-row gap-2 bg-ash/20 p-4 rounded-xl items-center relative z-20">
 
                 <div className="flex-1 min-w-[120px]">
                     <SearchableDropdown
@@ -391,23 +441,11 @@ export default function BibleController() {
                     />
                 </div>
 
-                <div className="flex-none flex flex-col items-end justify-center pl-2 border-l border-white/5 ml-1">
-                    {selectedVerseIndices.size > 0 && (
-                        <button
-                            onClick={() => {
-                                setSelectedVerseIndices(new Set());
-                                electron.Presentation.setContent(null);
-                            }}
-                            className="bg-red/80 hover:bg-red text-white text-[10px] font-bold py-1.5 px-3 rounded-md transition-colors uppercase tracking-wider shadow-lg shadow-red/20 whitespace-nowrap"
-                        >
-                            Stop
-                        </button>
-                    )}
-                </div>
+
             </div>
 
             {/* Content */}
-            <div id="verse-container" className="flex-1 bg-ash/10 rounded-xl p-6 overflow-y-auto space-y-4 relative z-0">
+            <div id="verse-container" className="flex-1 bg-ash/10 rounded-xl p-4 overflow-y-auto space-y-4 relative z-0">
                 {verses.length > 0 ? verses.map((verse, index) => {
                     const isSelected = selectedVerseIndices.has(index);
                     return (
@@ -415,7 +453,7 @@ export default function BibleController() {
                             key={index}
                             id={`verse-${index}`}
                             onClick={(e) => handleVerseClick(index, e)}
-                            className={`flex gap-4 p-3 rounded-lg transition-all group cursor-pointer border ${isSelected ? 'bg-blue-600/20 border-blue-500/30' : 'border-transparent hover:bg-white/5'}`}
+                            className={`flex gap-4 p-2 rounded-lg transition-all group cursor-pointer border ${isSelected ? 'bg-blue-600/20 border-blue-500/30' : 'border-transparent hover:bg-white/5'}`}
                         >
                             <span className={`font-bold min-w-[24px] text-right pt-1 text-sm ${isSelected ? 'text-blue-400' : 'text-ash/50 group-hover:text-ash/80'}`}>{index + 1}</span>
                             <p className={`text-lg leading-relaxed ${isSelected ? 'text-white' : 'text-light/80'}`}>{verse}</p>

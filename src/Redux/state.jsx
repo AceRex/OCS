@@ -10,6 +10,10 @@ const utilSlice = createSlice({
     isPaused: false,
     activeId: null,
     theme: "default",
+    nextStartInterval: 0,
+    delayCountdown: 0,
+    isDelayRunning: false,
+    nextItemToStart: null,
   },
   reducers: {
     setTheme: (state, action) => {
@@ -29,6 +33,18 @@ const utilSlice = createSlice({
     },
     setTime: (state, action) => {
       state.time = action.payload;
+    },
+    setNextStartInterval: (state, action) => {
+      state.nextStartInterval = action.payload;
+    },
+    setDelayCountdown: (state, action) => {
+      state.delayCountdown = action.payload;
+    },
+    setIsDelayRunning: (state, action) => {
+      state.isDelayRunning = action.payload;
+    },
+    setNextItemToStart: (state, action) => {
+      state.nextItemToStart = action.payload;
     },
     setAgenda: (state, action) => {
       const newAgenda = action.payload;

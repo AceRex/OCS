@@ -20,8 +20,13 @@ class AudioProcessor extends AudioWorkletProcessor {
     this.silenceChunkCount = 0;
     this.noiseFloorSamples = [];
     this.NOISE_FLOOR_UPDATE_INTERVAL = 8; // Update every 8 silent chunks (~1s)
-    this.NOISE_FLOOR_MIN = 0.002;
+    this.NOISE_FLOOR_MIN = 0.005; // Increased from 0.002
     this.NOISE_FLOOR_MAX = 0.025;
+
+    // VAD Hangover: wait ~640ms (5 chunks * 128ms) of silence before dropping isSpeaking
+    this.hangoverLimit = 5;
+    this.hangoverCount = 0;
+    this.wasSpeaking = false;
   }
 
   /**
@@ -73,18 +78,24 @@ class AudioProcessor extends AudioWorkletProcessor {
       this.buffer[this.ptr++] = channelData[i];
 
       if (this.ptr >= this.bufferSize) {
-        // ── 1. RMS Energy ────────────────────────────────────────────
+        // ── 1. RMS Energy + ZCR in one pass ──────────────────────────
         let sum = 0;
+        let crossings = 0;
+        let prev = this.buffer[0];
         for (let j = 0; j < this.buffer.length; j++) {
-          sum += this.buffer[j] * this.buffer[j];
+          const sample = this.buffer[j];
+          sum += sample * sample;
+          if (j > 0 && ((sample >= 0) !== (prev >= 0))) crossings++;
+          prev = sample;
         }
         const rms = Math.sqrt(sum / this.buffer.length);
-
-        // ── 2. Zero-Crossing Rate ────────────────────────────────────
-        const zcr = this.computeZCR(this.buffer);
+        const zcr = crossings / this.buffer.length;
 
         // ── 3. Voicing Score (periodicity) ───────────────────────────
-        const voicingScore = this.computeVoicingScore(this.buffer);
+        let voicingScore = 0;
+        if (rms > this.noiseFloor * 2 && zcr < 0.5) {
+          voicingScore = this.computeVoicingScore(this.buffer);
+        }
 
         // ── 4. Adaptive noise floor update (during silence) ──────────
         const isLikelySilent = rms < this.noiseFloor * 1.5;
@@ -109,7 +120,7 @@ class AudioProcessor extends AudioWorkletProcessor {
 
         // ── 5. Multi-feature VAD Decision ────────────────────────────
         // Primary: RMS must exceed the adaptive noise floor (with headroom)
-        const energyOk = rms > this.noiseFloor * 2.0;
+        const energyOk = rms > this.noiseFloor * 4.0; // Increased from 2.5 to be very conservative
 
         // Secondary: ZCR must be in the voice range (< 0.42)
         // High ZCR with low energy = white noise / hiss, not voice
@@ -117,10 +128,27 @@ class AudioProcessor extends AudioWorkletProcessor {
 
         // Tertiary: Either voicing score is present OR energy is very strong
         // (loud transients — claps, door slams — get through but will be filtered
-        //  by confidence gating in the whisper layer)
-        const periodicityOk = voicingScore > 0.12 || rms > this.noiseFloor * 6;
+        //  by confidence gating in the Vosk layer)
+        const periodicityOk = voicingScore > 0.15 || rms > this.noiseFloor * 6;
 
-        const isSpeaking = energyOk && zcrOk && periodicityOk;
+        const isCurrentSpeaking = energyOk && zcrOk && periodicityOk;
+
+        let isSpeaking = false;
+        if (isCurrentSpeaking) {
+            this.hangoverCount = 0;
+            this.wasSpeaking = true;
+            isSpeaking = true;
+        } else {
+            if (this.wasSpeaking) {
+                this.hangoverCount++;
+                if (this.hangoverCount < this.hangoverLimit) {
+                    isSpeaking = true; // Still in hangover period
+                } else {
+                    this.wasSpeaking = false;
+                    isSpeaking = false;
+                }
+            }
+        }
 
         // Compute a spectral confidence value for the debug bar
         const spectralConfidence = isSpeaking
@@ -138,7 +166,6 @@ class AudioProcessor extends AudioWorkletProcessor {
         });
 
         this.ptr = 0;
-        this.buffer = new Float32Array(this.bufferSize);
       }
     }
     return true;

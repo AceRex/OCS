@@ -64,16 +64,16 @@ export default function PreviewModal({ isOpen, onClose, mode }) {
             });
         });
 
-        // Listen to Content Updates
-        electron.Presentation.onSetContent(setPresentationContent);
-        electron.Presentation.onSetStyle((value) => {
+        // Listen to Content Updates (use disposers — never removeAllListeners)
+        const unsubContent = electron.Presentation.onSetContent(setPresentationContent);
+        const unsubStyle = electron.Presentation.onSetStyle((value) => {
             setPresentationStyle(prev => ({ ...prev, ...value }));
         });
 
         return () => {
             electron.Timer.removeSetTimerListener();
-            electron.Presentation.removeSetContentListener();
-            electron.Presentation.removeSetStyleListener();
+            if (typeof unsubContent === 'function') unsubContent();
+            if (typeof unsubStyle === 'function') unsubStyle();
         };
     }, [mode]); // Re-run listener logic if mode changes
 

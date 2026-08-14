@@ -1,24 +1,122 @@
 import React, { useState, useEffect } from "react";
-import { PiTextT, PiPaintBucket, PiGear } from "react-icons/pi";
+import { PiTextT, PiPaintBucket, PiGear, PiBook, PiPalette, PiTranslate, PiArrowsOut, PiMicrophone, PiMoon } from "react-icons/pi";
+
+const TRANSLATIONS = ['KJV', 'NIV', 'ESV', 'NKJV', 'NLT', 'AMP', 'MSG', 'CSB', 'NASB', 'RSV'];
+
+const REF_POSITIONS = [
+    { value: 'top-center',    label: 'Top Center' },
+    { value: 'top-left',      label: 'Top Left' },
+    { value: 'top-right',     label: 'Top Right' },
+    { value: 'bottom-center', label: 'Bottom Center' },
+    { value: 'bottom-left',   label: 'Bottom Left' },
+    { value: 'bottom-right',  label: 'Bottom Right' },
+];
+
+const BODY_POSITIONS = [
+    { value: 'center',       label: 'Center (Default)' },
+    { value: 'bottom-left',  label: 'Bottom Left' },
+    { value: 'bottom-right', label: 'Bottom Right' },
+];
 
 export default function SettingsController() {
+    const [activeTab, setActiveTab] = useState('appearance');
+
     const [styles, setStyles] = useState({
-        bgType: "color", // 'color' | 'image' | 'video'
-        backgroundColor: "#000000",
-        textColor: "#ffffff",
-        fontFamily: "Inter",
+        bgType: "color",
+        backgroundColor: "#0B0814",
+        textColor: "#F5F2FA",
+        fontFamily: "Outfit",
         fontSize: "5rem",
         textAlign: "center",
         backgroundImage: null,
-        backgroundVideo: null
+        backgroundVideo: null,
+        // Bible settings
+        bibleRefPosition: "top-center",
+        bibleBodyPosition: "center",
+        bibleTranslation: "KJV",
+        bibleServiceLabel: "",
+        bibleShowOrbs: true,
     });
 
     const [mediaFiles, setMediaFiles] = useState([]);
+    const [sleepMode, setSleepMode] = useState('always');
+    const [sleepProbeOk, setSleepProbeOk] = useState(true);
+    const [liveTranscriptCorrection, setLiveTranscriptCorrection] = useState(false);
+    const [sessionTranscriptCleanup, setSessionTranscriptCleanup] = useState(false);
+    const [scriptureReadAlong, setScriptureReadAlong] = useState(true);
+    const [transcriptionLanguage, setTranscriptionLanguage] = useState('en');
+    const [languageGateEnabled, setLanguageGateEnabled] = useState(true);
+
+    useEffect(() => {
+        const loadSettings = async () => {
+            if (window.electron?.Settings?.get) {
+                const s = await window.electron.Settings.get();
+                if (s?.sleepPrevention) setSleepMode(s.sleepPrevention);
+                setLiveTranscriptCorrection(!!s?.liveTranscriptCorrection);
+                setSessionTranscriptCleanup(!!s?.sessionTranscriptCleanup);
+                setScriptureReadAlong(s?.scriptureReadAlong !== false);
+                setTranscriptionLanguage(s?.transcriptionLanguage || 'en');
+                setLanguageGateEnabled(s?.languageGateEnabled !== false);
+            }
+            if (window.electron?.Sleep?.probe) {
+                const p = await window.electron.Sleep.probe();
+                setSleepProbeOk(!!p?.ok);
+            }
+        };
+        loadSettings();
+    }, []);
+
+    const setSleepPreventionMode = async (mode) => {
+        setSleepMode(mode);
+        if (window.electron?.Sleep?.setMode) {
+            await window.electron.Sleep.setMode(mode);
+        }
+        if (window.electron?.Settings?.set) {
+            await window.electron.Settings.set({ sleepPrevention: mode });
+        }
+    };
+
+    const setLiveCorrection = async (on) => {
+        setLiveTranscriptCorrection(on);
+        if (window.electron?.Settings?.set) {
+            await window.electron.Settings.set({ liveTranscriptCorrection: !!on });
+        }
+    };
+
+    const setSessionCleanup = async (on) => {
+        setSessionTranscriptCleanup(on);
+        if (window.electron?.Settings?.set) {
+            await window.electron.Settings.set({ sessionTranscriptCleanup: !!on });
+        }
+    };
+
+    const setReadAlong = async (on) => {
+        setScriptureReadAlong(on);
+        if (window.electron?.Settings?.set) {
+            await window.electron.Settings.set({ scriptureReadAlong: !!on });
+        }
+    };
+
+    const setTranscriptionLang = async (code) => {
+        setTranscriptionLanguage(code);
+        if (window.electron?.Settings?.set) {
+            await window.electron.Settings.set({ transcriptionLanguage: code });
+        }
+    };
+
+    const setLanguageGate = async (on) => {
+        setLanguageGateEnabled(on);
+        if (window.electron?.Settings?.set) {
+            await window.electron.Settings.set({ languageGateEnabled: !!on });
+        }
+    };
 
     useEffect(() => {
         const loadMedia = async () => {
-            const files = await electron.Media.list();
-            if (files) setMediaFiles(files);
+            if (window.electron?.Media?.list) {
+                const files = await window.electron.Media.list();
+                if (Array.isArray(files)) setMediaFiles(files);
+            }
         };
         loadMedia();
     }, []);
@@ -26,170 +124,461 @@ export default function SettingsController() {
     const updateStyle = (key, value) => {
         const newStyles = { ...styles, [key]: value };
         setStyles(newStyles);
-        electron.Presentation.setStyle(newStyles);
+        if (window.electron?.Presentation?.setStyle) {
+            window.electron.Presentation.setStyle(newStyles);
+        }
     };
 
-    return (
-        <div className="flex flex-col gap-6 p-4 text-light h-full overflow-y-auto">
-            {/* Header */}
-            <h2 className="text-xl font-bold text-ash uppercase tracking-widest flex items-center gap-2">
-                <PiGear className="mb-1" /> Settings
-            </h2>
+    const tabs = [
+        { id: 'appearance', label: 'Appearance', icon: <PiPalette /> },
+        { id: 'scripture', label: 'Scripture', icon: <PiBook /> },
+        { id: 'media', label: 'Media', icon: <PiPaintBucket /> },
+        { id: 'privacy', label: 'Privacy', icon: <PiMicrophone /> },
+    ];
 
-            {/* Style Controls */}
-            <div className="grid grid-cols-2 gap-4">
-                {/* Background Color */}
-                <div className="bg-ash/10 p-4 rounded-xl flex flex-col gap-2">
-                    <label className="text-xs font-bold text-ash flex items-center gap-2">
-                        <PiPaintBucket /> Background Color
-                    </label>
-                    <div className="flex items-center gap-2">
-                        <input
-                            type="color"
-                            value={styles.backgroundColor}
-                            onChange={(e) => updateStyle("backgroundColor", e.target.value)}
-                            className="w-8 h-8 rounded cursor-pointer bg-transparent border-none"
-                        />
-                        <span className="text-xs font-mono">{styles.backgroundColor}</span>
+    return (
+        <div className="flex flex-col gap-0 text-white h-full overflow-hidden font-outfit bg-[#0B0814]"
+             style={{ fontFamily: "'Outfit', 'Space Grotesk', sans-serif" }}>
+            {/* Header */}
+            <div className="px-8 pt-8 pb-6 border-b border-[#2E2542]">
+                <div className="flex items-center gap-3 mb-6">
+                    <div className="w-10 h-10 rounded-2xl bg-violet/20 flex items-center justify-center text-[#A788FA]">
+                        <PiGear size={22} />
+                    </div>
+                    <div>
+                        <h2 className="text-lg font-black uppercase tracking-widest text-[#F5F2FA]">Settings</h2>
+                        <p className="text-[10px] text-[#8882A4] font-bold uppercase tracking-widest">OCS Broadcast Configuration</p>
                     </div>
                 </div>
-
-                {/* Text Color */}
-                <div className="bg-ash/10 p-4 rounded-xl flex flex-col gap-2">
-                    <label className="text-xs font-bold text-ash flex items-center gap-2">
-                        <PiTextT /> Text Color
-                    </label>
-                    <div className="flex items-center gap-2">
-                        <input
-                            type="color"
-                            value={styles.textColor}
-                            onChange={(e) => updateStyle("textColor", e.target.value)}
-                            className="w-8 h-8 rounded cursor-pointer bg-transparent border-none"
-                        />
-                        <span className="text-xs font-mono">{styles.textColor}</span>
-                    </div>
+                {/* Tab Bar */}
+                <div className="flex gap-2">
+                    {tabs.map(tab => (
+                        <button
+                            key={tab.id}
+                            onClick={() => setActiveTab(tab.id)}
+                            className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-[11px] font-black uppercase tracking-widest transition-all ${
+                                activeTab === tab.id
+                                    ? 'bg-[#A788FA] text-[#0B0814]'
+                                    : 'bg-[#1A1428] text-[#8882A4] hover:text-white hover:bg-[#231A36]'
+                            }`}
+                        >
+                            {tab.icon} {tab.label}
+                        </button>
+                    ))}
                 </div>
             </div>
 
-            {/* Media & Font Settings */}
-            <div className="space-y-4">
-                {/* Local Media Library */}
-                <div className="bg-ash/10 p-4 rounded-xl flex flex-col gap-4">
-                    <div className="flex items-center justify-between">
-                        <label className="text-xs font-bold text-ash">Media Library</label>
-                        <button
-                            onClick={async () => {
-                                const newFile = await electron.Media.import();
-                                if (newFile) {
-                                    setMediaFiles(prev => [...prev, newFile]);
-                                }
-                            }}
-                            className="text-[10px] bg-blue-600 px-3 py-1 text-white rounded-full font-bold hover:bg-blue-500 transition-colors"
-                        >
-                            + Import Media
-                        </button>
-                    </div>
+            <div className="flex-1 overflow-y-auto p-8 space-y-6 no-scrollbar">
 
-                    {/* Local Library Grid */}
-                    <div className="grid grid-cols-4 gap-2 max-h-40 overflow-y-auto pr-1">
-                        {mediaFiles.map((url, i) => {
-                            const isVideo = url.toLowerCase().endsWith('.mp4') || url.toLowerCase().endsWith('.webm');
-                            return (
-                                <div key={i} className="relative group aspect-video rounded-md overflow-hidden border border-white/10 hover:border-blue-500 transition-all">
-                                    <button
-                                        onClick={() => {
-                                            const newStyles = {
-                                                ...styles,
-                                                backgroundImage: isVideo ? null : url,
-                                                backgroundVideo: isVideo ? url : null
-                                            };
-                                            setStyles(newStyles);
-                                            electron.Presentation.setStyle(newStyles);
-                                        }}
-                                        className="w-full h-full"
-                                    >
-                                        {isVideo ? (
-                                            <video src={url} className="w-full h-full object-cover" />
-                                        ) : (
-                                            <img src={url} className="w-full h-full object-cover" alt="local" />
-                                        )}
-                                    </button>
-
-                                    {/* Delete Button */}
-                                    <button
-                                        onClick={async (e) => {
-                                            e.stopPropagation();
-                                            const success = await electron.Media.delete(url);
-                                            if (success) {
-                                                setMediaFiles(prev => prev.filter(f => f !== url));
-                                            }
-                                        }}
-                                        className="absolute top-1 right-1 bg-red-600 text-white w-4 h-4 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-opacity z-10 hover:bg-red-700 font-bold leading-none text-xs pb-0.5"
-                                        title="Delete"
-                                    >
-                                        ×
-                                    </button>
-
-                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 pointer-events-none flex items-center justify-center transition-opacity">
-                                        <span className="text-[10px] text-white font-bold">USE</span>
-                                    </div>
+                {/* ─── APPEARANCE TAB ─── */}
+                {activeTab === 'appearance' && (
+                    <>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-[#1A1428] border border-[#2E2542] p-5 rounded-3xl flex flex-col gap-3">
+                                <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest flex items-center gap-2">
+                                    <PiPaintBucket /> Background Color
+                                </label>
+                                <div className="flex items-center gap-3">
+                                    <input
+                                        type="color"
+                                        value={styles.backgroundColor}
+                                        onChange={(e) => updateStyle("backgroundColor", e.target.value)}
+                                        className="w-10 h-10 rounded-xl cursor-pointer bg-transparent border-none"
+                                    />
+                                    <span className="text-xs font-mono text-[#8882A4]">{styles.backgroundColor}</span>
                                 </div>
-                            );
-                        })}
-                        {mediaFiles.length === 0 && (
-                            <div className="col-span-4 text-center py-4 text-ash text-xs italic opacity-50">
-                                No local media. Import to save.
                             </div>
-                        )}
-                    </div>
 
-                    <div className="w-full h-[1px] bg-white/5 my-2" />
-
-                    <label className="text-xs font-bold text-ash">Web Samples</label>
-                    <div className="grid grid-cols-4 gap-2">
-                        {[
-                            "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?q=80&w=500&auto=format&fit=crop",
-                            "https://images.unsplash.com/photo-1472214103451-9374bd1c798e?q=80&w=500&auto=format&fit=crop",
-                            "https://images.unsplash.com/photo-1519681393798-38e43269d496?q=80&w=500&auto=format&fit=crop",
-                            "https://images.unsplash.com/photo-1438232992991-995b7058bbb3?q=80&w=500&auto=format&fit=crop"
-                        ].map((url, i) => (
-                            <button
-                                key={i}
-                                onClick={() => {
-                                    const newStyles = {
-                                        ...styles,
-                                        backgroundImage: url,
-                                        backgroundVideo: null
-                                    };
-                                    setStyles(newStyles);
-                                    electron.Presentation.setStyle(newStyles);
-                                }}
-                                className="aspect-video w-full rounded-md overflow-hidden border border-white/10 hover:border-blue-500 transition-all relative group"
-                            >
-                                <img src={url} className="w-full h-full object-cover" alt="sample" />
-                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                    <span className="text-[10px] text-white font-bold">USE</span>
+                            <div className="bg-[#1A1428] border border-[#2E2542] p-5 rounded-3xl flex flex-col gap-3">
+                                <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest flex items-center gap-2">
+                                    <PiTextT /> Text Color
+                                </label>
+                                <div className="flex items-center gap-3">
+                                    <input
+                                        type="color"
+                                        value={styles.textColor}
+                                        onChange={(e) => updateStyle("textColor", e.target.value)}
+                                        className="w-10 h-10 rounded-xl cursor-pointer bg-transparent border-none"
+                                    />
+                                    <span className="text-xs font-mono text-[#8882A4]">{styles.textColor}</span>
                                 </div>
-                            </button>
-                        ))}
-                    </div>
-                </div>
+                            </div>
+                        </div>
 
-                {/* Font Family */}
-                <div className="bg-ash/10 p-4 rounded-xl flex flex-col gap-2">
-                    <label className="text-xs font-bold text-ash">Font Family</label>
-                    <select
-                        value={styles.fontFamily}
-                        onChange={(e) => updateStyle('fontFamily', e.target.value)}
-                        className="bg-primary text-light p-2 rounded text-sm border border-white/10 outline-none"
-                    >
-                        <option value="Inter">Inter (Default)</option>
-                        <option value="Times New Roman">Times New Roman</option>
-                        <option value="Courier New">Courier New</option>
-                        <option value="Arial">Arial</option>
-                        <option value="Georgia">Georgia</option>
-                    </select>
-                </div>
+                        <div className="bg-[#1A1428] border border-[#2E2542] p-5 rounded-3xl flex flex-col gap-3">
+                            <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest">Display Font</label>
+                            <div className="grid grid-cols-3 gap-2">
+                                {['Outfit', 'Space Grotesk', 'Georgia', 'Arial', 'Courier New', 'Times New Roman'].map(font => (
+                                    <button
+                                        key={font}
+                                        onClick={() => updateStyle('fontFamily', font)}
+                                        className={`px-4 py-2.5 rounded-2xl text-xs font-bold border transition-all ${
+                                            styles.fontFamily === font
+                                                ? 'bg-[#A788FA]/20 border-[#A788FA] text-[#A788FA]'
+                                                : 'bg-transparent border-[#2E2542] text-[#8882A4] hover:border-white/20 hover:text-white'
+                                        }`}
+                                        style={{ fontFamily: font }}
+                                    >
+                                        {font}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </>
+                )}
+
+                {/* ─── SCRIPTURE TAB ─── */}
+                {activeTab === 'scripture' && (
+                    <>
+                        {/* Preview Swatch */}
+                        <div className="w-full rounded-3xl overflow-hidden border border-[#2E2542]" style={{ aspectRatio: '16/9', position: 'relative', backgroundColor: '#0B0814' }}>
+                            {/* Orbs preview */}
+                            {styles.bibleShowOrbs && (
+                                <>
+                                    <div style={{ position:'absolute', top:'-15%', left:'-15%', width:'55%', height:'55%', borderRadius:'50%', background:'radial-gradient(circle, rgba(167,136,250,0.55) 0%, rgba(167,136,250,0.12) 55%, transparent 70%)', filter:'blur(2px)' }} />
+                                    <div style={{ position:'absolute', bottom:'-15%', right:'-15%', width:'50%', height:'50%', borderRadius:'50%', background:'radial-gradient(circle, rgba(103,232,249,0.45) 0%, rgba(103,232,249,0.10) 55%, transparent 70%)', filter:'blur(2px)' }} />
+                                </>
+                            )}
+                            <div className="absolute inset-0 flex items-center justify-center">
+                                <div style={{ textAlign:'center', padding:'5%' }}>
+                                    <p style={{ fontFamily:'"JetBrains Mono", monospace', fontSize:'1.2vw', color:'#67E8F9', letterSpacing:'0.2em', textTransform:'uppercase', marginBottom:'4%' }}>
+                                        JOHN · <span style={{ color:'#A788FA' }}>CHAPTER 3 · VERSE 16</span>
+                                    </p>
+                                    <p style={{ fontFamily:'"Outfit", sans-serif', fontSize:'2.2vw', fontWeight:800, color:'#F5F2FA', lineHeight:1.15 }}>
+                                        "For God so loved the world that he gave his one and only Son"
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="absolute bottom-3 left-1/2 -translate-x-1/2">
+                                <span style={{ fontFamily:'"Outfit", sans-serif', fontSize:'0.9vw', color:'rgba(245,242,250,0.4)', letterSpacing:'0.15em', textTransform:'uppercase' }}>
+                                    {styles.bibleTranslation}{styles.bibleServiceLabel ? ` · ${styles.bibleServiceLabel}` : ''}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            {/* Translation */}
+                            <div className="bg-[#1A1428] border border-[#2E2542] p-5 rounded-3xl flex flex-col gap-3">
+                                <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest flex items-center gap-2">
+                                    <PiTranslate /> Translation
+                                </label>
+                                <div className="flex flex-wrap gap-2">
+                                    {TRANSLATIONS.map(t => (
+                                        <button
+                                            key={t}
+                                            onClick={() => updateStyle('bibleTranslation', t)}
+                                            className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${
+                                                styles.bibleTranslation === t
+                                                    ? 'bg-[#67E8F9]/20 border-[#67E8F9] text-[#67E8F9]'
+                                                    : 'bg-transparent border-[#2E2542] text-[#8882A4] hover:border-white/20 hover:text-white'
+                                            }`}
+                                        >
+                                            {t}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Service Label */}
+                            <div className="bg-[#1A1428] border border-[#2E2542] p-5 rounded-3xl flex flex-col gap-3">
+                                <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest">Service Label</label>
+                                <input
+                                    type="text"
+                                    value={styles.bibleServiceLabel}
+                                    onChange={(e) => updateStyle('bibleServiceLabel', e.target.value)}
+                                    placeholder="e.g. Sunday Service"
+                                    className="bg-[#0B0814] border border-[#2E2542] rounded-2xl px-4 py-3 text-sm text-white placeholder-[#2E2542] outline-none focus:border-[#A788FA] transition-colors"
+                                />
+                            </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4">
+                            {/* Reference Position */}
+                            <div className="bg-[#1A1428] border border-[#2E2542] p-5 rounded-3xl flex flex-col gap-3">
+                                <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest flex items-center gap-2">
+                                    <PiArrowsOut /> Book & Verse Position
+                                </label>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {REF_POSITIONS.map(pos => (
+                                        <button
+                                            key={pos.value}
+                                            onClick={() => updateStyle('bibleRefPosition', pos.value)}
+                                            className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all ${
+                                                styles.bibleRefPosition === pos.value
+                                                    ? 'bg-[#A788FA]/20 border-[#A788FA] text-[#A788FA]'
+                                                    : 'bg-transparent border-[#2E2542] text-[#8882A4] hover:border-white/20 hover:text-white'
+                                            }`}
+                                        >
+                                            {pos.label}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Body Position */}
+                            <div className="bg-[#1A1428] border border-[#2E2542] p-5 rounded-3xl flex flex-col gap-3">
+                                <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest">Scripture Body Position</label>
+                                <div className="flex flex-col gap-2">
+                                    {BODY_POSITIONS.map(pos => (
+                                        <button
+                                            key={pos.value}
+                                            onClick={() => updateStyle('bibleBodyPosition', pos.value)}
+                                            className={`px-4 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest border text-left transition-all ${
+                                                styles.bibleBodyPosition === pos.value
+                                                    ? 'bg-[#A788FA]/20 border-[#A788FA] text-[#A788FA]'
+                                                    : 'bg-transparent border-[#2E2542] text-[#8882A4] hover:border-white/20 hover:text-white'
+                                            }`}
+                                        >
+                                            {pos.label}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                <div className="mt-2 pt-4 border-t border-[#2E2542] flex items-center justify-between">
+                                    <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest">Show Orb Effects</label>
+                                    <button
+                                        onClick={() => updateStyle('bibleShowOrbs', !styles.bibleShowOrbs)}
+                                        className={`relative w-12 h-6 rounded-full transition-colors ${styles.bibleShowOrbs ? 'bg-[#A788FA]' : 'bg-[#2E2542]'}`}
+                                    >
+                                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${styles.bibleShowOrbs ? 'left-7' : 'left-1'}`} />
+                                    </button>
+                                </div>
+                                <div className="mt-2 pt-4 border-t border-[#2E2542] flex items-center justify-between gap-3">
+                                    <div>
+                                        <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest block">Scripture read-along (Speaker)</label>
+                                        <span className="text-[10px] text-[#8882A4]">Word-pop teleprompt on Speaker View & Mini Preview. General View stays clean.</span>
+                                    </div>
+                                    <button
+                                        onClick={() => setReadAlong(!scriptureReadAlong)}
+                                        className={`relative w-12 h-6 rounded-full transition-colors shrink-0 ${scriptureReadAlong ? 'bg-[#A788FA]' : 'bg-[#2E2542]'}`}
+                                    >
+                                        <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${scriptureReadAlong ? 'left-7' : 'left-1'}`} />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </>
+                )}
+
+                {/* ─── MEDIA TAB ─── */}
+                {activeTab === 'media' && (
+                    <div className="bg-[#1A1428] border border-[#2E2542] p-5 rounded-3xl flex flex-col gap-4">
+                        <div className="flex items-center justify-between">
+                            <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest">Media Library</label>
+                            <button
+                                onClick={async () => {
+                                    if (!window.electron?.Media?.import) return;
+                                    const newFile = await window.electron.Media.import();
+                                    if (newFile) setMediaFiles(prev => [...prev, newFile]);
+                                }}
+                                className="text-[10px] bg-[#A788FA] text-[#0B0814] px-4 py-1.5 rounded-full font-black uppercase hover:bg-[#67E8F9] transition-colors"
+                            >
+                                + Import
+                            </button>
+                        </div>
+
+                        <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto pr-1">
+                            {mediaFiles.map((url, i) => {
+                                const isVideo = url.toLowerCase().endsWith('.mp4') || url.toLowerCase().endsWith('.webm');
+                                return (
+                                    <div key={i} className="relative group aspect-video rounded-2xl overflow-hidden border border-[#2E2542] hover:border-[#A788FA] transition-all">
+                                        <button
+                                            onClick={() => {
+                                                const newStyles = { ...styles, backgroundImage: isVideo ? null : url, backgroundVideo: isVideo ? url : null };
+                                                setStyles(newStyles);
+                                                if (window.electron?.Presentation?.setStyle) window.electron.Presentation.setStyle(newStyles);
+                                            }}
+                                            className="w-full h-full"
+                                        >
+                                            {isVideo ? <video src={url} className="w-full h-full object-cover" /> : <img src={url} className="w-full h-full object-cover" alt="local" />}
+                                        </button>
+                                        <button
+                                            onClick={async (e) => {
+                                                e.stopPropagation();
+                                                if (window.electron?.Media?.delete) {
+                                                    const ok = await window.electron.Media.delete(url);
+                                                    if (ok) setMediaFiles(prev => prev.filter(f => f !== url));
+                                                }
+                                            }}
+                                            className="absolute top-1 right-1 bg-red-600 text-white w-4 h-4 flex items-center justify-center rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10 text-[10px] font-black"
+                                        >×</button>
+                                    </div>
+                                );
+                            })}
+                            {mediaFiles.length === 0 && (
+                                <div className="col-span-4 text-center py-8 text-[#8882A4] text-xs font-bold uppercase tracking-widest opacity-40">
+                                    No media imported yet
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="border-t border-[#2E2542] pt-4">
+                            <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest mb-3 block">Sample Backgrounds</label>
+                            <div className="grid grid-cols-4 gap-2">
+                                {[
+                                    "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?q=80&w=500&auto=format&fit=crop",
+                                    "https://images.unsplash.com/photo-1472214103451-9374bd1c798e?q=80&w=500&auto=format&fit=crop",
+                                    "https://images.unsplash.com/photo-1519681393798-38e43269d496?q=80&w=500&auto=format&fit=crop",
+                                    "https://images.unsplash.com/photo-1438232992991-995b7058bbb3?q=80&w=500&auto=format&fit=crop"
+                                ].map((url, i) => (
+                                    <button
+                                        key={i}
+                                        onClick={() => {
+                                            const newStyles = { ...styles, backgroundImage: url, backgroundVideo: null };
+                                            setStyles(newStyles);
+                                            if (window.electron?.Presentation?.setStyle) window.electron.Presentation.setStyle(newStyles);
+                                        }}
+                                        className="aspect-video w-full rounded-2xl overflow-hidden border border-[#2E2542] hover:border-[#A788FA] transition-all relative group"
+                                    >
+                                        <img src={url} className="w-full h-full object-cover" alt="sample" />
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                            <span className="text-[10px] text-white font-black uppercase">Use</span>
+                                        </div>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* ─── PRIVACY / SESSION ARCHIVE ─── */}
+                {activeTab === 'privacy' && (
+                    <div className="bg-[#1A1428] border border-[#2E2542] p-6 rounded-3xl flex flex-col gap-4 max-w-2xl">
+                        <div>
+                            <h3 className="text-sm font-black uppercase tracking-widest text-[#F5F2FA]">Session archive</h3>
+                            <p className="text-[10px] text-[#8882A4] font-bold uppercase tracking-widest mt-1">Local recording notice</p>
+                        </div>
+                        <p className="text-sm text-[#C8C2DC] leading-relaxed">
+                            When you start a service timer, OCS may record microphone audio and the live transcript
+                            into a local Session Folder for church archive (sermon review, podcasts, notes).
+                            Audio and transcripts stay on this computer under the app’s data folder — they are not
+                            uploaded or shared over the network.
+                        </p>
+                        <p className="text-xs text-[#8882A4] leading-relaxed">
+                            A REC indicator appears on the Controller (and optionally Speaker View) while a session
+                            is archiving. Pause keeps recording by default. Manage folders from the Sessions sidebar.
+                            Free disk space under ~2 GB may block or warn before a new archive starts.
+                        </p>
+                        <div className="rounded-2xl bg-emerald-500/10 border border-emerald-500/20 px-4 py-3 text-xs text-emerald-200/90">
+                            Privacy: NFR-25 — primary mic audio is processed on-device only.
+                        </div>
+
+                        <div className="border-t border-[#2E2542] pt-5 mt-2">
+                            <div className="flex items-center gap-2 mb-3">
+                                <PiMoon className="text-[#A788FA]" size={18} />
+                                <h3 className="text-sm font-black uppercase tracking-widest text-[#F5F2FA]">Sleep prevention</h3>
+                            </div>
+                            <p className="text-xs text-[#8882A4] leading-relaxed mb-4">
+                                Keeps displays and projectors awake while OCS is protecting your service.
+                                Default is Always (recommended for live AV).
+                            </p>
+                            {!sleepProbeOk && (
+                                <div className="rounded-xl bg-amber-500/10 border border-amber-500/25 px-3 py-2 text-xs text-amber-200 mb-4">
+                                    Display sleep prevention could not be verified. Screens may still sleep mid-service.
+                                </div>
+                            )}
+                            <div className="grid grid-cols-2 gap-2">
+                                {[
+                                    { id: 'always', label: 'Always' },
+                                    { id: 'live', label: 'Only while live' },
+                                ].map((opt) => (
+                                    <button
+                                        key={opt.id}
+                                        type="button"
+                                        onClick={() => setSleepPreventionMode(opt.id)}
+                                        className={`px-4 py-3 rounded-2xl text-xs font-bold border transition-all ${
+                                            sleepMode === opt.id
+                                                ? 'bg-[#A788FA]/20 border-[#A788FA] text-[#A788FA]'
+                                                : 'bg-transparent border-[#2E2542] text-[#8882A4] hover:border-white/20 hover:text-white'
+                                        }`}
+                                    >
+                                        {opt.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="border-t border-[#2E2542] pt-5 mt-2">
+                            <h3 className="text-sm font-black uppercase tracking-widest text-[#F5F2FA] mb-1">Transcription language</h3>
+                            <p className="text-xs text-[#8882A4] leading-relaxed mb-4">
+                                OCS transcribes only the selected language. When an interpreter speaks another language
+                                on the same mic, those chunks are skipped (whisper language detection per VAD segment).
+                                Requires a multilingual whisper model (`ggml-tiny.bin`) for reliable detection; English-only
+                                models use a limited heuristic fallback.
+                            </p>
+                            <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest block mb-2">
+                                Target language
+                            </label>
+                            <select
+                                value={transcriptionLanguage}
+                                onChange={(e) => setTranscriptionLang(e.target.value)}
+                                className="w-full bg-[#0B0814] border border-[#2E2542] rounded-2xl px-4 py-3 text-sm text-white outline-none focus:border-[#A788FA] mb-4"
+                            >
+                                {[
+                                    { id: 'en', label: 'English' },
+                                    { id: 'yo', label: 'Yoruba' },
+                                    { id: 'fr', label: 'French' },
+                                    { id: 'es', label: 'Spanish' },
+                                    { id: 'pt', label: 'Portuguese' },
+                                    { id: 'sw', label: 'Swahili' },
+                                    { id: 'ha', label: 'Hausa' },
+                                    { id: 'ig', label: 'Igbo' },
+                                    { id: 'de', label: 'German' },
+                                    { id: 'zh', label: 'Chinese' },
+                                    { id: 'ar', label: 'Arabic' },
+                                ].map((opt) => (
+                                    <option key={opt.id} value={opt.id}>{opt.label}</option>
+                                ))}
+                            </select>
+                            <label className="flex items-start gap-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    className="mt-1 accent-[#A788FA]"
+                                    checked={languageGateEnabled}
+                                    onChange={(e) => setLanguageGate(e.target.checked)}
+                                />
+                                <span>
+                                    <span className="text-sm text-[#F5F2FA] font-semibold block">Filter non-target languages</span>
+                                    <span className="text-[11px] text-[#8882A4]">
+                                        Skip interpreter / other-language chunks. Applies to primary mic and secondary PTT.
+                                    </span>
+                                </span>
+                            </label>
+                        </div>
+
+                        <div className="border-t border-[#2E2542] pt-5 mt-2">
+                            <h3 className="text-sm font-black uppercase tracking-widest text-[#F5F2FA] mb-1">Transcript correction</h3>
+                            <p className="text-xs text-[#8882A4] leading-relaxed mb-4">
+                                Two separate features. Both default off. Session cleanup keeps a raw transcript file;
+                                AI cleanup is skipped if Ollama is unavailable.
+                            </p>
+                            <label className="flex items-start gap-3 mb-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    className="mt-1 accent-[#A788FA]"
+                                    checked={liveTranscriptCorrection}
+                                    onChange={(e) => setLiveCorrection(e.target.checked)}
+                                />
+                                <span>
+                                    <span className="text-sm text-[#F5F2FA] font-semibold block">Correct Live Transcript (dictionary)</span>
+                                    <span className="text-[11px] text-[#8882A4]">Fast display-only cleanup of Bible/church words. Does not change matching or archives.</span>
+                                </span>
+                            </label>
+                            <label className="flex items-start gap-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    className="mt-1 accent-[#A788FA]"
+                                    checked={sessionTranscriptCleanup}
+                                    onChange={(e) => setSessionCleanup(e.target.checked)}
+                                />
+                                <span>
+                                    <span className="text-sm text-[#F5F2FA] font-semibold block">Clean session PDF transcript (local AI)</span>
+                                    <span className="text-[11px] text-[#8882A4]">Post-timer Ollama pass with validation. Raw transcript always preserved.</span>
+                                </span>
+                            </label>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

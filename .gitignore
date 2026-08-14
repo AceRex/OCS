@@ -1,2 +1,45 @@
-node_modules
-voice_server/.venv/
+# Dependencies
+node_modules/
+package-lock.json.bak
+
+# Build & Bundles
+dist/
+build/
+out/
+*.bundle.js
+*.bundle.js.map
+
+# Python / AI Environments
+.venv/
+venv/
+env/
+__pycache__/
+*.pyc
+temp_output/
+
+# AI / ML Model Weights (Store in HF / GitHub Releases / S3)
+*.pth
+*.pt
+*.bin
+*.onnx
+*.ort
+*.fst
+*.mdl
+*.zip
+*.tar.gz
+voice_server/models/
+voice_server/piper/
+voice_server/piper_voices/
+ocs_image_engine/models/
+
+# Runtime Logs & Sessions
+session_archives/
+*.log
+*.log.*
+.electronmon
+
+# OS Caches
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,47 @@
+[
+  {
+    "id": "TC01",
+    "original": "turning to collisions one fifteen",
+    "goodCorrection": "turning to Colossians one fifteen",
+    "badCorrection": "Let us now examine Colossians 1:15 together",
+    "expectGoodAccepted": true,
+    "expectBadRejected": true,
+    "notes": "Colossians ASR garble — minimal fix vs paraphrase"
+  },
+  {
+    "id": "TC02",
+    "original": "jaymiah chapter fifty verse one",
+    "goodCorrection": "Jeremiah chapter fifty verse one",
+    "badCorrection": "The prophet speaks about judgment in chapter fifty.",
+    "expectGoodAccepted": true,
+    "expectBadRejected": true,
+    "notes": "Jeremiah spelling slip — reject summary that drops verse"
+  },
+  {
+    "id": "TC03",
+    "original": "the philippines of the spirit",
+    "goodCorrection": "the Philippians of the spirit",
+    "badCorrection": "Paul writes to the church at Philippi about the Spirit of God and unity among believers",
+    "expectGoodAccepted": true,
+    "expectBadRejected": true,
+    "notes": "Philippians country-name OOV — reject rewritten sermon sentence"
+  },
+  {
+    "id": "TC04",
+    "original": "halleluya and amen",
+    "goodCorrection": "hallelujah and amen",
+    "badCorrection": "hallelujah and amen\nPraise the Lord forevermore\nAmen and amen",
+    "expectGoodAccepted": true,
+    "expectBadRejected": true,
+    "notes": "Church vocab slip — reject added doxology lines"
+  },
+  {
+    "id": "TC05",
+    "original": "god is good all the time",
+    "goodCorrection": "god is good all the time",
+    "badCorrection": "Our God remains faithful and good in every season of life",
+    "expectGoodAccepted": true,
+    "expectBadRejected": true,
+    "notes": "Clean line unchanged; reject paraphrase"
+  }
+]

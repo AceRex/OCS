@@ -1,11 +1,15 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 
-function App() {
+function App({ mode: propMode }) {
   const [countdown, setCountDown] = useState(null);
   const [bgChange, setBgChange] = useState(false);
   const [timeUp, setTimeUp] = useState(false);
   const [isEventMode, setIsEventMode] = useState(false);
   const [theme, setTheme] = useState("default");
+  const [sessionRec, setSessionRec] = useState({ recording: false, title: null });
+  const viewMode = propMode || (typeof window !== 'undefined'
+    ? new URLSearchParams(window.location.search).get('mode')
+    : null);
 
   // New Presentation State
   const [presentationContent, setPresentationContent] = useState(null);
@@ -14,11 +18,307 @@ function App() {
     textColor: '#FFFFFF',
     fontFamily: 'serif',
     backgroundImage: null,
-    backgroundVideo: null
+    backgroundVideo: null,
+    lowerThirdImage: null
   });
 
-  const timer = useRef(null);
   const videoRef = useRef(null);
+
+  const presentationMemo = useMemo(() => {
+    const { 
+      backgroundColor, textColor, backgroundImage, backgroundVideo, 
+      backgroundX, backgroundY, backgroundWidth, backgroundHeight,
+      bibleRefPosition = 'top-center',
+      bibleBodyPosition = 'center',
+      bibleTranslation = 'KJV',
+      bibleServiceLabel = '',
+      bibleShowOrbs = true,
+      lowerThirdImage = null
+    } = presentationStyle || {};
+    const hasContent = presentationContent && presentationContent.data;
+    const isCustomLayers = hasContent && presentationContent.type === 'custom_layers';
+    const bgStyle = {
+      left: `${backgroundX || 50}%`,
+      top: `${backgroundY || 50}%`,
+      transform: 'translate(-50%, -50%)',
+      width: `${backgroundWidth || 100}%`,
+      height: `${backgroundHeight || 100}%`,
+      minWidth: '10px',
+      objectFit: 'fill'
+    };
+
+    const customLayers = isCustomLayers ? presentationContent.data.layers.map((layer, idx) => {
+      const shadowStyle = layer.style?.shadow
+        ? `${layer.style.shadow.x || 0}px ${layer.style.shadow.y || 0}px ${layer.style.shadow.blur || 10}px ${layer.style.shadow.color || 'rgba(0,0,0,0.6)'}`
+        : null;
+      return (
+        <div 
+          key={layer.id || idx}
+          className="absolute flex items-center justify-center text-center"
+          style={{
+            left: `${layer.x || 50}%`,
+            top: `${layer.y || 50}%`,
+            transform: 'translate(-50%, -50%)',
+            width: layer.type === 'image' ? `${layer.style?.width || 30}%` : 'auto',
+            zIndex: 10,
+            minWidth: '10px', 
+            minHeight: '10px'
+          }}
+        >
+          {layer.type === 'text' ? (
+            <p style={{
+              fontSize: `${layer.style?.fontSize || 5}cqw`,
+              color: layer.style?.color || '#ffffff',
+              fontFamily: layer.style?.fontFamily === 'serif' ? 'Georgia, serif' : (layer.style?.fontFamily === 'mono' ? '"Courier New", monospace' : 'system-ui, sans-serif'),
+              fontWeight: layer.style?.fontWeight || 'normal',
+              textTransform: layer.style?.textTransform || 'none',
+              lineHeight: layer.style?.lineHeight || 1.2,
+              whiteSpace: 'pre-wrap',
+              textShadow: shadowStyle || '0 2px 10px rgba(0,0,0,0.3)',
+            }}>{layer.content || ""}</p>
+          ) : (
+            <img 
+              src={layer.content} 
+              className="w-full h-auto pointer-events-none" 
+              style={{ 
+                boxShadow: shadowStyle,
+                display: 'block'
+              }}
+              alt="layer" 
+            />
+          )}
+        </div>
+      );
+    }) : null;
+
+    let biblePresentation = null;
+    if (hasContent && !isCustomLayers && presentationContent.type !== 'slide_index') {
+      const { title, body, readAlong, rangeStart, rangeEnd, currentVerse } = presentationContent.data;
+      const safeBody = body || "";
+      const bodyLen = safeBody.length;
+      const fontSize = bodyLen > 600 ? '2.8vw' : bodyLen > 300 ? '3.5vw' : bodyLen > 150 ? '4.5vw' : '6vw';
+      const useReadAlong = viewMode === 'speaker'
+        && readAlong?.enabled
+        && Array.isArray(readAlong.tokens)
+        && readAlong.tokens.length > 0;
+
+      let bookLabel = '';
+      let cvLabel = '';
+      if (title && typeof title === 'string') {
+        const parts = title.match(/^(.+?)\s+(\d+):(\d+)(?:-(\d+))?$/);
+        if (parts) {
+          bookLabel = parts[1].toUpperCase();
+          const ch = parts[2];
+          const rs = rangeStart != null ? rangeStart : parseInt(parts[3], 10);
+          const re = rangeEnd != null ? rangeEnd : (parts[4] ? parseInt(parts[4], 10) : rs);
+          const cur = currentVerse != null ? currentVerse : rs;
+          if (re > rs) {
+            // e.g. John 3:1-4 → CHAPTER 3 · VERSES 1–4 (current verse in body)
+            cvLabel = cur !== rs
+              ? `CHAPTER ${ch} · VERSES ${rs}–${re} · ${cur}`
+              : `CHAPTER ${ch} · VERSES ${rs}–${re}`;
+          } else {
+            cvLabel = `CHAPTER ${ch} · VERSE ${rs}`;
+          }
+        } else {
+          bookLabel = title.toUpperCase();
+        }
+      } else if (title) {
+        bookLabel = String(title).toUpperCase();
+      }
+
+      const refPositionMap = {
+        'top-center': 'top-[4vw] left-1/2 -translate-x-1/2',
+        'top-left': 'top-[4vw] left-[4vw]',
+        'top-right': 'top-[4vw] right-[4vw]',
+        'bottom-center': 'bottom-[4vw] left-1/2 -translate-x-1/2',
+        'bottom-left': 'bottom-[4vw] left-[4vw]',
+        'bottom-right': 'bottom-[4vw] right-[4vw]',
+      };
+
+      const bodyAlignMap = {
+        'center': 'items-center justify-center text-center',
+        'bottom-left': 'items-end justify-end text-left pb-[12vw] pl-[6vw]',
+        'bottom-right': 'items-end justify-end text-right pb-[12vw] pr-[6vw]',
+      };
+
+      const refPosClass = refPositionMap[bibleRefPosition] || refPositionMap['top-center'];
+      const bodyAlign = bodyAlignMap[bibleBodyPosition] || bodyAlignMap['center'];
+      const useCustomBg = !!backgroundImage || !!backgroundVideo;
+      const bgColor = useCustomBg ? '#000000' : (backgroundColor || '#0B0814');
+      const activeIdx = typeof readAlong?.activeIndex === 'number' ? readAlong.activeIndex : -1;
+      const baseColor = textColor || '#F5F2FA';
+
+      biblePresentation = (
+        <div className="w-full h-full relative overflow-hidden flex flex-col" style={{ backgroundColor: bgColor }}>
+          {bibleShowOrbs && !useCustomBg && (
+            <>
+              <div className="absolute pointer-events-none" style={{
+                top: '-15vw', left: '-15vw',
+                width: '55vw', height: '55vw',
+                borderRadius: '50%',
+                background: 'radial-gradient(circle, rgba(167,136,250,0.55) 0%, rgba(167,136,250,0.12) 55%, transparent 70%)',
+                filter: 'blur(2px)',
+              }} />
+              <div className="absolute pointer-events-none" style={{
+                bottom: '-15vw', right: '-15vw',
+                width: '50vw', height: '50vw',
+                borderRadius: '50%',
+                background: 'radial-gradient(circle, rgba(103,232,249,0.45) 0%, rgba(103,232,249,0.10) 55%, transparent 70%)',
+                filter: 'blur(2px)',
+              }} />
+              <div className="absolute pointer-events-none" style={{
+                top: '-8vw', left: '-8vw',
+                width: '38vw', height: '38vw',
+                borderRadius: '50%',
+                border: '0.3vw solid rgba(167,136,250,0.25)',
+              }} />
+              <div className="absolute pointer-events-none" style={{
+                top: '-3vw', left: '-3vw',
+                width: '28vw', height: '28vw',
+                borderRadius: '50%',
+                border: '0.2vw solid rgba(167,136,250,0.15)',
+              }} />
+              <div className="absolute pointer-events-none" style={{
+                bottom: '-8vw', right: '-8vw',
+                width: '35vw', height: '35vw',
+                borderRadius: '50%',
+                border: '0.3vw solid rgba(103,232,249,0.2)',
+              }} />
+            </>
+          )}
+
+          {backgroundVideo ? (
+            <video className="absolute inset-0 w-full h-full object-cover z-0" autoPlay loop muted playsInline>
+              <source src={backgroundVideo} />
+            </video>
+          ) : backgroundImage ? (
+            <img src={backgroundImage} className="absolute inset-0 w-full h-full object-cover z-0" alt="bg" />
+          ) : null}
+          {useCustomBg && <div className="absolute inset-0 bg-black/50 z-[1]" />}
+
+          {lowerThirdImage && (
+            <div className="absolute bottom-12 left-12 w-[80%] h-[20%] z-30 pointer-events-none">
+              <img src={lowerThirdImage} className="h-full w-auto object-contain drop-shadow-2xl" alt="lower third" />
+            </div>
+          )}
+
+          {title && (
+            <div className={`absolute z-20 flex items-center gap-[0.8vw] ${refPosClass}`}>
+              <span style={{
+                fontFamily: '"JetBrains Mono", monospace',
+                fontSize: '1.4vw',
+                fontWeight: 700,
+                letterSpacing: '0.18em',
+                color: '#67E8F9',
+                textTransform: 'uppercase',
+              }}>
+                {bookLabel}
+                {cvLabel && <> · <span style={{ color: '#A788FA' }}>{cvLabel}</span></>}
+              </span>
+            </div>
+          )}
+
+          <div
+            className={`w-full h-full flex ${bodyAlign} z-10 relative`}
+            style={{
+              overflow: 'hidden',
+              boxSizing: 'border-box',
+              paddingLeft: useReadAlong ? 0 : '6vw',
+              paddingRight: useReadAlong ? 0 : '6vw',
+            }}
+          >
+            <p style={{
+              fontFamily: '"Outfit", "Space Grotesk", sans-serif',
+              fontSize: fontSize,
+              fontWeight: useReadAlong ? 600 : 800,
+              color: baseColor,
+              lineHeight: 1.15,
+              maxWidth: useReadAlong ? '100%' : '90%',
+              width: useReadAlong ? '100%' : undefined,
+              boxSizing: 'border-box',
+              padding: 0,
+              margin: 0,
+              textShadow: '0 2px 30px rgba(0,0,0,0.6)',
+              letterSpacing: '-0.01em',
+              overflowWrap: 'anywhere',
+              wordBreak: 'break-word',
+            }}>
+              {useReadAlong ? (
+                readAlong.tokens.map((tok, i) => {
+                  const isActive = i === activeIdx;
+                  const isPast = activeIdx >= 0 && i < activeIdx;
+                  return (
+                    <span
+                      key={`${i}-${tok}`}
+                      className="ocs-ra-word"
+                      data-i={i}
+                      style={{
+                        display: 'inline',
+                        // Same weight for every token — bolding via shadow avoids layout growth / frame overflow
+                        fontWeight: 600,
+                        color: isActive ? '#FFFFFF' : baseColor,
+                        opacity: isActive ? 1 : (isPast ? 0.42 : 0.58),
+                        transition: 'color 180ms cubic-bezier(0.33, 1, 0.68, 1), opacity 180ms cubic-bezier(0.33, 1, 0.68, 1), text-shadow 180ms cubic-bezier(0.33, 1, 0.68, 1)',
+                        textShadow: isActive
+                          ? '0 0 0.6px #fff, 0 0 0.6px #fff, 0 0 12px rgba(255,255,255,0.25), 0 2px 30px rgba(0,0,0,0.6)'
+                          : '0 2px 30px rgba(0,0,0,0.6)',
+                      }}
+                    >
+                      {tok}{i < readAlong.tokens.length - 1 ? ' ' : ''}
+                    </span>
+                  );
+                })
+              ) : (
+                <span dangerouslySetInnerHTML={{ __html: safeBody }} />
+              )}
+            </p>
+          </div>
+
+          <div className="absolute bottom-[3vw] left-1/2 -translate-x-1/2 z-20 flex items-center gap-[1vw]">
+            <span style={{
+              fontFamily: '"Outfit", sans-serif',
+              fontSize: '1.1vw',
+              fontWeight: 500,
+              color: 'rgba(245,242,250,0.45)',
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+            }}>
+              {bibleTranslation}
+              {bibleServiceLabel && (
+                <> · <span style={{ color: 'rgba(245,242,250,0.35)' }}>{bibleServiceLabel}</span></>
+              )}
+            </span>
+          </div>
+        </div>
+      );
+    }
+
+    const slideIndexView = hasContent && presentationContent.type === 'slide_index' ? (
+      <div className="w-full h-full flex items-center justify-center">
+        <img 
+          src={presentationContent.data.slideImageUrl} 
+          className="w-full h-full object-contain" 
+          alt={`Slide ${presentationContent.data.slideIndex + 1}`} 
+        />
+      </div>
+    ) : null;
+
+    return {
+      hasContent,
+      isCustomLayers,
+      bgStyle,
+      backgroundVideo,
+      backgroundImage,
+      backgroundColor,
+      lowerThirdImage,
+      customLayers,
+      biblePresentation,
+      slideIndexView,
+    };
+  }, [presentationStyle, presentationContent, viewMode]);
+
+  // Read-along uses weight/opacity only — no auto-scroll (keeps stage frame stable)
 
   const formatTime = (timeToFormat) => {
     if (isNaN(timeToFormat)) {
@@ -35,66 +335,75 @@ function App() {
     return `${hr}:${min}:${sec}`;
   };
 
-  const [activeId, setActiveId] = useState(null);
-
-
-
   useEffect(() => {
     const searchParams = new URLSearchParams(window.location.search);
-    const mode = searchParams.get('mode'); // 'speaker' or 'general'
+    const mode = propMode || searchParams.get('mode'); // 'speaker' or 'general'
+    let unsubContent = null;
+    let unsubStyle = null;
+    let unsubSession = null;
+
+    // Session archive REC badge — Speaker View default on; General View off (FR-5.16)
+    if (mode === 'speaker' && window.electron?.Session) {
+      window.electron.Session.status?.().then((s) => {
+        setSessionRec({ recording: !!s?.recording, title: s?.title || null });
+      }).catch(() => {});
+      unsubSession = window.electron.Session.onStatus((s) => {
+        setSessionRec({ recording: !!s?.recording, title: s?.title || null });
+      });
+    }
 
     // Timer Listener
-    window.electron.Timer.onSetTimer((value) => {
-      let newTime, newEventMode, newTheme;
+    if (window.electron && window.electron.Timer) {
+      window.electron.Timer.onSetTimer((value) => {
+        let newTime, newEventMode, newTheme;
 
-      if (typeof value === "object" && value !== null) {
-        newTime = value.time;
-        newEventMode = value.isEventMode || false;
-        newTheme = value.theme || "default";
-      } else {
-        newTime = value;
-        newEventMode = false;
-        newTheme = "default";
-      }
-
-      // Logic:
-      // Speaker View: ALWAYS updates.
-      // General View: Updates ONLY if it's an "Event Mode" (Start Service) timer.
-      if (mode === 'general' && !newEventMode) {
-        // If we are in general view, and this is NOT an event mode timer,
-        // we ignore it (essentially wiping the countdown state so it doesn't show).
-        // Unless we want to clear it explicitly?
-        setCountDown(null);
-        setIsEventMode(false);
-        return;
-      }
-
-      setIsEventMode(newEventMode);
-      setTheme(newTheme);
-
-      setCountDown(prev => {
-        if (newTime === 0 && prev === null) {
-          setTimeUp(false);
-          return null;
+        if (typeof value === "object" && value !== null) {
+          newTime = value.time;
+          newEventMode = value.isEventMode || false;
+          newTheme = value.theme || "default";
+        } else {
+          newTime = value;
+          newEventMode = false;
+          newTheme = "default";
         }
 
-        if (newTime === 0) setTimeUp(true);
-        else setTimeUp(false);
+        if (mode === 'general' && !newEventMode) {
+          setCountDown(null);
+          setIsEventMode(false);
+          return;
+        }
 
-        return newTime;
+        setIsEventMode(newEventMode);
+        setTheme(newTheme);
+
+        setCountDown(prev => {
+          if (newTime === 0 && prev === null) {
+            setTimeUp(false);
+            return null;
+          }
+
+          if (newTime === 0) setTimeUp(true);
+          else setTimeUp(false);
+
+          return newTime;
+        });
       });
-    });
+    }
 
-    if (window.electron.Presentation) {
-      window.electron.Presentation.onSetContent((value) => {
-        if (value.target && Array.isArray(value.target)) {
-             // If target is specified, respect it. If strict filtering is needed:
+    if (window.electron && window.electron.Presentation) {
+      unsubContent = window.electron.Presentation.onSetContent((value) => {
+        // null = black/blank screen — must not touch .target
+        if (value && value.target && Array.isArray(value.target)) {
              if (!value.target.includes(mode) && !value.target.includes('all')) return;
         }
-        console.log("View received content:", value);
+        const summary = value == null
+          ? 'null (black)'
+          : `${value.type || '?'} ${value.data?.title || ''}`.trim();
+        console.log(`[View] RENDER mode=${mode} set-content ←`, summary);
         setPresentationContent(value);
       });
-      window.electron.Presentation.onSetStyle((value) => {
+      unsubStyle = window.electron.Presentation.onSetStyle((value) => {
+        if (!value) return;
         if (value.target && Array.isArray(value.target)) {
              if (!value.target.includes(mode) && !value.target.includes('all')) return;
         }
@@ -104,13 +413,15 @@ function App() {
     }
 
     return () => {
-      window.electron.Timer.removeSetTimerListener();
-      if (window.electron.Presentation) {
-        window.electron.Presentation.removeSetContentListener();
-        window.electron.Presentation.removeSetStyleListener();
+      if (window.electron && window.electron.Timer) {
+        window.electron.Timer.removeSetTimerListener();
       }
+      if (typeof unsubContent === 'function') unsubContent();
+      if (typeof unsubStyle === 'function') unsubStyle();
+      if (typeof unsubSession === 'function') unsubSession();
     };
   }, []);
+
 
   // Reload video if source changes
   useEffect(() => {
@@ -130,134 +441,75 @@ function App() {
   }, [countdown]);
 
   const renderPresentation = () => {
-    const { backgroundColor, textColor, fontFamily, backgroundImage, backgroundVideo, backgroundX, backgroundY, backgroundWidth, backgroundHeight } = presentationStyle;
-    const hasContent = presentationContent && presentationContent.data;
-    const isCustomLayers = hasContent && presentationContent.type === 'custom_layers';
+    const {
+      isCustomLayers,
+      bgStyle,
+      backgroundVideo,
+      backgroundImage,
+      backgroundColor,
+      lowerThirdImage,
+      customLayers,
+      biblePresentation,
+      slideIndexView,
+    } = presentationMemo;
 
-    const bgStyle = {
-        left: `${backgroundX || 50}%`,
-        top: `${backgroundY || 50}%`,
-        transform: 'translate(-50%, -50%)',
-        width: `${backgroundWidth || 100}%`,
-        height: `${backgroundHeight || 100}%`,
-        minWidth: '10px',
-        objectFit: 'fill'
-    };
+    // Bible and slide layouts own their backgrounds; skip outer chrome for them
+    const isSelfContained = !!biblePresentation || !!slideIndexView;
 
     return (
       <section
-        className={`w-full h-full flex flex-col items-center justify-center text-center relative overflow-hidden ${isCustomLayers ? 'p-0' : 'p-16'}`}
+        className={`w-full h-full flex flex-col items-center justify-center text-center relative overflow-hidden ${isCustomLayers || isSelfContained ? 'p-0' : 'p-16'}`}
         style={{ 
-            backgroundColor: (!backgroundImage && !backgroundVideo) ? (backgroundColor || '#000000') : '#000000',
+            backgroundColor: isSelfContained
+              ? 'transparent'
+              : ((!backgroundImage && !backgroundVideo) ? (backgroundColor || '#000000') : '#000000'),
             containerType: 'size' 
         }}
       >
-        {/* Background Media */}
-        {backgroundVideo ? (
-          <video
-            ref={videoRef}
-            className="absolute z-0"
-            style={bgStyle}
-            autoPlay loop muted playsInline
-          >
-            <source src={backgroundVideo} />
-          </video>
-        ) : backgroundImage ? (
-          <img
-            src={backgroundImage}
-            className="absolute z-0"
-            style={bgStyle}
-            alt="bg"
-          />
-        ) : null}
+        {!isSelfContained && (
+          <>
+            {backgroundVideo ? (
+              <video
+                ref={videoRef}
+                className="absolute z-0"
+                style={bgStyle}
+                autoPlay loop muted playsInline
+              >
+                <source src={backgroundVideo} />
+              </video>
+            ) : backgroundImage ? (
+              <img
+                src={backgroundImage}
+                className="absolute z-0"
+                style={bgStyle}
+                alt="bg"
+              />
+            ) : null}
 
-        {/* Overlay */}
-        {(backgroundVideo || backgroundImage) && (
-          <div className="absolute inset-0 w-full h-full bg-black/10 z-[1]" />
+            {lowerThirdImage && (
+              <div className="absolute bottom-12 left-12 w-[80%] h-[20%] z-30 pointer-events-none animate-in fade-in slide-in-from-left-8 duration-700">
+                <img 
+                  src={lowerThirdImage} 
+                  className="h-full w-auto object-contain drop-shadow-2xl" 
+                  alt="lower third" 
+                />
+              </div>
+            )}
+
+            {(backgroundVideo || backgroundImage) && (
+              <div className="absolute inset-0 w-full h-full bg-black/10 z-[1]" />
+            )}
+          </>
         )}
 
-        {/* Content Logic */}
         <div className="w-full h-full z-10 relative">
-            {hasContent && isCustomLayers && (
-                 <div className="w-full h-full relative" style={{ containerType: 'size' }}>
-                    {presentationContent.data.layers.map((layer, idx) => {
-                        // Build shadow string from layer.style.shadow if it exists
-                        const shadowStyle = layer.style?.shadow
-                            ? `${layer.style.shadow.x || 0}px ${layer.style.shadow.y || 0}px ${layer.style.shadow.blur || 10}px ${layer.style.shadow.color || 'rgba(0,0,0,0.6)'}`
-                            : null;
-
-                        return (
-                            <div 
-                                key={layer.id || idx}
-                                className="absolute flex items-center justify-center text-center"
-                                style={{
-                                    left: `${layer.x || 50}%`,
-                                    top: `${layer.y || 50}%`,
-                                    transform: 'translate(-50%, -50%)',
-                                    width: layer.type === 'image' ? `${layer.style?.width || 30}%` : 'auto',
-                                    zIndex: 10,
-                                    minWidth: '10px', 
-                                    minHeight: '10px'
-                                }}
-                            >
-                                {layer.type === 'text' ? (
-                                    <p style={{
-                                        fontSize: `${layer.style?.fontSize || 5}cqw`,
-                                        color: layer.style?.color || '#ffffff',
-                                        fontFamily: layer.style?.fontFamily === 'serif' ? 'Georgia, serif' : (layer.style?.fontFamily === 'mono' ? '"Courier New", monospace' : 'system-ui, sans-serif'),
-                                        fontWeight: layer.style?.fontWeight || 'normal',
-                                        textTransform: layer.style?.textTransform || 'none',
-                                        lineHeight: layer.style?.lineHeight || 1.2,
-                                        whiteSpace: 'pre-wrap',
-                                        textShadow: shadowStyle || '0 2px 10px rgba(0,0,0,0.3)',
-                                    }}>{layer.content || ""}</p>
-                                ) : (
-                                    <img 
-                                        src={layer.content} 
-                                        className="w-full h-auto pointer-events-none" 
-                                        style={{ 
-                                            boxShadow: shadowStyle,
-                                            display: 'block'
-                                        }}
-                                        alt="layer" 
-                                    />
-                                )}
-                            </div>
-                        );
-                    })}
-                 </div>
-            )}
-
-            
-            {hasContent && !isCustomLayers && presentationContent.type !== 'slide_index' && (
-                 <div className="w-full h-full flex flex-col items-center justify-center gap-8">
-                     <p 
-                        className="font-bold leading-tight max-w-[95%] transition-all duration-300 drop-shadow-lg"
-                        style={{
-                            fontSize: presentationContent.data.body && presentationContent.data.body.length > 150 ? '4vw' : '5vw',
-                            color: textColor,
-                            fontFamily: fontFamily === 'serif' ? 'serif' : 'sans-serif'
-                        }}
-                     >
-                        <span dangerouslySetInnerHTML={{ __html: presentationContent.data.body }} />
-                     </p>
-                     {presentationContent.data.title && (
-                        <div className="mb-8 text-[3vw] font-medium opacity-80 uppercase tracking-widest drop-shadow-md" style={{ color: textColor }}>
-                            {presentationContent.data.title}
-                        </div>
-                     )}
-                 </div>
-            )}
-            
-            {hasContent && presentationContent.type === 'slide_index' && (
-                 <div className="w-full h-full flex items-center justify-center">
-                    <img 
-                        src={presentationContent.data.slideImageUrl} 
-                        className="w-full h-full object-contain" 
-                        alt={`Slide ${presentationContent.data.slideIndex + 1}`}
-                    />
-                 </div>
-            )}
+          {isCustomLayers && (
+            <div className="w-full h-full relative" style={{ containerType: 'size' }}>
+              {customLayers}
+            </div>
+          )}
+          {biblePresentation}
+          {slideIndexView}
         </div>
       </section>
     );
@@ -325,6 +577,15 @@ function App() {
 
   return (
     <div className="h-screen flex flex-col justify-center items-center w-full bg-primary overflow-hidden" style={{ color: 'white' }}>
+      {sessionRec.recording && (
+        <div
+          className="absolute top-6 right-8 z-50 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/50 border border-red-500/40"
+          title={sessionRec.title || 'Session archive'}
+        >
+          <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+          <span className="text-xs font-bold uppercase tracking-widest text-red-300">REC</span>
+        </div>
+      )}
       <section className={`w-full h-full flex flex-col items-center justify-center relative ${showSplitTimer ? '' : 'max-lg:p-[0.5em]'}`}>
         <div className={`w-full ${showSplitTimer ? 'h-[100vh] flex-1' : 'h-screen flex flex-col items-center justify-center flex-1'} transition-all duration-500`}>
           {isPresenting ? renderPresentation() : (

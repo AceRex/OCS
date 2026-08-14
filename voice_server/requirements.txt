@@ -1,7 +1,11 @@
-# OCS Voice Sidecar — Python dependencies
+# OCS Voice Sidecar — Python dependencies (v4 — Local Ollama AI)
 # Install with: pip3 install -r requirements.txt
+#
+# Note: Ollama itself is a separate application — install from https://ollama.com
+# Then pull models: ollama pull llama3.2 && ollama pull llava
 faster-whisper
-noisereduce
 numpy
 flask
 scipy
+pillow
+requests

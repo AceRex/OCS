@@ -1,0 +1,739 @@
+{
+  "version": 1,
+  "description": "OCS voice engine acceptance suite (categories A–H). Category C and E grow as new real-world mishearings / false-positive bait are discovered.",
+  "notes": [
+    "heard = what ASR produced (or is expected to produce). When heard differs from spoken, that models garbling.",
+    "expect.ref null means must NOT resolve a scripture display.",
+    "expect.command means a closed-phrase command action should fire instead of scripture.",
+    "Category B cases with asrRisk=vocabulary_gap remain whisper.cpp-dependent when heard cannot contain the book token."
+  ],
+  "categories": {
+    "A": "Clean ambient references (correct transcript → resolve)",
+    "B": "Hard / rare book names (vocabulary-gap risk under small Vosk)",
+    "C": "Known ASR mishearings (alias / repair must recover)",
+    "D": "In-context verse/chapter jumps (needs active display context)",
+    "E": "False-positive bait (must NOT resolve)",
+    "F": "Closed-phrase commands",
+    "G": "Probe/final race & duplicate settlement",
+    "H": "Triggered (OCS/Media) scripture + Pass 3 keyword quotes"
+  },
+  "cases": [
+    {
+      "id": "A01",
+      "category": "A",
+      "spoken": "Proverbs twenty four verse six",
+      "heard": "Proverbs twenty four verse six",
+      "triggerArmed": false,
+      "expect": { "ref": "Proverbs 24:6" }
+    },
+    {
+      "id": "A02",
+      "category": "A",
+      "spoken": "John three sixteen",
+      "heard": "John three sixteen",
+      "triggerArmed": false,
+      "expect": { "ref": "John 3:16" }
+    },
+    {
+      "id": "A03",
+      "category": "A",
+      "spoken": "Genesis chapter one",
+      "heard": "Genesis chapter one",
+      "triggerArmed": false,
+      "expect": { "ref": "Genesis 1:1" }
+    },
+    {
+      "id": "A04",
+      "category": "A",
+      "spoken": "Matthew six verse four",
+      "heard": "Matthew six verse four",
+      "triggerArmed": false,
+      "expect": { "ref": "Matthew 6:4" }
+    },
+    {
+      "id": "A05",
+      "category": "A",
+      "spoken": "First Corinthians thirteen four",
+      "heard": "First Corinthians thirteen four",
+      "triggerArmed": false,
+      "expect": { "ref": "1 Corinthians 13:4" }
+    },
+    {
+      "id": "A06",
+      "category": "A",
+      "spoken": "the book of Romans eight",
+      "heard": "the book of Romans eight",
+      "triggerArmed": false,
+      "expect": { "ref": "Romans 8:1" }
+    },
+    {
+      "id": "A07",
+      "category": "A",
+      "spoken": "Psalm twenty three verse one",
+      "heard": "Psalm twenty three verse one",
+      "triggerArmed": false,
+      "expect": { "ref": "Psalms 23:1" }
+    },
+    {
+      "id": "A08",
+      "category": "A",
+      "spoken": "luke one verse one",
+      "heard": "luke one verse one",
+      "triggerArmed": false,
+      "expect": { "ref": "Luke 1:1" }
+    },
+    {
+      "id": "A09",
+      "category": "A",
+      "spoken": "Genesis one verse one",
+      "heard": "Genesis one verse one",
+      "triggerArmed": false,
+      "expect": { "ref": "Genesis 1:1" },
+      "notes": "Must NOT resolve to 1 Samuel 1:1 (chapter 'one' ≠ numbered-book ordinal)."
+    },
+    {
+      "id": "A10",
+      "category": "A",
+      "spoken": "Exodus one verse one",
+      "heard": "Exodus one verse one",
+      "triggerArmed": false,
+      "expect": { "ref": "Exodus 1:1" }
+    },
+    {
+      "id": "A11",
+      "category": "A",
+      "spoken": "Numbers one verse one",
+      "heard": "Numbers one verse one",
+      "triggerArmed": false,
+      "expect": { "ref": "Numbers 1:1" },
+      "notes": "Numbers collides with ordinary number words — highest risk ambient case."
+    },
+    {
+      "id": "A12",
+      "category": "A",
+      "spoken": "Titus one verse one",
+      "heard": "Titus one verse one",
+      "triggerArmed": false,
+      "expect": { "ref": "Titus 1:1" }
+    },
+    {
+      "id": "A13",
+      "category": "A",
+      "spoken": "First Samuel one verse one",
+      "heard": "First Samuel one verse one",
+      "triggerArmed": false,
+      "expect": { "ref": "1 Samuel 1:1" },
+      "notes": "Legitimate ordinal-prefix for numbered books must still work."
+    },
+    {
+      "id": "A14",
+      "category": "A",
+      "spoken": "Second Kings one verse one",
+      "heard": "Second Kings one verse one",
+      "triggerArmed": false,
+      "expect": { "ref": "2 Kings 1:1" }
+    },
+    {
+      "id": "A15",
+      "category": "A",
+      "spoken": "First John one verse one",
+      "heard": "First John one verse one",
+      "triggerArmed": false,
+      "expect": { "ref": "1 John 1:1" }
+    },
+    {
+      "id": "A16",
+      "category": "A",
+      "spoken": "Acts two verse twenty eight",
+      "heard": "acts 228",
+      "triggerArmed": false,
+      "expect": { "ref": "Acts 2:28" },
+      "notes": "Compact concatenated chapter+verse (CVV) — not chapter 228."
+    },
+    {
+      "id": "A17",
+      "category": "A",
+      "spoken": "John three sixteen",
+      "heard": "john 316",
+      "triggerArmed": false,
+      "expect": { "ref": "John 3:16" },
+      "notes": "Compact CVV pattern (same family as acts 228)."
+    },
+    {
+      "id": "A18",
+      "category": "A",
+      "spoken": "Acts two verse one to eight",
+      "heard": "acts 2 verse 1 to 8",
+      "triggerArmed": false,
+      "expect": { "ref": "Acts 2:1-8" },
+      "notes": "FR-3.63 inclusive verse range — title uses start-end; body joins verses for read-along."
+    },
+    {
+      "id": "A19",
+      "category": "A",
+      "spoken": "Genesis two verse one to four",
+      "heard": "genesis 2 124",
+      "triggerArmed": false,
+      "expect": { "ref": "Genesis 2:1-4" },
+      "notes": "ASR glue: '1 to 4' → '124' (middle 2 ≈ to); not verse 124."
+    },
+    {
+      "id": "A20",
+      "category": "A",
+      "spoken": "First John four verse seven to eight",
+      "heard": "first john 4728",
+      "triggerArmed": false,
+      "expect": { "ref": "1 John 4:7-8" },
+      "notes": "ASR glue: '4 7 to 8' → '4728' (middle 2 ≈ to); not 47:28."
+    },
+    {
+      "id": "A21",
+      "category": "A",
+      "spoken": "Matthew chapter six verse twenty two to twenty three",
+      "heard": "media the book of matthew 622 to 23",
+      "triggerArmed": false,
+      "expect": { "ref": "Matthew 6:22-23" },
+      "notes": "Wake+book-of + compact 622 (6:22) with trailing 'to 23'; not chapter 622."
+    },
+    {
+      "id": "E09",
+      "category": "E",
+      "spoken": "Genesis one verse one",
+      "heard": "one verse one",
+      "triggerArmed": true,
+      "expect": { "ref": null },
+      "notes": "ASR dropped Genesis — leftover chapter/verse digits must NOT Pass-2 fuzzy to 1 Samuel 1:1."
+    },
+
+    {
+      "id": "B01",
+      "category": "B",
+      "spoken": "Habakkuk two verse four",
+      "heard": "Habakkuk two verse four",
+      "asrRisk": "vocabulary_gap",
+      "triggerArmed": false,
+      "expect": { "ref": "Habakkuk 2:4" },
+      "notes": "Resolver must handle clean text; live small-Vosk often cannot emit Habakkuk at all."
+    },
+    {
+      "id": "B02",
+      "category": "B",
+      "spoken": "Zephaniah three verse seventeen",
+      "heard": "Zephaniah three verse seventeen",
+      "asrRisk": "vocabulary_gap",
+      "triggerArmed": false,
+      "expect": { "ref": "Zephaniah 3:17" }
+    },
+    {
+      "id": "B03",
+      "category": "B",
+      "spoken": "Philemon verse one",
+      "heard": "Philemon one verse one",
+      "asrRisk": "vocabulary_gap",
+      "triggerArmed": false,
+      "expect": { "ref": "Philemon 1:1" }
+    },
+    {
+      "id": "B04",
+      "category": "B",
+      "spoken": "Obadiah verse one",
+      "heard": "Obadiah one verse one",
+      "asrRisk": "vocabulary_gap",
+      "triggerArmed": false,
+      "expect": { "ref": "Obadiah 1:1" }
+    },
+    {
+      "id": "B05",
+      "category": "B",
+      "spoken": "Ecclesiastes three verse one",
+      "heard": "Ecclesiastes three verse one",
+      "asrRisk": "vocabulary_gap",
+      "triggerArmed": false,
+      "expect": { "ref": "Ecclesiastes 3:1" }
+    },
+    {
+      "id": "B06",
+      "category": "B",
+      "spoken": "Habakkuk two verse four",
+      "heard": "have a cook two verse four",
+      "asrRisk": "vocabulary_gap_realized",
+      "triggerArmed": false,
+      "expect": { "ref": "Habakkuk 2:4" },
+      "notes": "Small-model OOV garble of Habakkuk — recovered via multi-word alias."
+    },
+    {
+      "id": "B07",
+      "category": "B",
+      "spoken": "Colossians one fifteen",
+      "heard": "Colossians one fifteen",
+      "asrRisk": "vocabulary_gap",
+      "triggerArmed": false,
+      "expect": { "ref": "Colossians 1:15" },
+      "notes": "colossians is MISSING from vosk-model-small-en-us-0.15; clean heard only works if ASR somehow emits it (grammar cannot). Live ASR typically substitutes collisions/coalition/college."
+    },
+    {
+      "id": "B08",
+      "category": "B",
+      "spoken": "Colossians three two",
+      "heard": "Colossians three two",
+      "asrRisk": "vocabulary_gap",
+      "triggerArmed": false,
+      "expect": { "ref": "Colossians 3:2" }
+    },
+
+    {
+      "id": "C01",
+      "category": "C",
+      "spoken": "Mark one verse one",
+      "heard": "mach one verse one",
+      "triggerArmed": false,
+      "expect": { "ref": "Mark 1:1" }
+    },
+    {
+      "id": "C02",
+      "category": "C",
+      "spoken": "Mark one verse one",
+      "heard": "the book of mach one first one",
+      "triggerArmed": false,
+      "expect": { "ref": "Mark 1:1" }
+    },
+    {
+      "id": "C03",
+      "category": "C",
+      "spoken": "Matthew six verse four",
+      "heard": "matthew six first war",
+      "triggerArmed": false,
+      "expect": { "ref": "Matthew 6:4" }
+    },
+    {
+      "id": "C04",
+      "category": "C",
+      "spoken": "John three sixteen",
+      "heard": "junk three sixteen",
+      "triggerArmed": false,
+      "expect": { "ref": "John 3:16" }
+    },
+    {
+      "id": "C05",
+      "category": "C",
+      "spoken": "Luke one verse one",
+      "heard": "look one verse one",
+      "triggerArmed": false,
+      "expect": { "ref": "Luke 1:1" }
+    },
+    {
+      "id": "C06",
+      "category": "C",
+      "spoken": "Malachi three verse ten",
+      "heard": "molokai three verse ten",
+      "triggerArmed": false,
+      "expect": { "ref": "Malachi 3:10" }
+    },
+    {
+      "id": "C07",
+      "category": "C",
+      "spoken": "Psalms twenty three",
+      "heard": "sams twenty three",
+      "triggerArmed": false,
+      "expect": { "ref": "Psalms 23:1" }
+    },
+    {
+      "id": "C08",
+      "category": "C",
+      "spoken": "like get into that one sided luggage",
+      "heard": "like get into that one sided luggage we both not see it was as people",
+      "triggerArmed": false,
+      "expect": { "ref": null },
+      "notes": "Live-session garbled ASR that looked like speech activity but was not a reference (2026-07-29)."
+    },
+    {
+      "id": "C09",
+      "category": "C",
+      "spoken": "Mark one verse one",
+      "heard": "mark on of the he wrote meeting",
+      "triggerArmed": false,
+      "expect": { "ref": "Mark 1:1" },
+      "notes": "Live 2026-07-29: Mark + on→one repair recovers chapter-only Mark 1:1."
+    },
+    {
+      "id": "C10",
+      "category": "C",
+      "spoken": "Colossians three two",
+      "heard": "collisions three two",
+      "asrRisk": "vocabulary_gap_realized",
+      "triggerArmed": false,
+      "expect": { "ref": "Colossians 3:2" },
+      "notes": "Live OOV substitution: colossians→collisions (in-vocab competitor). Alias stopgap."
+    },
+    {
+      "id": "C11",
+      "category": "C",
+      "spoken": "Colossians three two",
+      "heard": "coalition three two",
+      "asrRisk": "vocabulary_gap_realized",
+      "triggerArmed": false,
+      "expect": { "ref": "Colossians 3:2" },
+      "notes": "Live OOV substitution: colossians→coalition. Alias stopgap."
+    },
+    {
+      "id": "C12",
+      "category": "C",
+      "spoken": "Philippians two verse fifteen",
+      "heard": "drinking the book of philippines su vez fifteen",
+      "asrRisk": "vocabulary_gap_realized",
+      "triggerArmed": false,
+      "expect": { "ref": "Philippians 2:15" },
+      "notes": "Live 2026-07-29: philippians→philippines (in-vocab country); two verse→su vez. Alias + connector repair."
+    },
+    {
+      "id": "C13",
+      "category": "C",
+      "spoken": "Philippians two fifteen",
+      "heard": "philippines two fifteen",
+      "asrRisk": "vocabulary_gap_realized",
+      "triggerArmed": false,
+      "expect": { "ref": "Philippians 2:15" }
+    },
+    {
+      "id": "C14",
+      "category": "C",
+      "spoken": "Colossians two verse two",
+      "heard": "colosians 2 verse 2",
+      "asrRisk": "spelling_slip",
+      "triggerArmed": false,
+      "expect": { "ref": "Colossians 2:2" },
+      "notes": "Single-s spelling slip of Colossians."
+    },
+    {
+      "id": "C15",
+      "category": "C",
+      "spoken": "Colossians two verse two",
+      "heard": "collusion 2 verse 2",
+      "asrRisk": "vocabulary_gap_realized",
+      "triggerArmed": false,
+      "expect": { "ref": "Colossians 2:2" },
+      "notes": "ASR/near-word: collusion → Colossians."
+    },
+    {
+      "id": "C16",
+      "category": "C",
+      "spoken": "Colossians two verse two",
+      "heard": "collotions 2 v 2",
+      "asrRisk": "vocabulary_gap_realized",
+      "triggerArmed": false,
+      "expect": { "ref": "Colossians 2:2" }
+    },
+    {
+      "id": "C17",
+      "category": "C",
+      "spoken": "Colossians two verse two",
+      "heard": "collosions 2 vs 2",
+      "asrRisk": "vocabulary_gap_realized",
+      "triggerArmed": false,
+      "expect": { "ref": "Colossians 2:2" },
+      "notes": "Near collisions (already aliased) with one-s spelling."
+    },
+    {
+      "id": "C18",
+      "category": "C",
+      "spoken": "Jeremiah chapter fifty",
+      "heard": "jaymiah chapter 50",
+      "asrRisk": "spelling_slip",
+      "triggerArmed": false,
+      "expect": { "ref": "Jeremiah 50:1" },
+      "notes": "Live: jaymiah → Jeremiah; chapter-only defaults to verse 1."
+    },
+    {
+      "id": "C19",
+      "category": "C",
+      "spoken": "Philippians two ten",
+      "heard": "the book of the philippines to 10",
+      "asrRisk": "vocabulary_gap_realized",
+      "triggerArmed": false,
+      "expect": { "ref": "Philippians 2:10" },
+      "notes": "Extra 'the' after book of; 'two'→'to'. Must not fuzzy to Ruth."
+    },
+
+    {
+      "id": "D01",
+      "category": "D",
+      "spoken": "verse twenty six",
+      "heard": "verse twenty six",
+      "context": { "book": "John", "chapter": 3, "verse": 16 },
+      "triggerArmed": true,
+      "expect": { "ref": "John 3:26" }
+    },
+    {
+      "id": "D02",
+      "category": "D",
+      "spoken": "chapter four",
+      "heard": "chapter four",
+      "context": { "book": "John", "chapter": 3, "verse": 16 },
+      "triggerArmed": true,
+      "expect": { "ref": "John 4:1" }
+    },
+    {
+      "id": "D03",
+      "category": "D",
+      "spoken": "verse five",
+      "heard": "verse five",
+      "context": null,
+      "triggerArmed": false,
+      "expect": { "ref": null },
+      "notes": "Short jump without active context must not invent a book."
+    },
+    {
+      "id": "D04",
+      "category": "D",
+      "spoken": "was twenty",
+      "heard": "was twenty",
+      "context": { "book": "John", "chapter": 3, "verse": 16 },
+      "triggerArmed": true,
+      "expect": { "ref": "John 3:20" }
+    },
+
+    {
+      "id": "E01",
+      "category": "E",
+      "spoken": "Mark my words this will happen",
+      "heard": "Mark my words this will happen",
+      "triggerArmed": false,
+      "expect": { "ref": null }
+    },
+    {
+      "id": "E02",
+      "category": "E",
+      "spoken": "Acts of kindness change a community",
+      "heard": "Acts of kindness change a community",
+      "triggerArmed": false,
+      "expect": { "ref": null }
+    },
+    {
+      "id": "E03",
+      "category": "E",
+      "spoken": "we have twenty four members in this room",
+      "heard": "we have twenty four members in this room",
+      "triggerArmed": false,
+      "expect": { "ref": null }
+    },
+    {
+      "id": "E04",
+      "category": "E",
+      "spoken": "Job had many trials in those days",
+      "heard": "Job had many trials in those days",
+      "triggerArmed": false,
+      "expect": { "ref": null }
+    },
+    {
+      "id": "E05",
+      "category": "E",
+      "spoken": "James said something similar last week",
+      "heard": "James said something similar last week",
+      "triggerArmed": false,
+      "expect": { "ref": null }
+    },
+    {
+      "id": "E06",
+      "category": "E",
+      "spoken": "let's turn to the topic of forgiveness",
+      "heard": "let's turn to the topic of forgiveness",
+      "triggerArmed": false,
+      "expect": { "ref": null }
+    },
+    {
+      "id": "E07",
+      "category": "E",
+      "spoken": "there were twelve disciples around him",
+      "heard": "there were twelve disciples around him",
+      "triggerArmed": false,
+      "expect": { "ref": null }
+    },
+    {
+      "id": "E08",
+      "category": "E",
+      "spoken": "it was one of those days",
+      "heard": "it was one of those days",
+      "triggerArmed": false,
+      "expect": { "ref": null }
+    },
+    {
+      "id": "E10",
+      "category": "E",
+      "spoken": "next to us",
+      "heard": "next to us",
+      "triggerArmed": false,
+      "expect": { "ref": null, "command": null },
+      "notes": "Preposition 'next to' must never fire next_verse."
+    },
+    {
+      "id": "E11",
+      "category": "E",
+      "spoken": "they stood next to us",
+      "heard": "they stood next to us",
+      "triggerArmed": false,
+      "expect": { "ref": null, "command": null }
+    },
+    {
+      "id": "E12",
+      "category": "E",
+      "spoken": "go next to the altar",
+      "heard": "go next to the altar",
+      "triggerArmed": false,
+      "expect": { "ref": null, "command": null },
+      "notes": "Loose 'go next' must not fire; require 'next verse'."
+    },
+
+    {
+      "id": "F01",
+      "category": "F",
+      "spoken": "next verse",
+      "heard": "next verse",
+      "triggerArmed": false,
+      "expect": { "command": "next_verse", "ref": null }
+    },
+    {
+      "id": "F02",
+      "category": "F",
+      "spoken": "previous verse",
+      "heard": "previous verse",
+      "triggerArmed": false,
+      "expect": { "command": "prev_verse", "ref": null }
+    },
+    {
+      "id": "F03",
+      "category": "F",
+      "spoken": "blank screen",
+      "heard": "blank screen",
+      "triggerArmed": false,
+      "expect": { "command": "black_screen", "ref": null }
+    },
+    {
+      "id": "F03a",
+      "category": "F",
+      "spoken": "blanche screen",
+      "heard": "blanche screen",
+      "triggerArmed": false,
+      "expect": { "command": "black_screen", "ref": null }
+    },
+    {
+      "id": "F03b",
+      "category": "F",
+      "spoken": "blunk screen",
+      "heard": "blunk screen",
+      "triggerArmed": false,
+      "expect": { "command": "black_screen", "ref": null }
+    },
+    {
+      "id": "F03c",
+      "category": "F",
+      "spoken": "click screen",
+      "heard": "click screen",
+      "triggerArmed": false,
+      "expect": { "command": "black_screen", "ref": null }
+    },
+    {
+      "id": "F03d",
+      "category": "F",
+      "spoken": "clear screen",
+      "heard": "clear screen",
+      "triggerArmed": false,
+      "expect": { "command": "black_screen", "ref": null }
+    },
+    {
+      "id": "F04",
+      "category": "F",
+      "spoken": "screen on",
+      "heard": "screen on",
+      "triggerArmed": false,
+      "expect": { "command": "screen_on", "ref": null }
+    },
+    {
+      "id": "F05",
+      "category": "F",
+      "spoken": "first verse",
+      "heard": "first verse",
+      "triggerArmed": false,
+      "expect": { "command": "first_verse", "ref": null }
+    },
+    {
+      "id": "F06",
+      "category": "F",
+      "spoken": "stop timer",
+      "heard": "stop timer",
+      "triggerArmed": false,
+      "expect": { "command": "stop_timer", "ref": null }
+    },
+
+    {
+      "id": "G01",
+      "category": "G",
+      "spoken": "Genesis one verse one",
+      "heard": "Genesis one verse one",
+      "events": [
+        { "role": "probe", "text": "Genesis one verse one", "utteranceId": 101 },
+        { "role": "final", "text": "Genesis one verse one", "utteranceId": 101 }
+      ],
+      "expect": { "ref": "Genesis 1:1", "settlements": ["probe", "confirmed"], "displayCount": 1 }
+    },
+    {
+      "id": "G02",
+      "category": "G",
+      "spoken": "John three sixteen",
+      "heard": "John three sixteen",
+      "events": [
+        { "role": "probe", "text": "John three", "utteranceId": 102 },
+        { "role": "final", "text": "John three sixteen", "utteranceId": 102 }
+      ],
+      "expect": { "ref": "John 3:16", "settlements": ["probe", "corrected"], "displayCount": 2 }
+    },
+    {
+      "id": "G03",
+      "category": "G",
+      "spoken": "Genesis one verse one then again",
+      "heard": "Genesis one verse one",
+      "events": [
+        { "role": "final", "text": "Genesis one verse one", "utteranceId": 103 },
+        { "role": "final", "text": "Genesis one verse one", "utteranceId": 104 }
+      ],
+      "expect": { "ref": "Genesis 1:1", "displayCount": 1, "secondBlocked": true },
+      "notes": "Cross-utterance FR-3.17 dedup within 10s."
+    },
+
+    {
+      "id": "H01",
+      "category": "H",
+      "spoken": "OCS John three sixteen",
+      "heard": "OCS John three sixteen",
+      "triggerArmed": true,
+      "expect": { "ref": "John 3:16" }
+    },
+    {
+      "id": "H02",
+      "category": "H",
+      "spoken": "Media Genesis one one",
+      "heard": "Media Genesis one one",
+      "triggerArmed": true,
+      "expect": { "ref": "Genesis 1:1" }
+    },
+    {
+      "id": "H03",
+      "category": "H",
+      "spoken": "OCS for God so loved the world",
+      "heard": "OCS for God so loved the world",
+      "triggerArmed": true,
+      "allowPass3": true,
+      "expect": { "ref": "John 3:16", "matchTypeIncludes": "keyword" },
+      "notes": "Pass 3 keyword quote — requires trigger/Pass B; needs search API."
+    },
+    {
+      "id": "H04",
+      "category": "H",
+      "spoken": "for God so loved the world that he gave",
+      "heard": "for God so loved the world that he gave",
+      "triggerArmed": false,
+      "allowPass3": false,
+      "expect": { "ref": null },
+      "notes": "Keyword quote without trigger must not run Pass 3 on ambient."
+    }
+  ]
+}

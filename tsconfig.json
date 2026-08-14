@@ -2,7 +2,9 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@/components": ["./src/components/index.ts"],
+      "@/components/*": ["./src/components/*"]
     },
     "target": "es5",
     "lib": ["dom", "dom.iterable", "esnext"],

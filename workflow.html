@@ -609,6 +609,112 @@
         </div>
       </div>
     </div>
+
+    <!-- ══════════════════════════════════════════
+         USE CASE — In-context verse jump
+    ══════════════════════════════════════════ -->
+    <div style="margin-top:40px;padding-top:28px;border-top:1px solid #1e293b;">
+      <div class="section-header">
+        <div class="section-icon" style="background:#312e81;">📖</div>
+        <div>
+          <div class="section-title">Use Case — In-Context Verse Jump</div>
+          <div class="section-desc">Preacher already on a chapter says <strong style="color:#c4b5fd;">“verse 20”</strong> or <strong style="color:#c4b5fd;">“jump to verse 20”</strong> — OCS stays in the current book/chapter</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:20px;">
+        <div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:16px;">
+          <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#64748b;margin-bottom:8px;">Actor</div>
+          <div style="font-size:13px;color:#e2e8f0;">Preacher (or worship leader) during sermon</div>
+        </div>
+        <div style="background:#0f172a;border:1px solid #1e293b;border-radius:12px;padding:16px;">
+          <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#64748b;margin-bottom:8px;">Precondition</div>
+          <div style="font-size:13px;color:#e2e8f0;">A verse is already on screen (e.g. <code style="color:#67e8f9;">John 3:16</code>) — context = book + chapter</div>
+        </div>
+      </div>
+
+      <p style="font-size:11px;color:#475569;text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Accepted phrases (same chapter)</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;">
+        <div style="background:#1e1b4b;border:1px solid #6366f1;border-radius:8px;padding:8px 12px;font-size:12px;color:#c4b5fd;font-family:ui-monospace,monospace;">verse 20</div>
+        <div style="background:#1e1b4b;border:1px solid #6366f1;border-radius:8px;padding:8px 12px;font-size:12px;color:#c4b5fd;font-family:ui-monospace,monospace;">jump to verse 20</div>
+        <div style="background:#1e1b4b;border:1px solid #6366f1;border-radius:8px;padding:8px 12px;font-size:12px;color:#c4b5fd;font-family:ui-monospace,monospace;">go to verse 20</div>
+        <div style="background:#1e1b4b;border:1px solid #6366f1;border-radius:8px;padding:8px 12px;font-size:12px;color:#c4b5fd;font-family:ui-monospace,monospace;">verse twenty</div>
+        <div style="background:#1e1b4b;border:1px solid #6366f1;border-radius:8px;padding:8px 12px;font-size:12px;color:#c4b5fd;font-family:ui-monospace,monospace;">skip to verse 20</div>
+        <div style="background:#1e1b4b;border:1px solid #6366f1;border-radius:8px;padding:8px 12px;font-size:12px;color:#c4b5fd;font-family:ui-monospace,monospace;">turn to verse 20</div>
+      </div>
+
+      <div class="flow-wrap"><div class="flow-inner">
+        <div class="flow-item">
+          <div class="flow-node blue">
+            <div class="node-tag">Context</div>
+            <div class="node-label">On screen</div>
+            <div class="node-sub">John 3:16 already displayed · currentRef = { book: John, chapter: 3 }</div>
+          </div>
+        </div>
+        <div class="flow-arrow arrow-blue"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#3b82f6;"></div></div>
+        <div class="flow-item">
+          <div class="flow-node purple">
+            <div class="node-tag">Speech</div>
+            <div class="node-label">“verse 20”</div>
+            <div class="node-sub">Or “jump to verse 20” · Vosk → transcript</div>
+          </div>
+        </div>
+        <div class="flow-arrow arrow-purple"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#7c3aed;"></div></div>
+        <div class="flow-item">
+          <div class="flow-node amber">
+            <div class="node-tag">Pass 4</div>
+            <div class="node-label">Context match</div>
+            <div class="node-sub">No book name → reuse current book/chapter · matchType: context_verse</div>
+          </div>
+        </div>
+        <div class="flow-arrow arrow-amber"><div class="arrow-line"></div><div class="arrow-head" style="border-left-color:#f59e0b;"></div></div>
+        <div class="flow-item">
+          <div class="flow-node green">
+            <div class="node-tag">Result</div>
+            <div class="node-label">John 3:20</div>
+            <div class="node-sub">SQLite fetch → IPC → Speaker + General View</div>
+          </div>
+        </div>
+      </div></div>
+
+      <div class="step-list" style="margin-top:20px;">
+        <div class="step-card">
+          <div class="step-num" style="background:#1e3a5f;color:#93c5fd;">1</div>
+          <div class="step-content">
+            <h4>Establish context</h4>
+            <p>Operator or voice already showed a full reference (e.g. “OCS John three sixteen”). <code>currentRefState</code> stores bookIndex + chapter + verse.</p>
+          </div>
+        </div>
+        <div class="step-card">
+          <div class="step-num" style="background:#2d1b69;color:#c4b5fd;">2</div>
+          <div class="step-content">
+            <h4>Hear short jump phrase</h4>
+            <p>Preacher says “verse 20” or “jump to verse 20”. Word-numbers converted (“twenty” → 20). No book name required.</p>
+          </div>
+        </div>
+        <div class="step-card">
+          <div class="step-num" style="background:#451a03;color:#fcd34d;">3</div>
+          <div class="step-content">
+            <h4>Pass 4 resolves against context</h4>
+            <p><code>smartBibleMatch</code> Pass 4 matches verse-only / jump-to-verse patterns and returns <code>{ bookIndex, chapter: 3, startVerse: 20, matchType: 'context_verse' }</code>.</p>
+          </div>
+        </div>
+        <div class="step-card">
+          <div class="step-num" style="background:#14532d;color:#86efac;">4</div>
+          <div class="step-content">
+            <h4>Display + keep context</h4>
+            <p>John 3:20 pushed to displays. Context updated so the next “verse 21” also works. Feedback badge: “→ John 3:20 (in-context)”.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="outcome-row" style="margin-top:16px;">
+        <div class="outcome" style="background:#14532d;border:1px solid #22c55e;color:#86efac;"><span class="outcome-icon">✅</span> Happy path: same book/chapter, new verse on screen &lt; 3s</div>
+        <div class="outcome" style="background:#451a03;border:1px solid #f59e0b;color:#fcd34d;"><span class="outcome-icon">⚠️</span> No context yet: prompt “say a full reference first”</div>
+        <div class="outcome" style="background:#450a0a;border:1px solid #ef4444;color:#fca5a5;"><span class="outcome-icon">❌</span> Verse out of range: “No verse N in this chapter”</div>
+        <div class="outcome" style="background:#1e1b4b;border:1px solid #6366f1;color:#c4b5fd;"><span class="outcome-icon">📎</span> Related: “chapter 4” jumps chapter in same book (verse 1)</div>
+      </div>
+    </div>
   </div>
 </div>
 

@@ -1,0 +1,48 @@
+{
+    "event_name": null,
+    "event_date": null,
+    "event_location": null,
+    "theme": "conference",
+    "theme_confidence": 0.5812298655509949,
+    "mood": "muted",
+    "palette_hex": [
+        "#F6F6F5",
+        "#D7B8BC",
+        "#ED8D2D",
+        "#666965",
+        "#4A1C7B",
+        "#252328"
+    ],
+    "primary_color": [
+        246,
+        246,
+        245
+    ],
+    "secondary_color": [
+        215,
+        184,
+        188
+    ],
+    "text_extracted": [],
+    "dates_found": [],
+    "layout_composition": "full-bleed",
+    "safe_zones": [
+        "top",
+        "bottom",
+        "left",
+        "right"
+    ],
+    "generated_files": {
+        "backgrounds": [
+            "/Users/rex/OCS/ocs_image_engine/output/background_1.png",
+            "/Users/rex/OCS/ocs_image_engine/output/background_2.png",
+            "/Users/rex/OCS/ocs_image_engine/output/background_3.png"
+        ],
+        "lower_thirds": [
+            "/Users/rex/OCS/ocs_image_engine/output/lower_third_1.png",
+            "/Users/rex/OCS/ocs_image_engine/output/lower_third_2.png",
+            "/Users/rex/OCS/ocs_image_engine/output/lower_third_3.png"
+        ]
+    },
+    "processing_time_sec": 5.561
+}

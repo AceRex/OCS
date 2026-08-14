@@ -1,108 +1,121 @@
 const { app, BrowserWindow, Menu, screen, ipcMain, session, dialog } = require("electron");
 const path = require("path");
 const fs = require("fs");
+const fsp = fs.promises;
 const yauzl = require("yauzl");
 const { spawn, execSync } = require("child_process");
+const QRCode = require("qrcode");
 
-// ── Python Voice Sidecar ──────────────────────────────────────────────────────
-// Spawns voice_server/server.py as a local HTTP server on 127.0.0.1:5421.
-// Falls back gracefully if Python is not installed (WASM engine activates).
-let voiceSidecarProcess = null;
-const SIDECAR_PORT = 5421;
-const SIDECAR_SCRIPT = path.join(__dirname, 'voice_server', 'server.py');
+const { AsrFacade } = require("./src/main/asr/asrFacade");
+const { emitTimerLifecycle } = require("./src/main/timerLifecycle");
+const { SessionArchiveService } = require("./src/main/sessionArchive");
+const {
+  generatePairing,
+  buildPairPayload,
+  clearPaired,
+  markPaired,
+  unmarkPaired,
+  isPaired,
+  validateCredential,
+} = require("./src/main/pairing/pairing");
+const { PairingRateLimiter } = require("./src/main/pairing/rateLimiter");
+const { ollamaStatus, ollamaChat, piperAvailable, piperSpeak } = require("./src/main/aiHelpers");
+const appSettings = require("./src/main/appSettings");
+const sleepPrevention = require("./src/main/sleepPrevention");
+
+// ── Platform helpers ──────────────────────────────────────────────────────────
+const IS_WIN  = process.platform === 'win32';
+const IS_MAC  = process.platform === 'darwin';
+const IS_LINUX = process.platform === 'linux';
+
+// ── ASR facade (whisper.cpp default, Vosk low-spec fallback) ──────────────────
+const asrEngine = new AsrFacade(__dirname);
+/** @deprecated use asrEngine — kept for any residual references */
+const voskEngine = asrEngine;
+let pairing = generatePairing();
+let pairingQrDataUrl = null;
+/** @type {SessionArchiveService|null} */
+let sessionArchive = null;
 
 function detectPython() {
-  // 1. Prefer the isolated venv we created in voice_server/.venv — packages guaranteed present
-  const venvPython = path.join(__dirname, 'voice_server', '.venv', 'bin', 'python');
-  if (fs.existsSync(venvPython)) {
-    try {
-      const ver = execSync(`"${venvPython}" --version 2>&1`, { timeout: 3000 }).toString().trim();
-      console.log(`[Sidecar] Using venv Python: ${ver}`);
-      return venvPython;
-    } catch (_) {}
-  }
+  // Still used by optional ocs_image_engine design tools — not for ASR.
+  const venvBin = IS_WIN ? ['Scripts', 'python.exe'] : ['bin', 'python'];
+  const engineVenv = path.join(__dirname, 'ocs_image_engine', '.venv', ...venvBin);
+  if (fs.existsSync(engineVenv)) return engineVenv;
 
-  // 2. Fall back to system Python 3.9–3.13 (faster-whisper compatible range)
-  const candidates = ['python3.13', 'python3.12', 'python3.11', 'python3.10', 'python3.9', 'python3', 'python'];
+  const candidates = IS_WIN
+    ? ['py', 'python', 'python3']
+    : ['python3.13', 'python3.12', 'python3.11', 'python3.10', 'python3.9', 'python3', 'python'];
+
   for (const cmd of candidates) {
     try {
-      const ver = execSync(`${cmd} --version 2>&1`, { timeout: 3000 }).toString().trim();
+      const probe = (cmd === 'py') ? 'py -3 --version' : `${cmd} --version`;
+      const ver = execSync(`${probe} 2>&1`, { timeout: 3000 }).toString().trim();
       const m = ver.match(/Python 3\.(\d+)/);
       if (!m) continue;
       const minor = parseInt(m[1], 10);
       if (minor >= 9 && minor <= 13) {
-        console.log(`[Sidecar] Found compatible system Python ${cmd}: ${ver}`);
-        return cmd;
-      }
-      if (minor >= 14) {
-        console.warn(`[Sidecar] ${cmd} (${ver}) is incompatible with faster-whisper. Run: python3.12 -m venv voice_server/.venv && voice_server/.venv/bin/pip install -r voice_server/requirements.txt`);
+        return (cmd === 'py') ? 'py -3' : cmd;
       }
     } catch (_) {}
   }
   return null;
 }
 
-function startVoiceSidecar() {
-  const pythonCmd = detectPython();
-  if (!pythonCmd) {
-    console.warn('[Sidecar] Python 3.9+ not found — voice engine will use WASM fallback');
-    return;
+function broadcastAsrEvent(channel, payload) {
+  for (const w of BrowserWindow.getAllWindows()) {
+    if (w.isDestroyed()) continue;
+    try { w.webContents.send(channel, payload); } catch (_) {}
   }
-  if (!fs.existsSync(SIDECAR_SCRIPT)) {
-    console.warn('[Sidecar] voice_server/server.py not found — skipping');
-    return;
+}
+
+asrEngine.on('transcript', (payload) => {
+  broadcastAsrEvent('vosk-transcript', payload);
+  broadcastAsrEvent('asr-transcript', payload);
+});
+asrEngine.on('status', (payload) => {
+  broadcastAsrEvent('vosk-status', payload);
+  broadcastAsrEvent('asr-status', payload);
+});
+// FR-3.68 — broadcast engine switch so debug bar and BroadcastEngine can update
+asrEngine.on('engine-changed', (payload) => {
+  broadcastAsrEvent('asr-engine-changed', payload);
+  console.log('[Asr] engine-changed broadcast →', payload);
+});
+asrEngine.on('engine-calibrated', (payload) => {
+  broadcastAsrEvent('asr-engine-calibrated', payload);
+});
+
+// FR-6.12 — rate limiter for 6-digit pairing code brute-force protection
+const _pairingRateLimiter = new PairingRateLimiter();
+
+async function refreshPairingQr() {
+  try {
+    const payload = buildPairPayload({
+      ip: serverIp,
+      port: PORT,
+      token: pairing.token,
+      code: pairing.code,
+    });
+    pairingQrDataUrl = await QRCode.toDataURL(payload, {
+      errorCorrectionLevel: 'M',
+      margin: 1,
+      width: 280,
+      color: { dark: '#0B0814', light: '#FFFFFF' },
+    });
+  } catch (err) {
+    console.error('[Pairing] QR generation failed:', err.message);
+    pairingQrDataUrl = null;
   }
+}
 
-  const modelCacheDir = path.join(app.getPath('userData'), 'ocs_whisper_cache');
-  if (!fs.existsSync(modelCacheDir)) fs.mkdirSync(modelCacheDir, { recursive: true });
-
-  voiceSidecarProcess = spawn(pythonCmd, [SIDECAR_SCRIPT], {
-    env: { ...process.env, OCS_MODEL_CACHE: modelCacheDir },
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
-
-  voiceSidecarProcess.stdout.on('data', (d) => process.stdout.write(`[PY] ${d}`));
-  voiceSidecarProcess.stderr.on('data', (d) => process.stderr.write(`[PY ERR] ${d}`));
-
-  voiceSidecarProcess.on('exit', (code, signal) => {
-    console.log(`[Sidecar] Exited (code=${code}, signal=${signal})`);
-    voiceSidecarProcess = null;
-
-    if (app.isQuitting) return;
-
-    if (code !== 0) {
-      app.sidecarRestartCount++;
-      if (app.sidecarRestartCount >= MAX_SIDECAR_RESTARTS) {
-        console.error(
-          `[Sidecar] ❌ Stopped after ${MAX_SIDECAR_RESTARTS} failed attempts.\n` +
-          `[Sidecar] ⚠️  Missing Python packages. Run this in Terminal:\n` +
-          `[Sidecar]    python3 -m pip install numpy flask scipy noisereduce faster-whisper\n` +
-          `[Sidecar] Voice engine will use WASM fallback until packages are installed.`
-        );
-        return; // Stop retrying
-      }
-      // Exponential back-off: 5s, 10s, 20s...
-      const delay = Math.min(5000 * Math.pow(2, app.sidecarRestartCount - 1), 60000);
-      console.warn(`[Sidecar] Restarting in ${delay / 1000}s (attempt ${app.sidecarRestartCount}/${MAX_SIDECAR_RESTARTS})...`);
-      setTimeout(() => {
-        if (!app.isQuitting) startVoiceSidecar();
-      }, delay);
-    } else {
-      // Clean exit (code 0) — reset counter
-      app.sidecarRestartCount = 0;
-    }
-  });
-
-  // Reset restart counter after process has been alive for 10s (healthy start)
-  const healthTimer = setTimeout(() => { app.sidecarRestartCount = 0; }, 10000);
-  voiceSidecarProcess.once('exit', () => clearTimeout(healthTimer));
-
-  console.log(`[Sidecar] Started (PID: ${voiceSidecarProcess.pid}) on port ${SIDECAR_PORT}`);
+function rotatePairing() {
+  pairing = generatePairing();
+  clearPaired();
+  return refreshPairingQr();
 }
 
 app.isQuitting = false;
-app.sidecarRestartCount = 0;
-const MAX_SIDECAR_RESTARTS = 5; // Stop retrying if packages are missing
 // ─────────────────────────────────────────────────────────────────────────────
 
 // Media Dictionary Setup
@@ -130,7 +143,7 @@ ipcMain.handle("media-import", async (event) => {
   const destPath = path.join(mediaPath, filename);
 
   try {
-    fs.copyFileSync(sourcePath, destPath);
+    await fsp.copyFile(sourcePath, destPath);
     return `file://${destPath}`;
   } catch (err) {
     console.error("Failed to copy file", err);
@@ -156,24 +169,24 @@ ipcMain.handle("media-import-presentation", async (event) => {
   const destPath = path.join(mediaPath, filename);
 
   try {
-    fs.copyFileSync(sourcePath, destPath);
+    await fsp.copyFile(sourcePath, destPath);
     
     // Create a folder for the slide images
     const slidesDir = path.join(mediaPath, `${filename}_slides`);
-    if (!fs.existsSync(slidesDir)) {
-      fs.mkdirSync(slidesDir, { recursive: true });
-    }
+    try {
+      await fsp.mkdir(slidesDir, { recursive: true });
+    } catch (_) {}
 
     // Extract slides to images using pptx-glimpse
-    const buffer = fs.readFileSync(destPath);
+    const buffer = await fsp.readFile(destPath);
     const pngBuffers = await convertPptxToPng(buffer);
     
     const slideUrls = [];
-    pngBuffers.forEach((buf, i) => {
+    for (let i = 0; i < pngBuffers.length; i++) {
       const slidePath = path.join(slidesDir, `slide_${i + 1}.png`);
-      fs.writeFileSync(slidePath, buf);
+      await fsp.writeFile(slidePath, pngBuffers[i]);
       slideUrls.push(`file://${slidePath}`);
-    });
+    }
 
     return { 
         fileUrl: `file://${destPath}`, 
@@ -208,14 +221,12 @@ function countPptxSlides(filePath) {
 }
 
 ipcMain.handle("presentation-delete", async (event, fileUrl) => {
+  const filePath = fileUrl.replace('file://', '');
   try {
-    const filePath = fileUrl.replace('file://', '');
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-      return true;
-    }
-    return false;
+    await fsp.unlink(filePath);
+    return true;
   } catch (err) {
+    if (err.code === 'ENOENT') return false;
     console.error("Failed to delete presentation", err);
     return false;
   }
@@ -225,40 +236,113 @@ ipcMain.handle("presentation-delete", async (event, fileUrl) => {
 
 ipcMain.handle("media-list", async () => {
   try {
-    const files = fs.readdirSync(mediaPath);
-    // Sort files by modification time descending (newest first)
-    const sortedFiles = files
-        .filter(file => !file.startsWith('.')) // hide hidden files
-        .map(file => {
-            const filePath = path.join(mediaPath, file);
-            return {
-                name: file,
-                time: fs.statSync(filePath).mtime.getTime()
-            };
-        })
-        .sort((a, b) => b.time - a.time)
-        .map(f => `file://${path.join(mediaPath, f.name)}`);
-    return sortedFiles;
+    const files = await fsp.readdir(mediaPath);
+    const fileStats = await Promise.all(files.map(async (file) => {
+      if (file.startsWith('.')) return null;
+      const filePath = path.join(mediaPath, file);
+      try {
+        const stat = await fsp.stat(filePath);
+        return { name: file, time: stat.mtime.getTime() };
+      } catch (err) {
+        return null;
+      }
+    }));
+
+    return fileStats
+      .filter(Boolean)
+      .sort((a, b) => b.time - a.time)
+      .map(f => `file://${path.join(mediaPath, f.name)}`);
   } catch (err) {
+    console.error("Failed to list media", err);
     return [];
   }
 });
 
 ipcMain.handle("media-delete", async (event, fileUrl) => {
+  const filePath = fileUrl.replace('file://', '');
   try {
-    // fileUrl is file:///path/to/media/filename.ext
-    const filePath = fileUrl.replace('file://', '');
-    if (fs.existsSync(filePath)) {
-      fs.unlinkSync(filePath);
-      return true;
-    }
-    return false;
+    await fsp.unlink(filePath);
+    return true;
   } catch (err) {
+    if (err.code === 'ENOENT') return false;
     console.error(err);
     return false;
   }
 });
 // ----------------------------
+
+// ------ DESIGN LAB HANDLERS ------
+const axios = require('axios');
+const FormData = require('form-data');
+
+let currentDesignProcess = null;
+
+ipcMain.handle("design-analyze", async (event, imagePath) => {
+    try {
+        // Kill existing process if running to prevent memory overflow
+        if (currentDesignProcess) {
+            currentDesignProcess.kill('SIGTERM');
+            currentDesignProcess = null;
+        }
+
+        const scriptPath = path.join(__dirname, 'ocs_image_engine', 'engine.py');
+        const posterPath = imagePath.replace('file://', '');
+        const outputDir = path.join(app.getPath("userData"), "generated_assets");
+        
+        return new Promise((resolve, reject) => {
+            const pythonCmd = detectPython() || (process.platform === "win32" ? "python" : "python3");
+            
+            try {
+                // Pass --generate to trigger inference and --out to ensure files are written outside the project root
+                currentDesignProcess = spawn(pythonCmd, [scriptPath, '--generate', posterPath, '--out', outputDir]);
+            } catch (err) {
+                return resolve({ error: `Could not start Python engine: ${err.message}` });
+            }
+
+            const proc = currentDesignProcess;
+
+            proc.on('error', (err) => {
+                if (currentDesignProcess === proc) currentDesignProcess = null;
+                resolve({ error: `Python engine error: ${err.message}` });
+            });
+            
+            let output = "";
+            let errorOutput = "";
+
+            proc.stdout.on('data', (data) => { output += data.toString(); });
+            proc.stderr.on('data', (data) => { errorOutput += data.toString(); });
+
+            proc.on('close', (code) => {
+                if (currentDesignProcess === proc) currentDesignProcess = null;
+                if (code === 0) {
+                    try {
+                        // Extract JSON from the output (handles any stray logs)
+                        const jsonMatch = output.match(/\{[\s\S]*\}/);
+                        if (jsonMatch) {
+                            const result = JSON.parse(jsonMatch[0]);
+                            resolve(result);
+                        } else {
+                            resolve({ error: "No valid JSON found in engine output", details: output });
+                        }
+                    } catch (e) {
+                        resolve({ error: "Failed to parse AI output", details: output });
+                    }
+                } else {
+                    resolve({ error: `Engine failed with code ${code}`, details: errorOutput });
+                }
+            });
+        });
+    } catch (err) {
+        return { error: err.message };
+    }
+});
+
+ipcMain.handle("design-generate", async (event, prompt) => {
+    // For the local engine, generation happens during the analysis phase 
+    // or as a follow-up. Since engine.py currently does both in process_poster,
+    // we can return the already generated files.
+    return { success: true, message: "Assets already generated during analysis." };
+});
 
 // ------ SERVER SETUP ------
 const express = require('express');
@@ -289,34 +373,124 @@ const PORT = 4000;
 let serverIp = ip.address(); // Get initial IP
 let connectedDevices = [];
 
-// Update IP if network changes (optional, but good practice)
-// For now, static check on startup is fine.
+// Read-only endpoints — unpaired devices may probe the server but cannot control it
+serverApp.get('/pair-info', (_req, res) => {
+  res.json({
+    ok: true,
+    port: PORT,
+    pairingRequired: true,
+    // Never expose the live token/code over an unauthenticated HTTP GET
+  });
+});
 
+/**
+ * Socket.IO auth (FR-6.10 / NFR-26):
+ * - Connection is allowed so the socket can attempt to pair
+ * - Control actions require a successful `pair` event with valid token/code
+ */
 io.on('connection', (socket) => {
-  console.log('a user connected', socket.id);
+  console.log('[Remote] socket connected', socket.id);
 
-  const device = { id: socket.id, ip: socket.handshake.address };
+  const device = {
+    id: socket.id,
+    ip: socket.handshake.address,
+    paired: false,
+    connectedAt: Date.now(),
+  };
   connectedDevices.push(device);
 
   const windows = BrowserWindow.getAllWindows();
   const controller = windows.find(w => w.getTitle() === "OCS Controller");
 
-  if (controller && !controller.isDestroyed()) {
-    controller.webContents.send('mobile-connected', device);
+  const notifyController = (channel, payload) => {
+    if (controller && !controller.isDestroyed()) {
+      controller.webContents.send(channel, payload);
+    }
+  };
+
+  // Auth attempt via handshake auth (preferred) or explicit pair event
+  const handshakeCred = socket.handshake.auth && (socket.handshake.auth.token || socket.handshake.auth.code);
+  if (handshakeCred && validateCredential(pairing, handshakeCred)) {
+    markPaired(socket.id);
+    device.paired = true;
+    device.name = socket.handshake.auth.deviceName || 'Mobile';
+    console.log('[Remote] paired via handshake:', socket.id);
+    socket.emit('pair-result', { ok: true });
+    notifyController('mobile-connected', device);
+  } else {
+    // Unpaired — connected but cannot control. Surface in debug/UI as pending.
+    notifyController('mobile-unpaired-attempt', {
+      id: socket.id,
+      ip: device.ip,
+      at: Date.now(),
+    });
+    socket.emit('pair-required', { message: 'Send pair event with token or 6-digit code' });
   }
 
-  socket.on('disconnect', () => {
-    console.log('user disconnected');
+  socket.on('pair', (payload = {}) => {
+    const clientIp = device.ip || socket.handshake.address;
 
-    connectedDevices = connectedDevices.filter(d => d.id !== socket.id);
-
-    if (controller && !controller.isDestroyed()) {
-      controller.webContents.send('mobile-disconnected', { id: socket.id });
+    // FR-6.12 — rate-limit 6-digit code attempts per source IP
+    const rateCheck = _pairingRateLimiter.check(clientIp);
+    if (!rateCheck.allowed) {
+      notifyController('mobile-unpaired-attempt', {
+        id: socket.id,
+        ip: clientIp,
+        at: Date.now(),
+        reason: rateCheck.reason,
+        lockedMs: rateCheck.retryAfterMs,
+      });
+      socket.emit('pair-result', {
+        ok: false,
+        error: 'Too many attempts. Try again later.',
+        retryAfterMs: rateCheck.retryAfterMs,
+      });
+      return;
     }
+
+    const cred = payload.token || payload.code;
+    if (!validateCredential(pairing, cred)) {
+      console.warn('[Remote] rejected pair attempt from', socket.id);
+      _pairingRateLimiter.recordFailure(clientIp);  // FR-6.12
+      notifyController('mobile-unpaired-attempt', {
+        id: socket.id,
+        ip: clientIp,
+        at: Date.now(),
+        reason: 'invalid_credential',
+      });
+      socket.emit('pair-result', { ok: false, error: 'Invalid pairing code' });
+      return;
+    }
+    _pairingRateLimiter.recordSuccess(clientIp);  // FR-6.12: reset counter on success
+    markPaired(socket.id);
+    device.paired = true;
+    device.name = payload.deviceName || device.name || 'Mobile';
+    socket.emit('pair-result', { ok: true });
+    notifyController('mobile-connected', device);
   });
 
-  // Handle commands from mobile
+  socket.on('disconnect', () => {
+    console.log('[Remote] disconnected', socket.id);
+    unmarkPaired(socket.id);
+    connectedDevices = connectedDevices.filter(d => d.id !== socket.id);
+    notifyController('mobile-disconnected', { id: socket.id });
+  });
+
+  // Handle commands from mobile — gated by pairing (NFR-26)
   socket.on('mobile-action', async (action) => {
+    if (!isPaired(socket.id)) {
+      console.warn('[Remote] blocked unpaired mobile-action from', socket.id, action && action.type);
+      notifyController('mobile-unpaired-attempt', {
+        id: socket.id,
+        ip: device.ip,
+        at: Date.now(),
+        reason: 'unpaired_action',
+        actionType: action && action.type,
+      });
+      socket.emit('pair-required', { message: 'Pairing required before control commands' });
+      return;
+    }
+
     console.log("Action received from mobile:", action);
 
     if (action.type === 'bible-get-books') {
@@ -382,17 +556,48 @@ io.on('connection', (socket) => {
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Local IP: ${serverIp}`);
+  refreshPairingQr().then(() => {
+    console.log(`[Pairing] code ${pairing.code} ready`);
+  });
 });
 
-ipcMain.handle('get-server-info', () => {
+ipcMain.handle('get-server-info', async () => {
   // Refresh IP in case it changed
   serverIp = ip.address();
-  return { ip: serverIp, port: PORT, devices: connectedDevices };
+  if (!pairingQrDataUrl) await refreshPairingQr();
+  return {
+    ip: serverIp,
+    port: PORT,
+    devices: connectedDevices.filter(d => d.paired),
+    pairingCode: pairing.code,
+    pairingQrDataUrl,
+  };
+});
+
+ipcMain.handle('pairing-rotate', async () => {
+  await rotatePairing();
+  serverIp = ip.address();
+  return {
+    ip: serverIp,
+    port: PORT,
+    pairingCode: pairing.code,
+    pairingQrDataUrl,
+    devices: connectedDevices.filter(d => d.paired),
+  };
+});
+
+ipcMain.on('mobile-disconnect-device', (event, deviceId) => {
+  const sock = io.sockets.sockets.get(deviceId);
+  if (sock) sock.disconnect(true);
 });
 
 ipcMain.on('bible-sync', (event, state) => {
-  // Broadcast to all connected mobile clients
-  io.emit('mobile-data', { type: 'bible-sync', payload: state });
+  // Broadcast only to paired mobile clients
+  for (const [id, sock] of io.sockets.sockets) {
+    if (isPaired(id)) {
+      sock.emit('mobile-data', { type: 'bible-sync', payload: state });
+    }
+  }
 });
 // --------------------------
 
@@ -462,13 +667,35 @@ function createWindows() {
     // Timer -> General View (Always - view.js now checks 'mode' and 'isEventMode' to decide whether to show it)
     if (!generalWindow.isDestroyed()) generalWindow.webContents.send("set-timer", value);
     if (!controllerWindow.isDestroyed()) controllerWindow.webContents.send("set-timer", value);
+    const t = typeof value === 'object' && value != null ? Number(value.time) : Number(value);
+    sleepPrevention.reconcile({ timerLive: Number.isFinite(t) && t > 0 });
   });
 
   ipcMain.on("activate_set_content", (event, value) => {
-    // Content -> Both Views
-    if (!speakerWindow.isDestroyed()) speakerWindow.webContents.send("set-content", value);
-    if (!generalWindow.isDestroyed()) generalWindow.webContents.send("set-content", value);
-    if (!controllerWindow.isDestroyed()) controllerWindow.webContents.send("set-content", value);
+    const summary = value == null
+      ? 'null (black)'
+      : `${value.type || '?'} ${value.data && value.data.title ? value.data.title : ''}`.trim();
+    const targets = {
+      speaker: speakerWindow && !speakerWindow.isDestroyed(),
+      general: generalWindow && !generalWindow.isDestroyed(),
+      controller: controllerWindow && !controllerWindow.isDestroyed(),
+    };
+    console.log('[IPC] activate_set_content', summary, '→', targets);
+    // Content -> All three windows (FR-1.3)
+    if (targets.speaker) speakerWindow.webContents.send("set-content", value);
+    if (targets.general) generalWindow.webContents.send("set-content", value);
+    if (targets.controller) controllerWindow.webContents.send("set-content", value);
+    // Tier 2 cleanup bias: record displayed scripture refs during active session
+    if (sessionArchive && value && (value.type === 'bible' || value.type === 'scripture')) {
+      const d = value.data || {};
+      const book = d.book || d.bookName || d.title;
+      const chapter = d.chapter;
+      const verse = d.verse ?? d.startVerse;
+      if (book && chapter != null) {
+        const ref = verse != null ? `${book} ${chapter}:${verse}` : `${book} ${chapter}`;
+        sessionArchive.recordScriptureRef(ref);
+      }
+    }
   });
 
   ipcMain.on("activate_set_style", (event, value) => {
@@ -550,13 +777,240 @@ ipcMain.handle("bible-search-verses", async (event, { query, version, limit }) =
   });
 });
 
-// ── Sidecar health check (for debug bar in renderer) ─────────────────────────
-ipcMain.handle("voice-sidecar-status", async () => {
-  return { running: voiceSidecarProcess !== null && !voiceSidecarProcess.killed, port: SIDECAR_PORT };
-});
-// -------------------------------------
+// ── ASR IPC (whisper default / vosk fallback) — vosk-* kept as aliases ────────
+ipcMain.handle('vosk-status', async () => asrEngine.getState());
+ipcMain.handle('asr-status', async () => asrEngine.getState());
 
-app.whenReady().then(() => {
+ipcMain.handle('vosk-init', async () => asrEngine.initialize());
+ipcMain.handle('asr-init', async (_e, opts) => asrEngine.initialize(opts?.engine));
+
+ipcMain.handle('vosk-start', async () => {
+  const state = await asrEngine.initialize();
+  if (state.status === 'error') return state;
+  try {
+    return asrEngine.startSession();
+  } catch (err) {
+    return { ...asrEngine.getState(), status: 'error', error: err.message };
+  }
+});
+ipcMain.handle('asr-start', async () => {
+  const state = await asrEngine.initialize();
+  if (state.status === 'error') return state;
+  try {
+    return asrEngine.startSession();
+  } catch (err) {
+    return { ...asrEngine.getState(), status: 'error', error: err.message };
+  }
+});
+
+ipcMain.handle('vosk-stop', async () => asrEngine.stopSession());
+ipcMain.handle('asr-stop', async () => asrEngine.stopSession());
+
+ipcMain.on('vosk-audio', (_event, pcm) => {
+  asrEngine.pushAudio(pcm);
+});
+ipcMain.on('asr-audio', (_event, pcm) => {
+  asrEngine.pushAudio(pcm);
+});
+
+let _asrAudioPackets = 0;
+asrEngine.on('transcript', (payload) => {
+  if (payload && payload.text) {
+    console.log(
+      `[Asr:${payload.asrEngine || asrEngine.engineName || '?'}]`,
+      payload.role || (payload.isFinal ? 'final' : 'partial'),
+      JSON.stringify(payload.text),
+      'conf=', payload.confidence,
+      payload.ignored ? '(ignored)' : ''
+    );
+  }
+});
+const _origPush = asrEngine.pushAudio.bind(asrEngine);
+asrEngine.pushAudio = (pcm) => {
+  if (_asrAudioPackets < 3) {
+    const len = pcm ? (pcm.byteLength || pcm.length || 0) : 0;
+    console.log(`[Asr] audio packet #${_asrAudioPackets + 1} bytes=${len} session=${asrEngine.getState().sessionActive}`);
+    _asrAudioPackets += 1;
+  }
+  return _origPush(pcm);
+};
+
+ipcMain.handle('vosk-set-confidence', async (_e, value) => {
+  asrEngine.setConfidenceThreshold(value);
+  return asrEngine.getState();
+});
+ipcMain.handle('asr-set-confidence', async (_e, value) => {
+  asrEngine.setConfidenceThreshold(value);
+  return asrEngine.getState();
+});
+ipcMain.handle('asr-transcribe-secondary', async (_e, pcm) => {
+  return asrEngine.transcribeSecondary(pcm);
+});
+
+// ── Session Archive / Timer lifecycle (FR-5.9–5.28) ───────────────────────────
+function broadcastSessionStatus(status) {
+  try {
+    sleepPrevention.reconcile({ sessionRecording: !!status?.recording });
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('session-archive-status', status);
+    }
+  } catch (_) {}
+}
+
+function broadcastSessionProgress(progress) {
+  try {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('session-archive-progress', progress);
+    }
+  } catch (_) {}
+}
+
+ipcMain.on('timer-lifecycle', (_e, event) => {
+  emitTimerLifecycle(event || {});
+});
+
+ipcMain.handle('session-list', async () => {
+  if (!sessionArchive) return [];
+  return sessionArchive.listSessions();
+});
+
+ipcMain.handle('session-get', async (_e, id) => {
+  if (!sessionArchive) throw new Error('Session archive not ready');
+  return sessionArchive.getSession(id);
+});
+
+ipcMain.handle('session-update', async (_e, { id, patch }) => {
+  if (!sessionArchive) throw new Error('Session archive not ready');
+  return sessionArchive.updateSession(id, patch || {});
+});
+
+ipcMain.handle('session-delete', async (_e, id) => {
+  if (!sessionArchive) throw new Error('Session archive not ready');
+  return sessionArchive.deleteSession(id);
+});
+
+ipcMain.handle('session-retry-pdf', async (_e, id) => {
+  if (!sessionArchive) throw new Error('Session archive not ready');
+  return sessionArchive.retryPdf(id);
+});
+
+ipcMain.handle('session-status', async () => {
+  return sessionArchive ? sessionArchive.getStatus() : { recording: false };
+});
+
+ipcMain.on('session-transcript-line', (_e, line) => {
+  if (sessionArchive) sessionArchive.appendTranscriptLine(line || {});
+});
+
+ipcMain.on('session-audio-chunk', (_e, chunk) => {
+  if (sessionArchive) sessionArchive.pushAudioChunk(chunk);
+});
+
+ipcMain.on('session-audio-mime', (_e, mime) => {
+  if (sessionArchive) sessionArchive.setAudioMime(mime);
+});
+
+ipcMain.handle('session-show-in-folder', async (_e, id) => {
+  if (!sessionArchive) return { ok: false };
+  const s = await sessionArchive.getSession(id);
+  const { shell } = require('electron');
+  const candidates = [s.paths.audio, s.paths.video, s.paths.pdf, s.paths.dir].filter(Boolean);
+  let target = s.paths.dir;
+  for (const p of candidates) {
+    try {
+      await fsp.access(p);
+      target = p;
+      break;
+    } catch (_) {}
+  }
+  if (target === s.paths.dir) {
+    await shell.openPath(target);
+  } else {
+    shell.showItemInFolder(target);
+  }
+  return { ok: true, path: target };
+});
+
+ipcMain.handle('session-audio-url', async (_e, id) => {
+  if (!sessionArchive) return null;
+  const s = await sessionArchive.getSession(id);
+  const mediaPath = s.paths.audio || s.paths.video;
+  try {
+    await fsp.access(mediaPath);
+    const st = await fsp.stat(mediaPath);
+    if (!st.size) return null;
+    const { pathToFileURL } = require('url');
+    return pathToFileURL(mediaPath).href;
+  } catch (_) {
+    return null;
+  }
+});
+
+// ── Sleep prevention (FR-13) ───────────────────────────────────────────────────
+ipcMain.handle('sleep-get-status', () => sleepPrevention.getStatus());
+ipcMain.handle('sleep-set-mode', async (_e, mode) => sleepPrevention.setMode(mode));
+ipcMain.handle('sleep-probe', () => sleepPrevention.probe());
+ipcMain.handle('settings-get', async () => appSettings.load());
+ipcMain.handle('settings-set', async (_e, patch) => {
+  const saved = await appSettings.save(patch || {});
+  // Keep ASR language gate in sync with Settings (primary + secondary share policy)
+  if (
+    patch
+    && (Object.prototype.hasOwnProperty.call(patch, 'transcriptionLanguage')
+      || Object.prototype.hasOwnProperty.call(patch, 'languageGateEnabled'))
+  ) {
+    asrEngine.setLanguagePolicy({
+      enabled: saved.languageGateEnabled !== false,
+      languages: [saved.transcriptionLanguage || 'en'],
+    });
+  }
+  return saved;
+});
+
+// Legacy alias used by older debug UI
+ipcMain.handle('voice-sidecar-status', async () => {
+  const s = asrEngine.getState();
+  return {
+    running: s.status === 'ready' || s.status === 'listening',
+    port: null,
+    backend: s.asrEngine === 'whisper' ? 'whisper-cpp' : 'native-koffi',
+    ...s,
+  };
+});
+
+// ── AI: Ollama + Piper (direct from main — no Python) ─────────────────────────
+ipcMain.handle('ai-status', async () => {
+  const asr = asrEngine.getState();
+  const ollama = await ollamaStatus();
+  return {
+    ok: asr.status === 'ready' || asr.status === 'listening',
+    asrEngine: asr.asrEngine,
+    vosk: asr.model ? asr.model.name : null,
+    voskStatus: asr.status,
+    piper: piperAvailable(__dirname),
+    ollama,
+  };
+});
+
+ipcMain.handle('ai-chat', async (_event, { prompt, system, model }) => {
+  try {
+    return await ollamaChat({ prompt, system, model });
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('ai-speak', async (_event, { text, voice }) => {
+  try {
+    return await piperSpeak(__dirname, text, voice);
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
+
+app.whenReady().then(async () => {
   // GRANT MICROPHONE ACCESS AUTOMATICALLY
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
     if (permission === 'media') {
@@ -570,19 +1024,56 @@ app.whenReady().then(() => {
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
 
-  // Start Python voice sidecar (non-blocking — app stays usable while it loads)
-  startVoiceSidecar();
+  appSettings.init(app.getPath('userData'));
+  await appSettings.load();
+
+  // Session archive (FR-5.10+)
+  sessionArchive = new SessionArchiveService(app.getPath('userData'));
+  await sessionArchive.init();
+  sessionArchive.on('status', broadcastSessionStatus);
+  sessionArchive.on('progress', broadcastSessionProgress);
+  sessionArchive.on('session-updated', (meta) => {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('session-updated', meta);
+    }
+  });
+  sessionArchive.on('session-finalized', (meta) => {
+    broadcastSessionStatus(sessionArchive.getStatus());
+    // Do not null progress before UI can paint 100% / error — view clears itself
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('session-finalized', meta);
+    }
+  });
+
+  sleepPrevention.init();
+  const sleepProbe = sleepPrevention.probe();
+  if (!sleepProbe.ok) {
+    console.warn('[SleepPrevention]', sleepProbe.message);
+  }
+
+  // Load ASR in-process (whisper default, vosk fallback) — non-blocking for windows
+  asrEngine.initialize().then(() => {
+    const s = appSettings.loadSync();
+    asrEngine.setLanguagePolicy({
+      enabled: s.languageGateEnabled !== false,
+      languages: [s.transcriptionLanguage || 'en'],
+    });
+  }).catch((err) => {
+    console.error('[Asr] init error:', err.message);
+  });
 
   createWindows();
 });
 
-app.on("before-quit", () => {
+app.on("before-quit", async () => {
   app.isQuitting = true;
-  // Cleanly terminate the Python voice sidecar
-  if (voiceSidecarProcess && !voiceSidecarProcess.killed) {
-    console.log('[Sidecar] Shutting down Python voice server...');
-    voiceSidecarProcess.kill('SIGTERM');
-  }
+  try {
+    if (sessionArchive && sessionArchive.active) {
+      await sessionArchive.finalizeSession({ incomplete: true });
+    }
+  } catch (_) {}
+  sleepPrevention.shutdown();
+  asrEngine.shutdown();
 });
 
 app.on("window-all-closed", () => {
@@ -596,3 +1087,11 @@ app.on("activate", () => {
     createWindows();
   }
 });
+
+
+
+
+
+
+
+
