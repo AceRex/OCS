@@ -124,7 +124,7 @@ export default function TimerController() {
   useEffect(() => {
     setCountDown(time);
     setTimeUp(false);
-  }, [time]);
+  }, [time, activeId]);
 
   useEffect(() => {
     if (timer.current) {
@@ -154,15 +154,18 @@ export default function TimerController() {
               currentIndex > -1 ? agenda[currentIndex + 1] : null;
 
             if (nextItem) {
+              const nextTime = Number(nextItem.time) || 0;
               if (nextStartInterval > 0) {
                 // Schedule next item with a delay
                 dispatch(utilAction.setNextItemToStart(nextItem));
                 dispatch(utilAction.setDelayCountdown(nextStartInterval));
                 dispatch(utilAction.setIsDelayRunning(true));
               } else {
-                // Auto-start immediately
+                // Auto-start immediately — explicitly reset local countdown so same-duration items don't trip prevCountdown <= 1
+                setCountDown(nextTime);
+                setTimeUp(false);
                 dispatch(utilAction.setEventMode(false));
-                dispatch(utilAction.setTime(Number(nextItem.time) || 0));
+                dispatch(utilAction.setTime(nextTime));
                 dispatch(utilAction.setActiveId(nextItem._id));
                 dispatch(utilAction.setPaused(false));
 
@@ -170,7 +173,7 @@ export default function TimerController() {
                   type: "timer:started",
                   timerId: nextItem._id,
                   title: nextItem.agenda || nextItem.anchor || "Session",
-                  durationSec: Number(nextItem.time) || 0,
+                  durationSec: nextTime,
                   category: nextItem.agenda || "",
                   speakerName:
                     (nextItem.anchor && String(nextItem.anchor).trim()) ||

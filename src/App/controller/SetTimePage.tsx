@@ -93,11 +93,13 @@ export default function SetTimePage() {
       (eventDate.getTime() - now.getTime()) / 1000,
     );
     dispatch(utilAction.setEventMode(true));
+    dispatch(utilAction.setActiveId(null));
     dispatch(utilAction.setTime(diffInSeconds));
   };
   const handleClose = () => {
     const totalTimeInSeconds = Number(hours) * 3600 + Number(minutes) * 60;
     dispatch(utilAction.setEventMode(false));
+    dispatch(utilAction.setActiveId(null));
     dispatch(utilAction.setTime(totalTimeInSeconds));
   };
   const handleClick = () => {
