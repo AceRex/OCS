@@ -97,8 +97,7 @@ function App({ mode: propMode }) {
       const safeBody = body || "";
       const bodyLen = safeBody.length;
       const fontSize = bodyLen > 600 ? '2.8vw' : bodyLen > 300 ? '3.5vw' : bodyLen > 150 ? '4.5vw' : '6vw';
-      const useReadAlong = viewMode === 'speaker'
-        && readAlong?.enabled
+      const useReadAlong = !!readAlong?.enabled
         && Array.isArray(readAlong.tokens)
         && readAlong.tokens.length > 0;
 

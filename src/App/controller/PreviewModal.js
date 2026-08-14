@@ -88,9 +88,13 @@ export default function PreviewModal({ isOpen, onClose, mode }) {
     // Render Helpers (Scaled down logic from View.js)
     const renderBibleContent = () => {
         if (!presentationContent || !presentationContent.data) return null;
-        const { title, body } = presentationContent.data;
+        const { title, body, readAlong } = presentationContent.data;
         const safeBody = body || "";
         const length = safeBody.length;
+        const useReadAlong = !!readAlong?.enabled
+            && Array.isArray(readAlong.tokens)
+            && readAlong.tokens.length > 0;
+        const activeIdx = typeof readAlong?.activeIndex === 'number' ? readAlong.activeIndex : -1;
 
         // Approximate scaling for preview
         let fontSize = 'text-[24px]';
@@ -121,7 +125,33 @@ export default function PreviewModal({ isOpen, onClose, mode }) {
                 {(backgroundVideo || backgroundImage) && <div className="absolute inset-0 w-full h-full bg-black/40 z-1" />}
 
                 <div className="flex-1 flex flex-col items-center justify-center gap-4 z-10 relative w-full">
-                    <p className={`${fontSize} font-bold leading-tight max-w-[95%] drop-shadow-lg`}>{safeBody}</p>
+                    <p className={`${fontSize} font-bold leading-tight max-w-[95%] drop-shadow-lg`}>
+                        {useReadAlong ? (
+                            readAlong.tokens.map((tok, i) => {
+                                const isActive = i === activeIdx;
+                                const isPast = activeIdx >= 0 && i < activeIdx;
+                                return (
+                                    <span
+                                        key={`${i}-${tok}`}
+                                        style={{
+                                            display: 'inline',
+                                            fontWeight: 600,
+                                            color: isActive ? '#FFFFFF' : textColor,
+                                            opacity: isActive ? 1 : (isPast ? 0.42 : 0.58),
+                                            transition: 'color 180ms ease, opacity 180ms ease',
+                                            textShadow: isActive
+                                                ? '0 0 10px rgba(255,255,255,0.4), 0 2px 10px rgba(0,0,0,0.6)'
+                                                : '0 2px 10px rgba(0,0,0,0.5)',
+                                        }}
+                                    >
+                                        {tok}{i < readAlong.tokens.length - 1 ? ' ' : ''}
+                                    </span>
+                                );
+                            })
+                        ) : (
+                            <span dangerouslySetInnerHTML={{ __html: safeBody }} />
+                        )}
+                    </p>
                 </div>
                 {title && <div className="mb-4 text-sm font-medium opacity-80 uppercase tracking-widest z-10 relative drop-shadow-md">{title}</div>}
             </section>
