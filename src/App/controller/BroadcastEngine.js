@@ -2823,9 +2823,7 @@ export default function BroadcastEngine() {
               <div className="h-full flex flex-col items-center justify-center opacity-10 gap-4 p-6">
                 <PiWaveform size={60} />
                 <p className="text-[10px] font-black uppercase tracking-[0.3em]">
-                  {isTranscribing
-                    ? "Listening for speech…"
-                    : "Microphone off"}
+                  {isTranscribing ? "Listening for speech…" : "Microphone off"}
                 </p>
                 {speechError && (
                   <p className="text-[10px] font-black uppercase tracking-[0.1em] text-red-500 mt-2">

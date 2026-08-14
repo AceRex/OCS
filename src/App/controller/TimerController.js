@@ -429,15 +429,17 @@ export default function TimerController() {
               return (
                 <React.Fragment key={_id}>
                   <div
-                    className={`relative rounded-lg ${isActive ? "p-2 overflow-hidden" : ""}`}
+                    className={`relative rounded-lg overflow-hidden p-[2px] transition-all ${
+                      isActive
+                        ? "shadow-[0_0_15px_rgba(10,239,118,0.2)]"
+                        : "border border-light/20"
+                    }`}
                   >
                     {isActive && (
-                      <div className="absolute inset-[-500%] animate-[spin_5s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,#0000_0%,#0AEF76_50%,#0000_100%)]" />
+                      <div className="absolute inset-[-500%] animate-[spin_4s_linear_infinite] bg-[conic-gradient(from_90deg_at_50%_50%,#0000_0%,#0AEF76_50%,#0000_100%)]" />
                     )}
                     <li
-                      className={`font-bold text-light flex flex-col gap-2 p-4 justify-between list-none bg-[#646464] border rounded-lg relative z-10 ${
-                        isActive ? "border-transparent" : "border-light/30"
-                      }`}
+                      className="font-bold text-light flex flex-col gap-2 p-4 justify-between list-none bg-[#646464] rounded-[6px] relative z-10 w-full"
                       onClick={() =>
                         !isEditing && setActiveMenuId(isMenuOpen ? null : _id)
                       }
