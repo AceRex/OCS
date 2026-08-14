@@ -75,10 +75,20 @@
     "revelations": "Revelation",
     "mattew": "Matthew",
     "mathew": "Matthew",
-    "halleluya": "hallelujah",
     "halleluja": "hallelujah",
     "haleluja": "hallelujah",
     "hosana": "hosanna",
-    "a men": "amen"
+    "a men": "amen",
+    "niv": "NIV",
+    "amp": "AMP",
+    "kjv": "KJV",
+    "nkjv": "NKJV",
+    "esv": "ESV",
+    "nlt": "NLT",
+    "asv": "ASV",
+    "net": "NET",
+    "bbe": "BBE",
+    "web": "WEB",
+    "msg": "MSG"
   }
 }

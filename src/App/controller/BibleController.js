@@ -3,11 +3,12 @@ import React, { useState, useEffect, useRef } from 'react';
 import { PiCaretDown, PiMagnifyingGlass, PiCheck } from "react-icons/pi";
 
 const versions = {
-    kjv: "King James Version",
-    bbe: "Bible in Basic English",
-    asv: "American Standard Version",
-    web: "World English Bible",
-    net: "New English Translation",
+    kjv: "King James Version (KJV)",
+    amp: "Amplified Bible (AMP)",
+    net: "New English Translation (NET / NIV)",
+    asv: "American Standard Version (ASV / ESV)",
+    bbe: "Bible in Basic English (BBE / NLT)",
+    web: "World English Bible (WEB)",
     geneva: "Geneva Bible",
     tyndale: "Tyndale Bible",
     coverdale: "Coverdale Bible",
@@ -243,6 +244,17 @@ export default function BibleController() {
         window.addEventListener('voice-bible-sync', handleVoiceSync);
         return () => window.removeEventListener('voice-bible-sync', handleVoiceSync);
     }, [selectedVersion, selectedBookIndex, selectedChapterIndex]);
+
+    // Listen for Voice Translation Sync (BroadcastEngine → voice-translation-sync)
+    useEffect(() => {
+        const handleVoiceTranslation = (e) => {
+            if (e?.detail?.version) {
+                setSelectedVersion(e.detail.version);
+            }
+        };
+        window.addEventListener('voice-translation-sync', handleVoiceTranslation);
+        return () => window.removeEventListener('voice-translation-sync', handleVoiceTranslation);
+    }, []);
 
 
     const currentBook = books[selectedBookIndex];

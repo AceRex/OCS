@@ -107,6 +107,99 @@ const OCS_COMMANDS = [
   },
 ];
 
+const TRANSLATION_DEFINITIONS = [
+  { keys: ['niv', 'n i v', 'new international version', 'new international', 'an eye vee'], dbVersion: 'net', label: 'NIV' },
+  { keys: ['amp', 'a m p', 'amplified bible', 'amplified version', 'amplified', 'amped'], dbVersion: 'amp', label: 'AMP' },
+  { keys: ['kjv', 'k j v', 'king james version', 'king james'], dbVersion: 'kjv', label: 'KJV' },
+  { keys: ['nkjv', 'n k j v', 'new king james version', 'new king james'], dbVersion: 'kjvpce', label: 'NKJV' },
+  { keys: ['esv', 'e s v', 'english standard version', 'english standard'], dbVersion: 'asv', label: 'ESV' },
+  { keys: ['nlt', 'n l t', 'new living translation', 'new living'], dbVersion: 'bbe', label: 'NLT' },
+  { keys: ['asv', 'a s v', 'american standard version', 'american standard'], dbVersion: 'asv', label: 'ASV' },
+  { keys: ['net', 'n e t', 'new english translation', 'net bible'], dbVersion: 'net', label: 'NET' },
+  { keys: ['bbe', 'b b e', 'basic english', 'bible in basic english'], dbVersion: 'bbe', label: 'BBE' },
+  { keys: ['web', 'world english bible', 'world english'], dbVersion: 'web', label: 'WEB' },
+  { keys: ['msg', 'the message', 'message version', 'message bible', 'message'], dbVersion: 'web', label: 'MSG' },
+  { keys: ['csb', 'christian standard bible', 'christian standard'], dbVersion: 'net', label: 'CSB' },
+  { keys: ['nasb', 'new american standard bible', 'new american standard'], dbVersion: 'asv', label: 'NASB' },
+  { keys: ['rsv', 'revised standard version', 'revised standard'], dbVersion: 'asv', label: 'RSV' },
+  { keys: ['geneva', 'geneva bible'], dbVersion: 'geneva', label: 'Geneva' },
+  { keys: ['tyndale', 'tyndale bible'], dbVersion: 'tyndale', label: 'Tyndale' },
+  { keys: ['coverdale', 'coverdale bible'], dbVersion: 'coverdale', label: 'Coverdale' },
+  { keys: ['bishops', 'bishops bible'], dbVersion: 'bishops', label: 'Bishops' },
+];
+
+function findTranslationByToken(tokenStr) {
+  if (!tokenStr) return null;
+  const clean = tokenStr
+    .toLowerCase()
+    .replace(/\b(?:the|version|translation|bible|please|now|it|this|that|in|to)\b/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  for (const def of TRANSLATION_DEFINITIONS) {
+    for (const k of def.keys) {
+      if (clean === k || clean.startsWith(k + ' ') || clean.endsWith(' ' + k)) {
+        return def;
+      }
+    }
+  }
+  return null;
+}
+
+function checkTranslationCommand(rawText) {
+  if (!rawText) return null;
+  const lower = rawText.toLowerCase().replace(/[.,!?]/g, ' ').replace(/\s+/g, ' ').trim();
+
+  // Guard: if it looks like a full chapter/verse reference (e.g. "John 3:16 in NIV"), let the scripture resolver handle it
+  if (hasReferenceShape(lower) && /\b(?:verse|chapter|\d+:\d+|\d+\s+\d+)\b/i.test(lower)) {
+    return null;
+  }
+
+  // 1. "change translation to [x]", "change bible translation to [x]", "switch translation to [x]", "set translation to [x]"
+  const changeMatch = lower.match(/\b(?:change|switch|set|put)\s+(?:the\s+)?(?:bible\s+)?(?:translation|version)\s+(?:to|in)\s+(.+)/i);
+  if (changeMatch) {
+    const res = findTranslationByToken(changeMatch[1]);
+    if (res) return res;
+  }
+
+  // 2. "can I have [x]", "can I have it in [x]", "can we have [x]", "can you show [x]"
+  const canHaveMatch = lower.match(/\b(?:can\s+(?:i|we|you)\s+(?:have|get|see|show|put|display)\s+(?:it\s+in\s+|this\s+in\s+|in\s+)?)\s*(.+)/i);
+  if (canHaveMatch) {
+    const res = findTranslationByToken(canHaveMatch[1]);
+    if (res) return res;
+  }
+
+  // 3. "show in [x]", "show it in [x]", "display in [x]", "read in [x]", "view in [x]"
+  const showInMatch = lower.match(/\b(?:show|display|view|read|open|put)\s+(?:this\s+|it\s+)?in\s+(.+)/i);
+  if (showInMatch) {
+    const res = findTranslationByToken(showInMatch[1]);
+    if (res) return res;
+  }
+
+  // 4. "switch to [x]", "change to [x]"
+  const switchToMatch = lower.match(/\b(?:switch|change)\s+to\s+([a-z0-9\s]+?)(?:\s+translation|\s+version|\s+bible)?$/i);
+  if (switchToMatch) {
+    const res = findTranslationByToken(switchToMatch[1]);
+    if (res) return res;
+  }
+
+  // 5. "give me [x]", "give me it in [x]"
+  const giveMeMatch = lower.match(/\b(?:give\s+me\s+(?:it\s+in\s+|in\s+)?)\s*(.+)/i);
+  if (giveMeMatch) {
+    const res = findTranslationByToken(giveMeMatch[1]);
+    if (res) return res;
+  }
+
+  // 6. Bare translation switch: "translation [x]" or "version [x]"
+  const bareTransMatch = lower.match(/\b(?:translation|version)\s+([a-z0-9\s]+)$/i);
+  if (bareTransMatch) {
+    const res = findTranslationByToken(bareTransMatch[1]);
+    if (res) return res;
+  }
+
+  return null;
+}
+
 const VERSE_DEDUP_MS = 10000;
 const TRIGGER_ARM_MS = 8000;
 const SETTLE_TIMEOUT_MS = 2500; // promote PROBE_FIRED → SETTLED_DIRECT if no final
@@ -990,9 +1083,88 @@ export default function BroadcastEngine() {
     }
   };
 
+  const changeTranslation = async (dbVersion, label) => {
+    currentBibleVersionRef.current = dbVersion;
+
+    // 1. Update the presentation styles in Electron View windows (General and Speaker)
+    if (window.electron?.Presentation?.setStyle) {
+      window.electron.Presentation.setStyle({ bibleTranslation: label });
+    }
+
+    // 2. If a passage is currently on screen, re-fetch and re-render in the new translation!
+    const passage = currentPassageRef.current;
+    if (passage && passage.bookIndex != null && passage.chapter != null) {
+      const bookId = Number.isInteger(booksRef.current[passage.bookIndex]?.id)
+        ? booksRef.current[passage.bookIndex].id
+        : passage.bookIndex;
+
+      let vers = await window.electron.Bible.getChapter(
+        dbVersion,
+        bookId,
+        passage.chapter,
+      );
+
+      // Fallback to KJV if specific chapter not in partial translation
+      if (!vers || vers.length === 0) {
+        vers = await window.electron.Bible.getChapter(
+          "kjv",
+          bookId,
+          passage.chapter,
+        );
+      }
+
+      if (vers && vers.length > 0) {
+        const bookName =
+          passage.bookName || booksRef.current[passage.bookIndex]?.name || "";
+        const curV = passage.currentVerse || passage.startVerse || 1;
+        const startV = passage.startVerse || curV;
+        const endV = passage.endVerse || curV;
+
+        const step = formatRangeStep(
+          bookName,
+          passage.chapter,
+          startV,
+          endV,
+          curV,
+          vers,
+        );
+        const tokens = tokenizePassage(step.body);
+
+        currentVerseTitleRef.current = step.title;
+        currentVerseFullTextRef.current = step.body;
+        currentPassageRef.current = {
+          ...passage,
+          verseTexts: vers,
+          tokens,
+          activeIndex: -1,
+        };
+
+        pushBibleContent(step.title, step.body, tokens, -1, step);
+      }
+    }
+
+    // 3. Notify BibleController to update its selected dropdown
+    window.dispatchEvent(
+      new CustomEvent("voice-translation-sync", {
+        detail: { version: dbVersion, label },
+      }),
+    );
+
+    // 4. Visual feedback toast
+    setCommandFeedback({ label: `Translation → ${label}`, ok: true });
+    setTimeout(() => setCommandFeedback(null), 3000);
+  };
+
   // Wire to ref so the onmessage closure always calls the latest version
   const handleOCSCommands = (text) => {
     const lower = text.toLowerCase().replace(/[.,!?]/g, "");
+
+    // ── Translation Switch: "change translation to NIV", "can I have NIV", "show in AMP", etc.
+    const transMatch = checkTranslationCommand(lower);
+    if (transMatch) {
+      changeTranslation(transMatch.dbVersion, transMatch.label);
+      return true;
+    }
 
     // ── Highlight: "highlight [words]" / "mark the word [words]"
     // NEVER bare "mark …" — that steals scripture refs ("book of Mark one verse one")
@@ -1353,7 +1525,25 @@ export default function BroadcastEngine() {
 
     // Pull scripture core out of noisy ASR ("let's check the book of mach…")
     const core = extractScriptureCore(text) || text;
-    const matchText = core.length >= 3 ? core : text;
+    let matchText = core.length >= 3 ? core : text;
+
+    // Check for trailing translation (e.g. "John 3:16 in NIV" or "Genesis 1:1 in AMP")
+    const embeddedTransMatch = matchText.match(/\bin\s+([a-z0-9\s]+)$/i);
+    if (embeddedTransMatch) {
+      const trans = findTranslationByToken(embeddedTransMatch[1]);
+      if (trans) {
+        currentBibleVersionRef.current = trans.dbVersion;
+        if (window.electron?.Presentation?.setStyle) {
+          window.electron.Presentation.setStyle({ bibleTranslation: trans.label });
+        }
+        window.dispatchEvent(
+          new CustomEvent("voice-translation-sync", {
+            detail: { version: trans.dbVersion, label: trans.label },
+          }),
+        );
+        matchText = matchText.replace(/\bin\s+[a-z0-9\s]+$/i, "").trim();
+      }
+    }
 
     const fromPassB = pass === "B";
     const shape = shapeHint || matchReferenceShape(matchText);
