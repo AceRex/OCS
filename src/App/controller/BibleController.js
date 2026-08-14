@@ -249,6 +249,7 @@ export default function BibleController() {
     useEffect(() => {
         const handleVoiceTranslation = (e) => {
             if (e?.detail?.version) {
+                skipPresentationClearUntilRef.current = Date.now() + 1500;
                 setSelectedVersion(e.detail.version);
             }
         };
@@ -347,16 +348,16 @@ export default function BibleController() {
     };
 
     // Clear verse selection when changing chapter/book (manual picker browse).
-    // Must NOT wipe live AV output when the change was driven by voice-bible-sync.
+    // Must NOT wipe live AV output when the change was driven by voice-bible-sync or translation change.
     useEffect(() => {
-        setSelectedVerseIndices(new Set());
         if (Date.now() < skipPresentationClearUntilRef.current) {
-            console.log('[Bible] skip presentation clear (voice nav window)');
+            console.log('[Bible] skip presentation clear (voice nav/translation window)');
             return;
         }
-        console.log('[Bible] clear presentation on book/chapter/version change');
+        setSelectedVerseIndices(new Set());
+        console.log('[Bible] clear presentation on book/chapter change');
         electron.Presentation.setContent(null);
-    }, [selectedBookIndex, selectedChapterIndex, selectedVersion]);
+    }, [selectedBookIndex, selectedChapterIndex]);
 
     if (!currentBook) return <div className="text-light p-4">Loading Bible Data...</div>;
 
