@@ -106,8 +106,8 @@ export const BOOK_ALIASES = {
     '1cor': '1 Corinthians', '1corinthians': '1 Corinthians', 'first corinthians': '1 Corinthians', '1 corinthians': '1 Corinthians', 'first corinthian': '1 Corinthians', '1 corinthian': '1 Corinthians', '1st corinthians': '1 Corinthians', '1st corinthian': '1 Corinthians',
     '2cor': '2 Corinthians', '2corinthians': '2 Corinthians', 'second corinthians': '2 Corinthians', '2 corinthians': '2 Corinthians', 'second corinthian': '2 Corinthians', '2 corinthian': '2 Corinthians', '2nd corinthians': '2 Corinthians', '2nd corinthian': '2 Corinthians',
     'cor': '1 Corinthians', 'corinthian': '1 Corinthians', 'corinthians': '1 Corinthians',
-    'gal': 'Galatians', 'galatians': 'Galatians',
-    'eph': 'Ephesians', 'ephesians': 'Ephesians', 'ephesian': 'Ephesians',
+    'gal': 'Galatians', 'galatians': 'Galatians', 'galleets': 'Galatians', 'galitians': 'Galatians', 'calitians': 'Galatians', 'caledians': 'Galatians', 'galatia': 'Galatians',
+    'eph': 'Ephesians', 'ephesians': 'Ephesians', 'ephesian': 'Ephesians', 'eficiency': 'Ephesians', 'efficiency': 'Ephesians', 'efitians': 'Ephesians', 'efesiens': 'Ephesians',
     'phil': 'Philippians', 'philippians': 'Philippians', 'philippian': 'Philippians',
     'philippines': 'Philippians', 'philippine': 'Philippians',
     'philipians': 'Philippians', 'philipian': 'Philippians',
@@ -138,8 +138,8 @@ export const BOOK_ALIASES = {
     'second simultity': '2 Timothy', '2nd simultity': '2 Timothy', '2 simultity': '2 Timothy',
     'tim': '1 Timothy', 'timothy': '1 Timothy',
     'tit': 'Titus', 'titus': 'Titus',
-    'philem': 'Philemon', 'philemon': 'Philemon', 'filemon': 'Philemon',
-    'heb': 'Hebrews', 'hebrews': 'Hebrews',
+    'philem': 'Philemon', 'philemon': 'Philemon', 'filemon': 'Philemon', 'philimone': 'Philemon', 'philom': 'Philemon', 'philimano': 'Philemon', 'philine won': 'Philemon', 'philinewon': 'Philemon',
+    'heb': 'Hebrews', 'hebrews': 'Hebrews', 'ebers': 'Hebrews', 'he brushed': 'Hebrews', 'hebrushed': 'Hebrews', 'hebrew': 'Hebrews',
     'jam': 'James', 'james': 'James', 'jas': 'James',
     '1pet': '1 Peter', '1peter': '1 Peter', 'first peter': '1 Peter', '1 peter': '1 Peter', '1st peter': '1 Peter',
     '2pet': '2 Peter', '2peter': '2 Peter', 'second peter': '2 Peter', '2 peter': '2 Peter', '2nd peter': '2 Peter',
@@ -474,6 +474,22 @@ export function repairReferenceConnectors(text) {
         if (/\b(?:go|jump|skip|turn|move|good|back|switch|change|read|show|open)\s*$/i.test(before)) return full;
         return `${lead}2 ${n}`;
     });
+
+    // "he brushed" → "hebrews", "philine won" → "philemon"
+    t = t.replace(/\bhe\s+brushed\b/gi, 'hebrews');
+    t = t.replace(/\bphiline\s+won\b/gi, 'philemon');
+
+    // Book + "is" + number → book + number ("philippian is 2 verse 9" → "philippian 2 verse 9")
+    t = t.replace(
+        /\b(genesis|exodus|leviticus|numbers|deuteronomy|joshua|judges|ruth|samuel|kings|chronicles|ezra|nehemiah|esther|job|psalms?|proverbs|ecclesiastes|ecclesiastics|ecclesia\s+sticks?|isaiah|jeremiah|jaymiah|jayemiah|jerimiah|jeremy|lamentations|ezekiel|daniel|hosea|joel|amos|obadiah|jonah|micah|nahum|habakkuk|zephaniah|haggai|zechariah|malachi|matthew|mark|luke|john|acts|romans|corinthians|galatians|ephesians|philippians|philippines|philippine|philipians|phillipians|phillipines|colossians|thessalonians|timothy|titus|philemon|hebrews|james|peter|jude|revelation)\s+is\s+(\d+)\b/gi,
+        '$1 $2'
+    );
+
+    // Book + "for" + number/verse → book + "4" + number/verse ("galatians for verse 6" → "galatians 4 verse 6")
+    t = t.replace(
+        /\b(genesis|exodus|leviticus|numbers|deuteronomy|joshua|judges|ruth|samuel|kings|chronicles|ezra|nehemiah|esther|job|psalms?|proverbs|ecclesiastes|ecclesiastics|ecclesia\s+sticks?|isaiah|jeremiah|jaymiah|jayemiah|jerimiah|jeremy|lamentations|ezekiel|daniel|hosea|joel|amos|obadiah|jonah|micah|nahum|habakkuk|zephaniah|haggai|zechariah|malachi|matthew|mark|luke|john|acts|romans|corinthians|galatians|galleets|galitians|calitians|caledians|ephesians|eficiency|efficiency|efitians|philippians|philippines|philippine|philipians|colossians|colosians|collisions|thessalonians|timothy|titus|philemon|hebrews|james|peter|jude|revelation)\s+for\s+(verse|verses|vs|v|\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/gi,
+        '$1 4 $2'
+    );
 
     // Book + "on" → book + "1" when a verse/chapter cue follows
     // (Vosk drops the /w/ in "one": "mark on verse one" / "mark on of …")

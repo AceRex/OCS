@@ -155,6 +155,35 @@ async function runTests() {
     // Zechariah
     { phrase: "zakaraya 1 1", expectedBook: "Zechariah", ch: 1, v: 1 },
     { phrase: "zachariah 1 1", expectedBook: "Zechariah", ch: 1, v: 1 },
+
+    // 2 Corinthians
+    { phrase: "second corinthians 1 1", expectedBook: "2 Corinthians", ch: 1, v: 1 },
+
+    // Galatians
+    { phrase: "the book of galatians for verse 6", expectedBook: "Galatians", ch: 4, v: 6 },
+    { phrase: "book of galleets 1 1", expectedBook: "Galatians", ch: 1, v: 1 },
+    { phrase: "the book of galitians 1 1", expectedBook: "Galatians", ch: 1, v: 1 },
+    { phrase: "calitians 1 1", expectedBook: "Galatians", ch: 1, v: 1 },
+    { phrase: "caledians 1 1", expectedBook: "Galatians", ch: 1, v: 1 },
+
+    // Ephesians
+    { phrase: "the book of eficiency 1 1", expectedBook: "Ephesians", ch: 1, v: 1 },
+
+    // Philippians
+    { phrase: "the book of philippian is 2 verse 9", expectedBook: "Philippians", ch: 2, v: 9 },
+
+    // Philemon
+    { phrase: "philimone 1 1", expectedBook: "Philemon", ch: 1, v: 1 },
+    { phrase: "philom 1 1", expectedBook: "Philemon", ch: 1, v: 1 },
+    { phrase: "philimano 1 1", expectedBook: "Philemon", ch: 1, v: 1 },
+    { phrase: "philine won 1 1", expectedBook: "Philemon", ch: 1, v: 1 },
+
+    // Hebrews
+    { phrase: "ebers 1 1", expectedBook: "Hebrews", ch: 1, v: 1 },
+    { phrase: "he brushed 1 1", expectedBook: "Hebrews", ch: 1, v: 1 },
+
+    // 1 Peter
+    { phrase: "first peter 1 1", expectedBook: "1 Peter", ch: 1, v: 1 },
   ];
 
   let passed = 0;
