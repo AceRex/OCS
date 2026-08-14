@@ -338,11 +338,11 @@ export default function BroadcastEngine() {
     let unsubEngineCalibrated = null;
     if (window.electron?.Asr?.onEngineChanged) {
       unsubEngineChanged = window.electron.Asr.onEngineChanged((payload) => {
-        console.log('[ASR] engine-changed →', payload);
+        console.log("[ASR] engine-changed →", payload);
         setAsrEngine(payload.toEngine || null);
         setAsrCalibrating(true);
         setCommandFeedback({
-          label: `ASR switched to ${payload.toEngine === 'whisper' ? 'whisper.cpp' : 'vosk-fallback'} — calibrating…`,
+          label: `ASR switched to ${payload.toEngine === "whisper" ? "whisper.cpp" : "vosk-fallback"} — calibrating…`,
           ok: null, // neutral
         });
         setTimeout(() => setCommandFeedback(null), 5000);
@@ -369,17 +369,7 @@ export default function BroadcastEngine() {
       const AsrApi = window.electron?.Asr || window.electron?.Vosk;
       if (!AsrApi) return;
       try {
-        const res = await AsrApi.init();
-        if (cancelled) return;
-        const activeEngine = res?.asrEngine || res?.engineName || asrEngine;
-        const engineLabel = activeEngine === 'whisper' ? 'whisper.cpp' : activeEngine === 'vosk' ? 'vosk-fallback' : (res?.model?.name || "ASR");
-        setTranscriptLines([
-          {
-            text: `Voice engine ready (${engineLabel}). Click the microphone button to start listening.`,
-            stamp: "00:00",
-            isFinal: true,
-          },
-        ]);
+        await AsrApi.init();
       } catch (err) {
         console.error("[ASR] init failed:", err);
       }
@@ -389,8 +379,8 @@ export default function BroadcastEngine() {
     return () => {
       cancelled = true;
       clearInterval(pollInterval);
-      if (typeof unsubEngineChanged === 'function') unsubEngineChanged();
-      if (typeof unsubEngineCalibrated === 'function') unsubEngineCalibrated();
+      if (typeof unsubEngineChanged === "function") unsubEngineChanged();
+      if (typeof unsubEngineCalibrated === "function") unsubEngineCalibrated();
       if (voskUnsubRef.current) voskUnsubRef.current();
       // Use Asr.stop() — Vosk shim kept for backward compat during migration
       const stopApi = window.electron?.Asr || window.electron?.Vosk;
@@ -419,7 +409,6 @@ export default function BroadcastEngine() {
       }
     };
   }, []);
-
 
   // ── Verse Navigation ────────────────────────────────────────────────────
   const navigateRelative = async (direction) => {
@@ -2294,16 +2283,6 @@ export default function BroadcastEngine() {
   const startListening = async ({ auto = false } = {}) => {
     if (isTranscribingRef.current) return true;
 
-    // FR-3.26 — engine-agnostic startup message (engine name filled after start() resolves)
-    setTranscriptLines([
-      {
-        text: auto
-          ? "Auto-starting ASR engine (continuous listen)…"
-          : "Initializing ASR Engine...",
-        stamp: "00:00",
-        isFinal: true,
-      },
-    ]);
     setDetectedCommands([]);
     setInterimText("");
     setSpeechError(null);
@@ -2322,7 +2301,9 @@ export default function BroadcastEngine() {
 
       const started = await AsrApi.start();
       if (!started || started.status === "error") {
-        throw new Error((started && started.error) || "ASR engine failed to start");
+        throw new Error(
+          (started && started.error) || "ASR engine failed to start",
+        );
       }
 
       // FR-3.26 — update active engine name from start() response
@@ -2357,7 +2338,7 @@ export default function BroadcastEngine() {
           micErr.name === "PermissionDeniedError";
         const errMsg = isDenied
           ? "Microphone access denied. Open System Settings → Privacy & Security → Microphone to allow OCS."
-          : (micErr.message || "Microphone error — check your audio device.");
+          : micErr.message || "Microphone error — check your audio device.";
         throw Object.assign(new Error(errMsg), { micDenied: isDenied });
       }
       streamRef.current = stream;
@@ -2445,16 +2426,6 @@ export default function BroadcastEngine() {
         tryStartArchiveRecorder(stream);
       }
 
-      // FR-3.26 — show active engine name in startup message
-      const activeEngine = started.asrEngine || started.engineName || asrEngine;
-      const engineLabel = activeEngine === 'whisper' ? 'whisper.cpp' : activeEngine === 'vosk' ? 'vosk-fallback' : (started.model?.name || "ASR");
-      setTranscriptLines([
-        {
-          text: `Listening continuously (${engineLabel} @ ${Math.round(inputRate)}→16kHz${started.passB ? `, Pass B grammar on (${started.grammarPhrases || "?"} phrases)` : ""}). Say "OCS" then a reference…`,
-          stamp: "00:00",
-          isFinal: true,
-        },
-      ]);
       setIsTranscribing(true);
       setIsSpeakingNow(false);
       console.log("[ASR] mic capture started", {
@@ -2853,8 +2824,8 @@ export default function BroadcastEngine() {
                 <PiWaveform size={60} />
                 <p className="text-[10px] font-black uppercase tracking-[0.3em]">
                   {isTranscribing
-                    ? "Listening for signal"
-                    : "Listening for signal"}
+                    ? "Listening for speech…"
+                    : "Microphone off"}
                 </p>
                 {speechError && (
                   <p className="text-[10px] font-black uppercase tracking-[0.1em] text-red-500 mt-2">
@@ -3077,7 +3048,7 @@ export default function BroadcastEngine() {
 
         {/* Control Center / Scene Editor */}
         <div className="flex-1 bg-[#121212] border border-white/5 rounded-[20px] flex flex-col overflow-hidden relative">
-          <DisabledContainer>
+          <DisabledContainer disabled>
             <div className="py-[12px] px-[24px] flex items-center justify-between border-b border-white/5 bg-white/[0.02]">
               <div className="flex items-center gap-5">
                 <div className="w-[30px] h-[30px] rounded-[8px] bg-blue-600/20 flex items-center justify-center text-blue-500 shadow-inner">
