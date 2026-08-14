@@ -131,6 +131,30 @@ async function runTests() {
     // Song of Solomon
     { phrase: "songs of solomon one verse one", expectedBook: "Song of Solomon", ch: 1, v: 1 },
     { phrase: "songs of suluman 1 1", expectedBook: "Song of Solomon", ch: 1, v: 1 },
+
+    // Joel
+    { phrase: "joyall 1 1", expectedBook: "Joel", ch: 1, v: 1 },
+    { phrase: "joyl 1 1", expectedBook: "Joel", ch: 1, v: 1 },
+
+    // Amos
+    { phrase: "almost three three", expectedBook: "Amos", ch: 3, v: 3 },
+
+    // Obadiah
+    { phrase: "the book of obadiah two verse four", expectedBook: "Obadiah", ch: 2, v: 4 },
+    { phrase: "obadiah 1 1", expectedBook: "Obadiah", ch: 1, v: 1 },
+
+    // Nahum
+    { phrase: "nahul 1 vass 1", expectedBook: "Nahum", ch: 1, v: 1 },
+    { phrase: "nahoon 1 vass 1", expectedBook: "Nahum", ch: 1, v: 1 },
+
+    // Habakkuk
+    { phrase: "amakuk 1 1", expectedBook: "Habakkuk", ch: 1, v: 1 },
+    { phrase: "the book of abakuk 1 1", expectedBook: "Habakkuk", ch: 1, v: 1 },
+    { phrase: "the book of abakukk 1 1", expectedBook: "Habakkuk", ch: 1, v: 1 },
+
+    // Zechariah
+    { phrase: "zakaraya 1 1", expectedBook: "Zechariah", ch: 1, v: 1 },
+    { phrase: "zachariah 1 1", expectedBook: "Zechariah", ch: 1, v: 1 },
   ];
 
   let passed = 0;
