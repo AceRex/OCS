@@ -123,7 +123,9 @@ export default function TimerController() {
 
   useEffect(() => {
     setCountDown(time);
-    setTimeUp(false);
+    if (time > 0) {
+      setTimeUp(false);
+    }
   }, [time, activeId]);
 
   useEffect(() => {
@@ -181,8 +183,10 @@ export default function TimerController() {
                 });
               }
             } else {
-              // No more items — clear the active timer
+              // All items completed — end timer session
+              dispatch(utilAction.setTime(0));
               dispatch(utilAction.setActiveId(null));
+              dispatch(utilAction.setPaused(false));
             }
 
             return 0;
