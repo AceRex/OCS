@@ -384,11 +384,11 @@ export default function TimerController() {
       )}
 
       <SetTimePage />
-      <div className="w-[70%] bg-primary/50 flex-1 rounded-2xl p-4 space-y-4">
+      <div className="w-[70%] bg-primary/50 flex flex-col h-full rounded-2xl p-4 gap-4 overflow-hidden">
         <div
-          className={`${
+          className={`shrink-0 ${
             bgChange ? "bg-red text-light" : "bg-green text-primary"
-          }  p-10 rounded-lg w-[100%] text-center relative`}
+          } p-8 rounded-lg w-full text-center relative`}
         >
           <p className="capitalize">current timer preview</p>
           <p className={"text-6xl w-[90%] m-auto font-extrabold"}>
@@ -412,7 +412,7 @@ export default function TimerController() {
           )}
         </div>
         <div
-          className={`m-auto bg-primary/70 flex flex-col gap-4 p-4 h-[78%] overflow-y-scroll rounded-2xl`}
+          className="w-full bg-primary/70 flex flex-col gap-3 p-4 flex-1 min-h-0 overflow-y-auto rounded-2xl"
         >
           {agenda?.length === 0 ? (
             <div className="font-normal flex flex-col h-full items-center justify-center gap-2 p-2 text-center rounded-md text-ash/60">
@@ -429,7 +429,7 @@ export default function TimerController() {
               return (
                 <React.Fragment key={_id}>
                   <div
-                    className={`relative rounded-lg overflow-hidden p-[2px] transition-all ${
+                    className={`shrink-0 relative rounded-lg overflow-hidden p-[2px] transition-all ${
                       isActive
                         ? "shadow-[0_0_15px_rgba(10,239,118,0.2)]"
                         : "border border-light/20"
