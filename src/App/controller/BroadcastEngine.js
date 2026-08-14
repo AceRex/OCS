@@ -2426,12 +2426,13 @@ export default function BroadcastEngine() {
         tryStartArchiveRecorder(stream);
       }
 
+      const activeEngine = started?.asrEngine || started?.engineName || asrEngine;
       setIsTranscribing(true);
       setIsSpeakingNow(false);
       console.log("[ASR] mic capture started", {
         inputRate,
         engine: activeEngine,
-        model: started.model?.name,
+        model: started?.model?.name,
         ctxState: audioCtx.state,
       });
       return true;
