@@ -89,6 +89,8 @@
     "net": "NET",
     "bbe": "BBE",
     "web": "WEB",
-    "msg": "MSG"
+    "msg": "MSG",
+    "vass": "verse",
+    "vasses": "verses"
   }
 }

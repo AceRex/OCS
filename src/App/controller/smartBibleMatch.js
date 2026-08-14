@@ -425,7 +425,7 @@ const DIGIT_MISHEARINGS = {
 const DIGIT_MISHEAR_RE = Object.keys(DIGIT_MISHEARINGS).join('|');
 // "verse"-like connectors Vosk substitutes between chapter and verse numbers
 // Include common WA/Vosk mangles: vast≈verse, of us≈verse, us≈verse
-const VERSE_CONNECTOR_RE = 'verse|verses|vs|v|first|was|worse|voice|virs|vers|vas|versus|versa|vast|fast';
+const VERSE_CONNECTOR_RE = 'verse|verses|vs|v|first|was|worse|voice|virs|vers|vas|vass|vasses|versus|versa|vast|fast';
 
 /**
  * Repair common Vosk mishearings of "verse" / digits inside a reference.
@@ -436,6 +436,10 @@ const VERSE_CONNECTOR_RE = 'verse|verses|vs|v|first|was|worse|voice|virs|vers|va
  */
 export function repairReferenceConnectors(text) {
     let t = text;
+
+    // "good to us 20" / "go to us 20" / "good to verse 20" (phonetic mishears of "go to verse 20")
+    t = t.replace(/\b(?:good\s+to\s+us|go\s+to\s+us)\s+(\d+)\b/gi, 'go to verse $1');
+    t = t.replace(/\b(?:good|go)\s+to\s+(?:verse|vass|vs|was|vast)\s+(\d+)\b/gi, 'go to verse $1');
 
     // "su vez" ≈ "two verse" (live 2026-07-29: Philippians 2:15 → "philippines su vez fifteen")
     t = t.replace(/\bsu\s+vez\b/gi, '2 verse');
@@ -449,11 +453,13 @@ export function repairReferenceConnectors(text) {
         /\b(genesis|exodus|leviticus|numbers|deuteronomy|joshua|judges|ruth|samuel|kings|chronicles|ezra|nehemiah|esther|job|psalms?|proverbs|ecclesiastes|ecclesiastics|ecclesia\s+sticks?|isaiah|jeremiah|jaymiah|jayemiah|jerimiah|jeremy|lamentations|ezekiel|daniel|hosea|joel|amos|obadiah|jonah|micah|nahum|habakkuk|zephaniah|haggai|zechariah|malachi|matthew|mark|luke|john|acts|romans|corinthians|galatians|ephesians|philippians|philippines|philippine|philipians|phillipians|phillipines|colossians|colosians|collisions|collosions|collusion|collotions|coalition|thessalonians|timothy|titus|philemon|hebrews|james|peter|jude|revelation|mach|match|marsh|mock|marc|look|junk|sams|molokai)\s+to\s+(\d+)\b/gi,
         '$1 2 $2'
     );
-    // Remaining after book resolved: "to 10" alone → "2 10"
+    // Remaining after book resolved: "to 10" alone → "2 10" (UNLESS preceded by navigation action like "go to", "jump to", etc.)
     t = t.replace(/(^|[\s:])to\s+(\d+)\b/gi, (full, lead, n, offset, str) => {
         // Avoid "3 to 16" — digit immediately before "to"
-        const before = str.slice(Math.max(0, offset - 3), offset);
+        const before = str.slice(Math.max(0, offset - 12), offset);
         if (/\d\s*$/.test(before)) return full;
+        // Avoid navigation commands: "go to 20", "jump to 20", "skip to 20", "move to 20", "turn to 20", "good to 20", "back to 20"
+        if (/\b(?:go|jump|skip|turn|move|good|back|switch|change|read|show|open)\s*$/i.test(before)) return full;
         return `${lead}2 ${n}`;
     });
 
@@ -853,17 +859,21 @@ export async function smartBibleMatch(rawCommand, books, bibleElectron, currentC
 
     // ─────────────────────────────────────────────────────────────────────────
     // PASS 4 — Context-only jump (chapter X / verse X, no book name mentioned)
-    // Use cases: "verse 20", "jump to verse 20", "go to verse twenty", "chapter 4"
+    // Use cases: "go to vass 20", "good to us 20", "jump to 20", "go to 20", "verse 20"
     // Placed after Pass 1 so "1 John 4 verse 8" isn't hijacked by the "verse 8" part.
     // ─────────────────────────────────────────────────────────────────────────
     const contextJumpMatch = numberTranslated.match(
-        /\b(?:(?:go to|jump to|skip to|turn to|show|open|read|let'?s look at|what about)\s+)?(?:chapter\s+(\d+)(?:\s*(?:and\s+)?(?:verse|verses|vs\.?|v\.?)\s+(\d+))?|(?:verse|verses|vs\.?|v\.?)\s+(\d+))\b/i
+        /\b(?:(?:go to|jump to|skip to|turn to|move to|show|open|read|let'?s look at|what about|back to)\s+)?(?:chapter\s+(\d+)(?:\s*(?:and\s+)?(?:verse|verses|vs\.?|v\.?|vass|vasses|vas)\s+(\d+))?|(?:verse|verses|vs\.?|v\.?|vass|vasses|vas)\s+(\d+))\b/i
     );
 
-    // Short ASR mishearing of "verse N" alone: "was 20" / "voice twenty" — only if
-    // the whole utterance is that jump (avoids "it was one of those days").
+    // Direct numeric jumps: "go to 20", "jump to 20", "skip to 20", "move to 20", "turn to 20", "good to us 20", "go to us 20"
+    const directNumJump = numberTranslated.trim().match(
+        /^(?:(?:go to|jump to|skip to|turn to|move to|show|read|open|back to|good to us|go to us)\s+)(\d+)$/i
+    );
+
+    // Short ASR mishearing of "verse N" alone: "was 20" / "voice twenty" / "vass 20" / "vas 20"
     const shortWasJump = numberTranslated.trim().match(
-        /^(?:(?:go to|jump to|skip to|turn to|show)\s+)?(?:was|worse|voice|vers|virs|vas)\s+(\d+)$/i
+        /^(?:(?:go to|jump to|skip to|turn to|move to|show|read)\s+)?(?:was|worse|voice|vers|virs|vas|vass)\s+(\d+)$/i
     );
 
     if (currentContext && Number.isInteger(currentContext.bookIndex)) {
@@ -879,6 +889,17 @@ export async function smartBibleMatch(rawCommand, books, bibleElectron, currentC
                 startVerse: jumpVerse,
                 endVerse: jumpVerse,
                 matchType: verseString ? 'context_verse' : 'context_chapter',
+            };
+        }
+
+        if (directNumJump) {
+            const jumpVerse = parseInt(directNumJump[1], 10);
+            return {
+                bookIndex,
+                chapter,
+                startVerse: jumpVerse,
+                endVerse: jumpVerse,
+                matchType: 'context_verse',
             };
         }
 
@@ -1078,21 +1099,29 @@ export function isLikelyBibleReference(rawText) {
     t = repairReferenceConnectors(t);
     t = t.replace(TRIGGER_STRIP_RE, ' ').trim();
     
-    // Check if it's a direct context jump (e.g. "verse 5" or "chapter 3")
+    // Check if it's a direct context jump (e.g. "verse 5" or "chapter 3" or "go to 20")
     // Also accept repaired mishearings already normalized to "verse"
-    if (/\b(?:chapter|verse|verses|vs|v)\s*\d+\b/i.test(t)) {
+    if (
+        /\b(?:chapter|verse|verses|vs|v|vass|vas|was|voice)\s*\d+\b/i.test(t) ||
+        /\b(?:go to|jump to|skip to|turn to|move to|back to)\s+\d+\b/i.test(t) ||
+        /\b(?:good\s+to\s+us|go\s+to\s+us)\s+\d+\b/i.test(t)
+    ) {
         return true;
     }
     // Digits flanking a verse-like connector still unrepaired: "1 was 1" / "6 first 4"
-    if (/\b\d+\s+(?:was|worse|voice|virs|vers|vas|versus|first)\s+\d+\b/i.test(t)) {
+    if (/\b\d+\s+(?:was|worse|voice|virs|vers|vas|vass|versus|first)\s+\d+\b/i.test(t)) {
         return true;
     }
     // "6 first war" — connector + misheard digit word
-    if (/\b\d+\s+(?:was|worse|voice|virs|vers|vas|versus|first)\s+(?:war|fore|floor|ford|tree|free|tee|won|wan|fife|sex|sicks|ate|hate|nigh|mine)\b/i.test(t)) {
+    if (/\b\d+\s+(?:was|worse|voice|virs|vers|vas|vass|versus|first)\s+(?:war|fore|floor|ford|tree|free|tee|won|wan|fife|sex|sicks|ate|hate|nigh|mine)\b/i.test(t)) {
         return true;
     }
     // Short whole-utterance "was 20" / "voice sixteen" (verse mishearing)
-    if (/^(?:(?:go to|jump to|skip to|turn to|show)\s+)?(?:was|worse|voice|vers|virs|vas)\s+\d+$/i.test(t)) {
+    if (
+        /^(?:(?:go to|jump to|skip to|turn to|move to|show|read|open|back to)\s+)?(?:was|worse|voice|vers|virs|vas|vass)\s+\d+$/i.test(t) ||
+        /^(?:go to|jump to|skip to|turn to|move to|back to)\s+\d+$/i.test(t) ||
+        /^(?:good\s+to\s+us|go\s+to\s+us)\s+\d+$/i.test(t)
+    ) {
         return true;
     }
 
@@ -1162,15 +1191,20 @@ export function matchReferenceShape(rawText) {
     }
 
     t = repairReferenceConnectors(t);
-    // Strip wake words only — keep "book of" (structural cue)
-    t = t.replace(/\b(ocs|oh see ess|oh-see-ess|o s c|osc|oasis|ocean|osiris|obvious|media|meter|medium|median|me the|need a|meet a|meeting|video|please|read|open|show|go to|jump to|skip to|turn to)\b/gi, ' ');
-    t = t.replace(/\s+/g, ' ').trim();
-
 
     // Short context jump — NOT ambient-complete (Pass 4 / trigger path only)
-    if (/^(?:(?:go to|jump to|skip to|turn to|show)\s+)?(?:chapter|verse|verses|vs|v|was|worse|voice|vers|virs|vas)\s+\d+$/i.test(t)) {
+    if (
+        /^(?:(?:go to|jump to|skip to|turn to|move to|show|read|open|back to)\s+)?(?:chapter|verse|verses|vs|v|was|worse|voice|vers|virs|vas|vass)\s+\d+$/i.test(t) ||
+        /^(?:go to|jump to|skip to|turn to|move to|back to)\s+\d+$/i.test(t) ||
+        /^(?:good\s+to\s+us|go\s+to\s+us)\s+\d+$/i.test(t) ||
+        /^(?:verse|vass|vas)\s+\d+$/i.test(t)
+    ) {
         return { ...empty, shortContext: true, span: t };
     }
+
+    // Strip wake words only — keep "book of" (structural cue)
+    t = t.replace(/\b(ocs|oh see ess|oh-see-ess|o s c|osc|oasis|ocean|osiris|obvious|media|meter|medium|median|me the|need a|meet a|meeting|video|please|read|open|show|go to|jump to|skip to|turn to|move to|back to)\b/gi, ' ');
+    t = t.replace(/\s+/g, ' ').trim();
 
     const tokens = t.split(/\s+/).filter(Boolean);
     if (!tokens.length) return empty;

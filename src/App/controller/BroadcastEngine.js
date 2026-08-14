@@ -22,6 +22,7 @@ import {
   hasReferenceShape,
   matchReferenceShape,
   wordNumbersToDigits,
+  repairReferenceConnectors,
   extractScriptureCore,
 } from "./smartBibleMatch";
 import { emitPipelineTrace } from "./voicePipelineTrace";
@@ -240,12 +241,15 @@ function stripTriggerWords(text) {
 }
 
 function isShortContextJump(text) {
-  const t = wordNumbersToDigits(String(text || "").toLowerCase())
-    .replace(/[,.;]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  return /^(?:(?:go to|jump to|skip to|turn to|show)\s+)?(?:chapter|verse|verses|vs|v|was|worse|voice|vers)\s+\d+$/i.test(
-    t,
+  if (!text) return false;
+  let t = wordNumbersToDigits(String(text || "").toLowerCase())
+    .replace(/[,.;:]/g, " ");
+  t = repairReferenceConnectors(t).replace(/\s+/g, " ").trim();
+  return (
+    /^(?:(?:go to|jump to|skip to|turn to|move to|show|read|open|back to)\s+)?(?:chapter|verse|verses|vs|v|was|worse|voice|vers|virs|vas|vass)\s+\d+$/i.test(t) ||
+    /^(?:go to|jump to|skip to|turn to|move to|back to)\s+\d+$/i.test(t) ||
+    /^(?:good\s+to\s+us|go\s+to\s+us)\s+\d+$/i.test(t) ||
+    /^(?:verse|vass|vas)\s+\d+$/i.test(t)
   );
 }
 
