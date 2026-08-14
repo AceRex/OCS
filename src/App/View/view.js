@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
+import DisplayCanvas from "./DisplayCanvas";
 
 function App({ mode: propMode }) {
   const [countdown, setCountDown] = useState(null);
@@ -11,7 +12,35 @@ function App({ mode: propMode }) {
     ? new URLSearchParams(window.location.search).get('mode')
     : null);
 
-  // New Presentation State
+  // 4-Band Compositor Canvas State (FR-4.13, FR-4.14, FR-4.15)
+  const [canvasState, setCanvasState] = useState({
+    background: {
+      type: "color",
+      url: null,
+      color: "#000000",
+      panX: 0,
+      panY: 0,
+      zoom: 1,
+      muted: true,
+      loop: true,
+      autoPlay: true,
+    },
+    contentSlot: {
+      type: "none",
+      data: null,
+    },
+    pinnedLayers: [],
+    chrome: {
+      blackout: false,
+      logo: false,
+      logoUrl: null,
+      brandingText: null,
+      timerSplit: false,
+      timerCountdown: null,
+    },
+  });
+
+  // Presentation State (backward compatibility)
   const [presentationContent, setPresentationContent] = useState(null);
   const [presentationStyle, setPresentationStyle] = useState({
     backgroundColor: '#000000',
@@ -340,6 +369,7 @@ function App({ mode: propMode }) {
     let unsubContent = null;
     let unsubStyle = null;
     let unsubSession = null;
+    let unsubCanvas = null;
 
     // Session archive REC badge — Speaker View default on; General View off (FR-5.16)
     if (mode === 'speaker' && window.electron?.Session) {
@@ -393,21 +423,65 @@ function App({ mode: propMode }) {
       unsubContent = window.electron.Presentation.onSetContent((value) => {
         // null = black/blank screen — must not touch .target
         if (value && value.target && Array.isArray(value.target)) {
-             if (!value.target.includes(mode) && !value.target.includes('all')) return;
+          if (!value.target.includes(mode) && !value.target.includes('all') && mode !== 'controller') return;
         }
         const summary = value == null
-          ? 'null (black)'
+          ? 'null (black/none)'
           : `${value.type || '?'} ${value.data?.title || ''}`.trim();
-        console.log(`[View] RENDER mode=${mode} set-content ←`, summary);
+        console.log(`[View] RENDER mode=${mode} set-content (scoped to Content Slot) ←`, summary);
         setPresentationContent(value);
+
+        // FR-4.14: Content Slot scoping — only update contentSlot, preserve background & pinned layers
+        setCanvasState(prev => ({
+          ...prev,
+          contentSlot: value == null
+            ? { type: 'none', data: null }
+            : { type: value.type || 'none', data: value.data || value }
+        }));
       });
+
       unsubStyle = window.electron.Presentation.onSetStyle((value) => {
         if (!value) return;
         if (value.target && Array.isArray(value.target)) {
-             if (!value.target.includes(mode) && !value.target.includes('all')) return;
+          if (!value.target.includes(mode) && !value.target.includes('all')) return;
         }
         console.log("View received style:", value);
         setPresentationStyle(prev => ({ ...prev, ...value }));
+
+        setCanvasState(prev => {
+          const bg = { ...prev.background };
+          if (value.backgroundImage) {
+            bg.type = 'image';
+            bg.url = value.backgroundImage;
+          } else if (value.backgroundVideo) {
+            bg.type = 'video';
+            bg.url = value.backgroundVideo;
+          } else if (value.backgroundColor) {
+            bg.type = 'color';
+            bg.color = value.backgroundColor;
+          }
+          if (value.backgroundX != null) bg.panX = value.backgroundX - 50;
+          if (value.backgroundY != null) bg.panY = value.backgroundY - 50;
+          return {
+            ...prev,
+            background: bg
+          };
+        });
+      });
+    }
+
+    if (window.electron && window.electron.Canvas && window.electron.Canvas.onCanvasSync) {
+      unsubCanvas = window.electron.Canvas.onCanvasSync((state) => {
+        if (state) {
+          setCanvasState(prev => ({
+            ...prev,
+            ...state,
+            background: { ...prev.background, ...(state.background || {}) },
+            contentSlot: state.contentSlot || prev.contentSlot,
+            pinnedLayers: state.pinnedLayers || prev.pinnedLayers,
+            chrome: { ...prev.chrome, ...(state.chrome || {}) }
+          }));
+        }
       });
     }
 
@@ -418,6 +492,7 @@ function App({ mode: propMode }) {
       if (typeof unsubContent === 'function') unsubContent();
       if (typeof unsubStyle === 'function') unsubStyle();
       if (typeof unsubSession === 'function') unsubSession();
+      if (typeof unsubCanvas === 'function') unsubCanvas();
     };
   }, []);
 
@@ -440,77 +515,11 @@ function App({ mode: propMode }) {
   }, [countdown]);
 
   const renderPresentation = () => {
-    const {
-      isCustomLayers,
-      bgStyle,
-      backgroundVideo,
-      backgroundImage,
-      backgroundColor,
-      lowerThirdImage,
-      customLayers,
-      biblePresentation,
-      slideIndexView,
-    } = presentationMemo;
-
-    // Bible and slide layouts own their backgrounds; skip outer chrome for them
-    const isSelfContained = !!biblePresentation || !!slideIndexView;
-
     return (
-      <section
-        className={`w-full h-full flex flex-col items-center justify-center text-center relative overflow-hidden ${isCustomLayers || isSelfContained ? 'p-0' : 'p-16'}`}
-        style={{ 
-            backgroundColor: isSelfContained
-              ? 'transparent'
-              : ((!backgroundImage && !backgroundVideo) ? (backgroundColor || '#000000') : '#000000'),
-            containerType: 'size' 
-        }}
-      >
-        {!isSelfContained && (
-          <>
-            {backgroundVideo ? (
-              <video
-                ref={videoRef}
-                className="absolute z-0"
-                style={bgStyle}
-                autoPlay loop muted playsInline
-              >
-                <source src={backgroundVideo} />
-              </video>
-            ) : backgroundImage ? (
-              <img
-                src={backgroundImage}
-                className="absolute z-0"
-                style={bgStyle}
-                alt="bg"
-              />
-            ) : null}
-
-            {lowerThirdImage && (
-              <div className="absolute bottom-12 left-12 w-[80%] h-[20%] z-30 pointer-events-none animate-in fade-in slide-in-from-left-8 duration-700">
-                <img 
-                  src={lowerThirdImage} 
-                  className="h-full w-auto object-contain drop-shadow-2xl" 
-                  alt="lower third" 
-                />
-              </div>
-            )}
-
-            {(backgroundVideo || backgroundImage) && (
-              <div className="absolute inset-0 w-full h-full bg-black/10 z-[1]" />
-            )}
-          </>
-        )}
-
-        <div className="w-full h-full z-10 relative">
-          {isCustomLayers && (
-            <div className="w-full h-full relative" style={{ containerType: 'size' }}>
-              {customLayers}
-            </div>
-          )}
-          {biblePresentation}
-          {slideIndexView}
-        </div>
-      </section>
+      <DisplayCanvas
+        canvasState={canvasState}
+        mode={viewMode || 'general'}
+      />
     );
   };
 
@@ -571,8 +580,14 @@ function App({ mode: propMode }) {
   // Debug check
   if (!window.electron) return <div style={{ color: 'red', fontSize: 50, backgroundColor: 'white' }}>ELECTRON PRELOAD FAILED</div>;
 
-  const isPresenting = presentationContent && ['bible', 'custom', 'custom_layers', 'slide_index'].includes(presentationContent.type) && presentationContent.data;
+  const hasContentSlot = canvasState.contentSlot && canvasState.contentSlot.type !== 'none' && canvasState.contentSlot.data != null;
+  const hasBackgroundMedia = canvasState.background && canvasState.background.url != null;
+  const hasPinnedLayers = Array.isArray(canvasState.pinnedLayers) && canvasState.pinnedLayers.length > 0;
+  const hasLegacyContent = presentationContent && ['bible', 'custom', 'custom_layers', 'slide_index'].includes(presentationContent.type) && presentationContent.data;
+
+  const isPresenting = Boolean(hasContentSlot || hasBackgroundMedia || hasPinnedLayers || hasLegacyContent);
   const showSplitTimer = isPresenting && countdown > 0;
+  console.log(`[View ${viewMode}] RENDER: isPresenting=${isPresenting}, hasContentSlot=${hasContentSlot}, countdown=${countdown}, type=${canvasState.contentSlot?.type}`);
 
   return (
     <div className="h-screen flex flex-col justify-center items-center w-full bg-primary overflow-hidden" style={{ color: 'white' }}>

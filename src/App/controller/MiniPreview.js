@@ -69,7 +69,7 @@ export default function MiniPreview({ mode }) {
             unsubContent = window.electron.Presentation.onSetContent((value) => {
                 // null = black/blank screen — must not touch .target
                 if (value && value.target && Array.isArray(value.target)) {
-                    if (!value.target.includes(mode) && !value.target.includes('all')) return;
+                    if (!value.target.includes(mode) && !value.target.includes('all') && mode !== 'controller') return;
                 }
                 const summary = value == null
                     ? 'null (black)'

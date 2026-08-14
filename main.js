@@ -22,6 +22,27 @@ const { PairingRateLimiter } = require("./src/main/pairing/rateLimiter");
 const { ollamaStatus, ollamaChat, piperAvailable, piperSpeak } = require("./src/main/aiHelpers");
 const appSettings = require("./src/main/appSettings");
 const sleepPrevention = require("./src/main/sleepPrevention");
+const { ReferenceAligner } = require("./src/main/aligner/referenceAligner");
+const { SceneAutoAdvanceManager } = require("./src/main/aligner/sceneAutoAdvance");
+
+const globalAligner = new ReferenceAligner();
+const sceneAutoAdvance = new SceneAutoAdvanceManager({ aligner: globalAligner });
+
+sceneAutoAdvance.on('aligner:update', (update) => {
+  broadcastAsrEvent('alignment:update', update);
+});
+sceneAutoAdvance.on('advance', (data) => {
+  broadcastAsrEvent('scene-auto-advance', data);
+});
+sceneAutoAdvance.on('prev', (data) => {
+  broadcastAsrEvent('scene-auto-prev', data);
+});
+sceneAutoAdvance.on('prompt:suggest', (prompt) => {
+  broadcastAsrEvent('scene-prompt-suggest', prompt);
+});
+sceneAutoAdvance.on('prompt:clear', () => {
+  broadcastAsrEvent('scene-prompt-clear', {});
+});
 
 // ── Platform helpers ──────────────────────────────────────────────────────────
 const IS_WIN  = process.platform === 'win32';
@@ -72,6 +93,11 @@ function broadcastAsrEvent(channel, payload) {
 asrEngine.on('transcript', (payload) => {
   broadcastAsrEvent('vosk-transcript', payload);
   broadcastAsrEvent('asr-transcript', payload);
+
+  // Feed active Read-Along aligner if enabled (FR-5.31 / FR-5.36)
+  if (sceneAutoAdvance.isEnabled && payload) {
+    sceneAutoAdvance.feed(payload);
+  }
 });
 asrEngine.on('status', (payload) => {
   broadcastAsrEvent('vosk-status', payload);
@@ -655,6 +681,20 @@ function createWindows() {
     },
   });
 
+  // Dev / Debug Listeners
+  speakerWindow.webContents.on('console-message', (e, level, msg, line, src) => {
+    console.log(`[SpeakerView JS (L${line})]`, msg);
+  });
+  speakerWindow.webContents.on('did-fail-load', (e, code, desc) => {
+    console.error('[SpeakerView did-fail-load]', code, desc);
+  });
+  generalWindow.webContents.on('console-message', (e, level, msg, line, src) => {
+    console.log(`[GeneralView JS (L${line})]`, msg);
+  });
+  generalWindow.webContents.on('did-fail-load', (e, code, desc) => {
+    console.error('[GeneralView did-fail-load]', code, desc);
+  });
+
   // Load Content with Modes
   speakerWindow.loadFile("view.html", { search: "mode=speaker" });
   generalWindow.loadFile("view.html", { search: "mode=general" });
@@ -671,20 +711,112 @@ function createWindows() {
     sleepPrevention.reconcile({ timerLive: Number.isFinite(t) && t > 0 });
   });
 
-  ipcMain.on("activate_set_content", (event, value) => {
-    const summary = value == null
-      ? 'null (black)'
-      : `${value.type || '?'} ${value.data && value.data.title ? value.data.title : ''}`.trim();
+  // Display Canvas State Store (FR-4.13, FR-4.14, FR-4.15)
+  let currentCanvasState = {
+    background: {
+      type: "color",
+      url: null,
+      color: "#000000",
+      panX: 0,
+      panY: 0,
+      zoom: 1,
+      muted: true,
+      loop: true,
+      autoPlay: true,
+    },
+    contentSlot: {
+      type: "none",
+      data: null,
+    },
+    pinnedLayers: [],
+    chrome: {
+      blackout: false,
+      logo: false,
+      logoUrl: null,
+      brandingText: null,
+      timerSplit: false,
+      timerCountdown: null,
+    },
+  };
+
+  function broadcastCanvasState(state) {
+    if (state) currentCanvasState = state;
     const targets = {
       speaker: speakerWindow && !speakerWindow.isDestroyed(),
       general: generalWindow && !generalWindow.isDestroyed(),
       controller: controllerWindow && !controllerWindow.isDestroyed(),
     };
-    console.log('[IPC] activate_set_content', summary, '→', targets);
-    // Content -> All three windows (FR-1.3)
-    if (targets.speaker) speakerWindow.webContents.send("set-content", value);
-    if (targets.general) generalWindow.webContents.send("set-content", value);
-    if (targets.controller) controllerWindow.webContents.send("set-content", value);
+    if (targets.speaker) speakerWindow.webContents.send("canvas-state-update", currentCanvasState);
+    if (targets.general) generalWindow.webContents.send("canvas-state-update", currentCanvasState);
+    if (targets.controller) controllerWindow.webContents.send("canvas-state-update", currentCanvasState);
+
+    // FR-4.15: lightweight summary to Mobile Companion
+    const summary = {
+      activeContentSlotType: currentCanvasState.contentSlot?.type || "none",
+      hasContent: currentCanvasState.contentSlot?.type !== "none" && currentCanvasState.contentSlot?.data != null,
+      pinnedLayerCount: Array.isArray(currentCanvasState.pinnedLayers) ? currentCanvasState.pinnedLayers.length : 0,
+      isBlackout: !!currentCanvasState.chrome?.blackout,
+    };
+    if (io) {
+      for (const [id, sock] of io.sockets.sockets) {
+        if (isPaired(id)) {
+          sock.emit("mobile-data", { type: "canvas-summary", payload: summary });
+        }
+      }
+    }
+  }
+
+  ipcMain.on("canvas-sync-state", (event, state) => {
+    broadcastCanvasState(state);
+  });
+
+  ipcMain.on("canvas-set-background", (event, bg) => {
+    currentCanvasState.background = { ...currentCanvasState.background, ...bg };
+    broadcastCanvasState(currentCanvasState);
+  });
+
+  ipcMain.on("canvas-set-pinned-layers", (event, layers) => {
+    currentCanvasState.pinnedLayers = Array.isArray(layers) ? layers : [];
+    broadcastCanvasState(currentCanvasState);
+  });
+
+  ipcMain.on("canvas-set-chrome", (event, chrome) => {
+    currentCanvasState.chrome = { ...currentCanvasState.chrome, ...chrome };
+    broadcastCanvasState(currentCanvasState);
+  });
+
+  ipcMain.on("activate_set_content", (event, value) => {
+    const summary = value == null
+      ? 'null (black)'
+      : `${value.type || '?'} ${value.data && value.data.title ? value.data.title : ''}`.trim();
+
+    // FR-4.9 / Task-1 fix: if value carries a `target` array (Presentation path), respect it.
+    // When target is absent (Bible path), broadcast to all output windows (FR-1.3).
+    const allowedTargets = Array.isArray(value?.target) ? value.target : null;
+    const speakerOk = speakerWindow && !speakerWindow.isDestroyed() &&
+      (allowedTargets === null || allowedTargets.includes('speaker'));
+    const generalOk = generalWindow && !generalWindow.isDestroyed() &&
+      (allowedTargets === null || allowedTargets.includes('general'));
+    const controllerOk = controllerWindow && !controllerWindow.isDestroyed();
+
+    console.log('[IPC] activate_set_content', summary, '→ speaker:', speakerOk, 'general:', generalOk, 'target:', allowedTargets ?? 'all');
+
+    // FR-4.14: Content Slot scoping — update only the contentSlot band, preserve Background and Pinned layers
+    if (value == null) {
+      currentCanvasState.contentSlot = { type: "none", data: null };
+    } else {
+      currentCanvasState.contentSlot = {
+        type: value.type || "none",
+        data: value.data || value,
+      };
+    }
+    broadcastCanvasState(currentCanvasState);
+
+    // Dispatch to gated windows
+    if (speakerOk) speakerWindow.webContents.send("set-content", value);
+    if (generalOk) generalWindow.webContents.send("set-content", value);
+    if (controllerOk) controllerWindow.webContents.send("set-content", value);
+
     // Tier 2 cleanup bias: record displayed scripture refs during active session
     if (sessionArchive && value && (value.type === 'bible' || value.type === 'scripture')) {
       const d = value.data || {};
@@ -699,10 +831,60 @@ function createWindows() {
   });
 
   ipcMain.on("activate_set_style", (event, value) => {
-    // Style -> Both Views
-    if (!speakerWindow.isDestroyed()) speakerWindow.webContents.send("set-style", value);
-    if (!generalWindow.isDestroyed()) generalWindow.webContents.send("set-style", value);
-    if (!controllerWindow.isDestroyed()) controllerWindow.webContents.send("set-style", value);
+    // FR-4.9 fix: respect target array just like activate_set_content
+    const allowedTargets = Array.isArray(value?.target) ? value.target : null;
+    if (!speakerWindow.isDestroyed() && (allowedTargets === null || allowedTargets.includes('speaker')))
+      speakerWindow.webContents.send("set-style", value);
+    if (!generalWindow.isDestroyed() && (allowedTargets === null || allowedTargets.includes('general')))
+      generalWindow.webContents.send("set-style", value);
+    if (!controllerWindow.isDestroyed())
+      controllerWindow.webContents.send("set-style", value);
+  });
+
+  // ── Scene IPC (FR-4.28–FR-4.31) ────────────────────────────────────────────
+  // Persist scenes as JSON in userData (no SQLite migration needed for Phase 2)
+  const scenesFilePath = path.join(app.getPath('userData'), 'scenes.json');
+  let scenesStore = [];
+  try {
+    if (fs.existsSync(scenesFilePath)) {
+      scenesStore = JSON.parse(fs.readFileSync(scenesFilePath, 'utf8'));
+    }
+  } catch (_) { scenesStore = []; }
+  const saveScenes = () => {
+    try { fs.writeFileSync(scenesFilePath, JSON.stringify(scenesStore, null, 2), 'utf8'); } catch (_) {}
+  };
+
+  ipcMain.handle('scene-list', () => scenesStore);
+  ipcMain.handle('scene-save', (event, scene) => {
+    const idx = scenesStore.findIndex(s => s.id === scene.id);
+    if (idx >= 0) scenesStore[idx] = scene;
+    else scenesStore.push(scene);
+    saveScenes();
+    return scene;
+  });
+  ipcMain.handle('scene-delete', (event, sceneId) => {
+    scenesStore = scenesStore.filter(s => s.id !== sceneId);
+    saveScenes();
+    return true;
+  });
+
+  // ── Scene Read-Along Auto-Advance IPC (FR-5.36–FR-5.39) ────────────────────
+  ipcMain.on('scene-read-along-start', (event, { scene, pageIndex }) => {
+    console.log('[Scene] Read-Along start:', scene?.name, 'page:', pageIndex);
+    sceneAutoAdvance.startScene(scene, pageIndex);
+  });
+  ipcMain.on('scene-read-along-set-page', (event, pageIndex) => {
+    sceneAutoAdvance.setPage(pageIndex);
+  });
+  ipcMain.on('scene-read-along-stop', () => {
+    console.log('[Scene] Read-Along stop');
+    sceneAutoAdvance.stop();
+  });
+  ipcMain.on('scene-read-along-manual-advance', () => {
+    sceneAutoAdvance.manualAdvance();
+  });
+  ipcMain.on('scene-read-along-manual-prev', () => {
+    sceneAutoAdvance.manualPrev();
   });
 
   // Window Management
@@ -1063,6 +1245,36 @@ app.whenReady().then(async () => {
   });
 
   createWindows();
+});
+
+app.on("web-contents-created", (_event, contents) => {
+  contents.on("context-menu", (_e, params) => {
+    const { isEditable, selectionText, editFlags } = params;
+    if (isEditable) {
+      const contextMenu = Menu.buildFromTemplate([
+        { role: "undo", enabled: editFlags.canUndo },
+        { role: "redo", enabled: editFlags.canRedo },
+        { type: "separator" },
+        { role: "cut", enabled: editFlags.canCut },
+        { role: "copy", enabled: editFlags.canCopy },
+        { role: "paste", enabled: editFlags.canPaste },
+        { role: "pasteAndMatchStyle", enabled: editFlags.canPaste },
+        { role: "delete", enabled: editFlags.canDelete },
+        { type: "separator" },
+        { role: "selectAll", enabled: editFlags.canSelectAll },
+      ]);
+      const win = BrowserWindow.fromWebContents(contents);
+      if (win) contextMenu.popup({ window: win });
+    } else if (selectionText && selectionText.trim().length > 0) {
+      const contextMenu = Menu.buildFromTemplate([
+        { role: "copy", enabled: editFlags.canCopy },
+        { type: "separator" },
+        { role: "selectAll", enabled: editFlags.canSelectAll },
+      ]);
+      const win = BrowserWindow.fromWebContents(contents);
+      if (win) contextMenu.popup({ window: win });
+    }
+  });
 });
 
 app.on("before-quit", async () => {

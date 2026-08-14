@@ -782,7 +782,11 @@ export default function BibleController() {
             )}
           </div>
 
-          <span className="p-1 text-gray-500 font-bold text-2xl select-none">
+          <span
+            className={`p-1 font-bold text-2xl select-none transition-colors ${
+              bookQuery && bookQuery.trim() ? "text-white" : "text-gray-500"
+            }`}
+          >
             ,
           </span>
 
@@ -806,7 +810,13 @@ export default function BibleController() {
             }}
           />
 
-          <span className="p-1 text-gray-500 font-bold text-2xl select-none">
+          <span
+            className={`p-1 font-bold text-2xl select-none transition-colors ${
+              chapterInput && chapterInput.trim()
+                ? "text-white"
+                : "text-gray-500"
+            }`}
+          >
             :
           </span>
 

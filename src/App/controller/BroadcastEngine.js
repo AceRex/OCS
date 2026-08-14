@@ -97,14 +97,50 @@ const OCS_COMMANDS = [
     action: "last_verse",
   },
   {
-    patterns: [/\bset\s+timer\b/i, /\bstart\s+timer\b/i, /\btimer\s+for\b/i],
+    patterns: [
+      /\bset\s+timer\b/i,
+      /\bstart\s+timer\b/i,
+      /\btimer\s+for\b/i,
+    ],
     label: "Set Timer",
     action: "set_timer",
   },
   {
-    patterns: [/\bstop\s+timer\b/i, /\bcancel\s+timer\b/i, /\bend\s+timer\b/i],
+    patterns: [
+      /\bstop\s+timer\b/i,
+      /\bcancel\s+timer\b/i,
+      /\bend\s+timer\b/i,
+    ],
     label: "Stop Timer",
     action: "stop_timer",
+  },
+  // FR-4.31 Scene commands
+  {
+    patterns: [
+      /\bstart\s+scene\b/i,
+      /\bopen\s+scene\b/i,
+      /\bshow\s+scene\b/i,
+      /\bplay\s+scene\b/i,
+    ],
+    label: "Start Scene",
+    action: "start_scene",
+  },
+  {
+    patterns: [
+      /\bnext\s+page\b/i,
+      /\bgo\s+(?:to\s+)?(?:the\s+)?next\s+page\b/i,
+    ],
+    label: "Next Page",
+    action: "next_page",
+  },
+  {
+    patterns: [
+      /\bprevious\s+page\b/i,
+      /\bprev\s+page\b/i,
+      /\bback\s+(?:a\s+)?page\b/i,
+    ],
+    label: "Previous Page",
+    action: "prev_page",
   },
 ];
 
@@ -289,7 +325,7 @@ export default function BroadcastEngine() {
   const wsRef = useRef(null); // unused after Phase 0 migration — kept as ref sentinel
   const voskUnsubRef = useRef(null); // cleanup for asr transcript listener
   const sourceNodeRef = useRef(null);
-  const handleVoskTranscriptRef = useRef(null);
+  const handleTranscriptResultRef = useRef(null);
   const startListeningRef = useRef(null);
   const mediaRecorderRef = useRef(null);
   const sessionRecordingRef = useRef(false);
@@ -1084,6 +1120,32 @@ export default function BroadcastEngine() {
       dispatch(utilAction.setActiveId(null));
       setCommandFeedback({ label: "Timer stopped", ok: true });
       setTimeout(() => setCommandFeedback(null), 3000);
+    }
+    // FR-4.31 Scene commands — dispatched as CustomEvents so SceneController can handle them
+    // without creating a prop-drilling dependency from BroadcastEngine into PresentationController.
+    if (action === "start_scene") {
+      // Extract scene name from rawText, e.g. "OCS start scene Amazing Grace" → "Amazing Grace"
+      const nameMatch = rawText.match(/(?:start|open|show|play)\s+scene\s+(.+)/i);
+      const sceneName = nameMatch ? nameMatch[1].trim() : null;
+      window.dispatchEvent(new CustomEvent("ocs-scene-command", {
+        detail: { command: "start_scene", sceneName },
+      }));
+      setCommandFeedback({ label: sceneName ? `Scene: ${sceneName}` : "Start Scene", ok: true });
+      setTimeout(() => setCommandFeedback(null), 3000);
+    }
+    if (action === "next_page") {
+      window.dispatchEvent(new CustomEvent("ocs-scene-command", {
+        detail: { command: "next_page" },
+      }));
+      setCommandFeedback({ label: "Next Page →", ok: true });
+      setTimeout(() => setCommandFeedback(null), 2500);
+    }
+    if (action === "prev_page") {
+      window.dispatchEvent(new CustomEvent("ocs-scene-command", {
+        detail: { command: "prev_page" },
+      }));
+      setCommandFeedback({ label: "← Prev Page", ok: true });
+      setTimeout(() => setCommandFeedback(null), 2500);
     }
   };
 
@@ -2167,7 +2229,7 @@ export default function BroadcastEngine() {
     }
   };
 
-  const handleVoskTranscript = (res) => {
+  const handleTranscriptResult = (res) => {
     if (!res) return;
 
     // Language gate (FR-3.64) — non-target interpreter speech skipped before any UI/commands
@@ -2472,7 +2534,7 @@ export default function BroadcastEngine() {
       }
     }
   };
-  handleVoskTranscriptRef.current = handleVoskTranscript;
+  handleTranscriptResultRef.current = handleTranscriptResult;
 
   const startListening = async ({ auto = false } = {}) => {
     if (isTranscribingRef.current) return true;
@@ -2510,7 +2572,7 @@ export default function BroadcastEngine() {
       const onTranscriptFn = AsrApi.onTranscript;
       if (onTranscriptFn) {
         voskUnsubRef.current = onTranscriptFn((payload) => {
-          handleVoskTranscriptRef.current?.(payload);
+          handleTranscriptResultRef.current?.(payload);
         });
       }
 
@@ -2672,6 +2734,34 @@ export default function BroadcastEngine() {
       await startListening({ auto: false });
     }
   };
+
+  // External / Scene mic activation triggers
+  useEffect(() => {
+    const handleMicActivate = async () => {
+      if (!isTranscribingRef.current) {
+        console.log("[BroadcastEngine] Activating microphone for Scene start");
+        await startListening({ auto: false });
+      }
+    };
+    const handleMicStop = async () => {
+      if (isTranscribingRef.current) {
+        await stopListening();
+      }
+    };
+    const handleMicToggle = async () => {
+      await toggleTranscription();
+    };
+
+    window.addEventListener("ocs-mic-activate", handleMicActivate);
+    window.addEventListener("ocs-mic-stop", handleMicStop);
+    window.addEventListener("ocs-mic-toggle", handleMicToggle);
+
+    return () => {
+      window.removeEventListener("ocs-mic-activate", handleMicActivate);
+      window.removeEventListener("ocs-mic-stop", handleMicStop);
+      window.removeEventListener("ocs-mic-toggle", handleMicToggle);
+    };
+  }, []);
 
   // ── Piper TTS ─────────────────────────────────────────────────────────────
   const speakText = async (text) => {

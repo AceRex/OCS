@@ -5,6 +5,7 @@ import App from "./view.js";
 import { Provider } from "react-redux";
 import store from "../../Redux/slice.tsx";
 
+console.log("[View Index] Mounting into #root. URL:", window.location.href, "window.electron:", !!window.electron);
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(
   <React.StrictMode>

@@ -76,15 +76,17 @@ Thin sub-phase — Text is a `LayerSource` variant, not new architecture, so thi
 - "Next"/"previous" disambiguation (FR-4.9)
 - Ordinal book-prefix shape-gate fix (FR-3.69) — small, isolated, bundled here since it touches the same command-routing code being built in this sub-phase
 
-### Phase 2.6 — Scene: Structure & Manual Mode (New)
+### Phase 2.6 — Scene: Structure, Manual Mode & Read-Along (Read-Along pulled forward from Phase 5)
 
-Scene ships in two parts across two phases: the entity/manual-navigation half here, the Read-Along auto-advance half in Phase 5 once `referenceAligner.js` exists. Building it this way means Manual/Mobile-Controlled Scenes are usable standalone without waiting on the aligner.
+**Reordered post-v1.8:** Scene's Read-Along mode was originally deferred to Phase 5, pending `referenceAligner.js`. That dependency is now pulled forward — the aligner is built here, scoped to Scene only. Phase 5 no longer builds the aligner from scratch; it only wires the already-existing aligner to scripture read-along and free-text/OoS-note teleprompter (see Phase 5 note below).
 
 - Scene entity + Page editor, modeled on the existing Bible verse tree UI for consistency (FR-4.28)
 - Manual/Mobile-Controlled navigation mode: `Space`, Controller click, Mobile Companion next/previous (FR-4.29's manual branch)
 - Scene as a Content Slot type (FR-4.30)
 - Voice commands: start scene, next/previous page (FR-4.31)
-- **Explicitly deferred to Phase 5:** Read-Along mode (FR-4.29's automatic branch) — flagged here, not silently dropped, so it isn't forgotten between phases
+- **[Pulled forward]** Build `referenceAligner.js` (FR-5.31) — the shared alignment engine, scoped for now to Scene's Page text as the reference source. Consumes ASR final (and synthesized-partial, if the whisper.cpp partial-synthesis work FR-3.67 is already in place — if not, final-only is an acceptable interim scope, note it as a known limitation rather than blocking on FR-3.67 now)
+- **[Pulled forward]** Page-complete detection (FR-5.36), debounced auto-advance (FR-5.37), no-match fallback prompt (FR-5.38), manual override always available as a backstop (FR-5.39)
+- **[Pulled forward]** Unlock the Read-Along UI toggle (previously shipped locked/greyed with "coming in a future update" messaging) now that it's functional
 
 ### Phase 2.7 — Cross-Platform Media Pipeline (New)
 
@@ -132,14 +134,16 @@ Closes this phase out, since it hardens everything built in 2.3–2.6 rather tha
 
 Pulled out as its own phase rather than squeezed into Polish, since it introduces a genuinely new subsystem (the shared reference aligner) that both scripture read-along and free-text teleprompter depend on.
 
-- Build `referenceAligner.js` (FR-5.31) as a standalone module: reference text in, ASR final/synthesized-partial stream in, `{referenceId, wordIndex, confidence}` out
+**Reordered post-v1.8:** `referenceAligner.js` and Scene's Read-Along mode were pulled forward into Phase 2.6 (built and scoped to Scene first). This phase's job is now to **extend** the already-existing, already-proven-in-production-use aligner to scripture read-along and free-text/OoS-note teleprompter, not build it from scratch — lower risk than the original plan, since the engine will have already been running against real Scene usage before scripture/teleprompter depend on it.
+
+- Extend the existing `referenceAligner.js` (built in Phase 2.6, scoped to Scene) to accept scripture passages and free-text scripts as additional reference-text sources, alongside Scene Pages
 - Wire scripture read-along (existing FR-3.62 requirement) through the shared aligner instead of a bespoke implementation
 - Add free-text teleprompter source (FR-5.30b/c): paste-a-script and Order-of-Service-note sources
 - Implement FR-5.33 teleprompter scroll rendering (Speaker View only, General View excluded — same isolation rule as scripture read-along)
-- Implement FR-5.34 bounded backward resync
+- Implement FR-5.34 bounded backward resync — if Scene's Phase 2.6 implementation already needed this for its own accuracy, confirm and reuse rather than re-deriving it
 - Implement FR-5.35 teleprompter voice commands (start/stop/restart)
-- **[New] Implement FR-3.67 synthesized partials for whisper.cpp** — needed here because the aligner benefits from partial-equivalent updates for smooth scrolling; can be deferred past Phase 2 since presentation commands don't need it (they're final-only per FR-3.8d)
-- **[New in v1.8] Wire Scene Read-Along mode** (deferred from Phase 2.6) — page-complete detection (FR-5.36), debounced auto-advance (FR-5.37), no-match fallback prompt (FR-5.38), manual override always available (FR-5.39). This is the fourth caller of `referenceAligner.js` (alongside scripture read-along, free-text teleprompter, and Order-of-Service-note teleprompter), so building it here — right after the aligner itself is stable — is more efficient than a separate later phase.
+- **[New] Implement FR-3.67 synthesized partials for whisper.cpp**, if not already done in Phase 2.6 to support Scene's Read-Along smoothness — check before re-implementing
+- ~~Wire Scene Read-Along mode~~ — **done in Phase 2.6**, no longer this phase's work
 
 ---
 
@@ -175,21 +179,21 @@ Pulled out as its own phase rather than squeezed into Polish, since it introduce
 
 ## Summary of what changed vs. the prior (v1.7) phase plan
 
-| Change                                                                                                  | Where                           |
-| ------------------------------------------------------------------------------------------------------- | ------------------------------- |
-| New sub-task: build `AsrAdapter` before other voice work                                                | Phase 0 (v1.7)                  |
-| Token security hardening (per-device tokens, rate limiting, WSS option)                                 | Phase 4 (v1.7)                  |
-| Secondary input scope explicitly widened                                                                | Phase 4 (v1.7)                  |
-| Engine-switch recalibration + per-engine alias sets                                                     | Phase 6 (v1.7)                  |
-| **Display Canvas compositor foundation**                                                                | **Phase 2.2 (new in v1.8)**     |
-| **Media: Background & Pinned layers**                                                                   | **Phase 2.3 (new in v1.8)**     |
-| **Text as a layer**                                                                                     | **Phase 2.4 (new in v1.8)**     |
-| Presentation + voice control (carried forward from v1.7's Phase 2.5, renumbered as a Phase 2 sub-phase) | Phase 2.5                       |
-| **Scene: structure + manual mode**                                                                      | **Phase 2.6 (new in v1.8)**     |
-| **Cross-platform media pipeline (ffmpeg/sharp normalization)**                                          | **Phase 2.7 (new in v1.8)**     |
-| **Scene Read-Along auto-advance** (depends on the aligner, so deferred here from Phase 2.6)             | **Phase 5 (extended in v1.8)**  |
-| Beta scenarios extended for video/mic feedback + cross-platform media smoke test                        | Phase 7 (extended in v1.8)      |
-| Timer Controller, Session Folders                                                                       | **Untouched everywhere, still** |
+| Change                                                                                                  | Where                                                          |
+| ------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
+| New sub-task: build `AsrAdapter` before other voice work                                                | Phase 0 (v1.7)                                                 |
+| Token security hardening (per-device tokens, rate limiting, WSS option)                                 | Phase 4 (v1.7)                                                 |
+| Secondary input scope explicitly widened                                                                | Phase 4 (v1.7)                                                 |
+| Engine-switch recalibration + per-engine alias sets                                                     | Phase 6 (v1.7)                                                 |
+| **Display Canvas compositor foundation**                                                                | **Phase 2.2 (new in v1.8)**                                    |
+| **Media: Background & Pinned layers**                                                                   | **Phase 2.3 (new in v1.8)**                                    |
+| **Text as a layer**                                                                                     | **Phase 2.4 (new in v1.8)**                                    |
+| Presentation + voice control (carried forward from v1.7's Phase 2.5, renumbered as a Phase 2 sub-phase) | Phase 2.5                                                      |
+| **Scene: structure + manual mode + Read-Along** (pulled forward, post-v1.8)                             | **Phase 2.6 (expanded)**                                       |
+| **Cross-platform media pipeline (ffmpeg/sharp normalization)**                                          | **Phase 2.7 (new in v1.8)**                                    |
+| ~~Scene Read-Along auto-advance deferred to Phase 5~~ — superseded, built in Phase 2.6 instead          | Phase 5 now only extends the aligner to scripture/teleprompter |
+| Beta scenarios extended for video/mic feedback + cross-platform media smoke test                        | Phase 7 (extended in v1.8)                                     |
+| Timer Controller, Session Folders                                                                       | **Untouched everywhere, still**                                |
 
 ## Why MSTP sub-phases are ordered this way (2.2 → 2.7)
 

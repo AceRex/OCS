@@ -7,7 +7,7 @@
     "start": "concurrently \"npm run build:all\" \"electronmon .\"",
     "build:view": "webpack --config webpack.view.js --watch",
     "build:controller": "webpack --config webpack.controller.js --watch",
-    "build:all": "webpack --config webpack.view.js --config webpack.controller.js --watch",
+    "build:all": "concurrently \"npm run build:view\" \"npm run build:controller\"",
     "setup:voice": "node scripts/setup-voice.js",
     "download:whisper": "node scripts/download-whisper-models.js",
     "bench:whisper": "node scripts/bench-whisper-models.js",

@@ -140,6 +140,52 @@ contextBridge.exposeInMainWorld("electron", {
       ipcRenderer.removeAllListeners("set-style");
     }
   },
+  Canvas: {
+    syncState: (canvasState) => ipcRenderer.send("canvas-sync-state", canvasState),
+    setBackground: (bg) => ipcRenderer.send("canvas-set-background", bg),
+    setPinnedLayers: (layers) => ipcRenderer.send("canvas-set-pinned-layers", layers),
+    setChrome: (chrome) => ipcRenderer.send("canvas-set-chrome", chrome),
+    onCanvasSync: (callback) => {
+      const listener = (event, val) => callback(val);
+      ipcRenderer.on("canvas-state-update", listener);
+      return () => ipcRenderer.removeListener("canvas-state-update", listener);
+    },
+    removeListeners: () => {
+      ipcRenderer.removeAllListeners("canvas-state-update");
+    }
+  },
+  Scene: {
+    list: () => ipcRenderer.invoke('scene-list'),
+    save: (scene) => ipcRenderer.invoke('scene-save', scene),
+    delete: (sceneId) => ipcRenderer.invoke('scene-delete', sceneId),
+  },
+  Aligner: {
+    startScene: (scene, pageIndex = 0) => ipcRenderer.send('scene-read-along-start', { scene, pageIndex }),
+    setPage: (pageIndex) => ipcRenderer.send('scene-read-along-set-page', pageIndex),
+    stop: () => ipcRenderer.send('scene-read-along-stop'),
+    manualAdvance: () => ipcRenderer.send('scene-read-along-manual-advance'),
+    manualPrev: () => ipcRenderer.send('scene-read-along-manual-prev'),
+    onAlignmentUpdate: (callback) => {
+      const listener = (_e, val) => callback(val);
+      ipcRenderer.on('alignment:update', listener);
+      return () => ipcRenderer.removeListener('alignment:update', listener);
+    },
+    onAutoAdvance: (callback) => {
+      const listener = (_e, val) => callback(val);
+      ipcRenderer.on('scene-auto-advance', listener);
+      return () => ipcRenderer.removeListener('scene-auto-advance', listener);
+    },
+    onPromptSuggest: (callback) => {
+      const listener = (_e, val) => callback(val);
+      ipcRenderer.on('scene-prompt-suggest', listener);
+      return () => ipcRenderer.removeListener('scene-prompt-suggest', listener);
+    },
+    onPromptClear: (callback) => {
+      const listener = (_e, val) => callback(val);
+      ipcRenderer.on('scene-prompt-clear', listener);
+      return () => ipcRenderer.removeListener('scene-prompt-clear', listener);
+    },
+  },
   Media: {
     import: () => ipcRenderer.invoke("media-import"),
     importPresentation: () => ipcRenderer.invoke("media-import-presentation"),
