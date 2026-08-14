@@ -19,57 +19,61 @@
 export const BOOK_ALIASES = {
     // Pentateuch
     'gen': 'Genesis', 'genesis': 'Genesis', 'genisis': 'Genesis',
-    'ex': 'Exodus', 'exo': 'Exodus', 'exodus': 'Exodus',
-    'lev': 'Leviticus', 'leviticus': 'Leviticus',
+    'ex': 'Exodus', 'exo': 'Exodus', 'exod': 'Exodus', 'exodus': 'Exodus', 'exoda': 'Exodus', 'exodo': 'Exodus',
+    'lev': 'Leviticus', 'leviticus': 'Leviticus', 'levanticus': 'Leviticus', 'levanticos': 'Leviticus', 'leveticus': 'Leviticus', 'lebiticus': 'Leviticus', 'levitico': 'Leviticus', 'leviticos': 'Leviticus',
     'num': 'Numbers', 'numbers': 'Numbers',
-    'deut': 'Deuteronomy', 'deuteronomy': 'Deuteronomy', 'deutronomy': 'Deuteronomy',
-    'deu': 'Deuteronomy',
+    'deut': 'Deuteronomy', 'deuteronomy': 'Deuteronomy', 'deutronomy': 'Deuteronomy', 'deu': 'Deuteronomy',
+    'the terronomy': 'Deuteronomy', 'the teronomy': 'Deuteronomy', 'theteronomy': 'Deuteronomy', 'theteronomi': 'Deuteronomy',
+    'detreronomy': 'Deuteronomy', 'deterronomy': 'Deuteronomy', 'deteronomy': 'Deuteronomy', 'terronomy': 'Deuteronomy', 'teronomy': 'Deuteronomy', 'deuteronome': 'Deuteronomy',
 
     // Historical
     'josh': 'Joshua', 'joshua': 'Joshua',
-    'judg': 'Judges', 'judges': 'Judges',
+    'judg': 'Judges', 'judges': 'Judges', 'judge': 'Judges', 'jdg': 'Judges',
     'ruth': 'Ruth',
     '1sam': '1 Samuel', '1samuel': '1 Samuel', 'first samuel': '1 Samuel', '1 sam': '1 Samuel', '1st samuel': '1 Samuel', '1st sam': '1 Samuel',
+    'first summer': '1 Samuel', '1st summer': '1 Samuel', '1 summer': '1 Samuel', 'summer': '1 Samuel', 'samuel': '1 Samuel',
     '2sam': '2 Samuel', '2samuel': '2 Samuel', 'second samuel': '2 Samuel', '2 sam': '2 Samuel', '2nd samuel': '2 Samuel', '2nd sam': '2 Samuel',
-    // Bare "samuel"/"sam" → 1 Samuel (there is no un-numbered Samuel book in the canon)
-    'sam': '1 Samuel', 'samuel': '1 Samuel',
+    'second summer': '2 Samuel', '2nd summer': '2 Samuel', '2 summer': '2 Samuel',
     '1ki': '1 Kings', '1kings': '1 Kings', 'first kings': '1 Kings', '1 kings': '1 Kings', 'first king': '1 Kings', '1 king': '1 Kings', '1st kings': '1 Kings', '1st king': '1 Kings',
     '2ki': '2 Kings', '2kings': '2 Kings', 'second kings': '2 Kings', '2 kings': '2 Kings', 'second king': '2 Kings', '2 king': '2 Kings', '2nd kings': '2 Kings', '2nd king': '2 Kings',
-    // Bare kings → 1 Kings (not via fuzzy "1" firstWord)
     'kings': '1 Kings', 'king': '1 Kings',
     '1chr': '1 Chronicles', '1chronicles': '1 Chronicles', 'first chronicles': '1 Chronicles', 'first chronicle': '1 Chronicles', '1 chronicle': '1 Chronicles', '1st chronicles': '1 Chronicles', '1st chronicle': '1 Chronicles',
     '2chr': '2 Chronicles', '2chronicles': '2 Chronicles', 'second chronicles': '2 Chronicles', 'second chronicle': '2 Chronicles', '2 chronicle': '2 Chronicles', '2nd chronicles': '2 Chronicles', '2nd chronicle': '2 Chronicles',
     'chronicles': '1 Chronicles', 'chron': '1 Chronicles', 'chronicle': '1 Chronicles',
     'ezra': 'Ezra',
-    'neh': 'Nehemiah', 'nehemiah': 'Nehemiah',
+    'neh': 'Nehemiah', 'nehemiah': 'Nehemiah', 'nehemao': 'Nehemiah', 'neimei': 'Nehemiah', 'nei maya': 'Nehemiah', 'niy maya': 'Nehemiah', 'neimaya': 'Nehemiah', 'niymaya': 'Nehemiah', 'nehemaya': 'Nehemiah', 'nehamaya': 'Nehemiah', 'nehemiya': 'Nehemiah', 'nehemi': 'Nehemiah',
     'esth': 'Esther', 'esther': 'Esther',
 
     // Wisdom
     'job': 'Job',
     'ps': 'Psalms', 'psa': 'Psalms', 'psalm': 'Psalms', 'psalms': 'Psalms', 'sams': 'Psalms',
+    'sam': 'Psalms', 'some': 'Psalms', 'soms': 'Psalms', 'som': 'Psalms', 'salm': 'Psalms', 'salms': 'Psalms', 'psam': 'Psalms', 'psams': 'Psalms',
     'prov': 'Proverbs', 'proverbs': 'Proverbs', 'proverb': 'Proverbs',
     'eccl': 'Ecclesiastes', 'ecclesiastes': 'Ecclesiastes', 'ecclesiastics': 'Ecclesiastes',
     'ecclesiasticks': 'Ecclesiastes', 'ecclesia sticks': 'Ecclesiastes', 'ecclesia stick': 'Ecclesiastes',
     'ecclesiastic': 'Ecclesiastes', 'eclesiastes': 'Ecclesiastes', 'eklesiastes': 'Ecclesiastes',
     'ecclesiast': 'Ecclesiastes', 'ecclesiaste': 'Ecclesiastes', 'ecclesiasti': 'Ecclesiastes',
     'song': 'Song of Solomon', 'songs': 'Song of Solomon',
-    'song of songs': 'Song of Solomon', 'song of solomon': 'Song of Solomon',
+    'song of songs': 'Song of Solomon', 'songs of songs': 'Song of Solomon',
+    'song of solomon': 'Song of Solomon', 'songs of solomon': 'Song of Solomon',
+    'songs of suluman': 'Song of Solomon', 'song of suluman': 'Song of Solomon',
+    'songs of salomon': 'Song of Solomon', 'song of salomon': 'Song of Solomon',
+    'suluman': 'Song of Solomon', 'solomon': 'Song of Solomon',
     'sos': 'Song of Solomon',
 
     // Major Prophets
     'isa': 'Isaiah', 'isaiah': 'Isaiah',
     'jer': 'Jeremiah', 'jeremiah': 'Jeremiah',
-    // ASR / spelling slips (e.g. "jaymiah chapter 50")
     'jaymiah': 'Jeremiah', 'jayemiah': 'Jeremiah',
     'jerimiah': 'Jeremiah', 'jermiah': 'Jeremiah', 'jeremyah': 'Jeremiah',
     'jeremia': 'Jeremiah', 'jeremiya': 'Jeremiah', 'jeremaya': 'Jeremiah',
     'jeremy': 'Jeremiah',
-    'lam': 'Lamentations', 'lamentations': 'Lamentations',
+    'lam': 'Lamentations', 'lamentations': 'Lamentations', 'lamentation': 'Lamentations', 'lament': 'Lamentations',
     'ezek': 'Ezekiel', 'ezekiel': 'Ezekiel',
     'dan': 'Daniel', 'daniel': 'Daniel',
 
     // Minor Prophets
-    'hos': 'Hosea', 'hosea': 'Hosea',
+    'hos': 'Hosea', 'hosea': 'Hosea', 'osia': 'Hosea', 'ousia': 'Hosea', 'ocea': 'Hosea', 'oshea': 'Hosea', 'hoshea': 'Hosea', 'osea': 'Hosea',
     'joel': 'Joel',
     'amos': 'Amos',
     'obad': 'Obadiah', 'obadiah': 'Obadiah',
@@ -77,27 +81,22 @@ export const BOOK_ALIASES = {
     'mic': 'Micah', 'micah': 'Micah', 'my car': 'Micah', 'my ca': 'Micah', 'mica': 'Micah',
     'nah': 'Nahum', 'nahum': 'Nahum',
     'hab': 'Habakkuk', 'habakkuk': 'Habakkuk',
-    // Vosk OOV garble of Habakkuk (small model) — multi-word only (bare "cook" too aggressive)
     'have a cook': 'Habakkuk', 'haveacook': 'Habakkuk', 'habba cook': 'Habakkuk',
     'habit cook': 'Habakkuk', 'have a cup': 'Habakkuk',
     'zeph': 'Zephaniah', 'zephaniah': 'Zephaniah',
-    // Vosk garble of Zephaniah
     'stephanie': 'Zephaniah', 'zephania': 'Zephaniah', 'sefania': 'Zephaniah',
     'hag': 'Haggai', 'haggai': 'Haggai',
     'zech': 'Zechariah', 'zechariah': 'Zechariah',
     'mal': 'Malachi', 'malachi': 'Malachi',
-    // Vosk: "Malachi" → molokai / malakai / etc.
     'molokai': 'Malachi', 'malakai': 'Malachi', 'malakhi': 'Malachi', 'molochi': 'Malachi', 'molakai': 'Malachi',
 
     // NT Gospels & Acts
     'matt': 'Matthew', 'matthew': 'Matthew', 'mathew': 'Matthew', 'mat': 'Matthew',
     'mattew': 'Matthew', 'matthu': 'Matthew', 'mathu': 'Matthew', 'matyu': 'Matthew',
     'mark': 'Mark', 'mrk': 'Mark', 'marc': 'Mark', 'mac': 'Mark', 'march': 'Mark',
-    // Vosk small-model mishearings (esp. WA English): "Mark" → mach/match/marsh/mock
     'mach': 'Mark', 'match': 'Mark', 'marsh': 'Mark', 'mak': 'Mark', 'marg': 'Mark', 'merk': 'Mark',
     'mock': 'Mark', 'mocked': 'Mark', 'marks': 'Mark',
     'luke': 'Luke', 'luk': 'Luke', 'luc': 'Luke', 'look': 'Luke',
-    // 'jon' reserved — prefer junk/jn/joh for John (jon alone → too ambiguous with Jonah)
     'john': 'John', 'jn': 'John', 'joh': 'John',
     'junk': 'John',
     'acts': 'Acts', 'act': 'Acts', 'axe': 'Acts',
@@ -110,17 +109,14 @@ export const BOOK_ALIASES = {
     'gal': 'Galatians', 'galatians': 'Galatians',
     'eph': 'Ephesians', 'ephesians': 'Ephesians', 'ephesian': 'Ephesians',
     'phil': 'Philippians', 'philippians': 'Philippians', 'philippian': 'Philippians',
-    // OOV: philippians MISSING — free ASR substitutes country name / near-spellings
     'philippines': 'Philippians', 'philippine': 'Philippians',
     'philipians': 'Philippians', 'philipian': 'Philippians',
     'filippines': 'Philippians', 'filipines': 'Philippians',
     'philip pines': 'Philippians', 'phillipines': 'Philippians', 'phillipians': 'Philippians',
     'col': 'Colossians', 'colossians': 'Colossians', 'colossian': 'Colossians',
-    // Spelling slips / near-spellings (not only Vosk OOV)
     'colosians': 'Colossians', 'colosian': 'Colossians',
     'kolossians': 'Colossians', 'kolosians': 'Colossians',
     'colossyans': 'Colossians', 'colosseans': 'Colossians',
-    // Observed ASR OOV substitutions (colossians often MISSING; these competitors are in-vocab)
     'collisions': 'Colossians', 'collision': 'Colossians',
     'collosions': 'Colossians', 'collosion': 'Colossians',
     'collusion': 'Colossians', 'collusions': 'Colossians',
@@ -134,7 +130,12 @@ export const BOOK_ALIASES = {
     '2thess': '2 Thessalonians', '2thessalonians': '2 Thessalonians', 'second thessalonians': '2 Thessalonians', '2 thessalonians': '2 Thessalonians', '2nd thessalonians': '2 Thessalonians',
     'thess': '1 Thessalonians', 'thessalonian': '1 Thessalonians', 'thessalonians': '1 Thessalonians',
     '1tim': '1 Timothy', '1timothy': '1 Timothy', 'first timothy': '1 Timothy', '1 timothy': '1 Timothy', '1st timothy': '1 Timothy',
+    'festimucci': '1 Timothy', 'festimuti': '1 Timothy', 'fest timothy': '1 Timothy', 'festimoti': '1 Timothy', 'festimoty': '1 Timothy', 'festimucy': '1 Timothy', 'festimuchi': '1 Timothy', 'festimoche': '1 Timothy',
+    'first simultitu': '1 Timothy', '1st simultitu': '1 Timothy', '1 simultitu': '1 Timothy', 'simultitu': '1 Timothy',
+    'first simultity': '1 Timothy', '1st simultity': '1 Timothy', '1 simultity': '1 Timothy', 'simultity': '1 Timothy',
     '2tim': '2 Timothy', '2timothy': '2 Timothy', 'second timothy': '2 Timothy', '2 timothy': '2 Timothy', '2nd timothy': '2 Timothy',
+    'second simultitu': '2 Timothy', '2nd simultitu': '2 Timothy', '2 simultitu': '2 Timothy',
+    'second simultity': '2 Timothy', '2nd simultity': '2 Timothy', '2 simultity': '2 Timothy',
     'tim': '1 Timothy', 'timothy': '1 Timothy',
     'tit': 'Titus', 'titus': 'Titus',
     'philem': 'Philemon', 'philemon': 'Philemon', 'filemon': 'Philemon',
@@ -147,7 +148,7 @@ export const BOOK_ALIASES = {
     '2john': '2 John', 'second john': '2 John', '2 john': '2 John', '2nd john': '2 John',
     '3john': '3 John', 'third john': '3 John', '3 john': '3 John', '3rd john': '3 John',
     'jude': 'Jude',
-    'rev': 'Revelation', 'revelation': 'Revelation', 'revelations': 'Revelation',
+    'rev': 'Revelation', 'revelation': 'Revelation', 'revelations': 'Revelation', 'revolutions': 'Revelation', 'revolution': 'Revelation', 'revalation': 'Revelation', 'revalations': 'Revelation',
     'apoc': 'Revelation',
 };
 
@@ -441,10 +442,21 @@ export function repairReferenceConnectors(text) {
     t = t.replace(/\b(?:good\s+to\s+us|go\s+to\s+us)\s+(\d+)\b/gi, 'go to verse $1');
     t = t.replace(/\b(?:good|go)\s+to\s+(?:verse|vass|vs|was|vast)\s+(\d+)\b/gi, 'go to verse $1');
 
-    // "su vez" ≈ "two verse" (live 2026-07-29: Philippians 2:15 → "philippines su vez fifteen")
-    t = t.replace(/\bsu\s+vez\b/gi, '2 verse');
+    // "su vez" / "suves" ≈ "two verse" (live: Mark suves three → Mark 2 verse 3)
+    t = t.replace(/\b(?:suves|suvez|su\s+ves|su\s+vez|sue\s+ves|sue\s+vez|zoo\s+ves)\b/gi, '2 verse');
     // "su verse" / "sue verse" near-misses for "two verse"
     t = t.replace(/\b(?:su|sue|zoo)\s+(?:verse|verses|vs|v|vez)\b/gi, '2 verse');
+
+    // Roman numerals in chapter/verse position ("mark ii was three" → "mark 2 was 3")
+    t = t.replace(/\bii\b/gi, '2');
+    t = t.replace(/\biii\b/gi, '3');
+    t = t.replace(/\biv\b/gi, '4');
+
+    // "v.33" / "v6" / "v 6" (shorthand verse markers)
+    t = t.replace(/\bv\.?\s*(\d+)\b/gi, 'verse $1');
+
+    // "was 3" / "was three" between or after numbers/books ("mark 2 was 3" → "mark 2 verse 3")
+    t = t.replace(/\b(\d+)\s+was\s+(\d+)\b/gi, '$1 verse $2');
 
     // Book + "to" + number → book + "2" + number ("two" misheard as "to")
     // e.g. "philippines to 10" / "the book of philippines to 10" → chapter 2 verse 10
@@ -1175,14 +1187,14 @@ export function matchReferenceShape(rawText) {
     // e.g. "first corinthians" → "1 corinthians" before repair runs.
     const ORDINAL_BOOK_PREFIXES = [
         // 3-word ordinal aliases (e.g. "first book of …") — handled by tryBookAt's book-of path
-        [/\b(first)\s+(samuel|kings|chronicles|corinthians|corinthian|thessalonians|timothy|peter|john)\b/gi,
+        [/\b(first)\s+(samuel|summer|kings|chronicles|corinthians|corinthian|thessalonians|timothy|simultitu|simultity|peter|john)\b/gi,
             (_, _ord, book) => `1 ${book}`],
-        [/\b(second)\s+(samuel|kings|chronicles|corinthians|corinthian|thessalonians|timothy|peter|john)\b/gi,
+        [/\b(second)\s+(samuel|summer|kings|chronicles|corinthians|corinthian|thessalonians|timothy|simultitu|simultity|peter|john)\b/gi,
             (_, _ord, book) => `2 ${book}`],
         [/\b(third)\s+(john)\b/gi, () => '3 john'],
-        [/\b(1st)\s+(samuel|kings|chronicles|corinthians|corinthian|thessalonians|timothy|peter|john)\b/gi,
+        [/\b(1st)\s+(samuel|summer|kings|chronicles|corinthians|corinthian|thessalonians|timothy|simultitu|simultity|peter|john)\b/gi,
             (_, _ord, book) => `1 ${book}`],
-        [/\b(2nd)\s+(samuel|kings|chronicles|corinthians|corinthian|thessalonians|timothy|peter|john)\b/gi,
+        [/\b(2nd)\s+(samuel|summer|kings|chronicles|corinthians|corinthian|thessalonians|timothy|simultitu|simultity|peter|john)\b/gi,
             (_, _ord, book) => `2 ${book}`],
         [/\b(3rd)\s+(john)\b/gi, () => '3 john'],
     ];
