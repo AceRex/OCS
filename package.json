@@ -71,10 +71,22 @@
     "vosk-koffi": "^1.1.1"
   },
   "electronmon": {
+    "patterns": [
+      "main.js",
+      "preload.js",
+      "menu.js",
+      "src/main/**"
+    ],
     "ignore": [
+      "dist/**",
+      "build/**",
+      "node_modules/**",
       "ocs_image_engine/**",
       "voice_server/**",
       "temp_output/**",
+      "*.bundle.js",
+      "*.db",
+      "*.db-journal",
       "**/*.pyc",
       "**/__pycache__/**"
     ]

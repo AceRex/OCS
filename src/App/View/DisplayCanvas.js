@@ -1,4 +1,49 @@
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState } from "react";
+
+/**
+ * Render text with real-time word tracking — ONE WORD AHEAD model.
+ *
+ * Visual states:
+ *   - Confirmed/Read words (index <= currentWordIndex): solid white, bold
+ *   - Active/Next word (index === currentWordIndex + 1): cyan underline — the word to say next
+ *   - Upcoming words (index > currentWordIndex + 1): 40% opacity — not yet reached
+ *
+ * When currentWordIndex is -1 (initial), word 0 is highlighted as the active word.
+ */
+function renderTrackedSceneWords(text, currentWordIndex, isTracking) {
+  if (!text) return null;
+  if (!isTracking || typeof currentWordIndex !== "number" || currentWordIndex < -1) {
+    return text;
+  }
+
+  const segments = text.split(/(\s+)/);
+  let wordCounter = 0;
+
+  return segments.map((seg, idx) => {
+    if (/^\s+$/.test(seg)) {
+      return <span key={idx}>{seg}</span>;
+    }
+
+    const tokenIdx = wordCounter++;
+    const isRead = tokenIdx <= currentWordIndex;
+    const isActive = tokenIdx === currentWordIndex + 1;
+
+    return (
+      <span
+        key={idx}
+        className={`transition-all duration-150 ${
+          isActive
+            ? "text-cyan-300 font-bold underline decoration-cyan-400 decoration-2 underline-offset-4"
+            : isRead
+            ? "text-white font-semibold"
+            : "text-white/40"
+        }`}
+      >
+        {seg}
+      </span>
+    );
+  });
+}
 
 /**
  * DisplayCanvas — Unified 4-Band Compositor (FR-4.13, FR-4.14, FR-4.15)
@@ -18,6 +63,7 @@ export default function DisplayCanvas({
   onUpdateLayer,
 }) {
   const videoRef = useRef(null);
+  const [alignProgress, setAlignProgress] = useState({ wordIndex: -1, totalTokens: 0 });
 
   const {
     background = {
@@ -46,106 +92,39 @@ export default function DisplayCanvas({
     },
   } = canvasState;
 
+  // Listen to real-time word tracking events
+  useEffect(() => {
+    const unsub = window.electron?.Aligner?.onAlignmentUpdate?.((update) => {
+      setAlignProgress({
+        wordIndex: update.wordIndex ?? -1,
+        totalTokens: update.totalTokens ?? 0,
+      });
+    });
+    return () => unsub?.();
+  }, []);
+
+  // Reset alignment progress when contentSlot changes page
+  useEffect(() => {
+    setAlignProgress({ wordIndex: -1, totalTokens: 0 });
+  }, [contentSlot?.data?.pageIndex, contentSlot?.data?.sceneId]);
+
   // Auto-play / reload background video when URL changes
   useEffect(() => {
-    if (videoRef.current && background?.url && background?.type === "video") {
+    if (background?.type === "video" && background?.url && videoRef.current) {
       videoRef.current.load();
       videoRef.current.play().catch(() => {});
     }
   }, [background?.url, background?.type]);
 
-  // If Blackout is engaged (FR-1.5), render pure blackout
-  if (chrome?.blackout) {
-    return (
-      <div
-        className="w-full h-full bg-black relative flex items-center justify-center overflow-hidden"
-        style={{ containerType: "size" }}
-      >
-        {mode === "controller" && (
-          <span className="text-red-500 font-mono text-xs uppercase tracking-widest bg-black/80 px-2 py-1 rounded border border-red-500/30">
-            Blackout Active (B)
-          </span>
-        )}
-      </div>
-    );
-  }
-
-  // If Logo screen is engaged (FR-1.5)
-  if (chrome?.logo) {
-    return (
-      <div
-        className="w-full h-full bg-[#0B0814] relative flex items-center justify-center overflow-hidden"
-        style={{ containerType: "size" }}
-      >
-        {chrome.logoUrl ? (
-          <img
-            src={chrome.logoUrl}
-            alt="Logo"
-            className="max-w-[50%] max-h-[50%] object-contain drop-shadow-2xl animate-in fade-in zoom-in-95 duration-500"
-          />
-        ) : (
-          <div className="flex flex-col items-center animate-pulse">
-            <h1 className="text-[15vw] font-black text-[#F6F3F1] tracking-tighter leading-none opacity-25">
-              OCS
-            </h1>
-            <p className="text-[#F6F3F1]/40 text-xl font-medium tracking-[0.8em] uppercase mt-4">
-              {chrome.brandingText || "Organised Church Service"}
-            </p>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // --- BAND 1: Background Layer ---
-  const renderBackgroundBand = () => {
-    if (!background) {
-      return <div className="absolute inset-0 bg-[#000000]" />;
-    }
-
-    const panStyle = {
-      transform: `translate(${background.panX || 0}%, ${background.panY || 0}%) scale(${background.zoom || 1})`,
-      transformOrigin: "center center",
-      willChange: "transform",
-    };
-
-    if (background.type === "video" && background.url) {
-      return (
-        <video
-          ref={videoRef}
-          className="absolute inset-0 w-full h-full object-cover z-0 pointer-events-none"
-          style={panStyle}
-          autoPlay={background.autoPlay !== false}
-          loop={background.loop !== false}
-          muted={background.muted !== false} // FR-4.19: muted by default
-          playsInline
-        >
-          <source src={background.url} />
-        </video>
-      );
-    }
-
-    if (background.type === "image" && background.url) {
-      return (
-        <img
-          src={background.url}
-          alt="Background"
-          className="absolute inset-0 w-full h-full object-cover z-0 pointer-events-none"
-          style={panStyle}
-        />
-      );
-    }
-
-    return (
-      <div
-        className="absolute inset-0 z-0 transition-colors duration-300"
-        style={{ backgroundColor: background.color || "#000000" }}
-      />
-    );
+  // Handle Layer Selection (Editable / Controller mode)
+  const handleLayerClick = (e, layerId) => {
+    if (!isEditable) return;
+    e.stopPropagation();
+    onSelectLayer && onSelectLayer(layerId);
   };
 
-  // --- BAND 2: Content Slot ---
-  const renderContentSlotBand = () => {
+  // Helper to render Content Slot band (Band 2)
+  const renderContentSlot = () => {
     if (!contentSlot || contentSlot.type === "none" || !contentSlot.data) {
       return null;
     }
@@ -154,23 +133,13 @@ export default function DisplayCanvas({
 
     switch (type) {
       case "bible": {
-        const {
-          title,
-          body = "",
-          readAlong,
-          rangeStart,
-          rangeEnd,
-          currentVerse,
-        } = data;
-        const bodyLen = body.length;
+        const { title, body, readAlong, rangeStart, rangeEnd, currentVerse } = data;
+        const safeBody = body || "";
+        const bodyLen = safeBody.length;
         const fontSize =
-          bodyLen > 600
-            ? "2.8vw"
-            : bodyLen > 300
-              ? "3.5vw"
-              : bodyLen > 150
-                ? "4.5vw"
-                : "5.8vw";
+          bodyLen > 600 ? "2.8vw" : bodyLen > 300 ? "3.5vw" : bodyLen > 150 ? "4.5vw" : "6vw";
+        const useReadAlong =
+          !!readAlong?.enabled && Array.isArray(readAlong.tokens) && readAlong.tokens.length > 0;
 
         let bookLabel = "";
         let cvLabel = "";
@@ -180,12 +149,7 @@ export default function DisplayCanvas({
             bookLabel = parts[1].toUpperCase();
             const ch = parts[2];
             const rs = rangeStart != null ? rangeStart : parseInt(parts[3], 10);
-            const re =
-              rangeEnd != null
-                ? rangeEnd
-                : parts[4]
-                  ? parseInt(parts[4], 10)
-                  : rs;
+            const re = rangeEnd != null ? rangeEnd : parts[4] ? parseInt(parts[4], 10) : rs;
             const cur = currentVerse != null ? currentVerse : rs;
             if (re > rs) {
               cvLabel =
@@ -202,131 +166,88 @@ export default function DisplayCanvas({
           bookLabel = String(title).toUpperCase();
         }
 
-        const useReadAlong =
-          !!readAlong?.enabled &&
-          Array.isArray(readAlong.tokens) &&
-          readAlong.tokens.length > 0;
         const activeIdx =
-          typeof readAlong?.activeIndex === "number"
-            ? readAlong.activeIndex
-            : -1;
+          typeof readAlong?.activeIndex === "number" ? readAlong.activeIndex : -1;
 
         return (
-          <div className="w-full h-full relative z-10 flex flex-col justify-between p-[4vw] pointer-events-none select-none animate-in fade-in duration-300">
-            {/* Top Bar: Book & Chapter Badge */}
-            <div className="flex items-center justify-between w-full">
-              <div className="flex items-center gap-3">
-                <span className="px-3 py-1 bg-white/10 backdrop-blur-md rounded-lg text-white/90 text-sm font-semibold tracking-wider uppercase border border-white/10">
-                  {bookLabel || "SCRIPTURE"}
+          <div className="w-full h-full relative z-10 flex flex-col justify-center items-center p-[4vw] pointer-events-none select-none">
+            {/* Header Badge */}
+            {bookLabel && (
+              <div className="absolute top-[4vw] left-1/2 -translate-x-1/2 flex items-center gap-3 bg-black/60 backdrop-blur-md px-6 py-2 rounded-full border border-white/10 shadow-2xl">
+                <span className="font-extrabold tracking-widest text-orange-400 text-[1.4vw] uppercase">
+                  {bookLabel}
                 </span>
                 {cvLabel && (
-                  <span className="text-white/60 text-xs font-medium tracking-widest uppercase">
-                    {cvLabel}
-                  </span>
+                  <>
+                    <span className="w-1.5 h-1.5 rounded-full bg-white/40" />
+                    <span className="font-bold tracking-wider text-white/80 text-[1.2vw]">
+                      {cvLabel}
+                    </span>
+                  </>
                 )}
               </div>
-            </div>
-
-            {/* Middle: Verse Text with High Readability */}
-            <div className="flex-1 flex items-center justify-center my-auto px-[2vw]">
-              {useReadAlong ? (
-                <p
-                  className="font-serif leading-relaxed text-center drop-shadow-[0_4px_16px_rgba(0,0,0,0.8)]"
-                  style={{ fontSize }}
-                >
-                  {readAlong.tokens.map((token, i) => (
-                    <span
-                      key={i}
-                      className={`transition-colors duration-150 ${
-                        i === activeIdx
-                          ? "text-[#FCD34D] font-bold bg-amber-400/20 rounded px-1"
-                          : i < activeIdx
-                            ? "text-white/95"
-                            : "text-white/70"
-                      }`}
-                    >
-                      {token}{" "}
-                    </span>
-                  ))}
-                </p>
-              ) : (
-                <p
-                  className="text-white font-serif leading-relaxed text-center drop-shadow-[0_4px_16px_rgba(0,0,0,0.8)]"
-                  style={{ fontSize }}
-                >
-                  {body}
-                </p>
-              )}
-            </div>
-
-            {/* Bottom: Translation Badge */}
-            <div className="flex justify-end items-center w-full">
-              <span className="text-white/40 text-xs font-mono tracking-widest uppercase">
-                {data.version ? data.version.toUpperCase() : "KJV"}
-              </span>
-            </div>
-          </div>
-        );
-      }
-
-      case "presentation":
-      case "slide_index": {
-        // Presentation slide image / text
-        const slideUrl = data.slideUrl || data.slideImageUrl;
-        const { slideIndex, totalSlides } = data;
-        return (
-          <div className="w-full h-full relative z-10 flex items-center justify-center pointer-events-none select-none">
-            {slideUrl ? (
-              <img
-                src={slideUrl}
-                alt={`Slide ${slideIndex || 1}`}
-                className="w-full h-full object-contain drop-shadow-2xl"
-              />
-            ) : (
-              <div className="text-white/60 font-medium text-xl">
-                Slide {slideIndex || 1} of {totalSlides || 1}
-              </div>
             )}
+
+            {/* Scripture Body with Read-Along Word Highlighting */}
+            <div
+              className="leading-tight font-extrabold text-center drop-shadow-[0_4px_12px_rgba(0,0,0,0.8)] text-white w-full max-w-[90%]"
+              style={{ fontSize, letterSpacing: "-0.02em" }}
+            >
+              {useReadAlong
+                ? readAlong.tokens.map((tok, i) => {
+                    const isSpoken = i <= activeIdx;
+                    const isCurrent = i === activeIdx;
+                    return (
+                      <span
+                        key={i}
+                        className={`transition-colors duration-150 ${
+                          isCurrent
+                            ? "text-yellow-300 font-black"
+                            : isSpoken
+                              ? "text-white"
+                              : "text-white/40"
+                        }`}
+                      >
+                        {tok}
+                        {i < readAlong.tokens.length - 1 ? " " : ""}
+                      </span>
+                    );
+                  })
+                : safeBody}
+            </div>
           </div>
         );
       }
 
       case "scene": {
-        // Paged text / lyrics with rich styling matching Bible flow
-        const pageText = data.pageText || data.content || "";
+        // FR-4.14 / FR-4.15 Unified Scene & Song Slides Rendering
+        const pageText = data.content || "";
         const style = data.style || {};
+        const pageIndex = data.pageIndex || 0;
+        const pageCount = data.pageCount || 0;
+        const sectionLabel = data.sectionLabel || (data.sceneType === "song" ? `Verse ${pageIndex + 1}` : `Page ${pageIndex + 1}`);
 
-        // Bible-like responsive font scaling based on text length
-        const textLen = pageText.length;
-        const autoSize =
-          textLen > 600
-            ? "2.8vw"
-            : textLen > 300
-              ? "3.5vw"
-              : textLen > 150
-                ? "4.5vw"
-                : textLen > 70
-                  ? "5.2vw"
-                  : "6.0vw";
-
+        // Responsive font sizing based on length
+        const len = pageText.length;
         const fontSize =
           style.fontSize && style.fontSize !== "auto"
-            ? typeof style.fontSize === "number"
-              ? `${style.fontSize}px`
-              : style.fontSize.includes("px") ||
-                  style.fontSize.includes("vw") ||
-                  style.fontSize.includes("rem") ||
-                  style.fontSize.includes("%")
-                ? style.fontSize
-                : `${style.fontSize}px`
-            : autoSize;
+            ? `${style.fontSize}vw`
+            : len > 600
+              ? "2.8vw"
+              : len > 350
+                ? "3.5vw"
+                : len > 180
+                  ? "4.5vw"
+                  : len > 80
+                    ? "5.5vw"
+                    : "6.5vw";
 
         const alignClass =
-          style.textAlign === "left"
-            ? "text-left items-start"
+          style.textAlign === "center"
+            ? "text-center items-center"
             : style.textAlign === "right"
               ? "text-right items-end"
-              : "text-center items-center";
+              : "text-left items-start";
 
         const fontClass =
           style.fontFamily === "serif"
@@ -335,29 +256,76 @@ export default function DisplayCanvas({
               ? "font-mono"
               : "font-sans";
 
+        const animationClass =
+          style.animation === "slide-up"
+            ? "animate-in slide-in-from-bottom-8 duration-500 fade-in"
+            : style.animation === "zoom"
+              ? "animate-in zoom-in-95 duration-500 fade-in"
+              : style.animation === "none"
+                ? ""
+                : "animate-in fade-in duration-400";
+
+        const isSpeakerView = mode === "speaker";
+        const enableWordTracking = isSpeakerView || mode === "controller" || mode === "preview" || style.karaokeTracking === true;
+
         return (
           <div
-            className="w-full h-full relative z-10 flex flex-col justify-between p-[4vw] pointer-events-none select-none transition-colors duration-300 animate-in fade-in duration-300"
-            style={{ backgroundColor: style.backgroundColor || "transparent" }}
+            className="w-full h-full relative z-10 flex flex-col justify-center items-center p-[4vw] pointer-events-none select-none transition-colors duration-300 overflow-hidden"
+            style={{
+              backgroundColor: style.backgroundColor || "#000000",
+            }}
           >
-            {/* Middle: Scene / Slide Text with High Readability & Bible-style Drop Shadow */}
-            <div className={`flex-1 flex justify-center my-auto px-[2vw] ${alignClass}`}>
+            {/* Optional Background Image Layer */}
+            {style.backgroundImage && (
               <div
-                className={`leading-relaxed whitespace-pre-wrap drop-shadow-[0_4px_16px_rgba(0,0,0,0.8)] ${fontClass}`}
+                className="absolute inset-0 z-0 bg-cover bg-center pointer-events-none transition-all duration-500"
+                style={{
+                  backgroundImage: `url(${style.backgroundImage})`,
+                  opacity: typeof style.backgroundOpacity === "number" ? style.backgroundOpacity : 0.85,
+                }}
+              />
+            )}
+            {/* Dark overlay for contrast when background image is present */}
+            {style.backgroundImage && (
+              <div
+                className="absolute inset-0 z-0 pointer-events-none"
+                style={{
+                  backgroundColor: style.overlayColor || "rgba(0,0,0,0.45)",
+                }}
+              />
+            )}
+
+            {/* Center Content Box with Clean High Readability Typography */}
+            <div className={`w-full max-w-[92%] flex justify-center my-auto z-10 ${alignClass}`}>
+              <div
+                key={`${data.sceneId || 'scene'}-${pageIndex}-${pageText.slice(0, 10)}`}
+                className={`leading-relaxed whitespace-pre-wrap ${fontClass} ${animationClass}`}
                 style={{
                   fontSize,
                   color: style.color || "#ffffff",
                   fontWeight: style.fontWeight || "600",
                   fontStyle: style.isItalic ? "italic" : "normal",
                   textDecoration: style.isUnderline ? "underline" : "none",
-                  textAlign: style.textAlign || "center",
-                  maxWidth: "96%",
+                  textAlign: style.textAlign || "left",
+                  lineHeight: "1.45",
                   width: "100%",
                 }}
               >
-                {pageText}
+                {renderTrackedSceneWords(pageText, alignProgress.wordIndex, enableWordTracking)}
               </div>
             </div>
+
+            {/* Section / Page Number Badge — ONLY on Speaker Screen */}
+            {isSpeakerView && pageCount > 0 && (
+              <div className="absolute bottom-[2vw] right-[3vw] z-20 pointer-events-none">
+                <span
+                  className="font-mono font-bold text-white/60 bg-black/70 px-[1.5vw] py-[0.5vw] rounded-full border border-white/10 shadow-lg"
+                  style={{ fontSize: "1.2vw", letterSpacing: "0.05em" }}
+                >
+                  {sectionLabel} ({pageIndex + 1}/{pageCount})
+                </span>
+              </div>
+            )}
           </div>
         );
       }
@@ -370,59 +338,58 @@ export default function DisplayCanvas({
         const sorted = [...layers].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
 
         return (
-          <div className="absolute inset-0 w-full h-full z-10 pointer-events-none overflow-hidden">
+          <div className="w-full h-full relative z-10 pointer-events-none overflow-hidden">
             {sorted.map((layer) => {
-              if (layer.visible === false) return null;
-
-              const xPct = (layer.x ?? layer.position?.x ?? 0.5) * 100;
-              const yPct = (layer.y ?? layer.position?.y ?? 0.5) * 100;
-              const widthPct = layer.width ? layer.width * 100 : null;
-              const heightPct = layer.height ? layer.height * 100 : null;
-
-              const layerStyle = {
-                position: "absolute",
-                left: `${xPct}%`,
-                top: `${yPct}%`,
-                transform: "translate(-50%, -50%)",
-                width: widthPct ? `${widthPct}%` : "auto",
-                height: heightPct ? `${heightPct}%` : "auto",
-                zIndex: layer.zIndex || 20,
-                opacity: layer.style?.opacity ?? 1,
-                pointerEvents: "none",
-              };
+              const xPct = layer.x != null ? `${layer.x}%` : "50%";
+              const yPct = layer.y != null ? `${layer.y}%` : "50%";
+              const isSelected = selectedLayerId === layer.id;
 
               return (
-                <div key={layer.id} style={layerStyle}>
+                <div
+                  key={layer.id}
+                  onClick={(e) => handleLayerClick(e, layer.id)}
+                  className={`absolute transition-all duration-75 ${
+                    isEditable ? "pointer-events-auto cursor-pointer" : "pointer-events-none"
+                  }`}
+                  style={{
+                    left: xPct,
+                    top: yPct,
+                    transform: "translate(-50%, -50%)",
+                    width: layer.type === "image" ? `${layer.style?.width || 30}%` : "auto",
+                    zIndex: layer.zIndex || 10,
+                  }}
+                >
+                  {isSelected && isEditable && (
+                    <div className="absolute -inset-2 border-2 border-blue-500 border-dashed rounded-lg pointer-events-none z-50" />
+                  )}
+
                   {layer.type === "text" ? (
                     <p
+                      className="whitespace-pre-wrap text-center px-2 py-1 select-none"
                       style={{
-                        fontSize: layer.style?.fontSize ? `${layer.style.fontSize}cqw` : "4cqw",
-                        color: layer.style?.color || "#ffffff",
-                        fontFamily: layer.style?.fontFamily === "serif" ? "Georgia, serif"
-                            : layer.style?.fontFamily === "mono" ? '"Courier New", monospace'
-                            : "system-ui, sans-serif",
-                        fontWeight: layer.style?.fontWeight || "bold",
+                        fontSize: `${layer.style?.fontSize || 5}vw`,
                         lineHeight: layer.style?.lineHeight || 1.2,
-                        textShadow: layer.style?.shadow || "0 2px 10px rgba(0,0,0,0.8)",
-                        whiteSpace: "pre-wrap",
+                        color: layer.style?.color || "#ffffff",
+                        fontFamily:
+                          layer.style?.fontFamily === "serif"
+                            ? "Georgia, serif"
+                            : layer.style?.fontFamily === "mono"
+                              ? '"Courier New", monospace'
+                              : "sans-serif",
+                        fontWeight: layer.style?.fontWeight || "bold",
+                        textTransform: layer.style?.textTransform || "none",
                       }}
                     >
                       {layer.content}
                     </p>
-                  ) : layer.type === "video" ? (
-                    <video
-                      src={layer.content}
-                      autoPlay
-                      loop={layer.loop !== false}
-                      muted={layer.muted !== false}
-                      className="w-full h-auto object-contain drop-shadow-xl"
-                    />
                   ) : (
                     <img
                       src={layer.content}
-                      alt="Layer"
-                      className="w-full h-auto object-contain drop-shadow-xl"
-                      style={{ boxShadow: layer.style?.shadow }}
+                      className="w-full h-auto rounded-lg select-none pointer-events-none"
+                      style={{
+                        boxShadow: "0 4px 20px rgba(0,0,0,0.4)",
+                      }}
+                      alt="layer"
                     />
                   )}
                 </div>
@@ -433,17 +400,21 @@ export default function DisplayCanvas({
       }
 
       case "timer": {
-        const { timeRemaining, label } = data;
+        const { displayTime, label, isFinished } = data;
         return (
-          <div className="w-full h-full relative z-10 flex flex-col items-center justify-center pointer-events-none select-none">
+          <div className="w-full h-full relative z-10 flex flex-col justify-center items-center pointer-events-none select-none">
             {label && (
-              <p className="text-white/80 text-[3vw] font-bold uppercase tracking-widest mb-2">
+              <span className="text-[3vw] font-bold uppercase tracking-widest text-white/70 mb-[1vw] drop-shadow-md">
                 {label}
-              </p>
+              </span>
             )}
-            <p className="text-white text-[12vw] font-mono font-black leading-none drop-shadow-2xl">
-              {timeRemaining}
-            </p>
+            <span
+              className={`font-mono font-black text-[12vw] leading-none tracking-tight ${
+                isFinished ? "text-red-500 animate-pulse" : "text-white"
+              }`}
+            >
+              {displayTime || "00:00"}
+            </span>
           </div>
         );
       }
@@ -453,103 +424,64 @@ export default function DisplayCanvas({
     }
   };
 
-  // --- BAND 3: Pinned Layers ---
-  const renderPinnedLayersBand = () => {
-    if (!Array.isArray(pinnedLayers) || pinnedLayers.length === 0) {
-      return null;
-    }
-
-    // Sort by zIndex ascending
-    const sorted = [...pinnedLayers].sort(
-      (a, b) => (a.zIndex || 0) - (b.zIndex || 0),
-    );
+  // Helper to render Pinned Overlays (Band 3)
+  const renderPinnedLayers = () => {
+    if (!pinnedLayers || pinnedLayers.length === 0) return null;
 
     return (
-      <div className="absolute inset-0 w-full h-full z-20 pointer-events-none overflow-hidden">
-        {sorted.map((layer) => {
-          if (layer.visible === false) return null;
-
-          const isSelected = isEditable && selectedLayerId === layer.id;
-          const xPct = (layer.x ?? 0.5) * 100;
-          const yPct = (layer.y ?? 0.5) * 100;
-          const widthPct = layer.width ? layer.width * 100 : null;
-          const heightPct = layer.height ? layer.height * 100 : null;
-
-          const layerStyle = {
-            position: "absolute",
-            left: `${xPct}%`,
-            top: `${yPct}%`,
-            transform: "translate(-50%, -50%)",
-            width: widthPct ? `${widthPct}%` : "auto",
-            height: heightPct ? `${heightPct}%` : "auto",
-            zIndex: layer.zIndex || 20,
-            opacity: layer.style?.opacity ?? 1,
-            pointerEvents: isEditable ? "auto" : "none",
-          };
+      <div className="absolute inset-0 z-30 pointer-events-none overflow-hidden">
+        {pinnedLayers.map((layer) => {
+          const xPct = `${(layer.x ?? 0.5) * 100}%`;
+          const yPct = `${(layer.y ?? 0.5) * 100}%`;
+          const wPct = `${(layer.width ?? 0.2) * 100}%`;
+          const isSelected = selectedLayerId === layer.id;
 
           return (
             <div
               key={layer.id}
-              onClick={(e) => {
-                if (isEditable && onSelectLayer) {
-                  e.stopPropagation();
-                  onSelectLayer(layer.id);
-                }
-              }}
-              style={layerStyle}
-              className={`transition-shadow ${
-                isSelected ? "ring-2 ring-blue-500 ring-offset-2 ring-offset-black/50" : ""
+              onClick={(e) => handleLayerClick(e, layer.id)}
+              className={`absolute transition-all duration-75 ${
+                isEditable ? "pointer-events-auto cursor-pointer" : "pointer-events-none"
               }`}
+              style={{
+                left: xPct,
+                top: yPct,
+                transform: "translate(-50%, -50%)",
+                width: wPct,
+                zIndex: layer.zIndex || 30,
+              }}
             >
-              {layer.type === "text" ? (
+              {isSelected && isEditable && (
+                <div className="absolute -inset-2 border-2 border-yellow-500 border-dashed rounded-lg pointer-events-none z-50" />
+              )}
+
+              {layer.type === "image" ? (
+                <img
+                  src={layer.url || layer.content}
+                  alt="pinned"
+                  className="w-full h-auto rounded"
+                  style={{ opacity: layer.opacity ?? 1 }}
+                />
+              ) : layer.type === "video" ? (
+                <video
+                  src={layer.url || layer.content}
+                  autoPlay
+                  loop
+                  muted
+                  className="w-full h-auto rounded"
+                  style={{ opacity: layer.opacity ?? 1 }}
+                />
+              ) : (
                 <p
+                  className="whitespace-pre-wrap text-center font-bold"
                   style={{
-                    fontSize: layer.style?.fontSize
-                      ? `${layer.style.fontSize}cqw`
-                      : "4cqw",
-                    color: layer.style?.color || "#ffffff",
-                    fontFamily:
-                      layer.style?.fontFamily === "serif"
-                        ? "Georgia, serif"
-                        : layer.style?.fontFamily === "mono"
-                          ? '"Courier New", monospace'
-                          : "system-ui, sans-serif",
-                    fontWeight: layer.style?.fontWeight || "bold",
-                    lineHeight: layer.style?.lineHeight || 1.2,
-                    textShadow:
-                      layer.style?.shadow || "0 2px 10px rgba(0,0,0,0.8)",
-                    whiteSpace: "pre-wrap",
+                    fontSize: `${(layer.fontSize ?? 0.05) * 100}vw`,
+                    color: layer.color || "#ffffff",
+                    opacity: layer.opacity ?? 1,
                   }}
                 >
                   {layer.content}
                 </p>
-              ) : layer.type === "video" ? (
-                <video
-                  src={layer.content}
-                  autoPlay
-                  loop={layer.loop !== false}
-                  muted={layer.muted !== false}
-                  className="w-full h-auto object-contain drop-shadow-xl"
-                />
-              ) : (
-                <img
-                  src={layer.content}
-                  alt="Pinned Layer"
-                  className="w-full h-auto object-contain drop-shadow-xl"
-                  style={{
-                    boxShadow: layer.style?.shadow,
-                  }}
-                />
-              )}
-
-              {/* Adjusting Node Handles in Edit Mode (FR-4.20) */}
-              {isSelected && isEditable && (
-                <>
-                  <div className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-blue-500 border border-white rounded-full cursor-nwse-resize" />
-                  <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-blue-500 border border-white rounded-full cursor-nesw-resize" />
-                  <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-blue-500 border border-white rounded-full cursor-nesw-resize" />
-                  <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-blue-500 border border-white rounded-full cursor-nwse-resize" />
-                </>
               )}
             </div>
           );
@@ -558,36 +490,95 @@ export default function DisplayCanvas({
     );
   };
 
-  // --- BAND 4: Chrome Band (Topmost) ---
-  const renderChromeBand = () => {
-    if (chrome?.timerSplit && chrome?.timerCountdown > 0) {
-      return (
-        <div className="absolute bottom-0 left-0 w-full h-[15vh] flex items-center justify-center z-40 bg-black/60 backdrop-blur-md border-t border-white/10">
-          <p className="text-[7vh] font-mono font-bold text-white tracking-widest">
-            {chrome.timerCountdown}s
-          </p>
-        </div>
-      );
-    }
-    return null;
+  // Helper to render Chrome (Band 4)
+  const renderChrome = () => {
+    if (!chrome) return null;
+
+    return (
+      <div className="absolute inset-0 z-40 pointer-events-none">
+        {/* Full Blackout (FR-1.x) */}
+        {chrome.blackout && (
+          <div className="absolute inset-0 bg-black z-50 animate-in fade-in duration-150" />
+        )}
+
+        {/* Logo Screen Mode */}
+        {chrome.logo && chrome.logoUrl && !chrome.blackout && (
+          <div className="absolute inset-0 bg-black flex items-center justify-center z-45 animate-in fade-in duration-200">
+            <img
+              src={chrome.logoUrl}
+              alt="Logo"
+              className="max-w-[40%] max-h-[40%] object-contain shadow-2xl"
+            />
+          </div>
+        )}
+
+        {/* Optional Branding Text Overlay */}
+        {chrome.brandingText && !chrome.blackout && !chrome.logo && (
+          <div className="absolute bottom-[2vw] left-[3vw] z-40">
+            <span className="font-bold text-white/50 text-[1.2vw] tracking-wider uppercase">
+              {chrome.brandingText}
+            </span>
+          </div>
+        )}
+
+        {/* Split Timer Corner Badge (if split timer active) */}
+        {chrome.timerSplit && chrome.timerCountdown && !chrome.blackout && (
+          <div className="absolute top-[2vw] right-[3vw] z-40 bg-black/70 backdrop-blur-md px-4 py-2 rounded-xl border border-white/10 shadow-2xl">
+            <span className="font-mono font-bold text-orange-400 text-[1.8vw] tracking-tight">
+              {chrome.timerCountdown}
+            </span>
+          </div>
+        )}
+      </div>
+    );
   };
 
   return (
-    <div
-      className="w-full h-full relative overflow-hidden bg-black flex flex-col items-center justify-center select-none"
-      style={{ containerType: "size" }}
-    >
-      {/* Band 1: Background */}
-      {renderBackgroundBand()}
+    <div className="w-full h-full relative bg-black overflow-hidden select-none flex items-center justify-center">
+      {/* ── BAND 1: BACKGROUND LAYER ──────────────────────────────────────── */}
+      {background.type === "color" && (
+        <div
+          className="absolute inset-0 z-0 transition-colors duration-300"
+          style={{ backgroundColor: background.color || "#000000" }}
+        />
+      )}
 
-      {/* Band 2: Content Slot */}
-      {renderContentSlotBand()}
+      {background.type === "image" && background.url && (
+        <div
+          className="absolute inset-0 z-0 bg-cover bg-center transition-all duration-300"
+          style={{
+            backgroundImage: `url(${background.url})`,
+            transform: `scale(${background.zoom || 1}) translate(${background.panX || 0}px, ${
+              background.panY || 0
+            }px)`,
+          }}
+        />
+      )}
 
-      {/* Band 3: Pinned Layers */}
-      {renderPinnedLayersBand()}
+      {background.type === "video" && background.url && (
+        <video
+          ref={videoRef}
+          src={background.url}
+          autoPlay={background.autoPlay !== false}
+          loop={background.loop !== false}
+          muted={background.muted !== false}
+          className="absolute inset-0 w-full h-full object-cover z-0"
+          style={{
+            transform: `scale(${background.zoom || 1}) translate(${background.panX || 0}px, ${
+              background.panY || 0
+            }px)`,
+          }}
+        />
+      )}
 
-      {/* Band 4: Chrome */}
-      {renderChromeBand()}
+      {/* ── BAND 2: CONTENT SLOT ──────────────────────────────────────────── */}
+      {renderContentSlot()}
+
+      {/* ── BAND 3: PINNED LAYERS ─────────────────────────────────────────── */}
+      {renderPinnedLayers()}
+
+      {/* ── BAND 4: CHROME (Blackout / Logo / Brand / Split Timer) ─────────── */}
+      {renderChrome()}
     </div>
   );
 }

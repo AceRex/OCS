@@ -46,6 +46,18 @@ class WhisperAdapter extends AsrAdapter {
     return WHISPER_DEFAULT_CONFIDENCE;
   }
 
+  setSongContext(ctx) {
+    if (this.engine && typeof this.engine.setSongContext === 'function') {
+      this.engine.setSongContext(ctx);
+    }
+  }
+
+  clearSongContext() {
+    if (this.engine && typeof this.engine.clearSongContext === 'function') {
+      this.engine.clearSongContext();
+    }
+  }
+
   /**
    * Override routing: whisper's probe/rolling events map to 'partial';
    * final VAD-bounded events (isFinal: true) map to 'final'.

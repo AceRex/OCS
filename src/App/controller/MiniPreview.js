@@ -69,12 +69,15 @@ export default function MiniPreview({ mode }) {
             unsubContent = window.electron.Presentation.onSetContent((value) => {
                 // null = black/blank screen — must not touch .target
                 if (value && value.target && Array.isArray(value.target)) {
-                    if (!value.target.includes(mode) && !value.target.includes('all') && mode !== 'controller') return;
+                    if (!value.target.includes(mode) && !value.target.includes('all') && mode !== 'controller') {
+                        setPresentationContent(null);
+                        return;
+                    }
                 }
                 const summary = value == null
                     ? 'null (black)'
                     : `${value.type || '?'} ${value.data?.title || ''}`.trim();
-                console.log('[MiniPreview] RENDER set-content ←', summary);
+                console.log(`[MiniPreview] RENDER mode=${mode} set-content ←`, summary);
                 setPresentationContent(value);
             });
             unsubStyle = window.electron.Presentation.onSetStyle((value) => {
@@ -103,6 +106,60 @@ export default function MiniPreview({ mode }) {
             setBgChange(false);
         }
     }, [countdown]);
+
+    const renderSceneContent = () => {
+        if (!presentationContent || !presentationContent.data) return null;
+        const { content, pageText, style = {} } = presentationContent.data;
+        const text = pageText || content || "";
+        const length = text.length;
+
+        // Scaled down font sizes for mini preview matching Bible preview scale
+        let fontSize = length > 600 ? 'text-[11px]' : length > 300 ? 'text-[12px]' : length > 150 ? 'text-[15px]' : length > 70 ? 'text-[18px]' : 'text-[22px]';
+
+        if (style.fontSize && style.fontSize !== "auto") {
+            const num = parseInt(style.fontSize, 10);
+            if (!isNaN(num)) {
+                fontSize = `text-[${Math.max(10, Math.round(num * 0.45))}px]`;
+            }
+        }
+
+        const alignClass = style.textAlign === "left"
+            ? "text-left items-start"
+            : style.textAlign === "right"
+            ? "text-right items-end"
+            : "text-center items-center";
+
+        const fontClass = style.fontFamily === "serif"
+            ? "font-serif"
+            : style.fontFamily === "mono"
+            ? "font-mono"
+            : "font-sans";
+
+        const bgColor = style.backgroundColor || "#000000";
+        const textColor = style.color || "#FFFFFF";
+
+        return (
+            <div className="w-full h-full relative overflow-hidden flex flex-col justify-center p-4 transition-colors" style={{ backgroundColor: bgColor }}>
+                <div className={`w-full flex-1 flex justify-center my-auto px-2 ${alignClass}`}>
+                    <div
+                        className={`leading-relaxed whitespace-pre-wrap ${fontClass} ${fontSize}`}
+                        style={{
+                            color: textColor,
+                            fontWeight: style.fontWeight || "600",
+                            fontStyle: style.isItalic ? "italic" : "normal",
+                            textDecoration: style.isUnderline ? "underline" : "none",
+                            textAlign: style.textAlign || "center",
+                            textShadow: '0 2px 10px rgba(0,0,0,0.8)',
+                            maxWidth: "96%",
+                            width: "100%",
+                        }}
+                    >
+                        {text}
+                    </div>
+                </div>
+            </div>
+        );
+    };
 
     const renderBibleContent = () => {
         if (!presentationContent || !presentationContent.data) return null;
@@ -298,13 +355,15 @@ export default function MiniPreview({ mode }) {
         </div>
     );
 
-    const isPresenting = presentationContent && (presentationContent.type === 'bible' || presentationContent.type === 'custom') && presentationContent.data;
+    const isPresenting = presentationContent && (presentationContent.type === 'bible' || presentationContent.type === 'custom' || presentationContent.type === 'scene') && presentationContent.data;
     const showSplitTimer = isPresenting && countdown > 0;
 
     return (
         <div className="w-full h-full flex flex-col bg-black overflow-hidden relative">
             <div className="w-full flex-1 flex flex-col relative overflow-hidden">
-                {isPresenting ? renderBibleContent() : (
+                {isPresenting ? (
+                    presentationContent.type === 'scene' ? renderSceneContent() : renderBibleContent()
+                ) : (
                     !showSplitTimer && (
                         countdown === null ? renderIdleScreen() : (
                             countdown === 0 ? (isEventMode ? renderIdleScreen() : renderTimeUp()) : (

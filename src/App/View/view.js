@@ -423,7 +423,14 @@ function App({ mode: propMode }) {
       unsubContent = window.electron.Presentation.onSetContent((value) => {
         // null = black/blank screen — must not touch .target
         if (value && value.target && Array.isArray(value.target)) {
-          if (!value.target.includes(mode) && !value.target.includes('all') && mode !== 'controller') return;
+          if (!value.target.includes(mode) && !value.target.includes('all') && mode !== 'controller') {
+            setPresentationContent(null);
+            setCanvasState(prev => ({
+              ...prev,
+              contentSlot: { type: 'none', data: null }
+            }));
+            return;
+          }
         }
         const summary = value == null
           ? 'null (black/none)'

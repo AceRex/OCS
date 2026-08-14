@@ -130,6 +130,20 @@ class VoskEngine extends EventEmitter {
     };
   }
 
+  setSongContext({ tokens } = {}) {
+    if (Array.isArray(tokens) && tokens.length > 0) {
+      this._songTokens = new Set(tokens.map(t => String(t).toLowerCase()));
+      console.log(`[Vosk] Song words context active (${this._songTokens.size} words)`);
+    } else {
+      this._songTokens = null;
+    }
+  }
+
+  clearSongContext() {
+    this._songTokens = null;
+    console.log(`[Vosk] Song words context cleared`);
+  }
+
   async initialize() {
     if (this.status === 'ready' || this.status === 'listening') return this.getState();
     if (this.status === 'initializing') return this.getState();

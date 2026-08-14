@@ -160,8 +160,8 @@ contextBridge.exposeInMainWorld("electron", {
     delete: (sceneId) => ipcRenderer.invoke('scene-delete', sceneId),
   },
   Aligner: {
-    startScene: (scene, pageIndex = 0) => ipcRenderer.send('scene-read-along-start', { scene, pageIndex }),
-    setPage: (pageIndex) => ipcRenderer.send('scene-read-along-set-page', pageIndex),
+    startScene: (scene, pageIndex = 0, sequenceIndex = 0) => ipcRenderer.send('scene-read-along-start', { scene, pageIndex, sequenceIndex }),
+    setPage: (pageIndex, sequenceIndex) => ipcRenderer.send('scene-read-along-set-page', pageIndex, sequenceIndex),
     stop: () => ipcRenderer.send('scene-read-along-stop'),
     manualAdvance: () => ipcRenderer.send('scene-read-along-manual-advance'),
     manualPrev: () => ipcRenderer.send('scene-read-along-manual-prev'),
@@ -175,12 +175,27 @@ contextBridge.exposeInMainWorld("electron", {
       ipcRenderer.on('scene-auto-advance', listener);
       return () => ipcRenderer.removeListener('scene-auto-advance', listener);
     },
+    onAdvance: (callback) => {
+      const listener = (_e, val) => callback(val);
+      ipcRenderer.on('scene-auto-advance', listener);
+      return () => ipcRenderer.removeListener('scene-auto-advance', listener);
+    },
     onPromptSuggest: (callback) => {
       const listener = (_e, val) => callback(val);
       ipcRenderer.on('scene-prompt-suggest', listener);
       return () => ipcRenderer.removeListener('scene-prompt-suggest', listener);
     },
+    onSuggestPrompt: (callback) => {
+      const listener = (_e, val) => callback(val);
+      ipcRenderer.on('scene-prompt-suggest', listener);
+      return () => ipcRenderer.removeListener('scene-prompt-suggest', listener);
+    },
     onPromptClear: (callback) => {
+      const listener = (_e, val) => callback(val);
+      ipcRenderer.on('scene-prompt-clear', listener);
+      return () => ipcRenderer.removeListener('scene-prompt-clear', listener);
+    },
+    onClearSuggestion: (callback) => {
       const listener = (_e, val) => callback(val);
       ipcRenderer.on('scene-prompt-clear', listener);
       return () => ipcRenderer.removeListener('scene-prompt-clear', listener);

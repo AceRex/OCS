@@ -246,6 +246,18 @@ class AsrFacade extends EventEmitter {
     return this._adapter ? this._adapter.getLanguagePolicy() : null;
   }
 
+  setSongContext(ctx) {
+    if (this._adapter && typeof this._adapter.setSongContext === 'function') {
+      this._adapter.setSongContext(ctx);
+    }
+  }
+
+  clearSongContext() {
+    if (this._adapter && typeof this._adapter.clearSongContext === 'function') {
+      this._adapter.clearSongContext();
+    }
+  }
+
   shutdown() {
     if (this._calibrationTimer) {
       clearTimeout(this._calibrationTimer);

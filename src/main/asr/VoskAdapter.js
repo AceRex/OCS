@@ -40,8 +40,18 @@ class VoskAdapter extends AsrAdapter {
   _defaultConfidenceThreshold() {
     return VOSK_DEFAULT_CONFIDENCE;
   }
-  // VoskAdapter uses the base AsrAdapter._routeTranscript — no override needed.
-  // Vosk's raw transcript shape matches the base expected shape.
+
+  setSongContext(ctx) {
+    if (this.engine && typeof this.engine.setSongContext === 'function') {
+      this.engine.setSongContext(ctx);
+    }
+  }
+
+  clearSongContext() {
+    if (this.engine && typeof this.engine.clearSongContext === 'function') {
+      this.engine.clearSongContext();
+    }
+  }
 }
 
 module.exports = { VoskAdapter, VOSK_DEFAULT_CONFIDENCE };

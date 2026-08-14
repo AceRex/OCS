@@ -2611,20 +2611,32 @@ export default function BroadcastEngine() {
       const source = audioCtx.createMediaStreamSource(stream);
       sourceNodeRef.current = source;
 
-      // FR-3.2 — 100 Hz high-pass + 2× software pre-amp
+      // FR-3.2 — Vocal isolation filter graph: 120 Hz high-pass + 2.5 kHz presence peaking + 2.2× preamp
       const highpass = audioCtx.createBiquadFilter();
       highpass.type = "highpass";
-      highpass.frequency.value = 100;
+      highpass.frequency.value = 120;
       highpass.Q.value = 0.707;
 
+      const vocalPeaking = audioCtx.createBiquadFilter();
+      vocalPeaking.type = "peaking";
+      vocalPeaking.frequency.value = 2500;
+      vocalPeaking.Q.value = 1.0;
+      vocalPeaking.gain.value = 3.0; // Boost vocal formant presence over music/instruments
+
       const preamp = audioCtx.createGain();
-      preamp.gain.value = 2.0;
+      preamp.gain.value = 2.2;
 
       // ScriptProcessor must stay in an active graph. Zero-gain → destination
       // can be optimized away by Chromium; MediaStreamDestination always pulls.
       const sink = audioCtx.createMediaStreamDestination();
       const processor = audioCtx.createScriptProcessor(4096, 1, 1);
       processorRef.current = processor;
+
+      source.connect(highpass);
+      highpass.connect(vocalPeaking);
+      vocalPeaking.connect(preamp);
+      preamp.connect(processor);
+      processor.connect(sink);
 
       let rmsSmooth = 0;
       let lastSpeakState = false;

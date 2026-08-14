@@ -1,4 +1,23 @@
 const { app, BrowserWindow, Menu, screen, ipcMain, session, dialog } = require("electron");
+
+// ── Single Instance Lock (Enforce app only loads once) ──────────────────────
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  console.log('[App] Another instance of OCS is already running. Quitting duplicate process.');
+  app.quit();
+  process.exit(0);
+}
+
+app.on('second-instance', () => {
+  console.log('[App] Second instance launch attempted. Focusing primary controller.');
+  const windows = BrowserWindow.getAllWindows();
+  const controller = windows.find(w => w.getTitle() === 'OCS Controller');
+  if (controller && !controller.isDestroyed()) {
+    if (controller.isMinimized()) controller.restore();
+    controller.focus();
+  }
+});
+
 const path = require("path");
 const fs = require("fs");
 const fsp = fs.promises;
@@ -579,6 +598,14 @@ io.on('connection', (socket) => {
   });
 });
 
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.warn(`[Server] Port ${PORT} is already in use by another running instance. Remote Companion server is operating on existing process.`);
+  } else {
+    console.error('[Server] Server error:', err);
+  }
+});
+
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Local IP: ${serverIp}`);
@@ -739,16 +766,22 @@ function createWindows() {
     },
   };
 
-  function broadcastCanvasState(state) {
+  function broadcastCanvasState(state, allowedTargets = null) {
     if (state) currentCanvasState = state;
-    const targets = {
-      speaker: speakerWindow && !speakerWindow.isDestroyed(),
-      general: generalWindow && !generalWindow.isDestroyed(),
-      controller: controllerWindow && !controllerWindow.isDestroyed(),
-    };
-    if (targets.speaker) speakerWindow.webContents.send("canvas-state-update", currentCanvasState);
-    if (targets.general) generalWindow.webContents.send("canvas-state-update", currentCanvasState);
-    if (targets.controller) controllerWindow.webContents.send("canvas-state-update", currentCanvasState);
+    const speakerAllowed = allowedTargets === null || allowedTargets.includes('speaker') || allowedTargets.includes('all');
+    const generalAllowed = allowedTargets === null || allowedTargets.includes('general') || allowedTargets.includes('all');
+
+    if (speakerWindow && !speakerWindow.isDestroyed()) {
+      const speakerState = speakerAllowed ? currentCanvasState : { ...currentCanvasState, contentSlot: { type: "none", data: null } };
+      speakerWindow.webContents.send("canvas-state-update", speakerState);
+    }
+    if (generalWindow && !generalWindow.isDestroyed()) {
+      const generalState = generalAllowed ? currentCanvasState : { ...currentCanvasState, contentSlot: { type: "none", data: null } };
+      generalWindow.webContents.send("canvas-state-update", generalState);
+    }
+    if (controllerWindow && !controllerWindow.isDestroyed()) {
+      controllerWindow.webContents.send("canvas-state-update", currentCanvasState);
+    }
 
     // FR-4.15: lightweight summary to Mobile Companion
     const summary = {
@@ -810,7 +843,7 @@ function createWindows() {
         data: value.data || value,
       };
     }
-    broadcastCanvasState(currentCanvasState);
+    broadcastCanvasState(currentCanvasState, allowedTargets);
 
     // Dispatch to gated windows
     if (speakerOk) speakerWindow.webContents.send("set-content", value);
@@ -869,16 +902,27 @@ function createWindows() {
   });
 
   // ── Scene Read-Along Auto-Advance IPC (FR-5.36–FR-5.39) ────────────────────
-  ipcMain.on('scene-read-along-start', (event, { scene, pageIndex }) => {
-    console.log('[Scene] Read-Along start:', scene?.name, 'page:', pageIndex);
-    sceneAutoAdvance.startScene(scene, pageIndex);
+  ipcMain.on('scene-read-along-start', (event, { scene, pageIndex, sequenceIndex }) => {
+    console.log('[Scene] Read-Along start:', scene?.name, 'page:', pageIndex, 'seq:', sequenceIndex);
+    sceneAutoAdvance.startScene(scene, pageIndex, sequenceIndex);
+    if (scene?.sceneType === 'song' || scene?.navMode === 'read_along') {
+      const allLyrics = (scene?.pages || []).map(p => p.content).filter(Boolean).join('. ');
+      const tokens = (scene?.pages || []).flatMap(p => p.content ? p.content.toLowerCase().split(/\s+/) : []);
+      asrEngine.setSongContext({ isSong: true, lyrics: allLyrics, tokens });
+      broadcastAsrEvent('scene-song-active', { isSong: true, sceneId: scene?.id, sceneName: scene?.name });
+    } else {
+      asrEngine.clearSongContext();
+      broadcastAsrEvent('scene-song-active', { isSong: false });
+    }
   });
-  ipcMain.on('scene-read-along-set-page', (event, pageIndex) => {
-    sceneAutoAdvance.setPage(pageIndex);
+  ipcMain.on('scene-read-along-set-page', (event, pageIndex, sequenceIndex) => {
+    sceneAutoAdvance.setPage(pageIndex, sequenceIndex);
   });
   ipcMain.on('scene-read-along-stop', () => {
     console.log('[Scene] Read-Along stop');
     sceneAutoAdvance.stop();
+    asrEngine.clearSongContext();
+    broadcastAsrEvent('scene-song-active', { isSong: false });
   });
   ipcMain.on('scene-read-along-manual-advance', () => {
     sceneAutoAdvance.manualAdvance();
