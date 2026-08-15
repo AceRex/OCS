@@ -114,29 +114,36 @@ export default function BibleController() {
   const [books, setBooks] = useState([]);
   const [verses, setVerses] = useState([]);
 
-  // Indices
-  const [selectedBookIndex, setSelectedBookIndex] = useState(0);
+  // Indices (-1 on first load to ensure inputs start empty)
+  const [selectedBookIndex, setSelectedBookIndex] = useState(-1);
   const [selectedChapterIndex, setSelectedChapterIndex] = useState(0);
 
   // Selection State
   const [selectedVerseIndices, setSelectedVerseIndices] = useState(new Set());
   const [isLive, setIsLive] = useState(false);
 
-  // Quick Reference 2XL Inputs State
+  // Quick Reference 2XL Inputs State (Empty on first load)
   const [bookQuery, setBookQuery] = useState("");
   const [isBookDropdownOpen, setIsBookDropdownOpen] = useState(false);
   const [activeSuggestionIndex, setActiveSuggestionIndex] = useState(0);
   const [chapterInput, setChapterInput] = useState("");
   const [verseInput, setVerseInput] = useState("");
+  const [translationQuery, setTranslationQuery] = useState("");
+  const [isTranslationDropdownOpen, setIsTranslationDropdownOpen] = useState(false);
+  const [activeTranslationIndex, setActiveTranslationIndex] = useState(0);
 
   const bookInputRef = useRef(null);
   const chapterInputRef = useRef(null);
   const verseInputRef = useRef(null);
+  const translationInputRef = useRef(null);
   const bookContainerRef = useRef(null);
+  const translationContainerRef = useRef(null);
 
   const isUserEditingBookRef = useRef(false);
   const isUserEditingChapterRef = useRef(false);
   const isUserEditingVerseRef = useRef(false);
+  const isUserEditingTranslationRef = useRef(false);
+  const hasUserSelectedRef = useRef(false);
 
   // Sync State to Mobile
   useEffect(() => {
@@ -184,9 +191,10 @@ export default function BibleController() {
     // Critical: Clear verses immediately to prevent "Auto-Present" from showing stale data
     setVerses([]);
 
+    const bookIdx = selectedBookIndex >= 0 ? selectedBookIndex : 0;
     electron.Bible.getChapter(
       selectedVersion,
-      selectedBookIndex,
+      bookIdx,
       selectedChapterIndex + 1,
     )
       .then((newVerses) => {
@@ -319,7 +327,7 @@ export default function BibleController() {
       );
   }, []);
 
-  const currentBook = books[selectedBookIndex];
+  const currentBook = books[selectedBookIndex >= 0 ? selectedBookIndex : 0] || books[0];
 
   // Calculate correct chapter count
   // Fallback to 150 if chapters property is missing or 0
@@ -457,21 +465,21 @@ export default function BibleController() {
     electron.Presentation.setContent(null);
   }, [selectedBookIndex, selectedChapterIndex]);
 
-  // Sync 2XL Header Inputs with selection state when user is not actively editing
+  // Sync 2XL Header Inputs with selection state when user has interacted and is not actively editing
   useEffect(() => {
-    if (!isUserEditingBookRef.current && books[selectedBookIndex]) {
+    if (!isUserEditingBookRef.current && hasUserSelectedRef.current && selectedBookIndex >= 0 && books[selectedBookIndex]) {
       setBookQuery(books[selectedBookIndex].name);
     }
   }, [books, selectedBookIndex]);
 
   useEffect(() => {
-    if (!isUserEditingChapterRef.current) {
+    if (!isUserEditingChapterRef.current && hasUserSelectedRef.current && selectedBookIndex >= 0) {
       setChapterInput((selectedChapterIndex + 1).toString());
     }
-  }, [selectedChapterIndex]);
+  }, [selectedChapterIndex, selectedBookIndex]);
 
   useEffect(() => {
-    if (!isUserEditingVerseRef.current) {
+    if (!isUserEditingVerseRef.current && hasUserSelectedRef.current) {
       if (selectedVerseIndices.size === 0) {
         setVerseInput("");
       } else {
@@ -490,7 +498,7 @@ export default function BibleController() {
     }
   }, [selectedVerseIndices]);
 
-  // Close book dropdown when clicking outside
+  // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (
@@ -499,9 +507,16 @@ export default function BibleController() {
       ) {
         setIsBookDropdownOpen(false);
         isUserEditingBookRef.current = false;
-        if (books[selectedBookIndex]) {
+        if (hasUserSelectedRef.current && selectedBookIndex >= 0 && books[selectedBookIndex]) {
           setBookQuery(books[selectedBookIndex].name);
         }
+      }
+      if (
+        translationContainerRef.current &&
+        !translationContainerRef.current.contains(event.target)
+      ) {
+        setIsTranslationDropdownOpen(false);
+        isUserEditingTranslationRef.current = false;
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -513,7 +528,24 @@ export default function BibleController() {
     b.name.toLowerCase().includes((bookQuery || "").toLowerCase().trim()),
   );
 
+  const versionList = Object.entries(versions).map(([key, name]) => ({
+    key,
+    name,
+    abbrev: key.toUpperCase(),
+  }));
+
+  const filteredVersions = versionList.filter((v) => {
+    const q = (translationQuery || "").toLowerCase().trim();
+    if (!q) return true;
+    return (
+      v.key.toLowerCase().includes(q) ||
+      v.name.toLowerCase().includes(q) ||
+      v.abbrev.toLowerCase().includes(q)
+    );
+  });
+
   const handleSelectBook = (book) => {
+    hasUserSelectedRef.current = true;
     const idx = books.findIndex(
       (b) => b.id === book.id || b.name === book.name,
     );
@@ -532,6 +564,28 @@ export default function BibleController() {
     }
   };
 
+  const handleSelectVersion = (versionKey) => {
+    hasUserSelectedRef.current = true;
+    setSelectedVersion(versionKey);
+    setTranslationQuery(versionKey.toUpperCase());
+    setIsTranslationDropdownOpen(false);
+    isUserEditingTranslationRef.current = false;
+
+    // If verses are already selected, re-fetch chapter in new version and present immediately
+    if (selectedVerseIndices.size > 0 && selectedBookIndex >= 0) {
+      electron.Bible.getChapter(
+        versionKey,
+        selectedBookIndex,
+        selectedChapterIndex + 1,
+      )
+        .then((newVerses) => {
+          setVerses(newVerses);
+          presentVerses(selectedVerseIndices, newVerses, selectedBookIndex, selectedChapterIndex, versionKey);
+        })
+        .catch(console.error);
+    }
+  };
+
   const handleBookKeyDown = (e) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
@@ -542,46 +596,59 @@ export default function BibleController() {
     } else if (e.key === "ArrowUp") {
       e.preventDefault();
       setActiveSuggestionIndex((prev) => Math.max(0, prev - 1));
-    } else if (e.key === "Enter") {
-      e.preventDefault();
-      if (filteredBooks.length > 0) {
+    } else if (e.key === "Enter" || e.key === "Tab") {
+      if (filteredBooks.length > 0 && isBookDropdownOpen) {
+        e.preventDefault();
         const target = filteredBooks[activeSuggestionIndex] || filteredBooks[0];
         handleSelectBook(target);
+      } else if (bookQuery.trim()) {
+        const target = books.find((b) =>
+          b.name.toLowerCase().startsWith(bookQuery.trim().toLowerCase()),
+        );
+        if (target) {
+          e.preventDefault();
+          handleSelectBook(target);
+        } else {
+          setIsBookDropdownOpen(false);
+          isUserEditingBookRef.current = false;
+        }
+      } else {
+        setIsBookDropdownOpen(false);
+        isUserEditingBookRef.current = false;
+      }
+
+      if (e.key === "Tab" || e.key === "Enter") {
+        setTimeout(() => {
+          if (chapterInputRef.current) {
+            chapterInputRef.current.focus();
+            chapterInputRef.current.select();
+          }
+        }, 50);
       }
     } else if (e.key === "Escape") {
       setIsBookDropdownOpen(false);
       isUserEditingBookRef.current = false;
-      if (books[selectedBookIndex]) setBookQuery(books[selectedBookIndex].name);
-    } else if (e.key === "Tab") {
-      if (isBookDropdownOpen && filteredBooks.length > 0) {
-        const target = filteredBooks[activeSuggestionIndex] || filteredBooks[0];
-        const idx = books.findIndex(
-          (b) => b.id === target.id || b.name === target.name,
-        );
-        if (idx !== -1) {
-          setSelectedBookIndex(idx);
-          setSelectedChapterIndex(0);
-          setBookQuery(target.name);
-        }
+      if (selectedBookIndex >= 0 && books[selectedBookIndex]) {
+        setBookQuery(books[selectedBookIndex].name);
       }
-      setIsBookDropdownOpen(false);
-      isUserEditingBookRef.current = false;
     }
   };
 
   const commitChapter = (val) => {
+    hasUserSelectedRef.current = true;
     const chNum = parseInt(val, 10);
     if (!isNaN(chNum)) {
       const clamped = Math.max(1, Math.min(totalChapters, chNum));
       setSelectedChapterIndex(clamped - 1);
       setChapterInput(clamped.toString());
-    } else if (books[selectedBookIndex]) {
+    } else if (selectedBookIndex >= 0 && books[selectedBookIndex]) {
       setChapterInput((selectedChapterIndex + 1).toString());
     }
     isUserEditingChapterRef.current = false;
   };
 
   const handleChapterInputChange = (e) => {
+    hasUserSelectedRef.current = true;
     isUserEditingChapterRef.current = true;
     const val = e.target.value;
     if (val.includes(":")) {
@@ -600,7 +667,7 @@ export default function BibleController() {
   };
 
   const handleChapterKeyDown = (e) => {
-    if (e.key === "Enter" || e.key === ":") {
+    if (e.key === "Enter" || e.key === "Tab" || e.key === ":") {
       e.preventDefault();
       commitChapter(chapterInput);
       setTimeout(() => {
@@ -612,13 +679,42 @@ export default function BibleController() {
     }
   };
 
-  const commitVerse = (val) => {
+  const commitVerse = async (val) => {
     isUserEditingVerseRef.current = false;
     if (!val || !val.trim()) {
       setSelectedVerseIndices(new Set());
       electron.Presentation.setContent(null);
       return;
     }
+
+    hasUserSelectedRef.current = true;
+
+    // Resolve book index
+    let bookIdx = selectedBookIndex >= 0 ? selectedBookIndex : 0;
+    if (selectedBookIndex < 0 && bookQuery.trim()) {
+      const foundIdx = books.findIndex((b) =>
+        b.name.toLowerCase().startsWith(bookQuery.trim().toLowerCase()),
+      );
+      if (foundIdx !== -1) {
+        bookIdx = foundIdx;
+        setSelectedBookIndex(foundIdx);
+        setBookQuery(books[foundIdx].name);
+      }
+    } else if (selectedBookIndex < 0 && books.length > 0) {
+      bookIdx = 0;
+      setSelectedBookIndex(0);
+      setBookQuery(books[0].name);
+    }
+
+    // Resolve chapter index
+    let chNum = parseInt(chapterInput, 10);
+    if (isNaN(chNum) || chNum < 1) {
+      chNum = selectedChapterIndex >= 0 ? selectedChapterIndex + 1 : 1;
+      setChapterInput(chNum.toString());
+    }
+    const chIdx = chNum - 1;
+    setSelectedChapterIndex(chIdx);
+
     const parts = val
       .split(",")
       .map((s) => s.trim())
@@ -643,15 +739,29 @@ export default function BibleController() {
     if (unique.length > 0) {
       const newSet = new Set(unique);
       setSelectedVerseIndices(newSet);
-      if (verses.length > 0) {
-        presentVerses(newSet, verses);
+      const ver = selectedVersion || "kjv";
+
+      // Auto-load and present immediately!
+      if (
+        verses.length > 0 &&
+        selectedBookIndex === bookIdx &&
+        selectedChapterIndex === chIdx
+      ) {
+        presentVerses(newSet, verses, bookIdx, chIdx, ver);
         scrollToVerse(unique);
       } else {
-        pendingSelection.current = {
-          bookIndex: selectedBookIndex,
-          chapterIndex: selectedChapterIndex,
-          indices: unique,
-        };
+        try {
+          const fetchedVerses = await electron.Bible.getChapter(
+            ver,
+            bookIdx,
+            chIdx + 1,
+          );
+          setVerses(fetchedVerses);
+          presentVerses(newSet, fetchedVerses, bookIdx, chIdx, ver);
+          scrollToVerse(unique);
+        } catch (err) {
+          console.error("Failed to auto-load chapter verses:", err);
+        }
       }
     }
   };
@@ -660,6 +770,57 @@ export default function BibleController() {
     if (e.key === "Enter") {
       e.preventDefault();
       commitVerse(verseInput);
+    } else if (e.key === "Tab") {
+      e.preventDefault();
+      if (verseInput && verseInput.trim()) {
+        commitVerse(verseInput);
+      }
+      setTimeout(() => {
+        if (translationInputRef.current) {
+          translationInputRef.current.focus();
+          translationInputRef.current.select();
+        }
+      }, 50);
+    }
+  };
+
+  const handleTranslationKeyDown = (e) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if (!isTranslationDropdownOpen) setIsTranslationDropdownOpen(true);
+      setActiveTranslationIndex((prev) =>
+        Math.min(filteredVersions.length - 1, prev + 1),
+      );
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveTranslationIndex((prev) => Math.max(0, prev - 1));
+    } else if (e.key === "Enter" || e.key === "Tab") {
+      if (filteredVersions.length > 0 && isTranslationDropdownOpen) {
+        e.preventDefault();
+        const target = filteredVersions[activeTranslationIndex] || filteredVersions[0];
+        handleSelectVersion(target.key);
+      } else if (translationQuery.trim()) {
+        const q = translationQuery.trim().toLowerCase();
+        const target = versionList.find(
+          (v) =>
+            v.key.toLowerCase() === q ||
+            v.abbrev.toLowerCase() === q ||
+            v.name.toLowerCase().includes(q),
+        );
+        if (target) {
+          e.preventDefault();
+          handleSelectVersion(target.key);
+        } else {
+          setIsTranslationDropdownOpen(false);
+          isUserEditingTranslationRef.current = false;
+        }
+      } else {
+        setIsTranslationDropdownOpen(false);
+        isUserEditingTranslationRef.current = false;
+      }
+    } else if (e.key === "Escape") {
+      setIsTranslationDropdownOpen(false);
+      isUserEditingTranslationRef.current = false;
     }
   };
 
@@ -731,8 +892,8 @@ export default function BibleController() {
           </div>
         </div>
 
-        {/* 2XL Borderless Quick Reference Inputs */}
-        <div className="flex items-center font-bold text-2xl text-white relative">
+        {/* 2XL Borderless Quick Reference Inputs: Book, Chapter : verse in Translation */}
+        <div className="flex items-center font-bold text-2xl text-white relative flex-wrap gap-y-2">
           {/* Book Input & Autocomplete Dropdown */}
           <div className="relative inline-block" ref={bookContainerRef}>
             <input
@@ -740,6 +901,7 @@ export default function BibleController() {
               type="text"
               value={bookQuery}
               onChange={(e) => {
+                hasUserSelectedRef.current = true;
                 isUserEditingBookRef.current = true;
                 setBookQuery(e.target.value);
                 setIsBookDropdownOpen(true);
@@ -747,7 +909,9 @@ export default function BibleController() {
               }}
               onFocus={(e) => {
                 isUserEditingBookRef.current = true;
-                setIsBookDropdownOpen(true);
+                if (bookQuery.trim()) {
+                  setIsBookDropdownOpen(true);
+                }
                 setActiveSuggestionIndex(0);
                 e.target.select();
               }}
@@ -773,7 +937,7 @@ export default function BibleController() {
                     }`}
                   >
                     <span>{b.name}</span>
-                    {books[selectedBookIndex]?.name === b.name && (
+                    {selectedBookIndex >= 0 && books[selectedBookIndex]?.name === b.name && (
                       <PiCheck className="text-blue-400" />
                     )}
                   </button>
@@ -826,6 +990,7 @@ export default function BibleController() {
             type="text"
             value={verseInput}
             onChange={(e) => {
+              hasUserSelectedRef.current = true;
               isUserEditingVerseRef.current = true;
               setVerseInput(e.target.value);
             }}
@@ -834,13 +999,73 @@ export default function BibleController() {
               e.target.select();
             }}
             onKeyDown={handleVerseKeyDown}
-            onBlur={(e) => commitVerse(e.target.value)}
             placeholder="verse"
             className="p-0 m-0 font-bold text-2xl text-white bg-transparent border-none outline-none placeholder:text-gray-500 cursor-text hover:text-white/80 focus:text-white transition-colors"
             style={{
               width: `${Math.max(1, (verseInput || "verse").length)}ch`,
             }}
           />
+
+          {/* in Separator */}
+          <span
+            className={`p-1 font-bold text-2xl select-none transition-colors ${
+              verseInput && verseInput.trim() ? "text-white" : "text-gray-500"
+            }`}
+          >
+            {" "}in{" "}
+          </span>
+
+          {/* Translation Input & Autocomplete Dropdown */}
+          <div className="relative inline-block" ref={translationContainerRef}>
+            <input
+              ref={translationInputRef}
+              type="text"
+              value={translationQuery}
+              onChange={(e) => {
+                hasUserSelectedRef.current = true;
+                isUserEditingTranslationRef.current = true;
+                setTranslationQuery(e.target.value);
+                setIsTranslationDropdownOpen(true);
+                setActiveTranslationIndex(0);
+              }}
+              onFocus={(e) => {
+                isUserEditingTranslationRef.current = true;
+                if (translationQuery.trim()) {
+                  setIsTranslationDropdownOpen(true);
+                }
+                setActiveTranslationIndex(0);
+                e.target.select();
+              }}
+              onKeyDown={handleTranslationKeyDown}
+              placeholder="Translation"
+              className="p-0 m-0 font-bold text-2xl text-white bg-transparent border-none outline-none placeholder:text-gray-500 cursor-text hover:text-white/80 focus:text-white transition-colors"
+              style={{
+                width: `${Math.max(1, (translationQuery || "Translation").length)}ch`,
+              }}
+            />
+
+            {isTranslationDropdownOpen && filteredVersions.length > 0 && (
+              <div className="absolute top-full left-0 mt-2 min-w-[260px] max-h-60 overflow-y-auto bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl z-50 p-1 animate-in fade-in zoom-in-95 duration-100 no-scrollbar">
+                {filteredVersions.map((v, idx) => (
+                  <button
+                    key={v.key}
+                    type="button"
+                    onClick={() => handleSelectVersion(v.key)}
+                    className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center justify-between transition-colors ${
+                      idx === activeTranslationIndex
+                        ? "bg-blue-600/30 text-blue-400 font-semibold"
+                        : "text-white/80 hover:bg-white/5"
+                    }`}
+                  >
+                    <span className="truncate pr-2">{v.name}</span>
+                    {selectedVersion === v.key && (
+                      <PiCheck className="text-blue-400 shrink-0" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { renderAnimatedLyrics } from './LyricAnimationEngine';
 
 export default function MiniPreview({ mode }) {
     const [countdown, setCountDown] = useState(null);
@@ -109,17 +110,19 @@ export default function MiniPreview({ mode }) {
 
     const renderSceneContent = () => {
         if (!presentationContent || !presentationContent.data) return null;
-        const { content, pageText, style = {} } = presentationContent.data;
+        const { content, pageText, style = {}, translation = "", sceneType = "song", navMode = "read_along" } = presentationContent.data;
         const text = pageText || content || "";
         const length = text.length;
+        const isSong = sceneType === "song" || navMode === "read_along";
 
         // Scaled down font sizes for mini preview matching Bible preview scale
         let fontSize = length > 600 ? 'text-[11px]' : length > 300 ? 'text-[12px]' : length > 150 ? 'text-[15px]' : length > 70 ? 'text-[18px]' : 'text-[22px]';
 
         if (style.fontSize && style.fontSize !== "auto") {
-            const num = parseInt(style.fontSize, 10);
+            const num = parseFloat(style.fontSize);
             if (!isNaN(num)) {
-                fontSize = `text-[${Math.max(10, Math.round(num * 0.45))}px]`;
+                const scaled = num > 15 ? num * 0.35 : num * 3.5;
+                fontSize = `text-[${Math.max(10, Math.round(scaled))}px]`;
             }
         }
 
@@ -139,8 +142,27 @@ export default function MiniPreview({ mode }) {
         const textColor = style.color || "#FFFFFF";
 
         return (
-            <div className="w-full h-full relative overflow-hidden flex flex-col justify-center p-4 transition-colors" style={{ backgroundColor: bgColor }}>
-                <div className={`w-full flex-1 flex justify-center my-auto px-2 ${alignClass}`}>
+            <div className="w-full h-full relative overflow-hidden flex flex-col justify-center items-center p-4 transition-colors" style={{ backgroundColor: bgColor }}>
+                {style.backgroundImage && (
+                    <div
+                        className="absolute inset-0 z-0 bg-cover pointer-events-none"
+                        style={{
+                            backgroundImage: style.backgroundImage.startsWith('url(')
+                                ? style.backgroundImage
+                                : `url("${style.backgroundImage}")`,
+                            backgroundPosition: style.backgroundPosition === 'top'
+                                ? 'center top'
+                                : style.backgroundPosition === 'bottom'
+                                ? 'center bottom'
+                                : 'center center',
+                            opacity: typeof style.backgroundOpacity === 'number' ? style.backgroundOpacity : 0.85,
+                        }}
+                    />
+                )}
+                {style.backgroundImage && (
+                    <div className="absolute inset-0 z-0 bg-black/40 pointer-events-none" />
+                )}
+                <div className={`w-full max-w-[92%] flex justify-center my-auto px-2 z-10 ${alignClass}`}>
                     <div
                         className={`leading-relaxed whitespace-pre-wrap ${fontClass} ${fontSize}`}
                         style={{
@@ -149,12 +171,25 @@ export default function MiniPreview({ mode }) {
                             fontStyle: style.isItalic ? "italic" : "normal",
                             textDecoration: style.isUnderline ? "underline" : "none",
                             textAlign: style.textAlign || "center",
-                            textShadow: '0 2px 10px rgba(0,0,0,0.8)',
+                            lineHeight: style.lineHeight || "1.45",
+                            textShadow: style.textShadow === "none"
+                                ? "none"
+                                : style.textShadow === "soft"
+                                ? "0 2px 8px rgba(0,0,0,0.65)"
+                                : "0 4px 16px rgba(0,0,0,0.85), 0 1px 3px rgba(0,0,0,0.9)",
                             maxWidth: "96%",
                             width: "100%",
                         }}
                     >
-                        {text}
+                        {renderAnimatedLyrics({
+                            text,
+                            translation: translation || "",
+                            currentWordIndex: -1,
+                            animationType: style.animation || "karaoke",
+                            style,
+                            isSingAlong: isSong,
+                            enableWordTracking: false,
+                        })}
                     </div>
                 </div>
             </div>

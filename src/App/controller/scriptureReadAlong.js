@@ -67,47 +67,30 @@ function tokensMatch(heard, expected) {
   return editDistance(heard, expected) <= 1;
 }
 
+const { ReferenceAligner } = require('../../main/aligner/referenceAligner');
+
 /**
  * Advance activeIndex using the latest ASR transcript against passage tokens.
- * Monotonic: never moves backward. May skip up to SKIP_LIMIT tokens.
+ * @deprecated Use ReferenceAligner directly per FR-5.31. Kept as compatibility bridge.
  *
  * @param {string} transcript
- * @param {{ display: string, norm: string }[]} tokens
+ * @param {{ display: string, norm: string }[]|string[]} tokens
  * @param {number} activeIndex current index (-1 = not started)
  * @returns {number} new activeIndex
  */
 function advanceReadAlong(transcript, tokens, activeIndex) {
   if (!tokens || !tokens.length) return activeIndex;
-  const heard = tokenizePassage(transcript).map((t) => t.norm).filter(Boolean);
-  if (!heard.length) return activeIndex;
+  const rawText = Array.isArray(tokens)
+    ? tokens.map((t) => (typeof t === 'string' ? t : (t.display || t.norm || ''))).join(' ')
+    : String(tokens);
 
-  let idx = typeof activeIndex === 'number' ? activeIndex : -1;
-  // Prefer matching near the cursor using the tail of the ASR stream
-  const tail = heard.slice(-12);
-
-  for (const h of tail) {
-    let matched = false;
-    for (let skip = 0; skip <= SKIP_LIMIT; skip++) {
-      const candidate = idx + 1 + skip;
-      if (candidate >= tokens.length) break;
-      if (tokensMatch(h, tokens[candidate].norm)) {
-        idx = candidate;
-        matched = true;
-        break;
-      }
-    }
-    if (!matched && idx < 0) {
-      // Cold start: find first occurrence of this heard token in the first few words
-      for (let i = 0; i < Math.min(6, tokens.length); i++) {
-        if (tokensMatch(h, tokens[i].norm)) {
-          idx = i;
-          matched = true;
-          break;
-        }
-      }
-    }
+  const aligner = new ReferenceAligner();
+  aligner.setReference('scripture', rawText);
+  if (typeof activeIndex === 'number' && activeIndex >= 0) {
+    aligner.cursor = activeIndex;
   }
-  return idx;
+  const res = aligner.feed(transcript);
+  return res ? res.wordIndex : (typeof activeIndex === 'number' ? activeIndex : -1);
 }
 
 /**

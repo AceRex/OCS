@@ -6,8 +6,9 @@ import {
     PiFloppyDisk, PiListBullets, PiListNumbers,
     PiArrowRight, PiArrowLeft, PiScissors,
     PiCaretDown, PiMusicNotes, PiImage, PiSparkle,
-    PiRepeat, PiCheck,
+    PiRepeat, PiCheck, PiUploadSimple, PiGlobe,
 } from "react-icons/pi";
+import { LYRIC_ANIMATIONS, READ_ALONG_ANIMATIONS, renderAnimatedLyrics } from "./LyricAnimationEngine";
 
 /**
  * SceneModal — High-Fidelity Scene & Song Editor
@@ -50,12 +51,15 @@ export default function SceneModal({
             fontFamily: "Inter Tight",
             fontWeight: "600",
             fontSize: "auto",
+            lineHeight: "1.45",
             color: "#FFFFFF",
             backgroundColor: "#000000",
             backgroundImage: scene.style?.backgroundImage || null,
             backgroundOpacity: typeof scene.style?.backgroundOpacity === "number" ? scene.style.backgroundOpacity : 0.85,
+            backgroundPosition: scene.style?.backgroundPosition || "center",
+            textShadow: scene.style?.textShadow || "strong",
             animation: scene.style?.animation || "fade",
-            textAlign: "left",
+            textAlign: scene.style?.textAlign || "center",
             isItalic: false,
             isUnderline: false,
             ...(scene.style || {}),
@@ -63,7 +67,61 @@ export default function SceneModal({
     }));
 
     const [activePageIdx, setActivePageIdx] = useState(0);
+    const [isBgModalOpen, setIsBgModalOpen] = useState(false);
+    const [isAnimMenuOpen, setIsAnimMenuOpen] = useState(false);
+    const [hoveredAnimation, setHoveredAnimation] = useState(null);
+    const [hoverWordIndex, setHoverWordIndex] = useState(-1);
+    const [mediaAssets, setMediaAssets] = useState([]);
     const textareaRef = useRef(null);
+    const animMenuRef = useRef(null);
+
+    // Live Simulated Word-by-Word Progression during Animation Hover
+    useEffect(() => {
+        if (!hoveredAnimation) {
+            setHoverWordIndex(-1);
+            return;
+        }
+        const textSample = (currentScene.pages[activePageIdx]?.content || "").trim() || "Amazing grace how sweet the sound that saved a wretch like me";
+        const words = textSample.split(/\s+/).filter(Boolean);
+        const total = words.length;
+        let cur = -1;
+        const timer = setInterval(() => {
+            cur = (cur + 1) % (total + 4);
+            setHoverWordIndex(cur < total ? cur : -1);
+        }, 320);
+        return () => clearInterval(timer);
+    }, [hoveredAnimation, activePageIdx, currentScene.pages]);
+
+    // Close animation menu when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (e) => {
+            if (animMenuRef.current && !animMenuRef.current.contains(e.target)) {
+                setIsAnimMenuOpen(false);
+                setHoveredAnimation(null);
+            }
+        };
+        if (isAnimMenuOpen) {
+            document.addEventListener("mousedown", handleClickOutside);
+            return () => document.removeEventListener("mousedown", handleClickOutside);
+        }
+    }, [isAnimMenuOpen]);
+
+    const loadMediaAssets = async () => {
+        try {
+            if (window.electron?.Media?.list) {
+                const files = await window.electron.Media.list();
+                if (Array.isArray(files)) {
+                    setMediaAssets(files);
+                }
+            }
+        } catch (e) {
+            console.error("Failed to load media assets:", e);
+        }
+    };
+
+    useEffect(() => {
+        loadMediaAssets();
+    }, []);
 
     // Sync if scene prop changes
     useEffect(() => {
@@ -86,12 +144,15 @@ export default function SceneModal({
                     fontFamily: "Inter Tight",
                     fontWeight: "600",
                     fontSize: "auto",
+                    lineHeight: "1.45",
                     color: "#FFFFFF",
                     backgroundColor: "#000000",
                     backgroundImage: scene.style?.backgroundImage || null,
                     backgroundOpacity: typeof scene.style?.backgroundOpacity === "number" ? scene.style.backgroundOpacity : 0.85,
+                    backgroundPosition: scene.style?.backgroundPosition || "center",
+                    textShadow: scene.style?.textShadow || "strong",
                     animation: scene.style?.animation || "fade",
-                    textAlign: "left",
+                    textAlign: scene.style?.textAlign || "center",
                     isItalic: false,
                     isUnderline: false,
                     ...(scene.style || {}),
@@ -119,12 +180,19 @@ export default function SceneModal({
         });
     };
 
-    const activePage = currentScene.pages[activePageIdx] || currentScene.pages[0] || { content: "", sectionType: "verse", label: "Verse 1", repeatCount: 1 };
+    const activePage = currentScene.pages[activePageIdx] || currentScene.pages[0] || { content: "", translation: "", sectionType: "verse", label: "Verse 1", repeatCount: 1 };
 
-    const handleContentChange = (newText) => {
-        setCurrentScene(prev => ({
+    const handleContentChange = (val) => {
+        setCurrentScene((prev) => ({
             ...prev,
-            pages: prev.pages.map((p, idx) => idx === activePageIdx ? { ...p, content: newText } : p),
+            pages: prev.pages.map((p, idx) => (idx === activePageIdx ? { ...p, content: val } : p)),
+        }));
+    };
+
+    const handleTranslationChange = (val) => {
+        setCurrentScene((prev) => ({
+            ...prev,
+            pages: prev.pages.map((p, idx) => (idx === activePageIdx ? { ...p, translation: val } : p)),
         }));
     };
 
@@ -187,29 +255,51 @@ export default function SceneModal({
         }));
     };
 
-    const handleBgUpload = async () => {
-        const file = await window.electron?.Presentation?.importMedia?.();
-        if (file) {
-            updateStyle("backgroundImage", file);
+    const handleUploadNewBg = async () => {
+        try {
+            if (window.electron?.Media?.import) {
+                const file = await window.electron.Media.import();
+                if (file) {
+                    updateStyle("backgroundImage", file);
+                    setMediaAssets(prev => prev.includes(file) ? prev : [file, ...prev]);
+                    setIsBgModalOpen(false);
+                    return;
+                }
+            }
+        } catch (e) {
+            console.error("Media import failed, using fallback:", e);
         }
+
+        // Native file input fallback (reads as DataURL for reliable preview)
+        const input = document.createElement("input");
+        input.type = "file";
+        input.accept = "image/*";
+        input.onchange = (e) => {
+            const file = e.target.files?.[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = () => {
+                    updateStyle("backgroundImage", reader.result);
+                    setMediaAssets(prev => [reader.result, ...prev]);
+                    setIsBgModalOpen(false);
+                };
+                reader.readAsDataURL(file);
+            }
+        };
+        input.click();
     };
 
-    // Dynamic Font Size Auto-Calculation
+    // Dynamic Font Size Auto-Calculation matching Controller Preview & Stage Output
     const dynamicFontSize = useMemo(() => {
         if (currentScene.style?.fontSize && currentScene.style?.fontSize !== "auto") {
-            const val = currentScene.style.fontSize;
-            return typeof val === 'number' || (!val.includes('px') && !val.includes('vw') && !val.includes('rem'))
-                ? `${val}px`
-                : val;
+            const parsed = parseFloat(currentScene.style.fontSize);
+            if (!isNaN(parsed)) {
+                return parsed > 15 ? `${(parsed / 10).toFixed(1)}cqw` : `${parsed}cqw`;
+            }
+            return currentScene.style.fontSize;
         }
         const textLen = (activePage.content || "").length;
-        if (textLen === 0) return "44px";
-        if (textLen < 60) return "48px";
-        if (textLen < 140) return "40px";
-        if (textLen < 260) return "32px";
-        if (textLen < 450) return "26px";
-        if (textLen < 700) return "22px";
-        return "18px";
+        return textLen > 600 ? "2.4cqw" : textLen > 350 ? "2.9cqw" : textLen > 180 ? "3.5cqw" : textLen > 80 ? "4.0cqw" : "4.8cqw";
     }, [activePage.content, currentScene.style?.fontSize]);
 
     // ─── Smart List Formatting ──────────────────────────────────────────────────
@@ -777,49 +867,216 @@ export default function SceneModal({
                         </div>
                     </div>
 
-                    {/* Main Canvas Preview Box with Background Image and Animations */}
-                    <div
-                        className="flex-1 rounded-3xl border border-white/10 overflow-hidden flex items-center justify-center p-8 relative shadow-2xl transition-all"
-                        style={{ backgroundColor: currentScene.style.backgroundColor || "#000000" }}
-                    >
-                        {/* Background Image Layer */}
-                        {currentScene.style.backgroundImage && (
+                    {/* Main Canvas Preview Area & Side Docked Animation Palette */}
+                    <div className="w-full flex-1 flex gap-4 items-center justify-center min-h-0 relative overflow-hidden">
+                        
+                        {/* 16:9 Canvas Preview Box */}
+                        <div className="flex-1 flex items-center justify-center min-h-0 h-full relative">
                             <div
-                                className="absolute inset-0 z-0 bg-cover bg-center transition-all duration-300"
+                                className="aspect-video w-full max-h-full rounded-3xl border border-white/10 overflow-hidden flex flex-col justify-center items-center p-8 relative shadow-2xl transition-all"
                                 style={{
-                                    backgroundImage: `url(${currentScene.style.backgroundImage})`,
-                                    opacity: currentScene.style.backgroundOpacity ?? 0.85,
+                                    backgroundColor: currentScene.style.backgroundColor || "#000000",
+                                    containerType: "size",
                                 }}
-                            />
-                        )}
-                        {currentScene.style.backgroundImage && (
-                            <div className="absolute inset-0 z-0 bg-black/40" />
-                        )}
+                            >
+                            {/* Background Image Layer */}
+                            {currentScene.style.backgroundImage && (
+                                <div
+                                    className="absolute inset-0 z-0 bg-cover transition-all duration-300 pointer-events-none"
+                                    style={{
+                                        backgroundImage: currentScene.style.backgroundImage.startsWith('url(')
+                                            ? currentScene.style.backgroundImage
+                                            : `url("${currentScene.style.backgroundImage}")`,
+                                        backgroundPosition: currentScene.style.backgroundPosition === 'top'
+                                            ? 'center top'
+                                            : currentScene.style.backgroundPosition === 'bottom'
+                                            ? 'center bottom'
+                                            : 'center center',
+                                        opacity: typeof currentScene.style.backgroundOpacity === 'number' ? currentScene.style.backgroundOpacity : 0.85,
+                                    }}
+                                />
+                            )}
+                            {currentScene.style.backgroundImage && (
+                                <div className="absolute inset-0 z-0 bg-black/40 pointer-events-none" />
+                            )}
 
-                        <textarea
-                            ref={textareaRef}
-                            value={activePage.content}
-                            onChange={(e) => handleContentChange(e.target.value)}
-                            onKeyDown={handleKeyDown}
-                            onPaste={handlePaste}
-                            placeholder={isSong ? "Type or paste song lyrics / verses / chorus here..." : "Type or paste scene text here..."}
-                            style={{
-                                fontSize: dynamicFontSize,
-                                color: currentScene.style.color || "#FFFFFF",
-                                fontFamily: currentScene.style.fontFamily === "serif"
-                                    ? "Georgia, serif"
-                                    : currentScene.style.fontFamily === "mono"
-                                    ? '"Courier New", monospace'
-                                    : '"Inter Tight", sans-serif',
-                                fontWeight: currentScene.style.fontWeight || "600",
-                                fontStyle: currentScene.style.isItalic ? "italic" : "normal",
-                                textDecoration: currentScene.style.isUnderline ? "underline" : "none",
-                                textAlign: currentScene.style.textAlign || "left",
-                                lineHeight: "1.45",
-                                textShadow: "0 4px 16px rgba(0,0,0,0.85)",
-                            }}
-                            className="w-full h-full bg-transparent outline-none resize-none border-none flex items-center justify-center drop-shadow-md placeholder:text-white/20 overflow-y-auto z-10"
-                        />
+                            {/* Centered Content Container or Live Hover Animation Preview */}
+                            <div className="w-full max-w-[92%] flex flex-col justify-center items-center my-auto z-10 relative">
+                                {hoveredAnimation ? (
+                                    /* Live Animated Sing-Along Simulation Preview while Hovering */
+                                    <div
+                                        className="w-full flex justify-center items-center my-auto z-10 select-none animate-in fade-in duration-150"
+                                        style={{
+                                            fontSize: dynamicFontSize,
+                                            color: currentScene.style.color || "#FFFFFF",
+                                            fontFamily: currentScene.style.fontFamily === "serif"
+                                                ? "Georgia, serif"
+                                                : currentScene.style.fontFamily === "mono"
+                                                ? '"Courier New", monospace'
+                                                : '"Inter Tight", sans-serif',
+                                            fontWeight: currentScene.style.fontWeight || "600",
+                                            fontStyle: currentScene.style.isItalic ? "italic" : "normal",
+                                            textDecoration: currentScene.style.isUnderline ? "underline" : "none",
+                                            textAlign: currentScene.style.textAlign || "center",
+                                            lineHeight: currentScene.style.lineHeight || "1.45",
+                                            textShadow: currentScene.style.textShadow === "none"
+                                                ? "none"
+                                                : currentScene.style.textShadow === "soft"
+                                                ? "0 2px 8px rgba(0,0,0,0.65)"
+                                                : "0 4px 16px rgba(0,0,0,0.85), 0 1px 3px rgba(0,0,0,0.9)",
+                                            width: "100%",
+                                        }}
+                                    >
+                                        {renderAnimatedLyrics({
+                                            text: (activePage.content || "").trim() || (isSong ? "Amazing grace how sweet the sound that saved a wretch like me" : "The Lord is my light and my salvation"),
+                                            translation: activePage.translation || (isSong ? "Oore-ọ̀fẹ́ tí ó yanilẹ́nu, bí ohùn náà ti dùn tó" : ""),
+                                            currentWordIndex: hoverWordIndex,
+                                            animationType: hoveredAnimation,
+                                            style: currentScene.style,
+                                            isSingAlong: true,
+                                            enableWordTracking: true,
+                                            sectionType: activePage.sectionType,
+                                            sectionLabel: activePage.label,
+                                        })}
+                                    </div>
+                                ) : (
+                                    /* Normal Perfectly Centered Live Textarea */
+                                    <div className="grid grid-cols-1 grid-rows-1 w-full items-center justify-center">
+                                        {/* Invisible mirrored element that gives the exact auto-height */}
+                                        <div
+                                            aria-hidden="true"
+                                            className="invisible whitespace-pre-wrap select-none pointer-events-none col-start-1 row-start-1"
+                                            style={{
+                                                fontSize: dynamicFontSize,
+                                                fontFamily: currentScene.style.fontFamily === "serif"
+                                                    ? "Georgia, serif"
+                                                    : currentScene.style.fontFamily === "mono"
+                                                    ? '"Courier New", monospace'
+                                                    : '"Inter Tight", sans-serif',
+                                                fontWeight: currentScene.style.fontWeight || "600",
+                                                fontStyle: currentScene.style.isItalic ? "italic" : "normal",
+                                                textDecoration: currentScene.style.isUnderline ? "underline" : "none",
+                                                textAlign: currentScene.style.textAlign || "center",
+                                                lineHeight: currentScene.style.lineHeight || "1.45",
+                                                padding: 0,
+                                                margin: 0,
+                                                width: "100%",
+                                            }}
+                                        >
+                                            {(activePage.content || (isSong ? "Type or paste song lyrics / verses / chorus here..." : "Type or paste scene text here...")) + "\n"}
+                                        </div>
+
+                                        <textarea
+                                            ref={textareaRef}
+                                            value={activePage.content}
+                                            onChange={(e) => handleContentChange(e.target.value)}
+                                            onKeyDown={handleKeyDown}
+                                            onPaste={handlePaste}
+                                            placeholder={isSong ? "Type or paste song lyrics / verses / chorus here..." : "Type or paste scene text here..."}
+                                            style={{
+                                                fontSize: dynamicFontSize,
+                                                color: currentScene.style.color || "#FFFFFF",
+                                                fontFamily: currentScene.style.fontFamily === "serif"
+                                                    ? "Georgia, serif"
+                                                    : currentScene.style.fontFamily === "mono"
+                                                    ? '"Courier New", monospace'
+                                                    : '"Inter Tight", sans-serif',
+                                                fontWeight: currentScene.style.fontWeight || "600",
+                                                fontStyle: currentScene.style.isItalic ? "italic" : "normal",
+                                                textDecoration: currentScene.style.isUnderline ? "underline" : "none",
+                                                textAlign: currentScene.style.textAlign || "center",
+                                                lineHeight: currentScene.style.lineHeight || "1.45",
+                                                textShadow: currentScene.style.textShadow === "none"
+                                                    ? "none"
+                                                    : currentScene.style.textShadow === "soft"
+                                                    ? "0 2px 8px rgba(0,0,0,0.65)"
+                                                    : "0 4px 16px rgba(0,0,0,0.85), 0 1px 3px rgba(0,0,0,0.9)",
+                                                padding: 0,
+                                                margin: 0,
+                                                width: "100%",
+                                            }}
+                                            className="w-full h-full bg-transparent outline-none resize-none border-none drop-shadow-md placeholder:text-white/20 overflow-hidden col-start-1 row-start-1 z-10"
+                                        />
+                                    </div>
+                                )}
+
+                                {/* Translated Lyrics Input Bar below lyrics for Song scenes */}
+                                {isSong && (
+                                    <div className="w-full mt-3 flex items-center gap-2 bg-black/50 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10 z-20">
+                                        <PiGlobe size={14} className="text-amber-400 shrink-0" />
+                                        <input
+                                            type="text"
+                                            value={activePage.translation || ""}
+                                            onChange={(e) => handleTranslationChange(e.target.value)}
+                                            placeholder="Translation (Optional): e.g. Olóòótọ́ ni ìṣòtítọ́ Rẹ..."
+                                            className="w-full bg-transparent text-xs text-amber-200 placeholder:text-white/25 outline-none border-none"
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Side Docked Animation Palette (Never blocks the canvas preview!) */}
+                    {isAnimMenuOpen && (
+                            <div
+                                ref={animMenuRef}
+                                className="w-72 h-full bg-[#14141b] border border-white/15 rounded-3xl p-3 shadow-2xl flex flex-col gap-2 overflow-hidden animate-in slide-in-from-right-6 duration-200 shrink-0 z-30"
+                            >
+                                <div className="flex items-center justify-between px-2 py-1 border-b border-white/10 shrink-0">
+                                    <div className="flex flex-col">
+                                        <span className="text-xs font-bold text-white">
+                                            {isSong ? "Sing-Along FX & Translations" : "Read-Along Animations"}
+                                        </span>
+                                        <span className="text-[10px] text-cyan-400 font-mono">Hover to live preview</span>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setIsAnimMenuOpen(false);
+                                            setHoveredAnimation(null);
+                                        }}
+                                        className="p-1 text-white/40 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
+                                    >
+                                        <PiX size={14} />
+                                    </button>
+                                </div>
+
+                                <div className="flex-1 overflow-y-auto flex flex-col gap-1 pr-1 no-scrollbar">
+                                    {(isSong ? LYRIC_ANIMATIONS : READ_ALONG_ANIMATIONS).map((anim) => {
+                                        const isSelected = (currentScene.style.animation || (isSong ? "karaoke" : "word-highlight")) === anim.id;
+                                        return (
+                                            <button
+                                                key={anim.id}
+                                                type="button"
+                                                onMouseEnter={() => setHoveredAnimation(anim.id)}
+                                                onMouseLeave={() => setHoveredAnimation(null)}
+                                                onClick={() => {
+                                                    updateStyle("animation", anim.id);
+                                                    setIsAnimMenuOpen(false);
+                                                    setHoveredAnimation(null);
+                                                }}
+                                                className={`w-full text-left px-2.5 py-1.5 rounded-xl transition-all flex flex-col gap-0.5 group ${
+                                                    isSelected
+                                                        ? "bg-purple-500/25 text-white border border-purple-500/40 shadow-sm"
+                                                        : "hover:bg-white/10 text-white/80 hover:text-white border border-transparent"
+                                                }`}
+                                            >
+                                                <div className="flex items-center justify-between">
+                                                    <span className="text-xs font-bold flex items-center gap-1.5">
+                                                        {anim.badge?.split(" ")[0]} {anim.name}
+                                                    </span>
+                                                    {isSelected && <PiCheck size={14} className="text-purple-400" />}
+                                                </div>
+                                                <p className="text-[10px] text-white/40 group-hover:text-white/70 leading-tight">
+                                                    {anim.description}
+                                                </p>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     {/* Bottom Formatting Toolbar (Font, Colors, BG Image, Animation) */}
@@ -853,43 +1110,99 @@ export default function SceneModal({
                                     value={currentScene.style.fontSize || "auto"}
                                     onChange={(e) => updateStyle("fontSize", e.target.value)}
                                     className="bg-[#24242a] text-xs font-semibold text-white/90 py-1.5 px-3 pr-7 rounded-xl border border-white/10 outline-none appearance-none cursor-pointer hover:bg-[#2b2b33] transition-colors"
+                                    title="Font Size"
                                 >
                                     <option value="auto">Auto Size</option>
-                                    <option value="24">24px</option>
-                                    <option value="32">32px</option>
-                                    <option value="40">40px</option>
-                                    <option value="48">48px</option>
-                                    <option value="56">56px</option>
-                                    <option value="64">64px</option>
-                                    <option value="72">72px</option>
-                                    <option value="84">84px</option>
+                                    <option value="28">Small (2.8vw)</option>
+                                    <option value="35">Medium (3.5vw)</option>
+                                    <option value="40">Regular (4.0vw)</option>
+                                    <option value="48">Large (4.8vw)</option>
+                                    <option value="56">Extra Large (5.6vw)</option>
+                                    <option value="64">Huge (6.4vw)</option>
                                 </select>
                                 <PiCaretDown size={12} className="absolute right-2.5 pointer-events-none text-white/40" />
                             </div>
 
-                            {/* Animation Selector */}
+                            {/* Line Height Selector */}
                             <div className="relative flex items-center">
                                 <select
-                                    value={currentScene.style.animation || "fade"}
-                                    onChange={(e) => updateStyle("animation", e.target.value)}
+                                    value={currentScene.style.lineHeight || "1.45"}
+                                    onChange={(e) => updateStyle("lineHeight", e.target.value)}
                                     className="bg-[#24242a] text-xs font-semibold text-white/90 py-1.5 px-3 pr-7 rounded-xl border border-white/10 outline-none appearance-none cursor-pointer hover:bg-[#2b2b33] transition-colors"
-                                    title="Text Transition Animation"
+                                    title="Line Height / Spacing"
                                 >
-                                    <option value="fade">✨ Fade In</option>
-                                    <option value="slide-up">🚀 Slide Up</option>
-                                    <option value="zoom">🔍 Zoom In</option>
-                                    <option value="none">⏹️ No Animation</option>
+                                    <option value="1.15">Line: 1.15 (Tight)</option>
+                                    <option value="1.3">Line: 1.30 (Compact)</option>
+                                    <option value="1.45">Line: 1.45 (Normal)</option>
+                                    <option value="1.65">Line: 1.65 (Relaxed)</option>
+                                    <option value="1.85">Line: 1.85 (Loose)</option>
+                                    <option value="2.0">Line: 2.00 (Double)</option>
                                 </select>
                                 <PiCaretDown size={12} className="absolute right-2.5 pointer-events-none text-white/40" />
+                            </div>
+
+                            {/* Text Shadow Selector */}
+                            <div className="relative flex items-center">
+                                <select
+                                    value={currentScene.style.textShadow || "strong"}
+                                    onChange={(e) => updateStyle("textShadow", e.target.value)}
+                                    className="bg-[#24242a] text-xs font-semibold text-white/90 py-1.5 px-3 pr-7 rounded-xl border border-white/10 outline-none appearance-none cursor-pointer hover:bg-[#2b2b33] transition-colors"
+                                    title="Text Drop Shadow"
+                                >
+                                    <option value="strong">Shadow: Strong</option>
+                                    <option value="soft">Shadow: Soft</option>
+                                    <option value="none">Shadow: None</option>
+                                </select>
+                                <PiCaretDown size={12} className="absolute right-2.5 pointer-events-none text-white/40" />
+                            </div>
+
+                            {/* Background Position Selector (Top, Center, Bottom) */}
+                            {currentScene.style.backgroundImage && (
+                                <div className="relative flex items-center">
+                                    <select
+                                        value={currentScene.style.backgroundPosition || "center"}
+                                        onChange={(e) => updateStyle("backgroundPosition", e.target.value)}
+                                        className="bg-[#24242a] text-xs font-semibold text-white/90 py-1.5 px-3 pr-7 rounded-xl border border-white/10 outline-none appearance-none cursor-pointer hover:bg-[#2b2b33] transition-colors"
+                                        title="Background Image Vertical Alignment"
+                                    >
+                                        <option value="center">BG: Center</option>
+                                        <option value="top">BG: Top</option>
+                                        <option value="bottom">BG: Bottom</option>
+                                    </select>
+                                    <PiCaretDown size={12} className="absolute right-2.5 pointer-events-none text-white/40" />
+                                </div>
+                            )}
+
+                            {/* Animation Palette Toggle Button */}
+                            <div className="relative flex items-center">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsAnimMenuOpen(prev => !prev)}
+                                    className={`text-xs font-semibold py-1.5 px-3 rounded-xl border transition-colors flex items-center gap-1.5 ${
+                                        isAnimMenuOpen
+                                            ? "bg-purple-600 text-white border-purple-500 shadow-md"
+                                            : "bg-[#24242a] text-white/90 border-white/10 hover:bg-[#2b2b33]"
+                                    }`}
+                                    title={`Choose ${isSong ? 'Sing-Along' : 'Read-Along'} Animation`}
+                                >
+                                    <PiSparkle size={13} className="text-amber-400" />
+                                    <span>
+                                        {(isSong ? LYRIC_ANIMATIONS : READ_ALONG_ANIMATIONS).find(a => a.id === (currentScene.style.animation || (isSong ? "karaoke" : "word-highlight")))?.name || (isSong ? "Karaoke Highlight" : "Word Highlight")}
+                                    </span>
+                                    <PiCaretDown size={12} className={`transition-transform duration-200 ${isAnimMenuOpen ? "rotate-180 text-white" : "text-white/40"}`} />
+                                </button>
                             </div>
 
                             <div className="h-4 w-px bg-white/10" />
 
-                            {/* Background Image Trigger */}
+                            {/* Background Image Trigger (Opens Asset Selection Modal) */}
                             <div className="flex items-center gap-1.5">
                                 <button
                                     type="button"
-                                    onClick={handleBgUpload}
+                                    onClick={() => {
+                                        loadMediaAssets();
+                                        setIsBgModalOpen(true);
+                                    }}
                                     className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors border ${
                                         currentScene.style.backgroundImage
                                             ? "bg-purple-500/20 text-purple-300 border-purple-500/40"
@@ -1034,6 +1347,152 @@ export default function SceneModal({
 
                 </div>
             </div>
+
+            {/* Background Image Selection & Management Modal */}
+            {isBgModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
+                    <div className="bg-[#18181f] border border-white/15 rounded-3xl w-full max-w-xl p-6 flex flex-col gap-5 shadow-2xl animate-in zoom-in-95 duration-200">
+                        {/* Modal Header */}
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2.5">
+                                <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center">
+                                    <PiImage size={18} />
+                                </div>
+                                <div>
+                                    <h4 className="text-base font-bold text-white">Choose Background Image</h4>
+                                    <p className="text-xs text-white/50">Select an existing image asset or upload a new one</p>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setIsBgModalOpen(false)}
+                                className="text-white/40 hover:text-white p-2 rounded-xl hover:bg-white/5 transition-colors"
+                            >
+                                <PiX size={18} />
+                            </button>
+                        </div>
+
+                        {/* Top Actions: Upload New & Clear */}
+                        <div className="flex items-center gap-3">
+                            <button
+                                type="button"
+                                onClick={handleUploadNewBg}
+                                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 text-xs transition-all shadow-lg shadow-blue-600/20"
+                            >
+                                <PiUploadSimple size={16} />
+                                Upload New Image
+                            </button>
+
+                            {currentScene.style.backgroundImage && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        updateStyle("backgroundImage", null);
+                                        setIsBgModalOpen(false);
+                                    }}
+                                    className="bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20 font-bold py-2.5 px-4 rounded-xl flex items-center gap-1.5 text-xs transition-all"
+                                >
+                                    <PiTrash size={14} />
+                                    Clear BG
+                                </button>
+                            )}
+                        </div>
+
+                        {/* Background Alignment & Opacity Controls */}
+                        <div className="bg-[#121216] border border-white/10 rounded-2xl p-3 flex items-center justify-between gap-4 flex-wrap">
+                            <div className="flex items-center gap-2">
+                                <span className="text-xs font-semibold text-white/60">Position:</span>
+                                <div className="flex items-center bg-[#24242a] rounded-lg p-0.5 border border-white/10">
+                                    {["top", "center", "bottom"].map((pos) => (
+                                        <button
+                                            key={pos}
+                                            type="button"
+                                            onClick={() => updateStyle("backgroundPosition", pos)}
+                                            className={`text-[11px] font-bold uppercase px-2.5 py-1 rounded-md transition-all ${
+                                                (currentScene.style.backgroundPosition || "center") === pos
+                                                    ? "bg-white text-black shadow-sm"
+                                                    : "text-white/40 hover:text-white"
+                                            }`}
+                                        >
+                                            {pos}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+
+                            <div className="flex items-center gap-2 flex-1 min-w-[180px]">
+                                <span className="text-xs font-semibold text-white/60 shrink-0">Opacity:</span>
+                                <input
+                                    type="range"
+                                    min="0.2"
+                                    max="1.0"
+                                    step="0.05"
+                                    value={typeof currentScene.style.backgroundOpacity === 'number' ? currentScene.style.backgroundOpacity : 0.85}
+                                    onChange={(e) => updateStyle("backgroundOpacity", parseFloat(e.target.value))}
+                                    className="w-full accent-purple-500 cursor-pointer"
+                                />
+                                <span className="text-xs font-mono text-white/40 shrink-0">
+                                    {Math.round((typeof currentScene.style.backgroundOpacity === 'number' ? currentScene.style.backgroundOpacity : 0.85) * 100)}%
+                                </span>
+                            </div>
+                        </div>
+
+                        {/* Image Thumbnails Grid */}
+                        <div className="flex flex-col gap-2">
+                            <span className="text-[11px] font-bold uppercase tracking-wider text-white/40">
+                                Available Images ({mediaAssets.length})
+                            </span>
+                            <div className="grid grid-cols-4 gap-2.5 max-h-56 overflow-y-auto pr-1 no-scrollbar">
+                                {mediaAssets.map((imgUrl, idx) => {
+                                    const isSelected = currentScene.style.backgroundImage === imgUrl;
+                                    return (
+                                        <div
+                                            key={idx}
+                                            onClick={() => {
+                                                updateStyle("backgroundImage", imgUrl);
+                                                setIsBgModalOpen(false);
+                                            }}
+                                            className={`aspect-video rounded-xl overflow-hidden relative cursor-pointer border-2 transition-all group ${
+                                                isSelected
+                                                    ? "border-purple-500 ring-2 ring-purple-500/30"
+                                                    : "border-white/10 hover:border-white/40"
+                                            }`}
+                                        >
+                                            <div
+                                                className="absolute inset-0 bg-cover bg-center group-hover:scale-105 transition-transform duration-300"
+                                                style={{ backgroundImage: imgUrl.startsWith('url(') ? imgUrl : `url("${imgUrl}")` }}
+                                            />
+                                            {isSelected && (
+                                                <div className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-purple-500 text-white flex items-center justify-center shadow-lg">
+                                                    <PiCheck size={12} />
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+
+                                {mediaAssets.length === 0 && (
+                                    <div className="col-span-4 py-8 text-center text-white/30 text-xs flex flex-col items-center gap-2">
+                                        <PiImage size={24} className="opacity-40" />
+                                        <span>No images saved yet. Click "Upload New Image" above.</span>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
+                            <button
+                                type="button"
+                                onClick={() => setIsBgModalOpen(false)}
+                                className="px-4 py-2 text-xs font-semibold text-white/60 hover:text-white rounded-xl hover:bg-white/5 transition-colors"
+                            >
+                                Done
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

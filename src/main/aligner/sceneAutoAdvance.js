@@ -18,14 +18,14 @@ const { ReferenceAligner, tokenize, matchWord, STOP_WORDS } = require('./referen
 class SceneAutoAdvanceManager extends EventEmitter {
   /**
    * @param {object} [options]
-   * @param {number} [options.debounceMs=40] - Auto-advance debounce window
-   * @param {number} [options.fallbackTimeoutMs=3000] - No-match fallback prompt delay
+   * @param {number} [options.debounceMs=500] - Auto-advance debounce window (FR-5.37)
+   * @param {number} [options.fallbackTimeoutMs=4000] - No-match fallback prompt delay (FR-5.38)
    * @param {ReferenceAligner} [options.aligner] - Optional custom ReferenceAligner instance
    */
   constructor(options = {}) {
     super();
-    this.debounceMs = options.debounceMs ?? 40;
-    this.fallbackTimeoutMs = options.fallbackTimeoutMs ?? 3000;
+    this.debounceMs = options.debounceMs ?? 500;
+    this.fallbackTimeoutMs = options.fallbackTimeoutMs ?? 4000;
     this.aligner = options.aligner || new ReferenceAligner();
 
     this.scene = null;
@@ -68,8 +68,8 @@ class SceneAutoAdvanceManager extends EventEmitter {
       this.currentPageIndex = this.sequence[this.currentSequenceIndex]?.pageIndex ?? pageIndex;
     }
 
-    // Always enabled for songs and read-along scenes
-    this.isEnabled = scene?.sceneType === 'song' || scene?.navMode === 'read_along' || scene?.isSong === true;
+    // Enabled for read-along scenes and songs, unless explicitly set to manual mode
+    this.isEnabled = scene?.navMode !== 'manual' && (scene?.navMode === 'read_along' || scene?.sceneType === 'song' || scene?.isSong === true);
 
     if (this.isEnabled) {
       this._loadCurrentPage();
@@ -121,14 +121,39 @@ class SceneAutoAdvanceManager extends EventEmitter {
     const spokenTokens = tokenize(text);
     if (!spokenTokens.length) return null;
 
-    // 1. Cross-Section Lookahead: Check if singer started singing the NEXT section
-    // Must match at least 2 distinct words (at least 1 non-stopword)
+    // 1. Feed current page aligner (voice tracks words in sequence)
+    const alignResult = this.aligner.feed(asrPayload);
+
+    // 2. Cross-Section Lookahead: Check if singer started singing the NEXT section
+    // Guard 1: Only check if next sequence item exists
     const nextSeqIdx = this.currentSequenceIndex + 1;
     if (nextSeqIdx < this.sequence.length) {
       const nextItem = this.sequence[nextSeqIdx];
+      const currentPage = this.scene?.pages?.[this.currentPageIndex];
       const nextPage = this.scene?.pages?.[nextItem.pageIndex];
-      if (nextPage && nextPage.content) {
+
+      // Guard 2: If next page is identical (Chorus Flow repeat X2/X3), do NOT cross-lookahead.
+      // Rely solely on page-complete detection for repeated sections.
+      const isRepeatedSection =
+        nextItem.pageIndex === this.currentPageIndex ||
+        (currentPage?.content &&
+          nextPage?.content &&
+          currentPage.content.trim().toLowerCase() === nextPage.content.trim().toLowerCase());
+
+      if (!isRepeatedSection && nextPage && nextPage.content && currentPage && currentPage.content) {
+        const currTokens = this.aligner.tokens || [];
         const nextTokens = tokenize(nextPage.content);
+
+        // Guard 3: Only allow cross-section lookahead if current slide is near completion
+        // (singer is near the end of the slide, e.g. within 3 tokens or >= 70% through),
+        // preventing premature jump when current slide and next slide share opening words.
+        const currentCursor = this.aligner.cursor;
+        const totalCurr = currTokens.length;
+        const isNearEnd =
+          totalCurr <= 4
+            ? currentCursor >= 1
+            : currentCursor >= totalCurr - 4 || (totalCurr > 0 && currentCursor / totalCurr >= 0.7);
+
         if (nextTokens.length > 0) {
           let nextMatches = 0;
           let contentMatches = 0;
@@ -145,8 +170,13 @@ class SceneAutoAdvanceManager extends EventEmitter {
             }
           }
 
-          // Advance ONLY if at least 2 words match and at least 1 is a content word
-          if (nextMatches >= 2 && contentMatches >= 1) {
+          // If current slide matched the speech, only advance if near the end of the slide.
+          // If current slide had NO match (singer jumped ahead), advance on strong next-section match (>=2 content words).
+          const canAdvance =
+            (alignResult !== null && isNearEnd && nextMatches >= 2 && contentMatches >= 1) ||
+            (alignResult === null && nextMatches >= 2 && contentMatches >= 2);
+
+          if (canAdvance) {
             this._triggerAutoAdvance();
             return { autoAdvanced: true, nextSection: nextItem.label };
           }
@@ -154,8 +184,7 @@ class SceneAutoAdvanceManager extends EventEmitter {
       }
     }
 
-    // 2. Feed current page aligner (voice tracks words in sequence)
-    return this.aligner.feed(asrPayload);
+    return alignResult;
   }
 
   /**

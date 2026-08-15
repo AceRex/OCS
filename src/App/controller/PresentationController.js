@@ -11,6 +11,7 @@ import {
 } from "react-icons/pi";
 import SceneModal from "./SceneModal";
 import { PresentationImportProgressModal, PresentationFontAdvisoryModal } from "./PresentationImportModal";
+import { renderAnimatedLyrics } from "./LyricAnimationEngine";
 
 /**
  * One-word-ahead word tracking for Controller preview.
@@ -175,12 +176,13 @@ function newScene(name = "Untitled Song", sceneType = "song") {
             fontFamily: "Inter Tight",
             fontWeight: "600",
             fontSize: "auto",
+            lineHeight: "1.45",
             color: "#FFFFFF",
             backgroundColor: "#000000",
             backgroundImage: null,
             backgroundOpacity: 0.85,
             animation: "fade",
-            textAlign: "left",
+            textAlign: "center",
             isItalic: false,
             isUnderline: false,
         },
@@ -204,6 +206,7 @@ function SceneTab({
     handleNextPage,
     handlePrevPage,
     handleStopScene,
+    onToggleLiveNavMode,
     previewScene,
     onLoadToPreview,
 }) {
@@ -241,11 +244,20 @@ function SceneTab({
                                 <span className="text-[10px] font-bold uppercase tracking-wider text-orange-400">
                                     ● Live: {activeScene.name}
                                 </span>
-                                {(activeScene.navMode === 'read_along' || activeScene.sceneType === 'song') && (
-                                    <span className="text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 animate-pulse">
-                                        {activeScene.sceneType === 'song' ? 'Sing-Along Active' : 'Read-Along Active'}
-                                    </span>
-                                )}
+                                <button
+                                    type="button"
+                                    onClick={onToggleLiveNavMode}
+                                    title="Click to toggle between Voice-tracking (Sing/Read-Along) and Manual Navigation"
+                                    className={`text-[9px] font-bold uppercase px-2 py-0.5 rounded border transition-colors ${
+                                        activeScene.navMode !== 'manual' && (activeScene.navMode === 'read_along' || activeScene.sceneType === 'song')
+                                            ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30 hover:bg-emerald-500/30 animate-pulse"
+                                            : "bg-white/10 text-white/60 border-white/10 hover:bg-white/20 hover:text-white"
+                                    }`}
+                                >
+                                    {activeScene.navMode !== 'manual' && (activeScene.navMode === 'read_along' || activeScene.sceneType === 'song')
+                                        ? (activeScene.sceneType === 'song' ? '🎤 Sing-Along' : '📖 Read-Along')
+                                        : '✋ Manual'}
+                                </button>
                             </div>
                             <button onClick={handleStopScene} className="text-[10px] text-red-400 hover:text-red-300 bg-red-500/10 px-2 py-0.5 rounded transition-colors font-bold">
                                 Stop
@@ -253,22 +265,24 @@ function SceneTab({
                         </div>
 
                         {/* Live voice tracking meter */}
-                        <div className="flex flex-col gap-1 bg-black/40 p-2 rounded-lg border border-white/5">
-                            <div className="flex items-center justify-between">
-                                <span className="text-xs font-bold text-orange-300">
-                                    {currentSeqItem.label || `Part ${activePageIndex + 1}`}
-                                </span>
-                                <span className="text-[10px] font-mono text-white/40">
-                                    Step {activeSequenceIndex + 1} / {activeSequence.length}
-                                </span>
+                        {activeScene.navMode !== 'manual' && (activeScene.navMode === 'read_along' || activeScene.sceneType === 'song') && (
+                            <div className="flex flex-col gap-1 bg-black/40 p-2 rounded-lg border border-white/5">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs font-bold text-orange-300">
+                                        {currentSeqItem.label || `Part ${activePageIndex + 1}`}
+                                    </span>
+                                    <span className="text-[10px] font-mono text-white/40">
+                                        Step {activeSequenceIndex + 1} / {activeSequence.length}
+                                    </span>
+                                </div>
+                                <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden mt-1">
+                                    <div
+                                        className="bg-gradient-to-r from-emerald-400 to-cyan-400 h-full transition-all duration-150"
+                                        style={{ width: `${alignProgress.progressPct}%` }}
+                                    />
+                                </div>
                             </div>
-                            <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden mt-1">
-                                <div
-                                    className="bg-gradient-to-r from-emerald-400 to-cyan-400 h-full transition-all duration-150"
-                                    style={{ width: `${alignProgress.progressPct}%` }}
-                                />
-                            </div>
-                        </div>
+                        )}
 
                         {/* Fallback prompt when stalled in Read-Along */}
                         {suggestPrompt && (
@@ -659,17 +673,22 @@ export default function PresentationController() {
         if (currentTargets.speaker) targetArr.push('speaker');
         if (targetArr.length === 0) return;
 
+        const navMode = scene.navMode === 'manual' ? 'manual' : (scene.navMode || (scene.sceneType === 'song' ? 'read_along' : 'manual'));
+
         const payload = {
             type: 'scene',
             data: {
                 sceneId: scene.id,
                 sceneName: scene.name,
                 sceneType: scene.sceneType || 'song',
+                navMode,
                 sectionLabel: currentSeqItem.label || page.label || (scene.sceneType === 'song' ? `Verse ${pageIdx + 1}` : `Page ${pageIdx + 1}`),
                 pageIndex: pageIdx,
                 sequenceIndex: sequenceIndex,
                 pageCount: scene.pages.length,
                 content: page.content,
+                translation: page.translation || '',
+                sectionType: page.sectionType || 'verse',
                 style: scene.style || page.style || {},
             },
             target: targetArr,
@@ -688,16 +707,15 @@ export default function PresentationController() {
         pushPageContent(scene, pageIdx, targets, seqIdx);
 
         const sequence = buildSceneSequence(scene);
-        const navMode = (scene.sceneType === 'song' || scene.navMode === 'read_along') ? 'read_along' : (scene.navMode || 'manual');
+        const navMode = scene.navMode === 'manual' ? 'manual' : ((scene.sceneType === 'song' || scene.navMode === 'read_along') ? 'read_along' : (scene.navMode || 'manual'));
 
         if (navMode === 'read_along') {
             window.electron?.Aligner?.startScene({ ...scene, sequence, navMode: 'read_along' }, pageIdx, seqIdx);
+            // Activate microphone ONLY when user presents a scene/song in read_along / sing_along mode
+            window.dispatchEvent(new CustomEvent('ocs-mic-activate', { detail: { sceneId: scene.id, navMode } }));
         } else {
             window.electron?.Aligner?.stop();
         }
-
-        // Activate microphone immediately when user presents a scene/song
-        window.dispatchEvent(new CustomEvent('ocs-mic-activate', { detail: { sceneId: scene.id, navMode } }));
     };
 
     const handleLoadSceneToPreview = (scene, pageIdx = 0, seqIdx = 0) => {
@@ -715,7 +733,7 @@ export default function PresentationController() {
             setActiveSequenceIndex(nextSeqIdx);
             setActivePageIndex(nextItem.pageIndex);
             pushPageContent(cur, nextItem.pageIndex, targets, nextSeqIdx);
-            if (cur.navMode === 'read_along' || cur.sceneType === 'song') {
+            if (cur.navMode !== 'manual' && (cur.navMode === 'read_along' || cur.sceneType === 'song')) {
                 window.electron?.Aligner?.startScene({ ...cur, sequence, navMode: 'read_along' }, nextItem.pageIndex, nextSeqIdx);
             }
         }
@@ -732,9 +750,33 @@ export default function PresentationController() {
             setActiveSequenceIndex(prevSeqIdx);
             setActivePageIndex(prevItem.pageIndex);
             pushPageContent(cur, prevItem.pageIndex, targets, prevSeqIdx);
-            if (cur.navMode === 'read_along' || cur.sceneType === 'song') {
+            if (cur.navMode !== 'manual' && (cur.navMode === 'read_along' || cur.sceneType === 'song')) {
                 window.electron?.Aligner?.startScene({ ...cur, sequence, navMode: 'read_along' }, prevItem.pageIndex, prevSeqIdx);
             }
+        }
+    };
+
+    const handleToggleLiveNavMode = () => {
+        const cur = scenes.find(s => s.id === activeSceneId);
+        if (!cur) return;
+        const currentMode = cur.navMode === 'manual' ? 'manual' : (cur.navMode || (cur.sceneType === 'song' ? 'read_along' : 'manual'));
+        const newMode = currentMode === 'manual' ? 'read_along' : 'manual';
+        const updated = { ...cur, navMode: newMode };
+
+        setScenes(prev => prev.map(s => s.id === cur.id ? updated : s));
+        window.electron?.Scene?.save(updated).catch(() => {});
+
+        pushPageContent(updated, activePageIndex, targets, activeSequenceIndex);
+
+        if (newMode === 'manual') {
+            window.electron?.Aligner?.stop();
+            window.dispatchEvent(new CustomEvent('ocs-mic-stop'));
+            setAlignProgress({ wordIndex: -1, totalTokens: 0, progressPct: 0 });
+            setSuggestPrompt(null);
+        } else {
+            const sequence = buildSceneSequence(updated);
+            window.electron?.Aligner?.startScene({ ...updated, sequence, navMode: 'read_along' }, activePageIndex, activeSequenceIndex);
+            window.dispatchEvent(new CustomEvent('ocs-mic-activate', { detail: { sceneId: updated.id, navMode: 'read_along' } }));
         }
     };
 
@@ -745,6 +787,7 @@ export default function PresentationController() {
         setSuggestPrompt(null);
         setAlignProgress({ wordIndex: -1, totalTokens: 0, progressPct: 0 });
         window.electron?.Aligner?.stop();
+        window.dispatchEvent(new CustomEvent('ocs-mic-stop'));
         window.electron?.Presentation?.setContent(null);
     };
 
@@ -768,6 +811,16 @@ export default function PresentationController() {
         });
         if (activeSceneId === updatedScene.id && isPresentingScene) {
             pushPageContent(updatedScene, activePageIndex, targets, activeSequenceIndex);
+            if (updatedScene.navMode === 'manual') {
+                window.electron?.Aligner?.stop();
+                window.dispatchEvent(new CustomEvent('ocs-mic-stop'));
+                setAlignProgress({ wordIndex: -1, totalTokens: 0, progressPct: 0 });
+                setSuggestPrompt(null);
+            } else if (updatedScene.navMode === 'read_along') {
+                const sequence = buildSceneSequence(updatedScene);
+                window.electron?.Aligner?.startScene({ ...updatedScene, sequence, navMode: 'read_along' }, activePageIndex, activeSequenceIndex);
+                window.dispatchEvent(new CustomEvent('ocs-mic-activate', { detail: { sceneId: updatedScene.id, navMode: 'read_along' } }));
+            }
         }
         if (previewScene && previewScene.scene?.id === updatedScene.id) {
             setPreviewScene({
@@ -1080,15 +1133,22 @@ export default function PresentationController() {
                             >
                                 {previewScene.scene.style?.backgroundImage && (
                                     <div
-                                        className="absolute inset-0 z-0 bg-cover bg-center transition-all duration-300"
+                                        className="absolute inset-0 z-0 bg-cover transition-all duration-300 pointer-events-none"
                                         style={{
-                                            backgroundImage: `url(${previewScene.scene.style.backgroundImage})`,
-                                            opacity: previewScene.scene.style.backgroundOpacity ?? 0.85,
+                                            backgroundImage: previewScene.scene.style.backgroundImage.startsWith('url(')
+                                                ? previewScene.scene.style.backgroundImage
+                                                : `url("${previewScene.scene.style.backgroundImage}")`,
+                                            backgroundPosition: previewScene.scene.style.backgroundPosition === 'top'
+                                                ? 'center top'
+                                                : previewScene.scene.style.backgroundPosition === 'bottom'
+                                                ? 'center bottom'
+                                                : 'center center',
+                                            opacity: typeof previewScene.scene.style.backgroundOpacity === 'number' ? previewScene.scene.style.backgroundOpacity : 0.85,
                                         }}
                                     />
                                 )}
                                 {previewScene.scene.style?.backgroundImage && (
-                                    <div className="absolute inset-0 z-0 bg-black/40" />
+                                    <div className="absolute inset-0 z-0 bg-black/40 pointer-events-none" />
                                 )}
 
                                 {/* Center Scene Text */}
@@ -1104,6 +1164,13 @@ export default function PresentationController() {
                                             fontSize: (() => {
                                                 const text = previewPage.content || '';
                                                 const len = text.length;
+                                                if (previewScene.scene.style?.fontSize && previewScene.scene.style.fontSize !== 'auto') {
+                                                    const parsed = parseFloat(previewScene.scene.style.fontSize);
+                                                    if (!isNaN(parsed)) {
+                                                        return parsed > 15 ? `${(parsed / 10).toFixed(1)}cqw` : `${parsed}cqw`;
+                                                    }
+                                                    return previewScene.scene.style.fontSize;
+                                                }
                                                 return len > 600 ? '2.4cqw' : len > 350 ? '2.9cqw' : len > 180 ? '3.5cqw' : len > 80 ? '4.0cqw' : '4.8cqw';
                                             })(),
                                             color: previewScene.scene.style?.color || '#FFFFFF',
@@ -1111,21 +1178,32 @@ export default function PresentationController() {
                                             fontWeight: previewScene.scene.style?.fontWeight || '600',
                                             fontStyle: previewScene.scene.style?.isItalic ? 'italic' : 'normal',
                                             textDecoration: previewScene.scene.style?.isUnderline ? 'underline' : 'none',
-                                            textAlign: previewScene.scene.style?.textAlign || 'left',
-                                            lineHeight: '1.45',
+                                            textAlign: previewScene.scene.style?.textAlign || 'center',
+                                            lineHeight: previewScene.scene.style?.lineHeight || '1.45',
+                                            textShadow: previewScene.scene.style?.textShadow === "none"
+                                                ? "none"
+                                                : previewScene.scene.style?.textShadow === "soft"
+                                                ? "0 2px 8px rgba(0,0,0,0.65)"
+                                                : "0 4px 16px rgba(0,0,0,0.85), 0 1px 3px rgba(0,0,0,0.9)",
                                             width: '100%',
                                         }}
                                     >
-                                        {renderTrackedSceneWords(
-                                            previewPage.content || '',
-                                            isPresentingScene && activeSceneId === previewScene.scene.id ? alignProgress.wordIndex : -1,
-                                            isPresentingScene && activeSceneId === previewScene.scene.id
-                                        )}
+                                        {renderAnimatedLyrics({
+                                            text: previewPage.content || '',
+                                            translation: previewPage.translation || '',
+                                            currentWordIndex: isPresentingScene && activeSceneId === previewScene.scene.id && previewScene.scene.navMode !== 'manual' ? alignProgress.wordIndex : -1,
+                                            animationType: previewScene.scene.style?.animation || 'karaoke',
+                                            style: previewScene.scene.style || {},
+                                            isSingAlong: previewScene.scene.sceneType === 'song' || previewScene.scene.navMode === 'read_along',
+                                            enableWordTracking: isPresentingScene && activeSceneId === previewScene.scene.id && previewScene.scene.navMode !== 'manual',
+                                            sectionType: previewPage.sectionType,
+                                            sectionLabel: previewItem.label,
+                                        })}
                                     </div>
                                 </div>
 
-                                {/* Bottom Live Voice Sing-Along Meter (When Live) */}
-                                {isPresentingScene && activeSceneId === previewScene.scene.id && (
+                                {/* Bottom Live Voice Sing-Along Meter (When Live and not manual) */}
+                                {isPresentingScene && activeSceneId === previewScene.scene.id && previewScene.scene.navMode !== 'manual' && (
                                     <div className="absolute bottom-3 left-4 right-4 z-20 flex items-center justify-between bg-black/70 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/10">
                                         <div className="flex items-center gap-2">
                                             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
@@ -1388,6 +1466,7 @@ export default function PresentationController() {
                                 handleNextPage={handleNextScenePage}
                                 handlePrevPage={handlePrevScenePage}
                                 handleStopScene={handleStopScene}
+                                onToggleLiveNavMode={handleToggleLiveNavMode}
                                 previewScene={previewScene}
                                 onLoadToPreview={handleLoadSceneToPreview}
                             />

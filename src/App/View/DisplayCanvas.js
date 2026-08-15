@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState } from "react";
+import { renderAnimatedLyrics } from "../controller/LyricAnimationEngine";
 
 /**
  * Render text with real-time word tracking — ONE WORD AHEAD model.
@@ -276,27 +277,26 @@ export default function DisplayCanvas({
         const pageCount = data.pageCount || 0;
         const sectionLabel = data.sectionLabel || (data.sceneType === "song" ? `Verse ${pageIndex + 1}` : `Page ${pageIndex + 1}`);
 
-        // Responsive font sizing based on length
+        // Responsive proportional font sizing matching Controller Preview & Scene Modal
         const len = pageText.length;
-        const fontSize =
-          style.fontSize && style.fontSize !== "auto"
-            ? `${style.fontSize}vw`
-            : len > 600
-              ? "2.8vw"
-              : len > 350
-                ? "3.5vw"
-                : len > 180
-                  ? "4.5vw"
-                  : len > 80
-                    ? "5.5vw"
-                    : "6.5vw";
+        let fontSize;
+        if (style.fontSize && style.fontSize !== "auto") {
+          const parsed = parseFloat(style.fontSize);
+          if (!isNaN(parsed)) {
+            fontSize = parsed > 15 ? `${(parsed / 10).toFixed(1)}vw` : `${parsed}vw`;
+          } else {
+            fontSize = style.fontSize;
+          }
+        } else {
+          fontSize = len > 600 ? "2.4vw" : len > 350 ? "2.9vw" : len > 180 ? "3.5vw" : len > 80 ? "4.0vw" : "4.8vw";
+        }
 
         const alignClass =
-          style.textAlign === "center"
-            ? "text-center items-center"
+          style.textAlign === "left"
+            ? "text-left items-start"
             : style.textAlign === "right"
               ? "text-right items-end"
-              : "text-left items-start";
+              : "text-center items-center";
 
         const fontClass =
           style.fontFamily === "serif"
@@ -315,7 +315,8 @@ export default function DisplayCanvas({
                 : "animate-in fade-in duration-400";
 
         const isSpeakerView = mode === "speaker";
-        const enableWordTracking = isSpeakerView || mode === "controller" || mode === "preview" || style.karaokeTracking === true;
+        const isManual = data.navMode === "manual";
+        const enableWordTracking = !isManual && (isSpeakerView || mode === "controller" || mode === "preview" || style.karaokeTracking === true);
 
         return (
           <div
@@ -327,9 +328,16 @@ export default function DisplayCanvas({
             {/* Optional Background Image Layer */}
             {style.backgroundImage && (
               <div
-                className="absolute inset-0 z-0 bg-cover bg-center pointer-events-none transition-all duration-500"
+                className="absolute inset-0 z-0 bg-cover pointer-events-none transition-all duration-500"
                 style={{
-                  backgroundImage: `url(${style.backgroundImage})`,
+                  backgroundImage: style.backgroundImage.startsWith('url(')
+                    ? style.backgroundImage
+                    : `url("${style.backgroundImage}")`,
+                  backgroundPosition: style.backgroundPosition === 'top'
+                    ? 'center top'
+                    : style.backgroundPosition === 'bottom'
+                    ? 'center bottom'
+                    : 'center center',
                   opacity: typeof style.backgroundOpacity === "number" ? style.backgroundOpacity : 0.85,
                 }}
               />
@@ -355,12 +363,27 @@ export default function DisplayCanvas({
                   fontWeight: style.fontWeight || "600",
                   fontStyle: style.isItalic ? "italic" : "normal",
                   textDecoration: style.isUnderline ? "underline" : "none",
-                  textAlign: style.textAlign || "left",
-                  lineHeight: "1.45",
+                  textAlign: style.textAlign || "center",
+                  lineHeight: style.lineHeight || "1.45",
+                  textShadow: style.textShadow === "none"
+                    ? "none"
+                    : style.textShadow === "soft"
+                    ? "0 2px 8px rgba(0,0,0,0.65)"
+                    : "0 4px 16px rgba(0,0,0,0.85), 0 1px 3px rgba(0,0,0,0.9)",
                   width: "100%",
                 }}
               >
-                {renderTrackedSceneWords(pageText, alignProgress.wordIndex, enableWordTracking)}
+                {renderAnimatedLyrics({
+                  text: pageText,
+                  translation: data.translation || "",
+                  currentWordIndex: alignProgress.wordIndex,
+                  animationType: style.animation || "karaoke",
+                  style,
+                  isSingAlong: data.sceneType === "song" || data.navMode === "read_along",
+                  enableWordTracking,
+                  sectionType: data.sectionType,
+                  sectionLabel,
+                })}
               </div>
             </div>
 

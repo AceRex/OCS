@@ -125,7 +125,7 @@ function tokenize(text) {
 }
 
 /**
- * Check if two words match fuzzily or via singing stem/inflection.
+ * Check if two words match fuzzily or via phonetic/stem/mispronunciation tolerance.
  */
 function matchWord(sTok, rTok, maxDist = 2) {
   if (sTok === rTok) return { match: true, dist: 0 };
@@ -142,16 +142,30 @@ function matchWord(sTok, rTok, maxDist = 2) {
     return { match: canS === canR, dist: canS === canR ? 0 : 99 };
   }
 
-  // Stem matching for content words with length >= 5 and small length difference
-  if (canS.length >= 5 && canR.length >= 5) {
-    const lenDiff = Math.abs(canS.length - canR.length);
-    if (lenDiff <= 3 && (canS.startsWith(canR.slice(0, 4)) || canR.startsWith(canS.slice(0, 4)))) {
+  // 1. Shared prefix/stem matching for content words
+  if (canS.length >= 4 && canR.length >= 4) {
+    const minLen = Math.min(canS.length, canR.length);
+    const prefixLen = Math.min(4, minLen);
+    if (canS.slice(0, prefixLen) === canR.slice(0, prefixLen) && Math.abs(canS.length - canR.length) <= 3) {
       return { match: true, dist: 1 };
     }
   }
 
+  // 2. Consonant skeleton matching (handles mispronounced vowels & slurred speech)
+  const cS = canS.replace(/[aeiouy]/g, '');
+  const cR = canR.replace(/[aeiouy]/g, '');
+  if (cS.length >= 3 && cR.length >= 3 && cS === cR) {
+    return { match: true, dist: 1 };
+  }
+
+  // 3. Substring containment for compound or glued words
+  if ((canS.length >= 5 && canR.includes(canS)) || (canR.length >= 5 && canS.includes(canR))) {
+    return { match: true, dist: 1 };
+  }
+
+  // 4. Dynamic Levenshtein tolerance based on word length
   const dist = levenshtein(canS, canR);
-  const allowed = canS.length <= 3 ? 0 : (canS.length <= 5 ? 1 : maxDist);
+  const allowed = canS.length <= 3 ? 1 : (canS.length <= 6 ? 2 : Math.max(maxDist, 3));
   if (dist <= allowed) {
     return { match: true, dist };
   }
@@ -255,79 +269,120 @@ class ReferenceAligner extends EventEmitter {
     let totalDist = 0;
     let isBackwardResync = false;
 
-    // 1. Forward sequential matching across spoken tokens
-    for (let sIdx = 0; sIdx < spokenTokens.length; sIdx++) {
-      const sTok = spokenTokens[sIdx];
-      const isStopWord = STOP_WORDS.has(sTok);
-      const searchStart = Math.max(0, currCursor + 1);
-      const searchEnd = Math.min(this.tokens.length - 1, searchStart + this.lookaheadWindow);
+    // 1. Forward sequential matching across candidate reference anchors
+    let bestScore = -Infinity;
+    let bestLastR = -1;
+    let bestMatchCount = 0;
+    let bestDist = 0;
 
-      let tokenBestIdx = -1;
-      let tokenBestDist = Infinity;
+    const startMin = this.cursor < 0 ? 0 : Math.max(0, this.cursor - spokenTokens.length - 2);
+    const startMax = this.cursor < 0
+      ? this.tokens.length - 1
+      : Math.min(this.tokens.length - 1, this.cursor + this.lookaheadWindow);
 
-      for (let rIdx = searchStart; rIdx <= searchEnd; rIdx++) {
-        const rTok = this.tokens[rIdx];
-        const res = matchWord(sTok, rTok, this.maxEditDistance);
-        const skip = rIdx - (currCursor >= 0 ? currCursor : 0);
+    for (let r0 = startMin; r0 <= startMax; r0++) {
+      let rIdx = r0;
+      let matchCountCand = 0;
+      let contentMatchCountCand = 0;
+      let totalDistCand = 0;
+      let lastR = -1;
 
-        if (res.match && res.dist < tokenBestDist) {
-          // Stopword skip protection: Stopwords can only match if adjacent (skip === 1) or first token
-          if (isStopWord && skip > 1) {
-            continue;
-          }
+      for (let s = 0; s < spokenTokens.length; s++) {
+        const sTok = spokenTokens[s];
+        const isStop = STOP_WORDS.has(sTok);
+        const searchLimit = Math.min(this.tokens.length - 1, rIdx + (isStop ? 1 : this.maxTokenSkip));
 
-          if (skip <= this.maxTokenSkip || res.dist <= 1) {
-            tokenBestDist = res.dist;
-            tokenBestIdx = rIdx;
-          }
-        }
-      }
-
-      if (tokenBestIdx !== -1) {
-        currCursor = tokenBestIdx;
-        matchCount++;
-        if (!isStopWord) contentMatchCount++;
-        totalDist += tokenBestDist;
-      }
-    }
-
-    // 2. FR-5.34 Bounded backward resync (only on content words)
-    if (matchCount === 0 && this.cursor > 0 && (now - this.lastResyncTime > this.resyncCooldownMs)) {
-      const backStart = Math.max(0, this.cursor - this.backwardWindow);
-      const backEnd = Math.max(0, this.cursor - 1);
-
-      for (let sIdx = 0; sIdx < spokenTokens.length; sIdx++) {
-        const sTok = spokenTokens[sIdx];
-        if (STOP_WORDS.has(sTok)) continue;
-
-        for (let rIdx = backStart; rIdx <= backEnd; rIdx++) {
-          const rTok = this.tokens[rIdx];
-          const res = matchWord(sTok, rTok, 1);
+        for (let r = rIdx; r <= searchLimit; r++) {
+          const res = matchWord(sTok, this.tokens[r], this.maxEditDistance);
           if (res.match) {
-            currCursor = rIdx;
-            matchCount = 1;
-            contentMatchCount = 1;
-            totalDist = res.dist;
-            isBackwardResync = true;
-
-            for (let remSIdx = sIdx + 1; remSIdx < spokenTokens.length; remSIdx++) {
-              const remTok = spokenTokens[remSIdx];
-              const nextRefIdx = currCursor + 1;
-              if (nextRefIdx < this.tokens.length) {
-                const remRes = matchWord(remTok, this.tokens[nextRefIdx], this.maxEditDistance);
-                if (remRes.match) {
-                  currCursor = nextRefIdx;
-                  matchCount++;
-                  if (!STOP_WORDS.has(remTok)) contentMatchCount++;
-                  totalDist += remRes.dist;
-                }
-              }
-            }
-
+            if (isStop && r > rIdx + 1) continue;
+            matchCountCand++;
+            if (!isStop) contentMatchCountCand++;
+            totalDistCand += res.dist;
+            lastR = r;
+            rIdx = r + 1;
             break;
           }
         }
-        if (isBackwardResync) break;
+      }
+
+      const matchRatio = spokenTokens.length > 0 ? matchCountCand / spokenTokens.length : 0;
+      const isAdmissible =
+        contentMatchCountCand >= 1 ||
+        (matchCountCand >= 2 && matchRatio >= 0.5) ||
+        (matchCountCand >= 1 && (this.cursor < 0 || spokenTokens.length === 1));
+
+      if (isAdmissible && matchCountCand > 0 && lastR >= 0) {
+        const expectedTarget = this.cursor < 0 ? 0 : this.cursor + 1;
+        const distancePenalty = Math.max(0, lastR - expectedTarget) * 1.5;
+        const score = matchCountCand * 10 + contentMatchCountCand * 5 - totalDistCand * 2 - distancePenalty;
+        if (score > bestScore) {
+          bestScore = score;
+          bestLastR = lastR;
+          bestMatchCount = matchCountCand;
+          bestDist = totalDistCand;
+        }
+      }
+    }
+
+    if (bestLastR >= 0 && bestLastR > this.cursor) {
+      currCursor = bestLastR;
+      matchCount = bestMatchCount;
+      totalDist = bestDist;
+    }
+
+    // 2. FR-5.34 Bounded backward resync (only on content words)
+    if (currCursor === this.cursor && this.cursor > 0 && (now - this.lastResyncTime > this.resyncCooldownMs)) {
+      const backStart = Math.max(0, this.cursor - this.backwardWindow);
+      const backEnd = Math.max(0, this.cursor - 1);
+
+      let bestBackScore = -Infinity;
+      let bestBackR = -1;
+      let bestBackMatches = 0;
+      let bestBackDist = 0;
+
+      for (let r0 = backStart; r0 <= backEnd; r0++) {
+        let rIdx = r0;
+        let matchCountCand = 0;
+        let contentMatches = 0;
+        let totalDistCand = 0;
+        let lastR = -1;
+
+        for (let s = 0; s < spokenTokens.length; s++) {
+          const sTok = spokenTokens[s];
+          const isStop = STOP_WORDS.has(sTok);
+          const searchLimit = Math.min(backEnd, rIdx + (isStop ? 1 : this.maxTokenSkip));
+
+          for (let r = rIdx; r <= searchLimit; r++) {
+            const res = matchWord(sTok, this.tokens[r], this.maxEditDistance);
+            if (res.match) {
+              if (isStop && r > rIdx + 1) continue;
+              matchCountCand++;
+              if (!isStop) contentMatches++;
+              totalDistCand += res.dist;
+              lastR = r;
+              rIdx = r + 1;
+              break;
+            }
+          }
+        }
+
+        if (contentMatches >= 1 && lastR >= 0 && lastR < this.cursor) {
+          const score = matchCountCand * 10 + contentMatches * 5 - totalDistCand * 2;
+          if (score > bestBackScore) {
+            bestBackScore = score;
+            bestBackR = lastR;
+            bestBackMatches = matchCountCand;
+            bestBackDist = totalDistCand;
+          }
+        }
+      }
+
+      if (bestBackR >= 0 && bestBackMatches >= 1) {
+        currCursor = bestBackR;
+        matchCount = bestBackMatches;
+        totalDist = bestBackDist;
+        isBackwardResync = true;
       }
     }
 

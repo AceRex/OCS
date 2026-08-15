@@ -32,9 +32,9 @@ import { Button, DisabledContainer } from "../../../components";
 
 // CJS corrector (JSON vocab) — display-only Tier 1
 const { correctLiveTranscript } = require("./liveTranscriptCorrector");
+const { ReferenceAligner } = require("../../main/aligner/referenceAligner");
 const {
   tokenizePassage,
-  advanceReadAlong,
   buildReadAlongPayload,
   formatRangeStep,
   isAtVerseEnd,
@@ -406,6 +406,7 @@ export default function BroadcastEngine() {
   const currentVerseTitleRef = useRef(null); // e.g. "John 3:16"
   const currentVerseFullTextRef = useRef(null); // full verse / passage body (plain)
   const currentPassageRef = useRef(null); // { bookIndex, chapter, startVerse, endVerse, tokens, activeIndex }
+  const scriptureAlignerRef = useRef(new ReferenceAligner());
   const readAlongEnabledRef = useRef(true);
   const readAlongThrottleRef = useRef({ lastPush: 0, timer: null });
   const currentBibleVersionRef = useRef("kjv");
@@ -493,6 +494,10 @@ export default function BroadcastEngine() {
       if (d.body != null) {
         currentVerseFullTextRef.current = d.body;
         const tokens = tokenizePassage(d.body);
+        scriptureAlignerRef.current.setReference(
+          `bible-${d.bookIndex}-${d.chapter}-${d.verse}`,
+          d.body,
+        );
         currentPassageRef.current = {
           bookIndex: d.bookIndex,
           chapter: d.chapter,
@@ -901,6 +906,7 @@ export default function BroadcastEngine() {
     };
     currentVerseTitleRef.current = step.title;
     currentVerseFullTextRef.current = step.body;
+    scriptureAlignerRef.current.setReference(step.title, step.body);
     currentPassageRef.current = {
       bookIndex,
       chapter,
@@ -1000,6 +1006,7 @@ export default function BroadcastEngine() {
       passage.verseTexts,
     );
     const tokens = tokenizePassage(step.body);
+    scriptureAlignerRef.current.setReference(step.title, step.body);
     passage.currentVerse = step.currentVerse;
     passage.tokens = tokens;
     passage.activeIndex = -1;
@@ -1068,14 +1075,15 @@ export default function BroadcastEngine() {
     }
     if (Date.now() < (passage.advanceLockUntil || 0)) return;
 
-    const next = advanceReadAlong(text, passage.tokens, passage.activeIndex);
-    if (next !== passage.activeIndex) {
+    const res = scriptureAlignerRef.current.feed(text);
+    const next = res && typeof res.wordIndex === "number" ? res.wordIndex : passage.activeIndex;
+    if (next !== passage.activeIndex && next >= 0) {
       pushReadAlongUpdate(next);
     }
 
     // Finished current verse → auto-step to next in range (Matthew 1:1 → 2 within 1–2)
     if (
-      isAtVerseEnd(next, passage.tokens) &&
+      (res?.isComplete || isAtVerseEnd(next, passage.tokens)) &&
       passage.endVerse > passage.startVerse &&
       passage.currentVerse < passage.endVerse
     ) {
@@ -1306,6 +1314,7 @@ export default function BroadcastEngine() {
 
         currentVerseTitleRef.current = step.title;
         currentVerseFullTextRef.current = step.body;
+        scriptureAlignerRef.current.setReference(step.title, step.body);
         currentPassageRef.current = {
           ...passage,
           verseTexts: vers,
@@ -2857,7 +2866,11 @@ export default function BroadcastEngine() {
 
   // External / Scene mic activation triggers
   useEffect(() => {
-    const handleMicActivate = async () => {
+    const handleMicActivate = async (e) => {
+      if (e?.detail?.navMode === "manual") {
+        console.log("[BroadcastEngine] Skipping mic activation for manual scene/song");
+        return;
+      }
       if (!isTranscribingRef.current) {
         console.log("[BroadcastEngine] Activating microphone for Scene start");
         await startListening({ auto: false });
