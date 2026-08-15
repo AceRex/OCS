@@ -142,7 +142,73 @@ const OCS_COMMANDS = [
     label: "Previous Page",
     action: "prev_page",
   },
+  // FR-4.8 / FR-4.9 Presentation (PPTX) Voice Commands
+  {
+    patterns: [
+      /\bnext\s+slide\b/i,
+      /\bgo\s+(?:to\s+)?(?:the\s+)?next\s+slide\b/i,
+      /\bforward\s+slide\b/i,
+    ],
+    label: "Next Slide",
+    action: "next_slide",
+  },
+  {
+    patterns: [
+      /\bprevious\s+slide\b/i,
+      /\bprev\s+slide\b/i,
+      /\bback\s+(?:a\s+)?slide\b/i,
+    ],
+    label: "Previous Slide",
+    action: "prev_slide",
+  },
+  {
+    patterns: [
+      /\bfirst\s+slide\b/i,
+      /\bstart\s+of\s+presentation\b/i,
+      /\bbeginning\s+of\s+presentation\b/i,
+    ],
+    label: "First Slide",
+    action: "first_slide",
+  },
+  {
+    patterns: [
+      /\blast\s+slide\b/i,
+      /\bend\s+of\s+presentation\b/i,
+    ],
+    label: "Last Slide",
+    action: "last_slide",
+  },
+  {
+    patterns: [
+      /\b(?:go\s+to|jump\s+to|show|open)\s+slide\s+([a-zA-Z0-9\-]+)\b/i,
+      /\bslide\s+(?:number\s+)?([a-zA-Z0-9\-]+)\b/i,
+    ],
+    label: "Jump to Slide",
+    action: "jump_to_slide",
+  },
 ];
+
+function parseSlideNumber(str) {
+  if (!str) return null;
+  const s = str.toLowerCase().trim();
+  const direct = parseInt(s, 10);
+  if (!isNaN(direct) && direct > 0) return direct;
+
+  const WORD_NUMS = {
+    one: 1, first: 1, two: 2, second: 2, three: 3, third: 3, four: 4, fourth: 4, five: 5, fifth: 5,
+    six: 6, sixth: 6, seven: 7, seventh: 7, eight: 8, eighth: 8, nine: 9, ninth: 9, ten: 10, tenth: 10,
+    eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17,
+    eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70,
+    eighty: 80, ninety: 90
+  };
+
+  if (WORD_NUMS[s]) return WORD_NUMS[s];
+  const parts = s.split(/[\s\-]+/);
+  if (parts.length === 2 && WORD_NUMS[parts[0]] && WORD_NUMS[parts[1]]) {
+    return WORD_NUMS[parts[0]] + WORD_NUMS[parts[1]];
+  }
+  return null;
+}
 
 const TRANSLATION_DEFINITIONS = [
   { keys: ['niv', 'n i v', 'new international version', 'new international', 'an eye vee'], dbVersion: 'net', label: 'NIV' },
@@ -1146,6 +1212,48 @@ export default function BroadcastEngine() {
       }));
       setCommandFeedback({ label: "← Prev Page", ok: true });
       setTimeout(() => setCommandFeedback(null), 2500);
+    }
+    // FR-4.8 / FR-4.9 Presentation Voice Commands
+    if (action === "next_slide") {
+      window.dispatchEvent(new CustomEvent("ocs-presentation-command", {
+        detail: { command: "next_slide" },
+      }));
+      setCommandFeedback({ label: "Next Slide →", ok: true });
+      setTimeout(() => setCommandFeedback(null), 2500);
+    }
+    if (action === "prev_slide") {
+      window.dispatchEvent(new CustomEvent("ocs-presentation-command", {
+        detail: { command: "prev_slide" },
+      }));
+      setCommandFeedback({ label: "← Prev Slide", ok: true });
+      setTimeout(() => setCommandFeedback(null), 2500);
+    }
+    if (action === "first_slide") {
+      window.dispatchEvent(new CustomEvent("ocs-presentation-command", {
+        detail: { command: "first_slide" },
+      }));
+      setCommandFeedback({ label: "First Slide", ok: true });
+      setTimeout(() => setCommandFeedback(null), 2500);
+    }
+    if (action === "last_slide") {
+      window.dispatchEvent(new CustomEvent("ocs-presentation-command", {
+        detail: { command: "last_slide" },
+      }));
+      setCommandFeedback({ label: "Last Slide", ok: true });
+      setTimeout(() => setCommandFeedback(null), 2500);
+    }
+    if (action === "jump_to_slide") {
+      const match = rawText.match(/(?:go\s+to|jump\s+to|show|open)\s+slide\s+([a-zA-Z0-9\-]+)/i)
+        || rawText.match(/slide\s+(?:number\s+)?([a-zA-Z0-9\-]+)/i);
+      const token = match ? match[1] : null;
+      const slideNumber = parseSlideNumber(token);
+      if (slideNumber) {
+        window.dispatchEvent(new CustomEvent("ocs-presentation-command", {
+          detail: { command: "jump_to_slide", slideNumber, slideIndex: slideNumber - 1 },
+        }));
+        setCommandFeedback({ label: `Slide ${slideNumber}`, ok: true });
+        setTimeout(() => setCommandFeedback(null), 2500);
+      }
     }
   };
 

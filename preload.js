@@ -21,6 +21,7 @@ contextBridge.exposeInMainWorld("electron", {
     /** Pass 3 — keyword content search (Smart Bible Matcher) */
     searchVerses: (query, version, limit) => ipcRenderer.invoke('bible-search-verses', { query, version: version || 'kjv', limit: limit || 5 }),
   },
+  openExternal: (url) => ipcRenderer.invoke('open-external-url', url),
   Voice: {
     /** @deprecated use Asr.getStatus — kept for older debug UI */
     getSidecarStatus: () => ipcRenderer.invoke('voice-sidecar-status'),
@@ -103,6 +104,17 @@ contextBridge.exposeInMainWorld("electron", {
     },
   },
   Presentation: {
+    list: () => ipcRenderer.invoke('presentation-list'),
+    save: (deck) => ipcRenderer.invoke('presentation-save', deck),
+    delete: (deckId) => ipcRenderer.invoke('presentation-delete', deckId),
+    importPresentation: () => ipcRenderer.invoke('media-import-presentation'),
+    importMedia: () => ipcRenderer.invoke('media-import'),
+    getMedia: () => ipcRenderer.invoke('media-list'),
+    onImportProgress: (callback) => {
+      const listener = (_event, data) => callback(data);
+      ipcRenderer.on('presentation-import-progress', listener);
+      return () => ipcRenderer.removeListener('presentation-import-progress', listener);
+    },
     setContent: (content) => {
       try {
         const summary = content == null

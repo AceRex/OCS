@@ -7,8 +7,10 @@ import {
     PiArrowUp, PiArrowDown, PiWifiHigh, PiHandPointing, PiMicrophone,
     PiCaretDownBold, PiTextAlignLeft, PiTextAlignCenter, PiTextAlignRight,
     PiEye, PiPlay, PiStack, PiMusicNotes, PiRepeat, PiFileText,
+    PiPresentation, PiSlideshow,
 } from "react-icons/pi";
 import SceneModal from "./SceneModal";
+import { PresentationImportProgressModal, PresentationFontAdvisoryModal } from "./PresentationImportModal";
 
 /**
  * One-word-ahead word tracking for Controller preview.
@@ -418,6 +420,11 @@ export default function PresentationController() {
     const [activeTab, setActiveTab] = useState('media');
     const [presentations, setPresentations] = useState([]);
     const [selectedPresentation, setSelectedPresentation] = useState(null);
+    const [activeSlideIndex, setActiveSlideIndex] = useState(0);
+    const [isPresentingSlide, setIsPresentingSlide] = useState(false);
+    const [activeDeckId, setActiveDeckId] = useState(null);
+    const [importProgress, setImportProgress] = useState(null);
+    const [showFontAdvisoryModal, setShowFontAdvisoryModal] = useState(null);
 
     // Scene State (Songs & Text Presentation)
     const [scenes, setScenes] = useState([]);
@@ -451,7 +458,7 @@ export default function PresentationController() {
 
     const canvasRef = useRef(null);
 
-    // Initial Scene & Media Fetch
+    // Initial Scene, Media & Presentation Fetch
     useEffect(() => {
         refreshMedia();
         if (window.electron?.Scene?.list) {
@@ -459,8 +466,8 @@ export default function PresentationController() {
                 setScenes(Array.isArray(list) ? list : []);
             }).catch(() => {});
         }
-        if (window.electron?.PresentationFile?.list) {
-            window.electron.PresentationFile.list().then(list => {
+        if (window.electron?.Presentation?.list) {
+            window.electron.Presentation.list().then(list => {
                 setPresentations(Array.isArray(list) ? list : []);
             }).catch(() => {});
         }
@@ -516,7 +523,62 @@ export default function PresentationController() {
         };
     }, [scenes, activeSceneId, targets]);
 
-    // Voice commands from BroadcastEngine via CustomEvent
+    const handlePresentSlide = (deck = selectedPresentation, slideIndex = activeSlideIndex) => {
+        if (!deck || !deck.slides || deck.slides.length === 0) return;
+        const sIdx = Math.max(0, Math.min(slideIndex, deck.slides.length - 1));
+        const slide = deck.slides[sIdx];
+        if (!slide) return;
+
+        setActiveDeckId(deck.id);
+        setActiveSlideIndex(sIdx);
+        setIsPresentingSlide(true);
+        setIsPresentingScene(false);
+
+        const targetList = Object.keys(targets).filter(k => targets[k]);
+        const payload = {
+            type: 'presentation',
+            data: {
+                deckId: deck.id,
+                deckName: deck.name,
+                slideIndex: sIdx,
+                slideNumber: sIdx + 1,
+                slideCount: deck.slides.length,
+                slideUrl: slide.url,
+                notes: slide.notes || '',
+            },
+            target: targetList.length > 0 ? targetList : ['general', 'speaker']
+        };
+
+        if (window.electron?.Presentation?.setContent) {
+            window.electron.Presentation.setContent(payload);
+        }
+    };
+
+    const handleStopSlidePresentation = () => {
+        setIsPresentingSlide(false);
+        setActiveDeckId(null);
+        if (window.electron?.Presentation?.setContent) {
+            window.electron.Presentation.setContent(null);
+        }
+    };
+
+    const handleNextSlide = () => {
+        const activeDeck = presentations.find(d => d.id === activeDeckId) || selectedPresentation;
+        if (!activeDeck || !activeDeck.slides || activeDeck.slides.length === 0) return;
+        const nextIdx = Math.min(activeSlideIndex + 1, activeDeck.slides.length - 1);
+        setActiveSlideIndex(nextIdx);
+        if (isPresentingSlide) handlePresentSlide(activeDeck, nextIdx);
+    };
+
+    const handlePrevSlide = () => {
+        const activeDeck = presentations.find(d => d.id === activeDeckId) || selectedPresentation;
+        if (!activeDeck || !activeDeck.slides || activeDeck.slides.length === 0) return;
+        const prevIdx = Math.max(activeSlideIndex - 1, 0);
+        setActiveSlideIndex(prevIdx);
+        if (isPresentingSlide) handlePresentSlide(activeDeck, prevIdx);
+    };
+
+    // Voice commands from BroadcastEngine via CustomEvent (Scenes & Presentations)
     useEffect(() => {
         const handleVoiceCommand = (e) => {
             const { command, sceneName } = e.detail || {};
@@ -529,21 +591,62 @@ export default function PresentationController() {
             if (command === "next_page") handleNextScenePage();
             if (command === "prev_page") handlePrevScenePage();
         };
-        window.addEventListener("ocs-scene-command", handleVoiceCommand);
-        return () => window.removeEventListener("ocs-scene-command", handleVoiceCommand);
-    }, [scenes, activeSceneId, activePageIndex, activeSequenceIndex]);
 
-    // Space / Arrow keyboard nav when presenting
+        const handlePresentationVoice = (e) => {
+            const { command, slideIndex, slideNumber } = e.detail || {};
+            const activeDeck = presentations.find(d => d.id === activeDeckId) || selectedPresentation;
+            if (!activeDeck || !activeDeck.slides || activeDeck.slides.length === 0) return;
+
+            if (command === "next_slide") {
+                setActiveSlideIndex(prev => {
+                    const nextIdx = Math.min(prev + 1, activeDeck.slides.length - 1);
+                    handlePresentSlide(activeDeck, nextIdx);
+                    return nextIdx;
+                });
+            } else if (command === "prev_slide") {
+                setActiveSlideIndex(prev => {
+                    const prevIdx = Math.max(prev - 1, 0);
+                    handlePresentSlide(activeDeck, prevIdx);
+                    return prevIdx;
+                });
+            } else if (command === "first_slide") {
+                handlePresentSlide(activeDeck, 0);
+                setActiveSlideIndex(0);
+            } else if (command === "last_slide") {
+                const lastIdx = activeDeck.slides.length - 1;
+                handlePresentSlide(activeDeck, lastIdx);
+                setActiveSlideIndex(lastIdx);
+            } else if (command === "jump_to_slide") {
+                const targetIdx = typeof slideIndex === 'number' ? slideIndex : (slideNumber ? slideNumber - 1 : 0);
+                const clamped = Math.max(0, Math.min(targetIdx, activeDeck.slides.length - 1));
+                handlePresentSlide(activeDeck, clamped);
+                setActiveSlideIndex(clamped);
+            }
+        };
+
+        window.addEventListener("ocs-scene-command", handleVoiceCommand);
+        window.addEventListener("ocs-presentation-command", handlePresentationVoice);
+        return () => {
+            window.removeEventListener("ocs-scene-command", handleVoiceCommand);
+            window.removeEventListener("ocs-presentation-command", handlePresentationVoice);
+        };
+    }, [scenes, activeSceneId, activePageIndex, activeSequenceIndex, presentations, activeDeckId, selectedPresentation, targets, activeSlideIndex]);
+
+    // Space / Arrow keyboard nav when presenting scenes or slides
     useEffect(() => {
         const handleKey = (e) => {
             if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-            if (!isPresentingScene) return;
-            if (e.key === ' ' || e.key === 'ArrowRight') { e.preventDefault(); handleNextScenePage(); }
-            if (e.key === 'ArrowLeft') { e.preventDefault(); handlePrevScenePage(); }
+            if (isPresentingScene) {
+                if (e.key === ' ' || e.key === 'ArrowRight') { e.preventDefault(); handleNextScenePage(); }
+                if (e.key === 'ArrowLeft') { e.preventDefault(); handlePrevScenePage(); }
+            } else if (isPresentingSlide || (activeTab === 'presentation' && selectedPresentation)) {
+                if (e.key === ' ' || e.key === 'ArrowRight') { e.preventDefault(); handleNextSlide(); }
+                if (e.key === 'ArrowLeft') { e.preventDefault(); handlePrevSlide(); }
+            }
         };
         window.addEventListener("keydown", handleKey);
         return () => window.removeEventListener("keydown", handleKey);
-    }, [isPresentingScene, activeSceneId, activePageIndex, activeSequenceIndex, scenes]);
+    }, [isPresentingScene, activeSceneId, activePageIndex, activeSequenceIndex, scenes, isPresentingSlide, activeTab, selectedPresentation, activeSlideIndex]);
 
     const pushPageContent = (scene, pageIdx, currentTargets = targets, sequenceIndex = 0) => {
         if (!scene || !scene.pages[pageIdx]) return;
@@ -676,15 +779,73 @@ export default function PresentationController() {
     };
 
     const refreshMedia = () => {
-        window.electron?.Presentation?.getMedia?.().then(files => {
+        window.electron?.Media?.list?.().then(files => {
             if (Array.isArray(files)) setMediaFiles(files);
-        });
+        }).catch(() => {});
+        window.electron?.Presentation?.list?.().then(decks => {
+            if (Array.isArray(decks)) setPresentations(decks);
+        }).catch(() => {});
     };
 
+    // Presentation Import Progress Listener
+    useEffect(() => {
+        if (window.electron?.Presentation?.onImportProgress) {
+            const unsub = window.electron.Presentation.onImportProgress((data) => {
+                setImportProgress(data);
+                if (data.stage === 'done') {
+                    setTimeout(() => setImportProgress(null), 1200);
+                }
+            });
+            return () => {
+                if (typeof unsub === 'function') unsub();
+            };
+        }
+    }, []);
+
     const handleImport = () => {
-        window.electron?.Presentation?.importMedia?.().then(newFile => {
+        window.electron?.Media?.import?.().then(newFile => {
             if (newFile) setMediaFiles(prev => [...prev, newFile]);
-        });
+        }).catch(() => {});
+    };
+
+    const handleImportPresentation = async () => {
+        try {
+            setImportProgress({ stage: 'opening', percent: 2, message: 'Opening presentation file picker...' });
+            const deck = await window.electron?.Presentation?.importPresentation?.();
+            if (deck && !deck.error) {
+                setPresentations(prev => {
+                    const filtered = prev.filter(d => d.id !== deck.id && d.filename !== deck.filename);
+                    return [...filtered, deck];
+                });
+                setSelectedPresentation(deck);
+                setActiveSlideIndex(0);
+                setActiveTab('presentation');
+                setPreviewScene(null);
+
+                // If missing/substituted fonts exist, surface non-blocking advisory modal
+                if (deck.fontAnalysis?.advisories?.length > 0) {
+                    setShowFontAdvisoryModal(deck);
+                }
+            } else if (deck?.error) {
+                setImportProgress({ stage: 'error', percent: 100, error: deck.error, message: `Import error: ${deck.error}` });
+            } else {
+                setImportProgress(null);
+            }
+        } catch (err) {
+            console.error("Presentation import error:", err);
+            setImportProgress({ stage: 'error', percent: 100, error: err.message, message: `Import failed: ${err.message}` });
+        }
+    };
+
+    const handleDeletePresentation = async (deckId) => {
+        try {
+            await window.electron?.Presentation?.delete?.(deckId);
+            setPresentations(prev => prev.filter(d => d.id !== deckId));
+            if (selectedPresentation?.id === deckId) setSelectedPresentation(null);
+            if (activeDeckId === deckId) handleStopSlidePresentation();
+        } catch (err) {
+            console.error("Failed to delete presentation:", err);
+        }
     };
 
     const addLayer = (type, content = "") => {
@@ -824,6 +985,7 @@ export default function PresentationController() {
         { id: 'media', label: 'Media', icon: PiImage },
         { id: 'text', label: 'Text', icon: PiTextT },
         { id: 'scene', label: 'Scene', icon: PiFilmSlate },
+        { id: 'presentation', label: 'Slides', icon: PiPresentation },
     ];
 
     // Computed preview sequence & item
@@ -850,7 +1012,7 @@ export default function PresentationController() {
                                 <PiPlus size={13} /> Add Scene
                             </button>
                         </div>
-                        {/* Target Toggles — Controls General and Speaker output for All Content (Media, Text, & Scenes) */}
+                        {/* Target Toggles — Controls General and Speaker output for All Content (Media, Text, Scenes, & Slides) */}
                         <div className="flex gap-2">
                             {['general', 'speaker'].map(t => (
                                 <button
@@ -869,7 +1031,45 @@ export default function PresentationController() {
                     </div>
 
                     <div className="flex-1 relative flex items-center justify-center bg-black/50 p-2 overflow-hidden">
-                        {previewScene ? (
+                        {activeTab === 'presentation' && selectedPresentation ? (
+                            /* High-Resolution PPTX Slide Preview with Speaker Notes Drawer */
+                            <div className="aspect-video w-full max-h-full rounded-lg overflow-hidden relative shadow-2xl border border-white/10 flex flex-col justify-center items-center bg-black select-none">
+                                {selectedPresentation.slides?.[activeSlideIndex]?.url ? (
+                                    <img
+                                        src={selectedPresentation.slides[activeSlideIndex].url}
+                                        className="w-full h-full object-contain pointer-events-none"
+                                        alt={`Slide ${activeSlideIndex + 1}`}
+                                    />
+                                ) : (
+                                    <div className="text-white/40 text-xs">No Slide Image</div>
+                                )}
+
+                                {/* Floating Live Badge */}
+                                {isPresentingSlide && activeDeckId === selectedPresentation.id && (
+                                    <div className="absolute top-3 right-4 z-20 flex items-center gap-1.5 bg-emerald-500/90 backdrop-blur-md px-2.5 py-1 rounded-full text-[10px] font-bold text-white uppercase tracking-wider shadow-lg">
+                                        <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+                                        On Display
+                                    </div>
+                                )}
+
+                                {/* Slide Number Badge */}
+                                <div className="absolute bottom-3 right-4 z-20 bg-black/80 backdrop-blur-md px-3 py-1 rounded-full border border-white/10">
+                                    <span className="text-xs font-mono font-bold text-white/80">
+                                        Slide {activeSlideIndex + 1} / {selectedPresentation.slides?.length || 0}
+                                    </span>
+                                </div>
+
+                                {/* Speaker Notes Preview in Controller (FR-4.3) */}
+                                {selectedPresentation.slides?.[activeSlideIndex]?.notes && (
+                                    <div className="absolute bottom-3 left-4 max-w-[60%] bg-black/85 backdrop-blur-md px-3 py-1.5 rounded-xl border border-yellow-500/30 text-left">
+                                        <span className="text-[9px] uppercase font-bold text-yellow-400 block mb-0.5 tracking-wider">Speaker Notes</span>
+                                        <p className="text-[11px] text-white/90 leading-tight whitespace-pre-wrap max-h-16 overflow-y-auto">
+                                            {selectedPresentation.slides[activeSlideIndex].notes}
+                                        </p>
+                                    </div>
+                                )}
+                            </div>
+                        ) : previewScene ? (
                             /* Clean High-Fidelity Scene Slide Preview with Background Image & Animation */
                             <div
                                 className="aspect-video w-full max-h-full rounded-lg overflow-hidden relative shadow-2xl border border-white/10 flex flex-col justify-center items-center p-[4%] transition-all select-none"
@@ -991,7 +1191,39 @@ export default function PresentationController() {
 
                     <div className="h-14 border-t border-white/5 flex items-center justify-between px-6 bg-[#1a1a1a]">
                         <div className="flex items-center gap-3">
-                            {previewScene ? (
+                            {activeTab === 'presentation' && selectedPresentation ? (
+                                <>
+                                    <button onClick={() => setSelectedPresentation(null)} className="text-white/50 hover:text-white text-xs flex items-center gap-1.5 transition-colors">
+                                        <PiX size={14} /> Close Deck
+                                    </button>
+                                    <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5 border border-white/10 pl-2">
+                                        <span className="text-xs text-purple-300 font-bold pr-2 truncate max-w-[160px]">
+                                            {selectedPresentation.name}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={handlePrevSlide}
+                                            disabled={activeSlideIndex === 0}
+                                            className="p-1 rounded text-white/60 hover:text-white disabled:opacity-20 transition-all"
+                                            title="Previous Slide"
+                                        >
+                                            <PiArrowLeft size={13} />
+                                        </button>
+                                        <span className="text-xs font-mono font-bold text-white/70 px-1">
+                                            {activeSlideIndex + 1} / {selectedPresentation.slides?.length || 0}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={handleNextSlide}
+                                            disabled={activeSlideIndex >= (selectedPresentation.slides?.length || 0) - 1}
+                                            className="p-1 rounded text-white/60 hover:text-white disabled:opacity-20 transition-all"
+                                            title="Next Slide"
+                                        >
+                                            <PiArrowRight size={13} />
+                                        </button>
+                                    </div>
+                                </>
+                            ) : previewScene ? (
                                 <>
                                     <button onClick={() => setPreviewScene(null)} className="text-white/50 hover:text-white text-xs flex items-center gap-1.5 transition-colors">
                                         <PiX size={14} /> Clear Preview
@@ -1039,22 +1271,41 @@ export default function PresentationController() {
                             )}
                         </div>
                         <button
-                            onClick={handlePresent}
+                            onClick={() => {
+                                if (activeTab === 'presentation' && selectedPresentation) {
+                                    if (isPresentingSlide && activeDeckId === selectedPresentation.id) {
+                                        handleStopSlidePresentation();
+                                    } else {
+                                        handlePresentSlide(selectedPresentation, activeSlideIndex);
+                                    }
+                                } else {
+                                    handlePresent();
+                                }
+                            }}
                             className={`${
-                                previewScene
+                                activeTab === 'presentation' && selectedPresentation
+                                    ? (isPresentingSlide && activeDeckId === selectedPresentation.id
+                                        ? 'bg-red hover:bg-red/90'
+                                        : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500')
+                                    : previewScene
                                     ? 'bg-gradient-to-r from-orange-500 to-purple-600 hover:from-orange-400 hover:to-purple-500'
                                     : 'bg-red hover:bg-red/90'
                             } text-white px-8 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-lg active:scale-95`}
                         >
-                            <PiBroadcast size={16} /> {previewScene ? (previewScene.scene.sceneType === 'song' ? 'Present Song Now' : 'Present Scene Now') : 'Present Now'}
+                            <PiBroadcast size={16} />
+                            {activeTab === 'presentation' && selectedPresentation
+                                ? (isPresentingSlide && activeDeckId === selectedPresentation.id ? 'Stop Slides' : 'Present Slide Now')
+                                : previewScene
+                                ? (previewScene.scene.sceneType === 'song' ? 'Present Song Now' : 'Present Scene Now')
+                                : 'Present Now'}
                         </button>
                     </div>
                 </div>
 
-                {/* RIGHT: 3 TABS (MEDIA, TEXT, SCENE) + LAYERS SECTION BELOW */}
+                {/* RIGHT: 4 TABS (MEDIA, TEXT, SCENE, SLIDES) + LAYERS SECTION BELOW */}
                 <div className="flex-1 bg-[#141414] m-2 ml-0 rounded-2xl border border-white/5 flex flex-col overflow-hidden w-full max-w-sm relative">
                     
-                    {/* Top 3 Tabs Bar */}
+                    {/* Top 4 Tabs Bar */}
                     <div className="flex border-b border-white/5 bg-[#1a1a1a] shrink-0">
                         {TABS.map(tab => (
                             <button
@@ -1064,6 +1315,8 @@ export default function PresentationController() {
                                     activeTab === tab.id
                                         ? (tab.id === 'scene'
                                             ? 'bg-white/5 text-orange-400 border-b-2 border-orange-500'
+                                            : tab.id === 'presentation'
+                                            ? 'bg-white/5 text-purple-400 border-b-2 border-purple-500'
                                             : 'bg-white/5 text-blue-400 border-b-2 border-blue-500')
                                         : 'text-white/40 hover:bg-white/5 hover:text-white/70'
                                 }`}
@@ -1074,7 +1327,7 @@ export default function PresentationController() {
                     </div>
 
                     {/* Active Tab Content Area */}
-                    <div className={`flex-1 overflow-y-auto content-start ${activeTab !== 'scene' ? 'p-3' : ''}`}>
+                    <div className={`flex-1 overflow-y-auto content-start ${activeTab !== 'scene' && activeTab !== 'presentation' ? 'p-3' : ''}`}>
 
                         {activeTab === 'media' && (
                             <div className="flex flex-col gap-3">
@@ -1140,9 +1393,144 @@ export default function PresentationController() {
                             />
                         )}
 
+                        {activeTab === 'presentation' && (
+                            <div className="flex flex-col gap-3 p-3 h-full overflow-y-auto">
+                                <div className="flex justify-between items-center mb-1">
+                                    <span className="text-[10px] uppercase text-white/40 font-bold tracking-widest">
+                                        PowerPoint ({presentations.length})
+                                    </span>
+                                    <button
+                                        onClick={handleImportPresentation}
+                                        className="flex items-center gap-1.5 px-2.5 py-1 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-lg text-xs font-bold uppercase tracking-wider border border-purple-500/30 transition-all shadow-sm active:scale-95"
+                                    >
+                                        <PiPlus size={13} /> Import PPTX
+                                    </button>
+                                </div>
+
+                                {presentations.length === 0 ? (
+                                    <div className="flex flex-col items-center justify-center py-12 text-white/30 text-center gap-2 border border-dashed border-white/10 rounded-2xl p-4">
+                                        <PiPresentation size={36} className="text-purple-400/50 mb-1" />
+                                        <p className="text-xs font-bold text-white/60">No PowerPoint Decks Yet</p>
+                                        <p className="text-[11px] text-white/40 max-w-[200px]">
+                                            Click "Import PPTX" to convert your slides to high-res presentation graphics.
+                                        </p>
+                                    </div>
+                                ) : (
+                                    <div className="flex flex-col gap-2">
+                                        {presentations.map((deck) => {
+                                            const isSelected = selectedPresentation?.id === deck.id;
+                                            const isLive = isPresentingSlide && activeDeckId === deck.id;
+                                            const firstSlideUrl = deck.slides?.[0]?.url;
+
+                                            return (
+                                                <div
+                                                    key={deck.id}
+                                                    onClick={() => {
+                                                        setSelectedPresentation(deck);
+                                                        setActiveSlideIndex(0);
+                                                        setPreviewScene(null);
+                                                    }}
+                                                    className={`p-2.5 rounded-xl border transition-all cursor-pointer flex flex-col gap-2 ${
+                                                        isSelected
+                                                            ? 'bg-purple-500/15 border-purple-500/50 shadow-md shadow-purple-500/10'
+                                                            : 'bg-white/5 border-white/5 hover:border-white/20 hover:bg-white/[0.07]'
+                                                    }`}
+                                                >
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="w-14 h-10 bg-black rounded-lg overflow-hidden shrink-0 border border-white/10 relative">
+                                                            {firstSlideUrl ? (
+                                                                <img src={firstSlideUrl} className="w-full h-full object-cover" alt="slide 1" />
+                                                            ) : (
+                                                                <div className="w-full h-full flex items-center justify-center text-white/30 text-[10px]">PPTX</div>
+                                                            )}
+                                                            {isLive && (
+                                                                <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                                                            )}
+                                                        </div>
+
+                                                        <div className="flex-1 min-w-0">
+                                                            <div className="flex items-center gap-1.5">
+                                                                <h4 className="text-xs font-bold text-white truncate">{deck.name}</h4>
+                                                                {isLive && (
+                                                                    <span className="px-1.5 py-0.2 bg-emerald-500/20 text-emerald-300 text-[9px] font-bold rounded uppercase">
+                                                                        Live
+                                                                    </span>
+                                                                )}
+                                                            </div>
+                                                            <p className="text-[10px] text-white/40">
+                                                                {deck.slideCount || deck.slides?.length || 0} Slides
+                                                            </p>
+                                                        </div>
+
+                                                        <div className="flex items-center gap-1">
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    setShowFontAdvisoryModal(deck);
+                                                                }}
+                                                                className="p-1.5 text-white/40 hover:text-purple-400 hover:bg-purple-500/10 rounded-lg transition-colors"
+                                                                title="Font Info & Advisory"
+                                                            >
+                                                                <PiTextT size={14} />
+                                                            </button>
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    handleDeletePresentation(deck.id);
+                                                                }}
+                                                                className="p-1.5 text-white/30 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                                                                title="Delete Deck"
+                                                            >
+                                                                <PiTrash size={14} />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* If per-slide errors exist (FR-4.2 / NFR-13), display error badge */}
+                                                    {deck.errors && deck.errors.length > 0 && (
+                                                        <div className="text-[10px] text-amber-400 bg-amber-400/10 px-2 py-1 rounded border border-amber-400/20">
+                                                            ⚠️ Warning: {deck.errors.length} slide(s) could not convert.
+                                                        </div>
+                                                    )}
+
+                                                    {/* If deck is selected, show slide thumbnail strip */}
+                                                    {isSelected && deck.slides && deck.slides.length > 0 && (
+                                                        <div className="grid grid-cols-4 gap-1.5 pt-2 border-t border-white/10">
+                                                            {deck.slides.map((s, idx) => (
+                                                                <div
+                                                                    key={idx}
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        setActiveSlideIndex(idx);
+                                                                        if (isPresentingSlide && activeDeckId === deck.id) {
+                                                                            handlePresentSlide(deck, idx);
+                                                                        }
+                                                                    }}
+                                                                    className={`aspect-video rounded overflow-hidden relative border cursor-pointer ${
+                                                                        activeSlideIndex === idx
+                                                                            ? 'border-purple-400 ring-2 ring-purple-500/40'
+                                                                            : 'border-white/10 hover:border-white/30'
+                                                                    }`}
+                                                                >
+                                                                    <img src={s.url} className="w-full h-full object-cover" alt={`Slide ${idx + 1}`} />
+                                                                    <span className="absolute bottom-0 right-0 bg-black/80 text-[8px] font-mono px-1 text-white/70">
+                                                                        {idx + 1}
+                                                                    </span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                     </div>
 
-                    {/* LAYERS SECTION (Pinned Below the 3 Tabs on Right Sidebar) */}
+                    {/* LAYERS SECTION (Pinned Below the 4 Tabs on Right Sidebar) */}
                     <div className="border-t border-white/10 p-3 bg-[#111114] flex flex-col gap-2 shrink-0 max-h-48 overflow-y-auto">
                         <div className="flex items-center justify-between">
                             <span className="text-[10px] uppercase font-bold tracking-widest text-white/40 flex items-center gap-1.5">
@@ -1230,6 +1618,18 @@ export default function PresentationController() {
                 scene={modalScene}
                 onClose={() => setSceneModalOpen(false)}
                 onSave={handleSaveSceneFromModal}
+            />
+
+            {/* Presentation Import Progress Modal (FR-4.2, FR-4.34) */}
+            <PresentationImportProgressModal
+                progress={importProgress}
+                onDismiss={() => setImportProgress(null)}
+            />
+
+            {/* Presentation Font Advisory & Inspection Modal (FR-4.37) */}
+            <PresentationFontAdvisoryModal
+                deck={showFontAdvisoryModal}
+                onClose={() => setShowFontAdvisoryModal(null)}
             />
         </div>
     );

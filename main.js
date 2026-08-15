@@ -197,13 +197,125 @@ ipcMain.handle("media-import", async (event) => {
 });
 
 const { convertPptxToPng } = require('pptx-glimpse');
+const JSZip = require('jszip');
+
+// ── Presentations Store (FR-4.1 - FR-4.7) ──────────────────────────────────
+const presentationsFilePath = path.join(app.getPath('userData'), 'presentations.json');
+let presentationsStore = [];
+try {
+  if (fs.existsSync(presentationsFilePath)) {
+    presentationsStore = JSON.parse(fs.readFileSync(presentationsFilePath, 'utf8'));
+  }
+} catch (_) { presentationsStore = []; }
+const savePresentations = () => {
+  try { fs.writeFileSync(presentationsFilePath, JSON.stringify(presentationsStore, null, 2), 'utf8'); } catch (_) {}
+};
+
+ipcMain.handle('presentation-list', () => presentationsStore);
+ipcMain.handle('presentation-save', (event, deck) => {
+  const idx = presentationsStore.findIndex(d => d.id === deck.id);
+  if (idx >= 0) presentationsStore[idx] = deck;
+  else presentationsStore.push(deck);
+  savePresentations();
+  return deck;
+});
+ipcMain.handle('presentation-delete', async (event, deckIdOrUrl) => {
+  const deck = presentationsStore.find(d => d.id === deckIdOrUrl || d.fileUrl === deckIdOrUrl);
+  if (deck) {
+    presentationsStore = presentationsStore.filter(d => d.id !== deck.id);
+    savePresentations();
+    try {
+      const pPath = deck.fileUrl ? deck.fileUrl.replace('file://', '') : null;
+      if (pPath && fs.existsSync(pPath)) await fsp.unlink(pPath).catch(() => {});
+      const slidesDir = path.join(mediaPath, `${deck.filename}_slides`);
+      if (fs.existsSync(slidesDir)) await fsp.rm(slidesDir, { recursive: true, force: true }).catch(() => {});
+    } catch (_) {}
+  } else {
+    const filePath = typeof deckIdOrUrl === 'string' ? deckIdOrUrl.replace('file://', '') : null;
+    if (filePath && fs.existsSync(filePath)) await fsp.unlink(filePath).catch(() => {});
+  }
+  return true;
+});
+
+const GOOGLE_FONTS_CATALOG = new Set([
+  'montserrat', 'poppins', 'roboto', 'open sans', 'lato', 'inter', 'oswald', 'raleway', 'nunito',
+  'playfair display', 'merriweather', 'lora', 'bebas neue', 'rubik', 'work sans', 'fira sans',
+  'pt sans', 'source sans 3', 'source sans pro', 'barlow', 'mulish', 'kanit', 'quicksand',
+  'titillium web', 'inconsolata', 'heebo', 'ibm plex sans', 'dm sans', 'cabin', 'outfit',
+  'manrope', 'plus jakarta sans', 'syne', 'epilogue', 'space grotesk', 'cormorant garamond',
+  'cinzel', 'abril fatface', 'anton', 'comfortaa', 'caveat', 'pacifico', 'dancing script',
+  'lobster', 'great vibes', 'sacramento', 'righteous', 'bungee', 'fredoka', 'bangers', 'permanent marker'
+]);
+
+function getBaseFontFamily(name) {
+  if (!name) return "";
+  return name.replace(/[-_]/g, ' ')
+             .replace(/\b(ExtraLight|Light|SemiBold|ExtraBold|Bold|Black|Medium|Regular|Thin|Heavy|Italic|Oblique|Condensed|LT|Pro|Display|Text|MT|Std)\b/gi, '')
+             .trim();
+}
+
+function analyzePptxFonts(usedFonts, embeddedFontNames, fontMapping) {
+  const referenced = usedFonts?.fonts || [];
+  const results = [];
+  const advisories = [];
+
+  for (const fontName of referenced) {
+    const baseName = getBaseFontFamily(fontName).toLowerCase();
+    const isEmbedded = embeddedFontNames.some(ef => ef.toLowerCase().includes(baseName));
+    const isMapped = Object.keys(fontMapping).some(k => k.toLowerCase() === fontName.toLowerCase() || k.toLowerCase() === baseName);
+    const isGoogleFont = GOOGLE_FONTS_CATALOG.has(baseName);
+    const googleFontsUrl = isGoogleFont ? `https://fonts.google.com/specimen/${encodeURIComponent(getBaseFontFamily(fontName))}` : null;
+
+    let status = 'system';
+    if (isEmbedded) {
+      status = 'embedded';
+    } else if (isMapped) {
+      status = 'bundled';
+    } else if (isGoogleFont) {
+      status = 'fallback_substituted';
+      advisories.push({
+        fontName,
+        status: 'google_font_downloadable',
+        googleFontsUrl,
+        message: `Font "${fontName}" is available on Google Fonts.`
+      });
+    } else {
+      status = 'fallback_substituted';
+      advisories.push({
+        fontName,
+        status: 'unresolved_fallback',
+        googleFontsUrl: null,
+        message: `Exact font "${fontName}" could not be located in catalog; standard fallback is used.`
+      });
+    }
+
+    results.push({
+      fontName,
+      status,
+      googleFontsUrl
+    });
+  }
+
+  return {
+    fonts: results,
+    advisories
+  };
+}
 
 ipcMain.handle("media-import-presentation", async (event) => {
   const window = BrowserWindow.fromWebContents(event.sender);
+  const sendProgress = (data) => {
+    try {
+      if (window && !window.isDestroyed()) {
+        window.webContents.send('presentation-import-progress', data);
+      }
+    } catch (_) {}
+  };
+
   const { canceled, filePaths } = await dialog.showOpenDialog(window, {
     properties: ['openFile'],
     filters: [
-      { name: 'Presentations', extensions: ['ppt', 'pptx'] }
+      { name: 'PowerPoint Presentations', extensions: ['pptx', 'ppt'] }
     ]
   });
 
@@ -214,6 +326,7 @@ ipcMain.handle("media-import-presentation", async (event) => {
   const destPath = path.join(mediaPath, filename);
 
   try {
+    sendProgress({ stage: 'reading', percent: 5, message: 'Reading presentation file...' });
     await fsp.copyFile(sourcePath, destPath);
     
     // Create a folder for the slide images
@@ -222,62 +335,193 @@ ipcMain.handle("media-import-presentation", async (event) => {
       await fsp.mkdir(slidesDir, { recursive: true });
     } catch (_) {}
 
-    // Extract slides to images using pptx-glimpse
     const buffer = await fsp.readFile(destPath);
-    const pngBuffers = await convertPptxToPng(buffer);
-    
-    const slideUrls = [];
-    for (let i = 0; i < pngBuffers.length; i++) {
-      const slidePath = path.join(slidesDir, `slide_${i + 1}.png`);
-      await fsp.writeFile(slidePath, pngBuffers[i]);
-      slideUrls.push(`file://${slidePath}`);
+    const os = require('os');
+    const fontDirs = [
+      '/System/Library/Fonts',
+      '/System/Library/Fonts/Supplemental',
+      '/Library/Fonts',
+      path.join(os.homedir(), 'Library/Fonts'),
+      '/Library/Application Support/Microsoft/Fonts',
+      'C:\\Windows\\Fonts',
+      'C:\\Program Files\\Microsoft Office\\root\\vfs\\Fonts',
+      '/usr/share/fonts',
+      '/usr/local/share/fonts'
+    ].filter(d => {
+      try { return fs.existsSync(d); } catch (_) { return false; }
+    });
+
+    const fontMapping = {
+      'Century Gothic': 'Arial',
+      'Aptos': 'Arial',
+      'Aptos Display': 'Arial',
+      'Calibri': 'Arial',
+      'Calibri Light': 'Arial',
+      'Segoe UI': 'Arial',
+      'Segoe UI Semibold': 'Arial',
+      'Segoe UI Light': 'Arial',
+      'Tahoma': 'Arial',
+      'Trebuchet MS': 'Arial',
+      'Verdana': 'Arial',
+      'Impact': 'Arial Black',
+      'Georgia': 'Times New Roman',
+      'Garamond': 'Times New Roman',
+      'Book Antiqua': 'Times New Roman',
+      'Palatino': 'Times New Roman',
+      'Palatino Linotype': 'Times New Roman',
+      'Consolas': 'Courier New',
+      'Lucida Console': 'Courier New',
+      'Franklin Gothic Medium': 'Arial',
+      'Gill Sans MT': 'Arial',
+      'Century': 'Times New Roman',
+      'Baskerville': 'Times New Roman',
+      'Montserrat': 'Arial',
+      'Montserrat ExtraBold': 'Arial Bold',
+      'Montserrat Medium': 'Arial',
+      'Montserrat SemiBold': 'Arial Bold',
+      'Montserrat Light': 'Arial',
+      'Montserrat Black': 'Arial Black',
+      'Poppins': 'Arial',
+      'Poppins Medium': 'Arial',
+      'Poppins SemiBold': 'Arial Bold',
+      'Poppins Bold': 'Arial Bold',
+      'Roboto': 'Arial',
+      'Roboto Medium': 'Arial',
+      'Roboto Bold': 'Arial Bold',
+      'Open Sans': 'Arial',
+      'Open Sans SemiBold': 'Arial Bold',
+      'Lato': 'Arial',
+      'Lato Bold': 'Arial Bold',
+      'Inter': 'Arial',
+      'Oswald': 'Arial',
+      'Raleway': 'Arial',
+      'Nunito': 'Arial',
+      'Playfair Display': 'Georgia',
+      'Merriweather': 'Georgia',
+      'Lora': 'Georgia',
+      'Bebas Neue': 'Arial Black',
+      'Futura': 'Arial',
+      'Helvetica Neue': 'Helvetica'
+    };
+
+    // Stage 2: Font detection and OpenXML inspection (Task 2)
+    sendProgress({ stage: 'fonts', percent: 15, message: 'Analyzing fonts and structure...' });
+    let totalSlides = 1;
+    let notesMap = {};
+    let embeddedFontNames = [];
+    let usedFonts = { fonts: [] };
+
+    try {
+      // Assuming collectUsedFonts exists in context or via require
+      if (typeof collectUsedFonts !== 'undefined') usedFonts = collectUsedFonts(buffer);
+    } catch (_) {}
+
+    try {
+      const zip = await JSZip.loadAsync(buffer);
+      const slideFiles = Object.keys(zip.files).filter(k => k.match(/^ppt\/slides\/slide\d+\.xml$/));
+      if (slideFiles.length > 0) totalSlides = slideFiles.length;
+
+      const fontFiles = Object.keys(zip.files).filter(k => k.startsWith('ppt/fonts/'));
+      embeddedFontNames = fontFiles.map(fn => path.basename(fn, path.extname(fn)));
+
+      // Extract speaker notes via OpenXML (FR-4.3)
+      const noteFiles = Object.keys(zip.files).filter(k => k.startsWith("ppt/notesSlides/notesSlide"));
+      for (const nf of noteFiles) {
+        const match = nf.match(/notesSlide(\d+)\.xml/);
+        const slideNum = match ? parseInt(match[1], 10) : null;
+        if (slideNum) {
+          const xml = await zip.file(nf).async("string");
+          const texts = [...xml.matchAll(/<a:t>(.*?)<\/a:t>/gs)].map(m => m[1]).join(" ").trim();
+          notesMap[slideNum] = texts;
+        }
+      }
+    } catch (err) {
+      console.warn("[PPTX] Zip parsing warning:", err);
     }
 
-    return { 
-        fileUrl: `file://${destPath}`, 
-        filename, 
-        slideCount: pngBuffers.length,
-        pages: slideUrls 
+    const fontAnalysis = analyzePptxFonts(usedFonts, embeddedFontNames, fontMapping);
+
+    // Stage 3: Slide-by-slide conversion with progress reporting (Task 1)
+    const slideList = [];
+    const errors = [];
+
+    for (let s = 1; s <= totalSlides; s++) {
+      const pct = Math.round(15 + (s / totalSlides) * 75);
+      sendProgress({
+        stage: 'converting',
+        current: s,
+        total: totalSlides,
+        percent: pct,
+        message: `Converting slide ${s} of ${totalSlides}...`
+      });
+
+      try {
+        const converted = await convertPptxToPng(buffer, {
+          slides: [s],
+          fontDirs,
+          fontMapping,
+          width: 1920,
+          height: 1080
+        });
+
+        const slideItem = converted && converted[0] ? converted[0] : null;
+        if (slideItem) {
+          const pngBuf = slideItem.png ? slideItem.png : slideItem;
+          const slideNumber = slideItem.slideNumber || s;
+          const slidePath = path.join(slidesDir, `slide_${slideNumber}.png`);
+          await fsp.writeFile(slidePath, pngBuf);
+          slideList.push({
+            slideIndex: s - 1,
+            slideNumber: slideNumber,
+            url: `file://${slidePath}`,
+            notes: notesMap[slideNumber] || "",
+            width: slideItem.width || 1920,
+            height: slideItem.height || 1080
+          });
+        }
+      } catch (slideErr) {
+        errors.push({ slideIndex: s - 1, slideNumber: s, error: slideErr.message });
+      }
+    }
+
+    // Stage 4: Finalizing
+    sendProgress({ stage: 'finalizing', percent: 95, message: 'Finalizing slide deck...' });
+
+    const deck = {
+      id: `deck-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      fileUrl: `file://${destPath}`,
+      filename: filename,
+      name: path.basename(filename, path.extname(filename)),
+      slideCount: slideList.length,
+      slides: slideList,
+      fontAnalysis: fontAnalysis,
+      errors: errors.length > 0 ? errors : undefined,
+      importedAt: Date.now()
     };
+
+    const idx = presentationsStore.findIndex(d => d.filename === filename);
+    if (idx >= 0) presentationsStore[idx] = deck;
+    else presentationsStore.push(deck);
+    savePresentations();
+
+    sendProgress({ stage: 'done', percent: 100, message: 'Import complete!' });
+    return deck;
   } catch (err) {
     console.error("Failed to copy presentation or convert slides", err);
-    return null;
+    sendProgress({ stage: 'error', percent: 100, error: err.message, message: `Import failed: ${err.message}` });
+    return { error: err.message };
   }
 });
 
-// Count slides in a PPTX file by reading its ZIP structure
-function countPptxSlides(filePath) {
-  return new Promise((resolve) => {
-    let count = 0;
-    yauzl.open(filePath, { lazyEntries: true }, (err, zipfile) => {
-      if (err) { resolve(0); return; }
-      zipfile.readEntry();
-      zipfile.on('entry', (entry) => {
-        // PPTX slides are at ppt/slides/slide1.xml, slide2.xml etc.
-        if (/^ppt\/slides\/slide\d+\.xml$/.test(entry.fileName)) {
-          count++;
-        }
-        zipfile.readEntry();
-      });
-      zipfile.on('end', () => resolve(count));
-      zipfile.on('error', () => resolve(count));
-    });
-  });
-}
 
-ipcMain.handle("presentation-delete", async (event, fileUrl) => {
-  const filePath = fileUrl.replace('file://', '');
-  try {
-    await fsp.unlink(filePath);
+
+ipcMain.handle("open-external-url", async (_event, url) => {
+  if (url && typeof url === 'string' && (url.startsWith('https://') || url.startsWith('http://'))) {
+    await shell.openExternal(url);
     return true;
-  } catch (err) {
-    if (err.code === 'ENOENT') return false;
-    console.error("Failed to delete presentation", err);
-    return false;
   }
+  return false;
 });
-
-
 
 ipcMain.handle("media-list", async () => {
   try {

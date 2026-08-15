@@ -49,6 +49,7 @@ class AsrAdapter extends EventEmitter {
 
     /** @type {object} The underlying engine (WhisperEngine | VoskEngine) */
     this._impl = impl;
+    this.engine = impl;
 
     /** @type {number} Active confidence threshold (engine-specific default applied on construction) */
     this.confidenceThreshold = this._defaultConfidenceThreshold();

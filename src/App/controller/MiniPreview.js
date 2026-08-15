@@ -161,6 +161,29 @@ export default function MiniPreview({ mode }) {
         );
     };
 
+    const renderPresentationContent = () => {
+        if (!presentationContent || !presentationContent.data) return null;
+        const { slideUrl, slideImageUrl, url, slideIndex = 0, slideCount = 0, notes } = presentationContent.data;
+        const imgUrl = slideUrl || slideImageUrl || url;
+        if (!imgUrl) return null;
+
+        return (
+            <div className="w-full h-full relative overflow-hidden flex flex-col bg-black items-center justify-center p-2">
+                <img src={imgUrl} className="w-full h-full object-contain pointer-events-none" alt="Slide" />
+                {slideCount > 0 && (
+                    <div className="absolute bottom-2 right-2 bg-black/80 px-2 py-0.5 rounded text-[10px] font-mono text-white/70 border border-white/10">
+                        Slide {slideIndex + 1}/{slideCount}
+                    </div>
+                )}
+                {notes && mode === 'speaker' && (
+                    <div className="absolute bottom-2 left-2 max-w-[70%] bg-black/85 px-2 py-1 rounded text-[10px] text-yellow-300 border border-yellow-500/30 truncate">
+                        📝 {notes}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     const renderBibleContent = () => {
         if (!presentationContent || !presentationContent.data) return null;
         const { title, body, readAlong, rangeStart, rangeEnd, currentVerse } = presentationContent.data;
@@ -355,14 +378,18 @@ export default function MiniPreview({ mode }) {
         </div>
     );
 
-    const isPresenting = presentationContent && (presentationContent.type === 'bible' || presentationContent.type === 'custom' || presentationContent.type === 'scene') && presentationContent.data;
+    const isPresenting = presentationContent && ['bible', 'custom', 'custom_layers', 'scene', 'presentation', 'slide_index'].includes(presentationContent.type) && presentationContent.data;
     const showSplitTimer = isPresenting && countdown > 0;
 
     return (
         <div className="w-full h-full flex flex-col bg-black overflow-hidden relative">
             <div className="w-full flex-1 flex flex-col relative overflow-hidden">
                 {isPresenting ? (
-                    presentationContent.type === 'scene' ? renderSceneContent() : renderBibleContent()
+                    presentationContent.type === 'scene'
+                        ? renderSceneContent()
+                        : (presentationContent.type === 'presentation' || presentationContent.type === 'slide_index')
+                        ? renderPresentationContent()
+                        : renderBibleContent()
                 ) : (
                     !showSplitTimer && (
                         countdown === null ? renderIdleScreen() : (

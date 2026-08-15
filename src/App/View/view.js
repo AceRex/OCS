@@ -590,7 +590,7 @@ function App({ mode: propMode }) {
   const hasContentSlot = canvasState.contentSlot && canvasState.contentSlot.type !== 'none' && canvasState.contentSlot.data != null;
   const hasBackgroundMedia = canvasState.background && canvasState.background.url != null;
   const hasPinnedLayers = Array.isArray(canvasState.pinnedLayers) && canvasState.pinnedLayers.length > 0;
-  const hasLegacyContent = presentationContent && ['bible', 'custom', 'custom_layers', 'slide_index'].includes(presentationContent.type) && presentationContent.data;
+  const hasLegacyContent = presentationContent && ['bible', 'custom', 'custom_layers', 'scene', 'presentation', 'slide_index'].includes(presentationContent.type) && presentationContent.data;
 
   const isPresenting = Boolean(hasContentSlot || hasBackgroundMedia || hasPinnedLayers || hasLegacyContent);
   const showSplitTimer = isPresenting && countdown > 0;

@@ -219,6 +219,55 @@ export default function DisplayCanvas({
         );
       }
 
+      case "presentation":
+      case "slide_index": {
+        // FR-4.13 / FR-4.3 Presentation Slide Content Slot
+        const slideUrl = data.slideUrl || data.slideImageUrl || data.url;
+        const slideIndex = data.slideIndex ?? (data.slideNumber != null ? data.slideNumber - 1 : 0);
+        const slideCount = data.slideCount ?? data.totalSlides ?? 0;
+        const notes = data.notes || "";
+        const deckName = data.deckName || data.name || "";
+        const isSpeaker = mode === "speaker" || mode === "controller";
+
+        if (!slideUrl) return null;
+
+        return (
+          <div className="w-full h-full relative z-10 flex items-center justify-center overflow-hidden bg-black select-none pointer-events-none">
+            <img
+              src={slideUrl}
+              className="w-full h-full object-contain pointer-events-none"
+              alt={`Slide ${slideIndex + 1}`}
+            />
+
+            {/* FR-4.3: Speaker Notes & Slide Counter — Rendered ONLY on Speaker View / Controller, NEVER on General View */}
+            {isSpeaker && (
+              <div className="absolute bottom-[2vw] left-[3vw] right-[3vw] z-20 flex items-end justify-between pointer-events-none">
+                {notes ? (
+                  <div className="max-w-[70%] bg-black/85 backdrop-blur-md px-[1.8vw] py-[1vw] rounded-2xl border border-white/20 shadow-2xl">
+                    <span className="text-[1vw] uppercase font-bold text-yellow-400 block mb-1 tracking-wider">
+                      Speaker Notes
+                    </span>
+                    <p className="text-[1.3vw] text-white/95 font-medium leading-snug whitespace-pre-wrap">
+                      {notes}
+                    </p>
+                  </div>
+                ) : (
+                  <div />
+                )}
+
+                {slideCount > 0 && (
+                  <div className="bg-black/70 backdrop-blur-md px-[1.5vw] py-[0.6vw] rounded-full border border-white/10 shadow-lg">
+                    <span className="font-mono font-bold text-white/70 text-[1.2vw]">
+                      {deckName ? `${deckName} · ` : ""}Slide {slideIndex + 1} / {slideCount}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      }
+
       case "scene": {
         // FR-4.14 / FR-4.15 Unified Scene & Song Slides Rendering
         const pageText = data.content || "";

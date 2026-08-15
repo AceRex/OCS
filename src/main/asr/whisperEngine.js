@@ -1,33 +1,57 @@
 /**
  * whisperEngine.js
  *
- * Primary ASR implementation using whisper.cpp (node-whisper / whisper-addon bindings).
+ * Primary native in-process ASR implementation using whisper.cpp (node addon).
  * Handles streaming PCM audio, real-time vocal extraction over music,
  * song-constrained bias prompts, and fast rolling interim partials.
+ *
+ * Implements the full AsrAdapter engine contract (FR-3.65 / FR-3.5 / FR-3.29):
+ *   - initialize() -> returns state object { status: 'ready'|'error', ... }
+ *   - startSession() / stopSession()
+ *   - pushAudio(pcm)
+ *   - shutdown()
+ *   - transcribeBuffer(pcm, opts)
+ *   - getState()
+ *   - setConfidenceThreshold() / setLanguagePolicy() / getLanguagePolicy()
+ *   - setSongContext() / clearSongContext()
  */
 
 'use strict';
 
-const { EventEmitter } = require('events');
 const path = require('path');
 const fs = require('fs');
+const { EventEmitter } = require('events');
 const { buildWhisperInitialPrompt, shouldArmRollingDecode } = require('./whisperPrompt');
-const { evaluateLanguageGate, extractDetectedLanguage } = require('./languageGate');
+const {
+  extractDetectedLanguage,
+  evaluateLanguageGate,
+  normalizeAllowList,
+  DEFAULT_LANGS,
+} = require('./languageGate');
 
 const SAMPLE_RATE = 16000;
-const BYTES_PER_SAMPLE = 2; // 16-bit PCM
+const DEFAULT_CONFIDENCE_THRESHOLD = 0.42; // recalibrated vs Vosk 0.48 for logprob mapping
+const PRE_ROLL_MS = 500;
+const OVERLAP_MS = 300;
+const SILENCE_END_MS = 450;
+const MAX_UTTERANCE_MS = 6000;
+const ROLLING_WINDOW_MS = 1600;
+const ROLLING_HOP_MS = 500;
+const ENERGY_SPEECH = 0.012;
+const ENERGY_SILENCE = 0.006;
 
 function resolveWhisperModel(rootDir) {
   const dir = path.join(rootDir, 'voice_server', 'models', 'whisper');
   const candidates = [
     'ggml-distil-small.en-q5_1.bin',
     'ggml-distil-small.en.bin',
-    'ggml-medium-32-2.en.bin',
+    'ggml-medium-32-2.en.bin', // official distil-medium.en ggml name on HF
     'ggml-distil-medium.en-q5_1.bin',
     'ggml-distil-medium.en.bin',
     'ggml-base.en.bin',
     'ggml-small.en.bin',
     'ggml-tiny.en.bin',
+    // Multilingual fallbacks (needed for reliable language detection)
     'ggml-small.bin',
     'ggml-base.bin',
     'ggml-tiny.bin',
@@ -50,16 +74,36 @@ function resolveWhisperModel(rootDir) {
   return null;
 }
 
-class RingBuffer {
-  constructor(maxBytes) {
-    this.maxBytes = maxBytes;
-    this.buf = Buffer.alloc(maxBytes);
+/** Prefer a small multilingual ggml for per-chunk language ID. */
+function resolveMultilingualDetectModel(rootDir) {
+  const dir = path.join(rootDir, 'voice_server', 'models', 'whisper');
+  for (const name of ['ggml-tiny.bin', 'ggml-base.bin', 'ggml-small.bin']) {
+    const p = path.join(dir, name);
+    if (fs.existsSync(p)) return { path: p, name, dir };
+  }
+  return null;
+}
+
+function resolveVadModel(rootDir) {
+  const dir = path.join(rootDir, 'voice_server', 'models', 'whisper');
+  for (const name of ['ggml-silero-v6.2.0.bin', 'ggml-silero-v5.1.2.bin']) {
+    const p = path.join(dir, name);
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
+/** Int16 mono PCM ring */
+class PcmRing {
+  constructor(ms = PRE_ROLL_MS, sampleRate = SAMPLE_RATE) {
+    this.maxBytes = Math.floor((ms / 1000) * sampleRate) * 2;
+    this.buf = Buffer.alloc(this.maxBytes);
     this.write = 0;
     this.size = 0;
   }
 
-  writeChunk(chunk) {
-    if (!chunk || !chunk.length) return;
+  push(chunk) {
+    if (!chunk || chunk.length < 2) return;
     let offset = 0;
     while (offset < chunk.length) {
       const space = this.maxBytes - this.write;
@@ -145,37 +189,42 @@ function clamp01(x) {
 }
 
 class WhisperEngine extends EventEmitter {
-  constructor(appDir, options = {}) {
+  constructor(rootDir, options = {}) {
     super();
-    this.appDir = appDir || process.cwd();
+    this.rootDir = rootDir || process.cwd();
+    this.appDir = this.rootDir;
     this.options = options;
     this.status = 'uninitialized';
     this.error = null;
     this.modelInfo = null;
+    this.confidenceThreshold = options.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD;
 
-    this.confidenceThreshold = options.confidenceThreshold ?? 0.35;
     this._whisper = null;
     this._busy = false;
-    this._queue = [];
-
     this._sessionActive = false;
+    this._initialPrompt = '';
+    this._vadPath = null;
+    this._uttSeq = 0;
+    this._activeUttId = null;
+    this._preRoll = new PcmRing(PRE_ROLL_MS);
+    this._utteranceChunks = [];
     this._inSpeech = false;
     this._speechStartedAt = 0;
     this._lastSpeechAt = 0;
     this._silenceMs = 0;
-    this._uttSeq = 0;
-    this._activeUttId = '0';
-    this._utteranceChunks = [];
     this._rollingBuf = Buffer.alloc(0);
+    this._lastRollingAt = 0;
     this._lastProbeText = '';
     this._overlapTail = Buffer.alloc(0);
+    this._inferQueue = Promise.resolve();
     this._isSongMode = false;
 
-    this._initialPrompt = '';
-    this._langPolicy = { enabled: false, languages: ['en'] };
+    this._langPolicy = {
+      enabled: false,
+      languages: [...DEFAULT_LANGS],
+    };
+    this._detectModel = null;
     this._lastDetectedLang = 'en';
-
-    this._preRoll = new RingBuffer(SAMPLE_RATE * BYTES_PER_SAMPLE * 1.5); // 1.5s
   }
 
   setSongContext({ lyrics } = {}) {
@@ -196,94 +245,242 @@ class WhisperEngine extends EventEmitter {
     console.log(`[Whisper] Song context cleared -> Bible/Command prompt restored`);
   }
 
-  async init() {
-    this.status = 'initializing';
-    this.emit('status', { status: 'initializing' });
-
-    try {
-      const nodeWhisper = require('node-whisper') || require('./nodeWhisperBridge');
-      this._whisper = nodeWhisper;
-
-      const modelPath = this.options.modelPath || path.join(this.appDir, 'models', 'whisper', 'ggml-base.en.bin');
-      this.modelInfo = {
-        name: path.basename(modelPath),
-        path: modelPath,
-        exists: fs.existsSync(modelPath),
-      };
-
-      this._initialPrompt = buildWhisperInitialPrompt();
-      this.status = 'ready';
-      this.emit('status', { status: 'ready', model: this.modelInfo });
-      return true;
-    } catch (err) {
-      this.status = 'error';
-      this.error = err.message || String(err);
-      this.emit('status', { status: 'error', error: this.error });
-      return false;
-    }
+  setLanguagePolicy({ enabled, languages } = {}) {
+    if (typeof enabled === 'boolean') this._langPolicy.enabled = enabled;
+    if (languages != null) this._langPolicy.languages = normalizeAllowList(languages);
   }
 
-  /** FR-3.65 — AsrAdapter calls initialize(), delegate to init() */
-  async initialize() {
-    return this.init();
+  getLanguagePolicy() {
+    return { ...this._langPolicy, lastDetected: this._lastDetectedLang };
   }
 
-  /** AsrAdapter contract: return engine state for IPC status queries */
+  setConfidenceThreshold(value) {
+    const n = Number(value);
+    if (Number.isFinite(n) && n >= 0 && n <= 1) this.confidenceThreshold = n;
+  }
+
   getState() {
     return {
-      status: this.status || 'uninitialized',
-      model: this.modelInfo || null,
-      error: this.error || null,
+      status: this.status,
+      error: this.error,
+      model: this.modelInfo,
+      sessionActive: this._sessionActive,
+      confidenceThreshold: this.confidenceThreshold,
+      backend: 'whisper-cpp',
       engine: 'whisper',
+      passB: false,
+      vad: !!this._vadPath,
+      utteranceId: this._activeUttId,
+      languageGate: this._langPolicy.enabled,
+      transcriptionLanguages: this._langPolicy.languages,
+      lastDetectedLanguage: this._lastDetectedLang,
+      detectModel: this._detectModel?.name || null,
     };
   }
 
-  start() {
-    this._sessionActive = true;
-    this._resetUtterance();
-    this.emit('status', { status: 'listening' });
-    return true;
-  }
+  async initialize() {
+    if (this.status === 'ready' || this.status === 'listening') return this.getState();
+    if (this.status === 'initializing') return this.getState();
 
-  stop() {
-    this._sessionActive = false;
-    this._resetUtterance();
-    this.emit('status', { status: 'stopped' });
-    return true;
-  }
+    this.status = 'initializing';
+    this.error = null;
+    this.emit('status', this.getState());
 
-  processAudio(pcmChunk) {
-    if (!this._sessionActive || !pcmChunk || !pcmChunk.length) return;
+    try {
+      const modelMeta = (this.options && this.options.modelPath)
+        ? {
+            path: this.options.modelPath,
+            name: path.basename(this.options.modelPath),
+            dir: path.dirname(this.options.modelPath),
+            englishOnly: /\.en\./.test(this.options.modelPath) || /\.en-/.test(this.options.modelPath),
+          }
+        : resolveWhisperModel(this.rootDir);
 
-    this._preRoll.writeChunk(pcmChunk);
-    const rms = rmsInt16(pcmChunk);
-    const now = Date.now();
-
-    // Voice Activity Detection threshold (lowered in song mode to capture soft singing)
-    const vadThreshold = this._isSongMode ? 0.004 : 0.008;
-    const isSpeech = rms > vadThreshold;
-
-    if (isSpeech) {
-      if (!this._inSpeech) {
-        this._beginUtterance(now);
+      if (!modelMeta || !modelMeta.path || !fs.existsSync(modelMeta.path)) {
+        throw new Error(
+          'No whisper ggml model found. Run: npm run setup:voice\n' +
+          'Expected voice_server/models/whisper/ggml-distil-small.en.bin'
+        );
       }
-      this._lastSpeechAt = now;
-      this._silenceMs = 0;
-      this._utteranceChunks.push(pcmChunk);
-      this._rollingBuf = Buffer.concat([this._rollingBuf, pcmChunk]);
-      this._maybeRollingProbe();
-    } else {
-      if (this._inSpeech) {
-        this._silenceMs = now - this._lastSpeechAt;
-        this._utteranceChunks.push(pcmChunk);
-        this._rollingBuf = Buffer.concat([this._rollingBuf, pcmChunk]);
 
-        const maxSilence = this._isSongMode ? 1400 : 700;
-        if (this._silenceMs > maxSilence) {
-          this._finalizeUtterance();
+      this._whisper = require('./whisperAddon');
+      this._vadPath = resolveVadModel(this.rootDir);
+      this._detectModel = resolveMultilingualDetectModel(this.rootDir);
+      this._initialPrompt = buildWhisperInitialPrompt();
+
+      // Cold-load probe: tiny silent buffer to force model open + measure load
+      const t0 = Date.now();
+      const silence = new Float32Array(SAMPLE_RATE); // 1s silence
+      try {
+        await this._whisper.transcribe({
+          model: modelMeta.path,
+          pcmf32: silence,
+          language: 'en',
+          use_gpu: true,
+          no_prints: true,
+          no_timestamps: true,
+          translate: false,
+          initial_prompt: this._initialPrompt,
+          ...(this._vadPath ? { vad: false } : {}),
+        });
+      } catch (e) {
+        if (!/model|ggml|failed to load|invalid/i.test(String(e.message || e))) {
+          // ignore decode errors on pure silence
+        } else if (/failed to load|invalid model|cannot open/i.test(String(e.message || e))) {
+          throw e;
         }
       }
+
+      this.modelInfo = {
+        ...modelMeta,
+        loadMs: Date.now() - t0,
+        promptChars: this._initialPrompt.length,
+        vad: !!this._vadPath,
+      };
+
+      this.status = 'ready';
+      console.log(`[Whisper] Native model loaded: ${modelMeta.name} (${this.modelInfo.loadMs}ms)`);
+      this.emit('status', this.getState());
+      return this.getState();
+    } catch (err) {
+      this.status = 'error';
+      this.error = err.message || String(err);
+      console.error('[Whisper] Native init failed:', this.error);
+      this.emit('status', this.getState());
+      return this.getState();
     }
+  }
+
+  // Alias for backward compatibility
+  async init() {
+    return this.initialize();
+  }
+
+  startSession() {
+    if (this.status !== 'ready' && this.status !== 'listening') {
+      throw new Error(this.error || 'Whisper engine not ready');
+    }
+    this._sessionActive = true;
+    this.status = 'listening';
+    this._resetUtterance();
+    this.emit('status', this.getState());
+    return this.getState();
+  }
+
+  // Alias
+  start() {
+    return this.startSession();
+  }
+
+  stopSession() {
+    if (this._inSpeech && this._utteranceChunks.length) {
+      this._finalizeUtterance('session_stop');
+    }
+    this._sessionActive = false;
+    if (this.status === 'listening') this.status = 'ready';
+    this.emit('status', this.getState());
+    return this.getState();
+  }
+
+  // Alias
+  stop() {
+    return this.stopSession();
+  }
+
+  shutdown() {
+    this.stopSession();
+    this.status = 'uninitialized';
+    this._whisper = null;
+  }
+
+  pushAudio(pcm) {
+    if (!this._sessionActive || !pcm || !pcm.length) return;
+    const chunk = Buffer.isBuffer(pcm) ? pcm : Buffer.from(pcm);
+    this._preRoll.push(chunk);
+
+    const energy = rmsInt16(chunk);
+    const now = Date.now();
+    const frameMs = (chunk.length / 2 / SAMPLE_RATE) * 1000;
+
+    if (!this._inSpeech) {
+      if (energy >= ENERGY_SPEECH) {
+        this._beginUtterance(now);
+      }
+    }
+
+    if (this._inSpeech) {
+      this._utteranceChunks.push(chunk);
+      // Rolling window buffer
+      this._rollingBuf = Buffer.concat([this._rollingBuf, chunk]);
+      const maxRoll = Math.floor((ROLLING_WINDOW_MS / 1000) * SAMPLE_RATE) * 2;
+      if (this._rollingBuf.length > maxRoll) {
+        this._rollingBuf = this._rollingBuf.slice(this._rollingBuf.length - maxRoll);
+      }
+
+      if (energy >= ENERGY_SILENCE) {
+        this._lastSpeechAt = now;
+        this._silenceMs = 0;
+      } else {
+        this._silenceMs += frameMs;
+      }
+
+      const utteredMs = now - this._speechStartedAt;
+      if (this._silenceMs >= SILENCE_END_MS || utteredMs >= MAX_UTTERANCE_MS) {
+        this._finalizeUtterance(utteredMs >= MAX_UTTERANCE_MS ? 'max_len' : 'silence');
+        return;
+      }
+
+      if (now - this._lastRollingAt >= ROLLING_HOP_MS) {
+        this._lastRollingAt = now;
+        this._maybeRollingProbe();
+      }
+    }
+  }
+
+  // Alias
+  processAudio(pcmChunk) {
+    return this.pushAudio(pcmChunk);
+  }
+
+  /** Transcribe a complete Int16 buffer (secondary PTT / suite). Same language gate as primary. */
+  async transcribeBuffer(pcm, { role = 'final', source = 'primary' } = {}) {
+    const buf = Buffer.isBuffer(pcm) ? pcm : Buffer.from(pcm);
+    const { text: textRaw, language, filtered, filterReason } = await this._runTranscribe(buf);
+    const utteranceId = String(++this._uttSeq);
+    if (filtered) {
+      const payload = {
+        text: '',
+        isFinal: role === 'final',
+        confidence: 0,
+        source,
+        pass: 'W',
+        utteranceId,
+        role,
+        ignored: true,
+        reason: 'non_target_language',
+        language: language || 'unknown',
+        filterReason: filterReason || 'non_target_language',
+      };
+      this.emit('transcript', payload);
+      return payload;
+    }
+    const text = normalizeTranscript(textRaw);
+    const confidence = confidenceFromResult(null, text);
+    const threshold = this._isSongMode ? 0.20 : this.confidenceThreshold;
+    const payload = {
+      text,
+      isFinal: role === 'final',
+      confidence,
+      source,
+      pass: 'W',
+      utteranceId,
+      role,
+      language: language || this._lastDetectedLang,
+      ignored: confidence < threshold,
+      reason: confidence < threshold ? 'low_confidence' : undefined,
+    };
+    this.emit('transcript', payload);
+    return payload;
   }
 
   _beginUtterance(now) {
@@ -310,114 +507,173 @@ class WhisperEngine extends EventEmitter {
   }
 
   _maybeRollingProbe() {
-    const minBytes = this._isSongMode ? Math.floor(SAMPLE_RATE * 0.35) : SAMPLE_RATE;
-    if (this._busy || this._rollingBuf.length < minBytes) return;
+    if (!this._rollingBuf.length || this._rollingBuf.length < SAMPLE_RATE * 2 * 0.4) return;
+    const buf = Buffer.from(this._rollingBuf);
+    const uttId = this._activeUttId;
 
-    const snap = Buffer.from(this._rollingBuf);
-    this._enqueue(async () => {
-      const { text: raw, language, filtered } = await this._runTranscribe(snap);
-      const text = normalizeTranscript(raw);
-      if (filtered || !text || text === this._lastProbeText) return;
-      this._lastProbeText = text;
+    this._inferQueue = this._inferQueue
+      .then(async () => {
+        if (!this._inSpeech || this._activeUttId !== uttId) return;
+        const { text: raw, language, filtered } = await this._runTranscribe(buf);
+        const text = normalizeTranscript(raw);
+        if (filtered || !text || text === this._lastProbeText) return;
+        this._lastProbeText = text;
 
-      const confidence = confidenceFromResult(null, text);
-      const threshold = this._isSongMode ? 0.20 : this.confidenceThreshold;
-
-      this.emit('transcript', {
-        text,
-        isFinal: false,
-        confidence,
-        source: 'primary',
-        pass: 'W',
-        utteranceId: this._activeUttId,
-        role: this._isSongMode ? 'partial' : 'probe',
-        language: language || this._lastDetectedLang,
-        ignored: confidence < threshold,
-        reason: confidence < threshold ? 'low_confidence' : undefined,
+        const confidence = confidenceFromResult(null, text);
+        this.emit('transcript', {
+          text,
+          isFinal: false,
+          confidence,
+          source: 'primary',
+          pass: 'W',
+          utteranceId: uttId,
+          role: 'probe',
+          language: language || this._lastDetectedLang,
+        });
+      })
+      .catch((err) => {
+        console.warn('[Whisper] probe error:', err.message || err);
       });
-    });
   }
 
-  _finalizeUtterance() {
-    if (!this._inSpeech || !this._utteranceChunks.length) {
-      this._resetUtterance();
-      return;
-    }
-
-    const fullBuf = Buffer.concat(this._utteranceChunks);
+  _finalizeUtterance(reason = 'silence') {
+    const chunks = this._utteranceChunks;
     const uttId = this._activeUttId;
     this._resetUtterance();
 
-    this._enqueue(async () => {
-      const { text: raw, language, filtered } = await this._runTranscribe(fullBuf);
-      const text = normalizeTranscript(raw);
-      if (filtered || !text) return;
+    if (!chunks.length) return;
+    const fullBuf = Buffer.concat(chunks);
+    if (fullBuf.length < SAMPLE_RATE * 2 * 0.3) return; // ignore <300ms blips
 
-      const confidence = confidenceFromResult(null, text);
-      const threshold = this._isSongMode ? 0.20 : this.confidenceThreshold;
+    // Save overlap tail for next utterance
+    const overlapBytes = Math.floor(0.3 * SAMPLE_RATE) * 2;
+    this._overlapTail = fullBuf.length > overlapBytes ? fullBuf.slice(fullBuf.length - overlapBytes) : Buffer.from(fullBuf);
 
-      this.emit('transcript', {
-        text,
-        isFinal: true,
-        confidence,
-        source: 'primary',
-        pass: 'W',
-        utteranceId: uttId,
-        role: 'final',
-        language: language || this._lastDetectedLang,
-        ignored: confidence < threshold,
-        reason: confidence < threshold ? 'low_confidence' : undefined,
+    this._inferQueue = this._inferQueue
+      .then(async () => {
+        const { text: raw, language, filtered } = await this._runTranscribe(fullBuf);
+        const text = normalizeTranscript(raw);
+        if (filtered || !text) return;
+
+        const confidence = confidenceFromResult(null, text);
+        const threshold = this._isSongMode ? 0.20 : this.confidenceThreshold;
+
+        this.emit('transcript', {
+          text,
+          isFinal: true,
+          confidence,
+          source: 'primary',
+          pass: 'W',
+          utteranceId: uttId,
+          role: 'final',
+          language: language || this._lastDetectedLang,
+          ignored: confidence < threshold,
+          reason: confidence < threshold ? 'low_confidence' : undefined,
+        });
+      })
+      .catch((err) => {
+        console.warn('[Whisper] finalize error:', err.message || err);
       });
+  }
+
+  async _runTranscribe(int16buf) {
+    if (!this._whisper || !this.modelInfo) {
+      return { text: '', language: null, filtered: false };
+    }
+    const pcmf32 = int16ToFloat32(int16buf);
+    const targetLang = (this._langPolicy.languages && this._langPolicy.languages[0]) || 'en';
+    const englishOnly = !!this.modelInfo.englishOnly;
+    let detected = null;
+
+    // Detect pass on multilingual tiny/base when gate is on (per-chunk, not per-session)
+    if (this._langPolicy.enabled && this._detectModel) {
+      try {
+        const det = await this._whisper.transcribe({
+          model: this._detectModel.path,
+          pcmf32,
+          language: 'auto',
+          detect_language: true,
+          use_gpu: true,
+          no_prints: true,
+          no_timestamps: true,
+          translate: false,
+        });
+        detected = extractDetectedLanguage(det);
+      } catch (err) {
+        console.warn('[Whisper] language detect failed:', err.message || err);
+      }
+    }
+
+    const gatePre = evaluateLanguageGate({
+      enabled: this._langPolicy.enabled,
+      allowList: this._langPolicy.languages,
+      detectedLanguage: detected,
+      englishOnlyModel: englishOnly && !this._detectModel,
     });
-  }
-
-  async _runTranscribe(buf) {
-    if (!this._whisper || !buf || buf.length < 320) {
-      return { text: '', language: 'en', filtered: false };
-    }
-
-    try {
-      const pcmf32 = int16ToFloat32(buf);
-      const opts = {
-        pcmf32,
-        language: 'en',
-        initial_prompt: this._initialPrompt,
-        use_gpu: true,
-        no_prints: true,
-        no_timestamps: true,
+    if (gatePre.skip && detected) {
+      this._lastDetectedLang = detected;
+      return {
+        text: '',
+        language: detected,
+        filtered: true,
+        filterReason: gatePre.reason || 'non_target_language',
       };
-
-      const result = await this._whisper.transcribe(opts);
-      const text = extractTranscriptionText(result);
-      return { text, language: 'en', filtered: false };
-    } catch (err) {
-      return { text: '', language: 'en', filtered: false, error: err.message };
     }
-  }
 
-  _enqueue(fn) {
-    this._queue.push(fn);
-    this._drain();
-  }
-
-  async _drain() {
-    if (this._busy || !this._queue.length) return;
-    this._busy = true;
-    const fn = this._queue.shift();
-    try {
-      await fn();
-    } catch (err) {
-      console.warn('[Whisper] queue task error:', err.message || err);
-    } finally {
-      this._busy = false;
-      this._drain();
+    const opts = {
+      model: this.modelInfo.path,
+      pcmf32,
+      language: englishOnly ? 'en' : targetLang,
+      use_gpu: true,
+      no_prints: true,
+      no_timestamps: true,
+      translate: false,
+      initial_prompt: this._initialPrompt,
+      detect_language: !englishOnly && this._langPolicy.enabled && !this._detectModel,
+    };
+    if (this._vadPath) {
+      opts.vad = false;
     }
+    const result = await this._whisper.transcribe(opts);
+    const text = extractTranscriptionText(result);
+    if (!detected) detected = extractDetectedLanguage(result);
+    if (detected) this._lastDetectedLang = detected;
+
+    const confidence = confidenceFromResult(result, text);
+    const gate = evaluateLanguageGate({
+      enabled: this._langPolicy.enabled,
+      allowList: this._langPolicy.languages,
+      detectedLanguage: detected,
+      text,
+      confidence,
+      englishOnlyModel: englishOnly && !this._detectModel,
+    });
+    if (gate.skip) {
+      this._lastDetectedLang = gate.language || detected || 'unknown';
+      return {
+        text: '',
+        language: this._lastDetectedLang,
+        filtered: true,
+        filterReason: gate.reason || 'non_target_language',
+      };
+    }
+
+    return {
+      text,
+      language: detected || targetLang,
+      filtered: false,
+    };
   }
 }
 
 module.exports = {
   WhisperEngine,
   resolveWhisperModel,
+  resolveMultilingualDetectModel,
+  resolveVadModel,
   normalizeTranscript,
+  int16ToFloat32,
   confidenceFromResult,
+  SAMPLE_RATE,
+  DEFAULT_CONFIDENCE_THRESHOLD,
 };
