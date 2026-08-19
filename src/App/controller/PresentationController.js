@@ -6,12 +6,29 @@ import {
     PiArrowLeft, PiArrowRight, PiPencil, PiFloppyDisk, PiX,
     PiArrowUp, PiArrowDown, PiWifiHigh, PiHandPointing, PiMicrophone,
     PiCaretDownBold, PiTextAlignLeft, PiTextAlignCenter, PiTextAlignRight,
-    PiEye, PiPlay, PiStack, PiMusicNotes, PiRepeat, PiFileText,
-    PiPresentation, PiSlideshow,
+    PiEye, PiPlay, PiPause, PiSkipBack, PiSkipForward, PiStop, PiSpeakerHigh, PiSpeakerSlash, PiCornersOut,
+    PiStack, PiMusicNotes, PiRepeat, PiFileText, PiDotsThreeVertical,
+    PiPresentation, PiSlideshow, PiDotsSixVertical, PiSlidersHorizontal, PiArrowsDownUp, PiVideo,
 } from "react-icons/pi";
 import SceneModal from "./SceneModal";
 import { PresentationImportProgressModal, PresentationFontAdvisoryModal } from "./PresentationImportModal";
 import { renderAnimatedLyrics } from "./LyricAnimationEngine";
+
+const isVideoFile = (url) => {
+    if (!url || typeof url !== 'string') return false;
+    const clean = url.split('?')[0].split('#')[0].toLowerCase();
+    return clean.endsWith('.mp4') || clean.endsWith('.webm') || clean.endsWith('.mov') || clean.endsWith('.m4v') || clean.endsWith('.ogg') || clean.endsWith('.mkv');
+};
+
+const formatTimecode = (seconds) => {
+    if (!seconds || isNaN(seconds) || seconds < 0) return '00:00:00:00';
+    const h = Math.floor(seconds / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = Math.floor(seconds % 60);
+    const frames = Math.floor((seconds % 1) * 30);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${pad(h)}:${pad(m)}:${pad(s)}:${pad(frames)}`;
+};
 
 /**
  * One-word-ahead word tracking for Controller preview.
@@ -286,13 +303,13 @@ function SceneTab({
 
                         {/* Fallback prompt when stalled in Read-Along */}
                         {suggestPrompt && (
-                            <div className="bg-yellow-500/15 border border-yellow-500/40 rounded-lg p-2 flex items-center justify-between animate-in fade-in duration-200">
-                                <span className="text-[11px] font-bold text-yellow-300">
+                            <div className="bg-white/10 border border-white/20 rounded-lg p-2 flex items-center justify-between animate-in fade-in duration-200">
+                                <span className="text-[11px] font-bold text-white">
                                     {suggestPrompt.label || "Advance to Next?"}
                                 </span>
                                 <button
                                     onClick={handleNextPage}
-                                    className="text-[10px] font-bold uppercase px-2 py-1 rounded bg-yellow-500/30 hover:bg-yellow-500/50 text-yellow-200 border border-yellow-500/40 transition-colors"
+                                    className="text-[10px] font-bold uppercase px-2 py-1 rounded bg-white/20 hover:bg-white/30 text-white border border-white/30 transition-colors"
                                 >
                                     Advance Now →
                                 </button>
@@ -461,6 +478,23 @@ export default function PresentationController() {
         { id: 'text-1', type: 'text', content: "Welcome", x: 50, y: 50, style: { fontSize: 5, color: '#ffffff', fontFamily: 'sans', width: 0 } }
     ]);
     const [selectedLayerId, setSelectedLayerId] = useState('text-1');
+    const [layersPanelHeight, setLayersPanelHeight] = useState(220);
+    const [isResizingPanel, setIsResizingPanel] = useState(false);
+    const panelDragStartRef = useRef({ startY: 0, startH: 220 });
+    const [draggedLayerIndex, setDraggedLayerIndex] = useState(null);
+
+    // Video Playback & Audio Sound States (Reference Image design)
+    const [videoPlaying, setVideoPlaying] = useState(true);
+    const [videoCurrentTime, setVideoCurrentTime] = useState(0);
+    const [videoDuration, setVideoDuration] = useState(0);
+    const [videoVolume, setVideoVolume] = useState(1);
+    const [videoMuted, setVideoMuted] = useState(false);
+    const [videoAspectRatio, setVideoAspectRatio] = useState('16:9');
+    const activeVideoRef = useRef(null);
+
+    // Media Asset Batch Selection & Context Menu
+    const [selectedAssetUrls, setSelectedAssetUrls] = useState([]);
+    const [contextMenu, setContextMenu] = useState(null);
 
     // General and Speaker targets from the Preview Page header
     const [targets, setTargets] = useState({ general: true, speaker: true });
@@ -856,67 +890,176 @@ export default function PresentationController() {
     }, []);
 
     const handleImport = () => {
-        window.electron?.Media?.import?.().then(newFile => {
-            if (newFile) setMediaFiles(prev => [...prev, newFile]);
-        }).catch(() => {});
+        window.electron?.Media?.import?.().then(result => {
+            if (!result) return;
+            const newFiles = Array.isArray(result) ? result : [result];
+            setMediaFiles(prev => {
+                const combined = [...newFiles, ...prev];
+                return Array.from(new Set(combined));
+            });
+        }).catch((err) => {
+            console.error("Media import error:", err);
+        });
     };
 
-    const handleImportPresentation = async () => {
-        try {
-            setImportProgress({ stage: 'opening', percent: 2, message: 'Opening presentation file picker...' });
-            const deck = await window.electron?.Presentation?.importPresentation?.();
-            if (deck && !deck.error) {
-                setPresentations(prev => {
-                    const filtered = prev.filter(d => d.id !== deck.id && d.filename !== deck.filename);
-                    return [...filtered, deck];
-                });
-                setSelectedPresentation(deck);
-                setActiveSlideIndex(0);
-                setActiveTab('presentation');
-                setPreviewScene(null);
-
-                // If missing/substituted fonts exist, surface non-blocking advisory modal
-                if (deck.fontAnalysis?.advisories?.length > 0) {
-                    setShowFontAdvisoryModal(deck);
+    const handleImportPresentation = () => {
+        const importFn = window.electron?.Presentation?.importPresentation || window.electron?.Media?.importPresentation;
+        if (typeof importFn === 'function') {
+            importFn().then(deck => {
+                if (deck) {
+                    setPresentations(prev => {
+                        const idx = prev.findIndex(p => p.id === deck.id);
+                        if (idx >= 0) {
+                            const updated = [...prev];
+                            updated[idx] = deck;
+                            return updated;
+                        }
+                        return [deck, ...prev];
+                    });
                 }
-            } else if (deck?.error) {
-                setImportProgress({ stage: 'error', percent: 100, error: deck.error, message: `Import error: ${deck.error}` });
-            } else {
-                setImportProgress(null);
-            }
-        } catch (err) {
-            console.error("Presentation import error:", err);
-            setImportProgress({ stage: 'error', percent: 100, error: err.message, message: `Import failed: ${err.message}` });
+            }).catch(err => {
+                console.error("Presentation import error:", err);
+            });
         }
     };
 
-    const handleDeletePresentation = async (deckId) => {
-        try {
-            await window.electron?.Presentation?.delete?.(deckId);
-            setPresentations(prev => prev.filter(d => d.id !== deckId));
-            if (selectedPresentation?.id === deckId) setSelectedPresentation(null);
-            if (activeDeckId === deckId) handleStopSlidePresentation();
-        } catch (err) {
-            console.error("Failed to delete presentation:", err);
+    const handleToggleSelectAsset = (url, e) => {
+        e?.stopPropagation();
+        setSelectedAssetUrls(prev =>
+            prev.includes(url) ? prev.filter(u => u !== url) : [...prev, url]
+        );
+    };
+
+    const handleSelectAllAssets = () => {
+        if (selectedAssetUrls.length === mediaFiles.length) {
+            setSelectedAssetUrls([]);
+        } else {
+            setSelectedAssetUrls([...mediaFiles]);
         }
     };
 
-    const addLayer = (type, content = "") => {
+    const handleAddSelectedAsLayers = () => {
+        selectedAssetUrls.forEach((url, i) => {
+            const isVideo = isVideoFile(url);
+            addLayer(isVideo ? 'video' : 'image', url, { x: 50 + (i * 2), y: 50 + (i * 2) });
+        });
+        setSelectedAssetUrls([]);
+        setContextMenu(null);
+    };
+
+    const handleSetFirstSelectedAsBg = () => {
+        if (selectedAssetUrls.length === 0) return;
+        const url = selectedAssetUrls[0];
+        setMediaAsBackground(url, isVideoFile(url));
+        setSelectedAssetUrls([]);
+        setContextMenu(null);
+    };
+
+    const handleDeleteSelectedAssets = async () => {
+        if (selectedAssetUrls.length === 0) return;
+        for (const url of selectedAssetUrls) {
+            try {
+                await window.electron?.Media?.delete?.(url);
+            } catch (_) {}
+        }
+        setMediaFiles(prev => prev.filter(f => !selectedAssetUrls.includes(f)));
+        setSelectedAssetUrls([]);
+        setContextMenu(null);
+    };
+
+    const handleAssetContextMenu = (e, fileUrl) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const isVideo = isVideoFile(fileUrl);
+        setContextMenu({
+            x: e.clientX,
+            y: e.clientY,
+            url: fileUrl,
+            isVideo
+        });
+        if (!selectedAssetUrls.includes(fileUrl)) {
+            setSelectedAssetUrls([fileUrl]);
+        }
+    };
+
+    // Video Playback Controls (Matching Reference Image)
+    const toggleVideoPlay = () => {
+        if (!activeVideoRef.current) return;
+        if (activeVideoRef.current.paused) {
+            activeVideoRef.current.play().catch(() => {});
+            setVideoPlaying(true);
+        } else {
+            activeVideoRef.current.pause();
+            setVideoPlaying(false);
+        }
+    };
+
+    const stopVideo = () => {
+        if (!activeVideoRef.current) return;
+        activeVideoRef.current.pause();
+        activeVideoRef.current.currentTime = 0;
+        setVideoPlaying(false);
+        setVideoCurrentTime(0);
+    };
+
+    const restartVideo = () => {
+        if (!activeVideoRef.current) return;
+        activeVideoRef.current.currentTime = 0;
+        activeVideoRef.current.play().catch(() => {});
+        setVideoPlaying(true);
+    };
+
+    const jumpToEndVideo = () => {
+        if (!activeVideoRef.current || !videoDuration) return;
+        activeVideoRef.current.currentTime = Math.max(0, videoDuration - 0.5);
+    };
+
+    const handleSeekVideo = (newTime) => {
+        if (!activeVideoRef.current) return;
+        activeVideoRef.current.currentTime = newTime;
+        setVideoCurrentTime(newTime);
+    };
+
+    const handleVolumeChange = (newVol) => {
+        const v = parseFloat(newVol);
+        setVideoVolume(v);
+        setVideoMuted(v === 0);
+        if (activeVideoRef.current) {
+            activeVideoRef.current.volume = v;
+            activeVideoRef.current.muted = v === 0;
+        }
+    };
+
+    const toggleVideoMute = () => {
+        const nextMute = !videoMuted;
+        setVideoMuted(nextMute);
+        if (activeVideoRef.current) {
+            activeVideoRef.current.muted = nextMute;
+        }
+    };
+
+    const addLayer = (type, content = "", options = {}) => {
+        setPreviewScene(null);
+        setSelectedPresentation(null);
         const id = `${type}-${Date.now()}`;
         const newLayer = {
             id,
             type,
             content,
-            x: 50,
-            y: 50,
+            x: options.x ?? 50,
+            y: options.y ?? 50,
             style: {
                 fontSize: type === 'text' ? 5 : undefined,
                 color: type === 'text' ? '#ffffff' : undefined,
                 fontFamily: 'sans',
-                width: type === 'image' ? 30 : 0
+                width: (type === 'image' || type === 'video') ? 30 : 0,
+                borderRadius: 8,
+                opacity: 1,
+                ...options.style
             }
         };
-        setLayers(prev => [...prev, newLayer]);
+        // Top layer is rendered in front (index 0)
+        setLayers(prev => [newLayer, ...prev]);
         setSelectedLayerId(id);
     };
 
@@ -929,17 +1072,83 @@ export default function PresentationController() {
         if (selectedLayerId === id) setSelectedLayerId(null);
     };
 
+    const moveLayerToFront = (index) => {
+        // Moves item toward index 0 (Top of list = Front)
+        if (index <= 0) return;
+        setLayers(prev => {
+            const next = [...prev];
+            const temp = next[index];
+            next[index] = next[index - 1];
+            next[index - 1] = temp;
+            return next;
+        });
+    };
+
+    const moveLayerToBack = (index) => {
+        // Moves item toward index N-1 (Bottom of list = Back)
+        if (index >= layers.length - 1) return;
+        setLayers(prev => {
+            const next = [...prev];
+            const temp = next[index];
+            next[index] = next[index + 1];
+            next[index + 1] = temp;
+            return next;
+        });
+    };
+
+    const handleLayerDragStart = (e, index) => {
+        setDraggedLayerIndex(index);
+        e.dataTransfer.effectAllowed = 'move';
+        try { e.dataTransfer.setData('text/plain', String(index)); } catch (_) {}
+    };
+
+    const handleLayerDragOver = (e, index) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+    };
+
+    const handleLayerDrop = (e, targetIndex) => {
+        e.preventDefault();
+        if (draggedLayerIndex === null || draggedLayerIndex === targetIndex) return;
+        setLayers(prev => {
+            const next = [...prev];
+            const [moved] = next.splice(draggedLayerIndex, 1);
+            next.splice(targetIndex, 0, moved);
+            return next;
+        });
+        setDraggedLayerIndex(null);
+    };
+
+    const handlePanelResizeStart = (e) => {
+        e.stopPropagation();
+        e.preventDefault();
+        setIsResizingPanel(true);
+        panelDragStartRef.current = { startY: e.clientY, startH: layersPanelHeight };
+    };
+
     const setMediaAsBackground = (url, isVideo) => {
+        setPreviewScene(null);
+        setSelectedPresentation(null);
+        // Immediately set background so the preview displays it instantly
+        setBackground({ url, type: isVideo ? 'video' : 'image', x: 50, y: 50, width: 100, height: 100 });
+        setSelectedLayerId('bg');
+
         const loadable = isVideo ? document.createElement('video') : new Image();
         loadable.src = url;
         const onLoad = () => {
             const w = isVideo ? loadable.videoWidth : loadable.naturalWidth;
             const h = isVideo ? loadable.videoHeight : loadable.naturalHeight;
-            const ratio = w / h;
-            const slideRatio = 16 / 9;
-            let bw = 100, bh = 100;
-            if (ratio > slideRatio) { bh = (slideRatio / ratio) * 100; } else { bw = (ratio / slideRatio) * 100; }
-            setBackground({ url, type: isVideo ? 'video' : 'image', x: 50, y: 50, width: bw, height: bh });
+            if (w && h) {
+                const ratio = w / h;
+                const slideRatio = 16 / 9;
+                let bw = 100, bh = 100;
+                if (ratio > slideRatio) {
+                    bh = (slideRatio / ratio) * 100;
+                } else {
+                    bw = (ratio / slideRatio) * 100;
+                }
+                setBackground({ url, type: isVideo ? 'video' : 'image', x: 50, y: 50, width: Math.round(bw), height: Math.round(bh) });
+            }
         };
         if (isVideo) { loadable.onloadedmetadata = onLoad; } else { loadable.onload = onLoad; }
     };
@@ -957,9 +1166,9 @@ export default function PresentationController() {
             setResizeHandle(handle); setIsDragging(false);
             let w = undefined, h = undefined, s = undefined;
             if (id === 'bg') { w = background.width; h = background.height; }
-            else if (target.type === 'image') { w = target.style.width; }
-            else { s = target.style.fontSize; }
-            setDragStart({ mouseX: e.clientX, mouseY: e.clientY, initialWidth: w, initialHeight: h, initialSize: s });
+            else if (target.type === 'image' || target.type === 'video') { w = typeof target.style?.width === 'number' ? target.style.width : 30; }
+            else { s = target.style?.fontSize || 5; }
+            setDragStart({ mouseX: e.clientX, mouseY: e.clientY, initialWidth: w, initialHeight: h, initialSize: s, objX: target.x, objY: target.y });
         } else {
             setResizeHandle(null); setIsDragging(true);
             setDragStart({ mouseX: e.clientX, mouseY: e.clientY, objX: target.x, objY: target.y });
@@ -967,6 +1176,14 @@ export default function PresentationController() {
     };
 
     const handleMouseMove = (e) => {
+        if (isResizingPanel) {
+            const delta = panelDragStartRef.current.startY - e.clientY;
+            const maxH = Math.max(260, Math.floor(window.innerHeight * 0.52));
+            const nextH = Math.max(90, Math.min(maxH, panelDragStartRef.current.startH + delta));
+            setLayersPanelHeight(nextH);
+            return;
+        }
+
         if (!draggingId || !canvasRef.current) return;
         const rect = canvasRef.current.getBoundingClientRect();
         const deltaX = e.clientX - dragStart.mouseX;
@@ -981,24 +1198,32 @@ export default function PresentationController() {
             const wMult = isLeft ? -1 : (isRight ? 1 : 0);
             const hMult = isTop ? -1 : (isBottom ? 1 : 0);
             if (layer && layer.type === 'text') {
-                const newSize = Math.max(1, dragStart.initialSize + deltaX * wMult * 0.05);
-                updateLayer(draggingId, { style: { ...layer.style, fontSize: newSize } });
+                const mult = wMult !== 0 ? wMult : 1;
+                const newSize = Math.max(1, (dragStart.initialSize || 5) + deltaX * mult * 0.05);
+                updateLayer(draggingId, { style: { ...layer.style, fontSize: Math.round(newSize * 10) / 10 } });
             } else if (draggingId === 'bg') {
                 let newWidth = background.width, newHeight = background.height;
-                if (wMult !== 0) newWidth = Math.max(10, dragStart.initialWidth + (deltaX / rect.width) * 100 * wMult);
-                if (hMult !== 0) newHeight = Math.max(10, dragStart.initialHeight + ((e.clientY - dragStart.mouseY) / rect.height) * 100 * hMult);
-                setBackground(prev => ({ ...prev, width: newWidth, height: newHeight }));
-            } else {
-                const newWidth = Math.max(5, dragStart.initialSize + (deltaX / rect.width) * 100 * wMult);
-                updateLayer(draggingId, { style: { ...layer.style, width: newWidth } });
+                if (wMult !== 0) newWidth = Math.max(10, (dragStart.initialWidth || 100) + deltaXPct * wMult);
+                if (hMult !== 0) newHeight = Math.max(10, (dragStart.initialHeight || 100) + deltaYPct * hMult);
+                setBackground(prev => ({ ...prev, width: Math.round(newWidth), height: Math.round(newHeight) }));
+            } else if (layer && (layer.type === 'image' || layer.type === 'video')) {
+                const baseW = typeof dragStart.initialWidth === 'number' ? dragStart.initialWidth : 30;
+                const mult = (wMult !== 0) ? wMult : (hMult !== 0 ? hMult : 1);
+                const newWidth = Math.max(5, Math.min(100, baseW + deltaXPct * mult));
+                updateLayer(draggingId, { style: { ...layer.style, width: Math.round(newWidth) } });
             }
         } else if (isDragging) {
-            if (draggingId === 'bg') setBackground(prev => ({ ...prev, x: dragStart.objX + deltaXPct, y: dragStart.objY + deltaYPct }));
-            else updateLayer(draggingId, { x: dragStart.objX + deltaXPct, y: dragStart.objY + deltaYPct });
+            if (draggingId === 'bg') setBackground(prev => ({ ...prev, x: Math.round(dragStart.objX + deltaXPct), y: Math.round(dragStart.objY + deltaYPct) }));
+            else updateLayer(draggingId, { x: Math.round(dragStart.objX + deltaXPct), y: Math.round(dragStart.objY + deltaYPct) });
         }
     };
 
-    const handleMouseUp = () => { setIsDragging(false); setResizeHandle(null); setDraggingId(null); };
+    const handleMouseUp = () => {
+        setIsResizingPanel(false);
+        setIsDragging(false);
+        setResizeHandle(null);
+        setDraggingId(null);
+    };
 
     const handlePresent = () => {
         if (!window.electron?.Presentation) return;
@@ -1015,7 +1240,26 @@ export default function PresentationController() {
 
         const payload = {
             type: 'custom_layers',
-            data: { background, layers },
+            data: {
+                background: {
+                    ...background,
+                    muted: videoMuted || videoVolume === 0,
+                    volume: videoVolume,
+                    aspectRatio: videoAspectRatio,
+                },
+                layers: layers.map(l => ({
+                    ...l,
+                    style: {
+                        ...l.style,
+                        muted: videoMuted || videoVolume === 0,
+                        volume: videoVolume,
+                        aspectRatio: videoAspectRatio,
+                    }
+                })),
+                volume: videoVolume,
+                muted: videoMuted || videoVolume === 0,
+                aspectRatio: videoAspectRatio,
+            },
             target: targetArr,
         };
         window.electron.Presentation.setContent(payload);
@@ -1041,6 +1285,137 @@ export default function PresentationController() {
         { id: 'presentation', label: 'Slides', icon: PiPresentation },
     ];
 
+    const renderLayersSection = () => (
+        <div
+            className="bg-[#111114] flex flex-col shrink-0 overflow-hidden relative border-t border-white/10"
+            style={{ height: `${layersPanelHeight}px` }}
+        >
+            {/* Draggable Vertical Splitter handle (allows dragging up to ~50% of sidebar) */}
+            <div
+                onMouseDown={handlePanelResizeStart}
+                className="w-full h-3 bg-[#18181c] hover:bg-blue-600/40 active:bg-blue-600/60 cursor-row-resize flex items-center justify-center border-b border-white/10 group transition-colors select-none shrink-0"
+                title="Drag up or down to resize Layers panel (up to 50% of screen)"
+            >
+                <div className="w-12 h-1 bg-white/25 group-hover:bg-blue-400 group-active:bg-blue-400 rounded-full transition-colors" />
+            </div>
+
+            <div className="p-3 flex flex-col gap-2 flex-1 min-h-0 overflow-hidden">
+                <div className="flex items-center justify-between shrink-0">
+                    <span className="text-[10px] uppercase font-bold tracking-widest text-white/40 flex items-center gap-1.5">
+                        <PiStack size={12} /> Layers ({layers.length + (background.url ? 1 : 0)})
+                    </span>
+                    {layers.length > 0 && (
+                        <button
+                            onClick={() => setLayers([])}
+                            className="text-[10px] text-red-400 hover:text-red-300 transition-colors font-bold"
+                        >
+                            Clear Layers
+                        </button>
+                    )}
+                </div>
+
+                <div className="flex-1 overflow-y-auto flex flex-col gap-1 pr-0.5">
+                    {/* Top item in this list (idx = 0) is rendered at the FRONT */}
+                    {layers.map((layer, idx) => {
+                        const isSelected = selectedLayerId === layer.id;
+                        return (
+                            <div
+                                key={layer.id}
+                                draggable
+                                onDragStart={(e) => handleLayerDragStart(e, idx)}
+                                onDragOver={(e) => handleLayerDragOver(e, idx)}
+                                onDrop={(e) => handleLayerDrop(e, idx)}
+                                onClick={() => setSelectedLayerId(layer.id)}
+                                className={`px-2 py-1.5 rounded-lg flex items-center justify-between text-xs cursor-pointer transition-all border group ${
+                                    isSelected
+                                        ? 'bg-blue-500/20 text-blue-300 border-blue-500/40 shadow-sm'
+                                        : 'bg-white/5 text-white/70 border-transparent hover:bg-white/10'
+                                } ${draggedLayerIndex === idx ? 'opacity-40 border-dashed border-blue-400' : ''}`}
+                            >
+                                <div className="flex items-center gap-1.5 truncate min-w-0 pr-2">
+                                    <span className="cursor-grab active:cursor-grabbing text-white/30 group-hover:text-white/70 p-0.5" title="Drag to reorder layer stack">
+                                        <PiDotsSixVertical size={13} />
+                                    </span>
+                                    {layer.type === 'text' ? (
+                                        <PiTextT size={13} className="text-blue-400 shrink-0" />
+                                    ) : layer.type === 'video' ? (
+                                        <PiVideo size={13} className="text-cyan-400 shrink-0" />
+                                    ) : (
+                                        <PiImage size={13} className="text-purple-400 shrink-0" />
+                                    )}
+                                    <span className="truncate font-medium text-xs">
+                                        {layer.type === 'text' ? (layer.content || 'Text Layer') : layer.type === 'video' ? `Video Layer ${idx + 1}` : `Image Layer ${idx + 1}`}
+                                    </span>
+                                    {idx === 0 && (
+                                        <span className="text-[9px] bg-blue-500/25 text-blue-300 font-bold px-1.5 py-0.5 rounded tracking-wide shrink-0">
+                                            Front
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="flex items-center gap-0.5 shrink-0">
+                                    <button
+                                        type="button"
+                                        disabled={idx === 0}
+                                        onClick={(e) => { e.stopPropagation(); moveLayerToFront(idx); }}
+                                        className="p-1 rounded text-white/40 hover:text-white hover:bg-white/10 disabled:opacity-20 disabled:pointer-events-none transition-colors"
+                                        title="Bring Forward (Towards Front)"
+                                    >
+                                        <PiArrowUp size={11} />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        disabled={idx === layers.length - 1}
+                                        onClick={(e) => { e.stopPropagation(); moveLayerToBack(idx); }}
+                                        className="p-1 rounded text-white/40 hover:text-white hover:bg-white/10 disabled:opacity-20 disabled:pointer-events-none transition-colors"
+                                        title="Send Backward (Towards Back)"
+                                    >
+                                        <PiArrowDown size={11} />
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={(e) => { e.stopPropagation(); removeLayer(layer.id); }}
+                                        className="text-white/30 hover:text-red-400 p-1 rounded hover:bg-red-500/10 transition-colors"
+                                        title="Delete Layer"
+                                    >
+                                        <PiTrash size={12} />
+                                    </button>
+                                </div>
+                            </div>
+                        );
+                    })}
+
+                    {/* Background Base Layer */}
+                    {background.url && (
+                        <div
+                            onClick={() => setSelectedLayerId('bg')}
+                            className={`px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs cursor-pointer transition-all border ${
+                                selectedLayerId === 'bg'
+                                    ? 'bg-white/15 text-white border-white/30 shadow-sm'
+                                    : 'bg-white/5 text-white/60 border-transparent hover:bg-white/10'
+                            }`}
+                        >
+                            <div className="flex items-center gap-2 truncate">
+                                {background.type === 'video' ? <PiVideo size={13} className="text-white" /> : <PiImage size={13} className="text-white" />}
+                                <span className="font-semibold truncate">Background (Base)</span>
+                            </div>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); clearBg(); }}
+                                className="text-white/30 hover:text-red-400 p-0.5 rounded"
+                                title="Remove Background"
+                            >
+                                <PiTrash size={12} />
+                            </button>
+                        </div>
+                    )}
+
+                    {layers.length === 0 && !background.url && (
+                        <span className="text-[10px] text-white/20 italic py-1 text-center">No active layers</span>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+
     // Computed preview sequence & item
     const previewSequence = previewScene ? buildSceneSequence(previewScene.scene) : [];
     const previewSeqIndex = previewScene?.sequenceIndex || 0;
@@ -1048,7 +1423,7 @@ export default function PresentationController() {
     const previewPage = previewScene?.scene?.pages[previewItem.pageIndex] || {};
 
     return (
-        <div className="h-full w-full bg-[#0d0d0d] flex flex-col overflow-hidden text-light font-sans" onMouseUp={handleMouseUp} onMouseMove={handleMouseMove}>
+        <div className="h-full w-full bg-[#0d0d0d] flex flex-col overflow-hidden text-light font-sans" onMouseUp={handleMouseUp} onMouseMove={handleMouseMove} onClick={() => setContextMenu(null)}>
             <div className="flex-1 flex min-h-0">
 
                 {/* LEFT: PREVIEW */}
@@ -1114,8 +1489,8 @@ export default function PresentationController() {
 
                                 {/* Speaker Notes Preview in Controller (FR-4.3) */}
                                 {selectedPresentation.slides?.[activeSlideIndex]?.notes && (
-                                    <div className="absolute bottom-3 left-4 max-w-[60%] bg-black/85 backdrop-blur-md px-3 py-1.5 rounded-xl border border-yellow-500/30 text-left">
-                                        <span className="text-[9px] uppercase font-bold text-yellow-400 block mb-0.5 tracking-wider">Speaker Notes</span>
+                                    <div className="absolute bottom-3 left-4 max-w-[60%] bg-black/85 backdrop-blur-md px-3 py-1.5 rounded-xl border border-white/20 text-left">
+                                        <span className="text-[9px] uppercase font-bold text-white block mb-0.5 tracking-wider">Speaker Notes</span>
                                         <p className="text-[11px] text-white/90 leading-tight whitespace-pre-wrap max-h-16 overflow-y-auto">
                                             {selectedPresentation.slides[activeSlideIndex].notes}
                                         </p>
@@ -1225,47 +1600,249 @@ export default function PresentationController() {
                             </div>
                         ) : (
                             /* Standard Custom Layers Canvas */
-                            <div ref={canvasRef} onMouseDown={(e) => handleMouseDown(e, 'bg')} className="aspect-video w-full max-h-full bg-black rounded-lg overflow-hidden relative shadow-2xl border border-white/10" style={{ containerType: 'size' }}>
+                            <div
+                                ref={canvasRef}
+                                onMouseDown={(e) => handleMouseDown(e, 'bg')}
+                                onDragOver={(e) => {
+                                    e.preventDefault();
+                                    e.dataTransfer.dropEffect = 'copy';
+                                }}
+                                onDrop={(e) => {
+                                    e.preventDefault();
+                                    const fileUrl = e.dataTransfer.getData('application/ocs-media') || e.dataTransfer.getData('text/plain');
+                                    if (!fileUrl) return;
+                                    if (!canvasRef.current) return;
+                                    const rect = canvasRef.current.getBoundingClientRect();
+                                    const dropX = Math.round(Math.max(5, Math.min(95, ((e.clientX - rect.left) / rect.width) * 100)));
+                                    const dropY = Math.round(Math.max(5, Math.min(95, ((e.clientY - rect.top) / rect.height) * 100)));
+                                    const isVideo = isVideoFile(fileUrl);
+                                    addLayer(isVideo ? 'video' : 'image', fileUrl, { x: dropX, y: dropY });
+                                }}
+                                className="aspect-video w-full max-h-full bg-black rounded-lg overflow-hidden relative shadow-2xl border border-white/10"
+                                style={{ containerType: 'size' }}
+                            >
                                 {background.url && (
                                     <div className="absolute z-0" style={{ left: `${background.x}%`, top: `${background.y}%`, transform: 'translate(-50%,-50%)', width: `${background.width}%`, height: `${background.height}%` }} onMouseDown={(e) => handleMouseDown(e, 'bg')}>
                                         {selectedLayerId === 'bg' && (
                                             <>
-                                                <div className="absolute -inset-0.5 border-2 border-yellow-500/50 border-dashed pointer-events-none z-50" />
+                                                <div className="absolute -inset-0.5 border-2 border-white/80 border-dashed pointer-events-none z-50" />
                                                 {['nw','ne','sw','se','ml','mr','mt','mb'].map(h => {
                                                     const pos = { nw:'-top-1.5 -left-1.5 cursor-nwse-resize', ne:'-top-1.5 -right-1.5 cursor-nesw-resize', sw:'-bottom-1.5 -left-1.5 cursor-nesw-resize', se:'-bottom-1.5 -right-1.5 cursor-nwse-resize', ml:'top-1/2 -translate-y-1/2 -left-1.5 cursor-ew-resize', mr:'top-1/2 -translate-y-1/2 -right-1.5 cursor-ew-resize', mt:'left-1/2 -translate-x-1/2 -top-1.5 cursor-ns-resize', mb:'left-1/2 -translate-x-1/2 -bottom-1.5 cursor-ns-resize' }[h];
-                                                    return <div key={h} onMouseDown={(e) => handleMouseDown(e, 'bg', h)} className={`absolute w-3 h-3 bg-yellow-500 border border-white rounded-full z-50 shadow-sm ${pos}`} />;
+                                                    return <div key={h} onMouseDown={(e) => handleMouseDown(e, 'bg', h)} className={`absolute w-3 h-3 bg-white border border-black rounded-full z-50 shadow-sm ${pos}`} />;
                                                 })}
                                             </>
                                         )}
                                         {background.type === 'video'
-                                            ? <video src={background.url} className="w-full h-full object-fill pointer-events-none" autoPlay loop muted />
-                                            : <img src={background.url} className="w-full h-full object-fill pointer-events-none" alt="bg" />
+                                            ? (
+                                                <video
+                                                    ref={background.type === 'video' ? activeVideoRef : null}
+                                                    src={background.url}
+                                                    key={background.url}
+                                                    className="w-full h-full object-fill pointer-events-none"
+                                                    autoPlay={videoPlaying}
+                                                    loop
+                                                    muted={videoMuted || videoVolume === 0}
+                                                    playsInline
+                                                    onTimeUpdate={(e) => setVideoCurrentTime(e.target.currentTime)}
+                                                    onLoadedMetadata={(e) => {
+                                                        setVideoDuration(e.target.duration);
+                                                        if (activeVideoRef.current) activeVideoRef.current.volume = videoVolume;
+                                                    }}
+                                                    onPlay={() => setVideoPlaying(true)}
+                                                    onPause={() => setVideoPlaying(false)}
+                                                />
+                                            ) : (
+                                                <img
+                                                    src={background.url}
+                                                    key={background.url}
+                                                    className="w-full h-full object-fill pointer-events-none select-none"
+                                                    alt="bg"
+                                                />
+                                            )
                                         }
                                     </div>
                                 )}
-                                {layers.map(layer => (
-                                    <div key={layer.id} onMouseDown={(e) => handleMouseDown(e, layer.id)} className={`absolute cursor-move group ${selectedLayerId === layer.id ? 'z-50' : 'z-10'}`} style={{ left: `${layer.x}%`, top: `${layer.y}%`, transform: 'translate(-50%,-50%)', width: layer.type === 'image' ? `${layer.style.width || 30}%` : 'auto' }}>
-                                        {selectedLayerId === layer.id && (
-                                            <>
-                                                <div className="absolute -inset-2 border-2 border-blue-500 border-dashed rounded-lg pointer-events-none z-0" />
-                                                {['nw','ne','sw','se','ml','mr'].map(h => {
-                                                    const pos = { nw:'-top-2 -left-2 cursor-nwse-resize', ne:'-top-2 -right-2 cursor-nesw-resize', sw:'-bottom-2 -left-2 cursor-nesw-resize', se:'-bottom-2 -right-2 cursor-nwse-resize', ml:'top-1/2 -translate-y-1/2 -left-2 cursor-ew-resize', mr:'top-1/2 -translate-y-1/2 -right-2 cursor-ew-resize' }[h];
-                                                    return <div key={h} onMouseDown={(e) => handleMouseDown(e, layer.id, h)} className={`absolute w-3 h-3 bg-blue-500 border border-white rounded-full z-50 shadow-sm ${pos}`} />;
-                                                })}
-                                            </>
-                                        )}
-                                        {layer.type === 'text' ? (
-                                            <p className="whitespace-pre-wrap text-center px-2 py-1 relative z-10" style={{ fontSize: `${layer.style.fontSize}cqw`, lineHeight: layer.style.lineHeight || 1.2, color: layer.style.color, fontFamily: layer.style.fontFamily === 'serif' ? 'Georgia,serif' : (layer.style.fontFamily === 'mono' ? '"Courier New",monospace' : 'system-ui,sans-serif'), fontWeight: layer.style.fontWeight || 'normal', textTransform: layer.style.textTransform || 'none', textShadow: layer.style.shadow ? `${layer.style.shadow.x||0}px ${layer.style.shadow.y||0}px ${layer.style.shadow.blur||10}px ${layer.style.shadow.color||'rgba(0,0,0,0.6)'}` : 'none' }}>
-                                                {layer.content}
-                                            </p>
-                                        ) : (
-                                            <img src={layer.content} className="w-full h-auto rounded-lg relative z-10 pointer-events-none" style={{ boxShadow: layer.style.shadow ? `${layer.style.shadow.x||0}px ${layer.style.shadow.y||0}px ${layer.style.shadow.blur||10}px ${layer.style.shadow.color||'rgba(0,0,0,0.6)'}` : 'none' }} alt="layer" />
-                                        )}
-                                    </div>
-                                ))}
+                                {layers.map((layer, idx) => {
+                                    const isSelected = selectedLayerId === layer.id;
+                                    const zIndex = isSelected ? 100 : (layers.length - idx) * 10;
+                                    return (
+                                        <div
+                                            key={layer.id}
+                                            onMouseDown={(e) => handleMouseDown(e, layer.id)}
+                                            className="absolute cursor-move group"
+                                            style={{
+                                                left: `${layer.x}%`,
+                                                top: `${layer.y}%`,
+                                                transform: 'translate(-50%,-50%)',
+                                                width: (layer.type === 'image' || layer.type === 'video') ? `${layer.style?.width || 30}%` : 'auto',
+                                                zIndex,
+                                            }}
+                                        >
+                                            {isSelected && (
+                                                <>
+                                                    <div className="absolute -inset-2 border-2 border-blue-500 border-dashed rounded-lg pointer-events-none z-50" />
+                                                    {['nw','ne','sw','se','ml','mr','mt','mb'].map(h => {
+                                                        const pos = { nw:'-top-2 -left-2 cursor-nwse-resize', ne:'-top-2 -right-2 cursor-nesw-resize', sw:'-bottom-2 -left-2 cursor-nesw-resize', se:'-bottom-2 -right-2 cursor-nwse-resize', ml:'top-1/2 -translate-y-1/2 -left-2 cursor-ew-resize', mr:'top-1/2 -translate-y-1/2 -right-2 cursor-ew-resize', mt:'left-1/2 -translate-x-1/2 -top-2 cursor-ns-resize', mb:'left-1/2 -translate-x-1/2 -bottom-2 cursor-ns-resize' }[h];
+                                                        return <div key={h} onMouseDown={(e) => handleMouseDown(e, layer.id, h)} className={`absolute w-3 h-3 bg-blue-500 border border-white rounded-full z-50 shadow-sm ${pos}`} />;
+                                                    })}
+                                                </>
+                                            )}
+                                            {layer.type === 'text' ? (
+                                                <p className="whitespace-pre-wrap text-center px-2 py-1 relative z-10 select-none" style={{ fontSize: `${layer.style.fontSize}cqw`, lineHeight: layer.style.lineHeight || 1.2, color: layer.style.color, fontFamily: layer.style.fontFamily === 'serif' ? 'Georgia,serif' : (layer.style.fontFamily === 'mono' ? '"Courier New",monospace' : 'system-ui,sans-serif'), fontWeight: layer.style.fontWeight || 'normal', textTransform: layer.style.textTransform || 'none', textShadow: layer.style.shadow ? `${layer.style.shadow.x||0}px ${layer.style.shadow.y||0}px ${layer.style.shadow.blur||10}px ${layer.style.shadow.color||'rgba(0,0,0,0.6)'}` : 'none' }}>
+                                                    {layer.content}
+                                                </p>
+                                            ) : layer.type === 'video' ? (
+                                                <video
+                                                    ref={selectedLayerId === layer.id || background.type !== 'video' ? activeVideoRef : null}
+                                                    src={layer.content}
+                                                    key={layer.content}
+                                                    autoPlay={videoPlaying}
+                                                    loop
+                                                    muted={videoMuted || videoVolume === 0}
+                                                    playsInline
+                                                    className="w-full h-auto relative z-10 pointer-events-none select-none transition-all"
+                                                    style={{
+                                                        borderRadius: `${layer.style?.borderRadius ?? 8}px`,
+                                                        opacity: layer.style?.opacity ?? 1,
+                                                        objectFit: videoAspectRatio === 'fill' ? 'cover' : (videoAspectRatio === 'fit' ? 'contain' : (layer.style?.objectFit || 'contain')),
+                                                        boxShadow: layer.style?.shadow ? `${layer.style.shadow.x||0}px ${layer.style.shadow.y||0}px ${layer.style.shadow.blur||14}px ${layer.style.shadow.color||'rgba(0,0,0,0.6)'}` : 'none',
+                                                    }}
+                                                    onTimeUpdate={(e) => setVideoCurrentTime(e.target.currentTime)}
+                                                    onLoadedMetadata={(e) => {
+                                                        setVideoDuration(e.target.duration);
+                                                        if (activeVideoRef.current) activeVideoRef.current.volume = videoVolume;
+                                                    }}
+                                                    onPlay={() => setVideoPlaying(true)}
+                                                    onPause={() => setVideoPlaying(false)}
+                                                />
+                                            ) : (
+                                                <img
+                                                    src={layer.content}
+                                                    className="w-full h-auto relative z-10 pointer-events-none select-none transition-all"
+                                                    style={{
+                                                        borderRadius: `${layer.style?.borderRadius ?? 8}px`,
+                                                        opacity: layer.style?.opacity ?? 1,
+                                                        objectFit: layer.style?.objectFit || 'contain',
+                                                        boxShadow: layer.style?.shadow ? `${layer.style.shadow.x||0}px ${layer.style.shadow.y||0}px ${layer.style.shadow.blur||14}px ${layer.style.shadow.color||'rgba(0,0,0,0.6)'}` : 'none',
+                                                    }}
+                                                    alt="layer"
+                                                />
+                                            )}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
+
+                    {/* Video Audio & Video Playback Control Bar (Reference Image Design) */}
+                    {((background.url && background.type === 'video') || layers.some(l => l.type === 'video')) && (
+                        <div className="w-full bg-[#161619] border-t border-white/10 px-4 py-2 flex flex-col gap-1.5 shrink-0 select-none">
+                            {/* Top Row: Scrubber + Timecode */}
+                            <div className="flex items-center gap-3 w-full">
+                                <input
+                                    type="range"
+                                    min="0"
+                                    max={videoDuration || 100}
+                                    step="0.1"
+                                    value={videoCurrentTime || 0}
+                                    onChange={(e) => handleSeekVideo(parseFloat(e.target.value))}
+                                    className="flex-1 h-1.5 bg-white/20 rounded-lg appearance-none cursor-pointer accent-red-500 hover:accent-red-400 transition-all"
+                                />
+                                <span className="font-mono text-xs font-semibold text-red-400 shrink-0">
+                                    {formatTimecode(videoCurrentTime)} / {formatTimecode(videoDuration)}
+                                </span>
+                            </div>
+
+                            {/* Bottom Row: Controls */}
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-3 text-white/80">
+                                    <button
+                                        type="button"
+                                        onClick={toggleVideoPlay}
+                                        className="hover:text-white transition-colors p-1"
+                                        title={videoPlaying ? "Pause" : "Play"}
+                                    >
+                                        {videoPlaying ? <PiPause size={16} /> : <PiPlay size={16} />}
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={restartVideo}
+                                        className="hover:text-white transition-colors p-1"
+                                        title="Restart (Jump to Start)"
+                                    >
+                                        <PiSkipBack size={16} />
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={jumpToEndVideo}
+                                        className="hover:text-white transition-colors p-1"
+                                        title="Jump to End"
+                                    >
+                                        <PiSkipForward size={16} />
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={stopVideo}
+                                        className="hover:text-white transition-colors p-1"
+                                        title="Stop (Reset to 0)"
+                                    >
+                                        <PiStop size={16} />
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={toggleVideoMute}
+                                        className="hover:text-white transition-colors p-1 ml-1"
+                                        title={videoMuted || videoVolume === 0 ? "Unmute Sound" : "Mute Sound"}
+                                    >
+                                        {videoMuted || videoVolume === 0 ? <PiSpeakerSlash size={16} /> : <PiSpeakerHigh size={16} />}
+                                    </button>
+
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="1"
+                                        step="0.05"
+                                        value={videoMuted ? 0 : videoVolume}
+                                        onChange={(e) => handleVolumeChange(e.target.value)}
+                                        className="w-20 h-1 bg-white/20 rounded-lg appearance-none cursor-pointer accent-white hover:accent-blue-400 transition-all"
+                                        title={`Volume: ${Math.round(videoVolume * 100)}%`}
+                                    />
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                    <div className="relative">
+                                        <select
+                                            value={videoAspectRatio}
+                                            onChange={(e) => setVideoAspectRatio(e.target.value)}
+                                            className="bg-[#242428] hover:bg-[#2c2c32] text-white text-xs font-mono font-bold px-2.5 py-1 rounded border border-white/10 focus:outline-none focus:border-red-500 cursor-pointer appearance-none pr-6"
+                                            title="Select Aspect Ratio"
+                                        >
+                                            <option value="16:9">16:9</option>
+                                            <option value="4:3">4:3</option>
+                                            <option value="21:9">21:9</option>
+                                            <option value="fit">Fit</option>
+                                            <option value="fill">Fill</option>
+                                        </select>
+                                        <PiCaretDownBold size={10} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-white/50" />
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setBackground(prev => ({ ...prev, width: 100, height: 100, x: 50, y: 50 }))}
+                                        className="text-white/80 hover:text-white p-1 rounded hover:bg-white/5 transition-colors"
+                                        title="Fit to Screen"
+                                    >
+                                        <PiCornersOut size={16} />
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
                     <div className="h-14 border-t border-white/5 flex items-center justify-between px-6 bg-[#1a1a1a]">
                         <div className="flex items-center gap-3">
@@ -1388,7 +1965,11 @@ export default function PresentationController() {
                         {TABS.map(tab => (
                             <button
                                 key={tab.id}
-                                onClick={() => { setActiveTab(tab.id); if (tab.id !== 'presentation') setSelectedPresentation(null); }}
+                                onClick={() => {
+                                    setActiveTab(tab.id);
+                                    if (tab.id !== 'presentation') setSelectedPresentation(null);
+                                    if (tab.id !== 'scene') setPreviewScene(null);
+                                }}
                                 className={`flex-1 flex items-center justify-center gap-1.5 py-3 text-[10px] font-bold uppercase tracking-wider transition-colors ${
                                     activeTab === tab.id
                                         ? (tab.id === 'scene'
@@ -1409,20 +1990,321 @@ export default function PresentationController() {
 
                         {activeTab === 'media' && (
                             <div className="flex flex-col gap-3">
-                                <div className="flex justify-between items-center mb-2">
-                                    <span className="text-[10px] uppercase text-white/40 font-bold tracking-widest">Imported Assets</span>
-                                    <button onClick={handleImport} className="text-blue-400 hover:text-blue-300 bg-blue-400/10 p-1.5 rounded transition-colors"><PiPlus size={14} /></button>
+                                {/* TOP OF INTERFACE: Background Asset Setting Card */}
+                                <div className={`p-3 rounded-xl border transition-all ${background.url ? 'bg-white/5 border-white/20 shadow-md' : 'bg-white/[0.02] border-white/10'}`}>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-[10px] uppercase font-bold tracking-widest text-white flex items-center gap-1.5">
+                                                <PiSlidersHorizontal size={13} className="text-white" /> Background Asset Setting
+                                            </span>
+                                            {background.url && (
+                                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-white/20 text-white uppercase tracking-wider">
+                                                    {background.type === 'video' ? 'Video' : 'Image'}
+                                                </span>
+                                            )}
+                                        </div>
+                                        {background.url && (
+                                            <button
+                                                type="button"
+                                                onClick={clearBg}
+                                                className="text-[10px] text-red-400 hover:text-red-300 flex items-center gap-1 font-bold px-2 py-0.5 rounded hover:bg-red-500/10 transition-colors"
+                                                title="Remove background"
+                                            >
+                                                <PiTrash size={12} /> Clear
+                                            </button>
+                                        )}
+                                    </div>
+
+                                    {background.url ? (
+                                        <div className="flex flex-col gap-2.5">
+                                            {/* Preview & Actions */}
+                                            <div className="flex items-center gap-3 bg-black/40 p-2 rounded-lg border border-white/10">
+                                                <div className="w-16 h-10 rounded overflow-hidden bg-black shrink-0 border border-white/20">
+                                                    {background.type === 'video' ? (
+                                                        <video src={background.url} className="w-full h-full object-cover" muted />
+                                                    ) : (
+                                                        <img src={background.url} className="w-full h-full object-cover" alt="bg-thumb" />
+                                                    )}
+                                                </div>
+                                                <div className="flex items-center gap-1.5 flex-1 justify-end">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setBackground(prev => ({ ...prev, width: 100, height: 100, x: 50, y: 50 }))}
+                                                        className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] font-bold transition-all border border-white/10"
+                                                    >
+                                                        Fit (100%)
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setBackground(prev => ({ ...prev, x: 50, y: 50 }))}
+                                                        className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] font-bold transition-all border border-white/10"
+                                                    >
+                                                        Center
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {/* Width Scale */}
+                                            <div className="flex flex-col gap-1">
+                                                <div className="flex justify-between items-center text-xs">
+                                                    <span className="text-white/60">Width Scale</span>
+                                                    <span className="font-mono text-white font-bold">{Math.round(background.width || 100)}%</span>
+                                                </div>
+                                                <input
+                                                    type="range"
+                                                    min="20"
+                                                    max="200"
+                                                    step="2"
+                                                    value={background.width || 100}
+                                                    onChange={(e) => setBackground(prev => ({ ...prev, width: parseInt(e.target.value, 10) }))}
+                                                    className="w-full accent-white cursor-pointer"
+                                                />
+                                            </div>
+
+                                            {/* Height Scale */}
+                                            <div className="flex flex-col gap-1">
+                                                <div className="flex justify-between items-center text-xs">
+                                                    <span className="text-white/60">Height Scale</span>
+                                                    <span className="font-mono text-white font-bold">{Math.round(background.height || 100)}%</span>
+                                                </div>
+                                                <input
+                                                    type="range"
+                                                    min="20"
+                                                    max="200"
+                                                    step="2"
+                                                    value={background.height || 100}
+                                                    onChange={(e) => setBackground(prev => ({ ...prev, height: parseInt(e.target.value, 10) }))}
+                                                    className="w-full accent-white cursor-pointer"
+                                                />
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <p className="text-[11px] text-white/40 leading-tight">
+                                            No background set. Select any asset below and click <span className="text-white font-semibold">"Set Background"</span> or drag onto canvas.
+                                        </p>
+                                    )}
                                 </div>
+
+                                <div className="flex justify-between items-center mb-0.5">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] uppercase text-white/40 font-bold tracking-widest">
+                                            Imported Assets ({mediaFiles.length})
+                                        </span>
+                                        {mediaFiles.length > 0 && (
+                                            <button
+                                                type="button"
+                                                onClick={handleSelectAllAssets}
+                                                className="text-[10px] font-bold text-blue-400 hover:text-blue-300 transition-colors"
+                                            >
+                                                {selectedAssetUrls.length === mediaFiles.length ? 'Deselect All' : 'Select All'}
+                                            </button>
+                                        )}
+                                    </div>
+                                    <button
+                                        onClick={handleImport}
+                                        className="text-blue-400 hover:text-blue-300 bg-blue-400/10 hover:bg-blue-400/20 px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all"
+                                        title="Import Images or Videos"
+                                    >
+                                        <PiPlus size={13} /> Import
+                                    </button>
+                                </div>
+
+                                {/* Selected Assets Action Bar (Single or Multi-Select Menu) */}
+                                {selectedAssetUrls.length > 0 && (
+                                    <div className="flex items-center justify-between bg-blue-500/10 border border-blue-500/30 rounded-xl px-2.5 py-1.5 transition-all">
+                                        <span className="text-[10px] font-bold text-blue-300">
+                                            {selectedAssetUrls.length} Selected
+                                        </span>
+                                        <div className="flex items-center gap-1.5">
+                                            <button
+                                                type="button"
+                                                onClick={handleSetFirstSelectedAsBg}
+                                                className="px-2 py-0.5 bg-white/15 hover:bg-white/25 text-white rounded text-[10px] font-bold transition-all border border-white/20"
+                                                title="Set as Background"
+                                            >
+                                                Set Background
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={handleAddSelectedAsLayers}
+                                                className="px-2 py-0.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded text-[10px] font-bold transition-all"
+                                                title="Add as Layer"
+                                            >
+                                                Add Layer
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={handleDeleteSelectedAssets}
+                                                className="px-1.5 py-0.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded text-[10px] font-bold transition-all"
+                                                title="Delete Selected"
+                                            >
+                                                <PiTrash size={12} />
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Media Assets Grid */}
                                 <div className="grid grid-cols-3 gap-2">
                                     {mediaFiles.map((fileUrl, index) => {
-                                        const isVideo = fileUrl.endsWith('.mp4');
+                                        const isVideo = isVideoFile(fileUrl);
+                                        const isSelected = selectedAssetUrls.includes(fileUrl);
                                         return (
-                                            <div key={index} className="aspect-square w-full h-[100px] bg-gray-800 rounded-xl relative overflow-hidden border border-white/5 hover:border-white/20 transition-all cursor-pointer" onContextMenu={(e) => handleContextMenu(e, fileUrl, isVideo)} onDoubleClick={() => addLayer(isVideo ? 'video' : 'image', fileUrl)}>
-                                                {isVideo ? <video src={fileUrl} className="absolute inset-0 w-full h-full object-cover opacity-70 hover:opacity-100 transition-opacity" muted /> : <img src={fileUrl} className="absolute inset-0 w-full h-full object-cover opacity-70 hover:opacity-100 transition-opacity" alt="thumb" />}
+                                            <div
+                                                key={`${fileUrl}-${index}`}
+                                                draggable
+                                                onDragStart={(e) => {
+                                                    e.dataTransfer.setData('application/ocs-media', fileUrl);
+                                                    e.dataTransfer.setData('text/plain', fileUrl);
+                                                    e.dataTransfer.effectAllowed = 'copy';
+                                                }}
+                                                onClick={(e) => handleToggleSelectAsset(fileUrl, e)}
+                                                onDoubleClick={() => addLayer(isVideo ? 'video' : 'image', fileUrl)}
+                                                onContextMenu={(e) => handleAssetContextMenu(e, fileUrl)}
+                                                className={`aspect-square w-full h-[90px] bg-[#1a1a1e] rounded-xl relative overflow-hidden border transition-all cursor-pointer group ${
+                                                    isSelected
+                                                        ? 'border-blue-500 ring-2 ring-blue-500/40 shadow-lg'
+                                                        : 'border-white/10 hover:border-white/30 hover:scale-[1.02]'
+                                                }`}
+                                                title="Click to select, Double-click to add layer, Drag onto canvas, Right-click for menu"
+                                            >
+                                                {/* Checkbox Selector */}
+                                                <div
+                                                    onClick={(e) => handleToggleSelectAsset(fileUrl, e)}
+                                                    className={`absolute top-1.5 left-1.5 z-20 rounded p-0.5 transition-all ${
+                                                        isSelected
+                                                            ? 'text-blue-400 bg-black/70'
+                                                            : 'text-white/40 opacity-0 group-hover:opacity-100 bg-black/50 hover:text-white'
+                                                    }`}
+                                                >
+                                                    {isSelected ? <PiCheckSquare size={14} /> : <PiSquare size={14} />}
+                                                </div>
+
+                                                {/* Media Type Badge */}
+                                                {isVideo && (
+                                                    <div className="absolute top-1.5 right-1.5 z-20 bg-black/70 backdrop-blur-xs text-cyan-300 px-1 py-0.5 rounded text-[9px] font-bold uppercase flex items-center gap-0.5">
+                                                        <PiVideo size={10} /> Video
+                                                    </div>
+                                                )}
+
+                                                {/* Media Content */}
+                                                {isVideo ? (
+                                                    <video
+                                                        src={fileUrl}
+                                                        className="absolute inset-0 w-full h-full object-cover opacity-75 group-hover:opacity-100 transition-opacity pointer-events-none"
+                                                        muted
+                                                        playsInline
+                                                        preload="metadata"
+                                                    />
+                                                ) : (
+                                                    <img
+                                                        src={fileUrl}
+                                                        className="absolute inset-0 w-full h-full object-cover opacity-75 group-hover:opacity-100 transition-opacity pointer-events-none"
+                                                        alt="asset"
+                                                        onError={(e) => {
+                                                            e.currentTarget.style.display = 'none';
+                                                        }}
+                                                    />
+                                                )}
                                             </div>
                                         );
                                     })}
                                 </div>
+
+                                {mediaFiles.length === 0 && (
+                                    <div className="text-center py-6 text-white/30 text-xs flex flex-col items-center gap-1.5 border border-dashed border-white/10 rounded-xl p-4">
+                                        <PiImage size={24} />
+                                        <span>No imported assets yet</span>
+                                        <button onClick={handleImport} className="text-blue-400 hover:underline text-[11px] font-bold">Import Media</button>
+                                    </div>
+                                )}
+
+                                {/* Image Layer Adjustments */}
+                                {selectedLayer && selectedLayer.type === 'image' && (
+                                    <div className="flex flex-col gap-3.5 border-t border-white/10 pt-3 mt-1">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-[10px] uppercase text-purple-400 font-bold tracking-widest flex items-center gap-1.5">
+                                                <PiSlidersHorizontal size={13} /> Adjust Selected Image Layer
+                                            </span>
+                                            <button
+                                                type="button"
+                                                onClick={() => removeLayer(selectedLayer.id)}
+                                                className="text-[10px] text-red-400 hover:text-red-300 flex items-center gap-1 font-bold"
+                                            >
+                                                <PiTrash size={12} /> Remove
+                                            </button>
+                                        </div>
+
+                                        {/* Width / Scale Slider */}
+                                        <div className="flex flex-col gap-1">
+                                            <div className="flex justify-between items-center text-xs">
+                                                <span className="text-white/60">Width / Scale</span>
+                                                <span className="font-mono text-purple-300 font-bold">{selectedLayer.style?.width || 30}%</span>
+                                            </div>
+                                            <input
+                                                type="range"
+                                                min="5"
+                                                max="100"
+                                                step="1"
+                                                value={selectedLayer.style?.width || 30}
+                                                onChange={(e) => updateLayer(selectedLayer.id, { style: { ...selectedLayer.style, width: parseInt(e.target.value, 10) } })}
+                                                className="w-full accent-purple-500"
+                                            />
+                                        </div>
+
+                                        {/* Opacity Slider */}
+                                        <div className="flex flex-col gap-1">
+                                            <div className="flex justify-between items-center text-xs">
+                                                <span className="text-white/60">Opacity</span>
+                                                <span className="font-mono text-purple-300 font-bold">{Math.round((selectedLayer.style?.opacity ?? 1) * 100)}%</span>
+                                            </div>
+                                            <input
+                                                type="range"
+                                                min="0.05"
+                                                max="1"
+                                                step="0.05"
+                                                value={selectedLayer.style?.opacity ?? 1}
+                                                onChange={(e) => updateLayer(selectedLayer.id, { style: { ...selectedLayer.style, opacity: parseFloat(e.target.value) } })}
+                                                className="w-full accent-purple-500"
+                                            />
+                                        </div>
+
+                                        {/* Rounded Corners */}
+                                        <div className="flex flex-col gap-1">
+                                            <div className="flex justify-between items-center text-xs">
+                                                <span className="text-white/60">Corner Radius</span>
+                                                <span className="font-mono text-purple-300 font-bold">{selectedLayer.style?.borderRadius ?? 8}px</span>
+                                            </div>
+                                            <input
+                                                type="range"
+                                                min="0"
+                                                max="48"
+                                                step="2"
+                                                value={selectedLayer.style?.borderRadius ?? 8}
+                                                onChange={(e) => updateLayer(selectedLayer.id, { style: { ...selectedLayer.style, borderRadius: parseInt(e.target.value, 10) } })}
+                                                className="w-full accent-purple-500"
+                                            />
+                                        </div>
+
+                                        {/* Drop Shadow & Quick Alignment */}
+                                        <div className="flex items-center justify-between pt-1">
+                                            <button
+                                                type="button"
+                                                onClick={() => updateLayer(selectedLayer.id, { style: { ...selectedLayer.style, width: 100 }, x: 50, y: 50 })}
+                                                className="px-2.5 py-1 bg-white/5 hover:bg-white/10 rounded text-[10px] font-bold text-white/70 hover:text-white transition-colors"
+                                            >
+                                                Fit (100%)
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={() => updateLayer(selectedLayer.id, { x: 50, y: 50 })}
+                                                className="px-2.5 py-1 bg-white/5 hover:bg-white/10 rounded text-[10px] font-bold text-white/70 hover:text-white transition-colors"
+                                            >
+                                                Center on Canvas
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
 
@@ -1609,83 +2491,8 @@ export default function PresentationController() {
 
                     </div>
 
-                    {/* LAYERS SECTION (Pinned Below the 4 Tabs on Right Sidebar) */}
-                    <div className="border-t border-white/10 p-3 bg-[#111114] flex flex-col gap-2 shrink-0 max-h-48 overflow-y-auto">
-                        <div className="flex items-center justify-between">
-                            <span className="text-[10px] uppercase font-bold tracking-widest text-white/40 flex items-center gap-1.5">
-                                <PiStack size={12} /> Layers ({layers.length + (background.url ? 1 : 0)})
-                            </span>
-                            {layers.length > 0 && (
-                                <button
-                                    onClick={() => setLayers([])}
-                                    className="text-[10px] text-red-400 hover:text-red-300 transition-colors font-bold"
-                                >
-                                    Clear Layers
-                                </button>
-                            )}
-                        </div>
-
-                        <div className="flex flex-col gap-1">
-                            {background.url && (
-                                <div
-                                    onClick={() => setSelectedLayerId('bg')}
-                                    className={`px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs cursor-pointer transition-all border ${
-                                        selectedLayerId === 'bg'
-                                            ? 'bg-yellow-500/20 text-yellow-300 border-yellow-500/40'
-                                            : 'bg-white/5 text-white/60 border-transparent hover:bg-white/10'
-                                    }`}
-                                >
-                                    <div className="flex items-center gap-2 truncate">
-                                        <PiImage size={13} className="text-yellow-400" />
-                                        <span className="font-semibold truncate">Background</span>
-                                    </div>
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); clearBg(); }}
-                                        className="text-white/30 hover:text-red-400 p-0.5 rounded"
-                                    >
-                                        <PiTrash size={12} />
-                                    </button>
-                                </div>
-                            )}
-
-                            {layers.map((layer, idx) => {
-                                const isSelected = selectedLayerId === layer.id;
-                                return (
-                                    <div
-                                        key={layer.id}
-                                        onClick={() => setSelectedLayerId(layer.id)}
-                                        className={`px-2.5 py-1.5 rounded-lg flex items-center justify-between text-xs cursor-pointer transition-all border ${
-                                            isSelected
-                                                ? 'bg-blue-500/20 text-blue-300 border-blue-500/40 shadow-sm'
-                                                : 'bg-white/5 text-white/70 border-transparent hover:bg-white/10'
-                                        }`}
-                                    >
-                                        <div className="flex items-center gap-2 truncate">
-                                            {layer.type === 'text' ? (
-                                                <PiTextT size={13} className="text-blue-400 shrink-0" />
-                                            ) : (
-                                                <PiImage size={13} className="text-purple-400 shrink-0" />
-                                            )}
-                                            <span className="truncate font-medium">
-                                                {layer.type === 'text' ? (layer.content || 'Text Layer') : `Image Layer ${idx + 1}`}
-                                            </span>
-                                        </div>
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); removeLayer(layer.id); }}
-                                            className="text-white/30 hover:text-red-400 p-0.5 rounded transition-colors"
-                                            title="Delete Layer"
-                                        >
-                                            <PiTrash size={12} />
-                                        </button>
-                                    </div>
-                                );
-                            })}
-
-                            {layers.length === 0 && !background.url && (
-                                <span className="text-[10px] text-white/20 italic py-1">No active layers</span>
-                            )}
-                        </div>
-                    </div>
+                    {/* LAYERS SECTION (Resizable Panel at Bottom of Sidebar) */}
+                    {renderLayersSection()}
 
                 </div>
 
@@ -1710,6 +2517,46 @@ export default function PresentationController() {
                 deck={showFontAdvisoryModal}
                 onClose={() => setShowFontAdvisoryModal(null)}
             />
+
+            {/* Media Asset Context Menu (Right Click & Actions) */}
+            {contextMenu && (
+                <div
+                    className="fixed z-50 bg-[#1e1e24] border border-white/15 rounded-xl shadow-2xl p-1.5 flex flex-col gap-1 min-w-[170px] backdrop-blur-lg select-none"
+                    style={{ left: Math.min(window.innerWidth - 180, contextMenu.x), top: Math.min(window.innerHeight - 150, contextMenu.y) }}
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <button
+                        type="button"
+                        onClick={() => {
+                            setMediaAsBackground(contextMenu.url, contextMenu.isVideo);
+                            setContextMenu(null);
+                        }}
+                        className="flex items-center gap-2 px-2.5 py-1.5 text-xs text-yellow-300 hover:bg-yellow-500/20 rounded-lg text-left font-semibold transition-colors"
+                    >
+                        <PiImage size={14} /> Set as Background
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => {
+                            addLayer(contextMenu.isVideo ? 'video' : 'image', contextMenu.url);
+                            setContextMenu(null);
+                        }}
+                        className="flex items-center gap-2 px-2.5 py-1.5 text-xs text-blue-300 hover:bg-blue-500/20 rounded-lg text-left font-semibold transition-colors"
+                    >
+                        <PiStack size={14} /> Add as Layer
+                    </button>
+                    <div className="h-px bg-white/10 my-0.5" />
+                    <button
+                        type="button"
+                        onClick={() => {
+                            handleDeleteSelectedAssets();
+                        }}
+                        className="flex items-center gap-2 px-2.5 py-1.5 text-xs text-red-400 hover:bg-red-500/20 rounded-lg text-left font-semibold transition-colors"
+                    >
+                        <PiTrash size={14} /> Delete Asset{selectedAssetUrls.length > 1 ? ` (${selectedAssetUrls.length})` : ''}
+                    </button>
+                </div>
+            )}
         </div>
     );
 }

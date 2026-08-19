@@ -1,5 +1,22 @@
 import React, { useState, useEffect } from "react";
-import { PiTextT, PiPaintBucket, PiGear, PiBook, PiPalette, PiTranslate, PiArrowsOut, PiMicrophone, PiMoon } from "react-icons/pi";
+import {
+    PiTextT,
+    PiPaintBucket,
+    PiGear,
+    PiBook,
+    PiPalette,
+    PiTranslate,
+    PiArrowsOut,
+    PiMicrophone,
+    PiMoon,
+    PiVideo,
+    PiUploadSimple,
+    PiTrash,
+    PiCheckCircle,
+    PiPlayCircle,
+    PiFilmStrip,
+    PiClock,
+} from "react-icons/pi";
 
 const TRANSLATIONS = ['KJV', 'NIV', 'ESV', 'NKJV', 'NLT', 'AMP', 'MSG', 'CSB', 'NASB', 'RSV'];
 
@@ -17,6 +34,12 @@ const BODY_POSITIONS = [
     { value: 'bottom-left',  label: 'Bottom Left' },
     { value: 'bottom-right', label: 'Bottom Right' },
 ];
+
+function formatBumperBytes(n) {
+    if (!n || n < 1024) return `${n || 0} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 export default function SettingsController() {
     const [activeTab, setActiveTab] = useState('appearance');
@@ -47,6 +70,11 @@ export default function SettingsController() {
     const [transcriptionLanguage, setTranscriptionLanguage] = useState('en');
     const [languageGateEnabled, setLanguageGateEnabled] = useState(true);
 
+    // Bumpers state (Intro / Outro)
+    const [bumpers, setBumpers] = useState({ intro: null, outro: null, autoMerge: true });
+    const [bumperBusy, setBumperBusy] = useState(false);
+    const [bumperError, setBumperError] = useState(null);
+
     useEffect(() => {
         const loadSettings = async () => {
             if (window.electron?.Settings?.get) {
@@ -62,9 +90,50 @@ export default function SettingsController() {
                 const p = await window.electron.Sleep.probe();
                 setSleepProbeOk(!!p?.ok);
             }
+            if (window.electron?.Bumper?.get) {
+                try {
+                    const b = await window.electron.Bumper.get();
+                    if (b) setBumpers(b);
+                } catch (_) {}
+            }
         };
         loadSettings();
     }, []);
+
+    const handleUploadBumper = async (type) => {
+        setBumperBusy(true);
+        setBumperError(null);
+        try {
+            const res = await window.electron?.Bumper?.upload?.(type);
+            if (res) {
+                setBumpers((prev) => ({ ...prev, [type]: res }));
+            }
+        } catch (e) {
+            setBumperError(e.message || `Failed to upload ${type} clip`);
+        } finally {
+            setBumperBusy(false);
+        }
+    };
+
+    const handleRemoveBumper = async (type) => {
+        setBumperBusy(true);
+        setBumperError(null);
+        try {
+            await window.electron?.Bumper?.remove?.(type);
+            setBumpers((prev) => ({ ...prev, [type]: null }));
+        } catch (e) {
+            setBumperError(e.message || `Failed to remove ${type} clip`);
+        } finally {
+            setBumperBusy(false);
+        }
+    };
+
+    const handleToggleAutoMerge = async (enabled) => {
+        setBumpers((prev) => ({ ...prev, autoMerge: enabled }));
+        if (window.electron?.Bumper?.setAutoMerge) {
+            await window.electron.Bumper.setAutoMerge(enabled);
+        }
+    };
 
     const setSleepPreventionMode = async (mode) => {
         setSleepMode(mode);
@@ -133,7 +202,8 @@ export default function SettingsController() {
         { id: 'appearance', label: 'Appearance', icon: <PiPalette /> },
         { id: 'scripture', label: 'Scripture', icon: <PiBook /> },
         { id: 'media', label: 'Media', icon: <PiPaintBucket /> },
-        { id: 'privacy', label: 'Privacy', icon: <PiMicrophone /> },
+        { id: 'bumpers', label: 'Intro & Outro', icon: <PiFilmStrip /> },
+        { id: 'privacy', label: 'Privacy & AI', icon: <PiMicrophone /> },
     ];
 
     return (
@@ -576,6 +646,209 @@ export default function SettingsController() {
                                     <span className="text-[11px] text-[#8882A4]">Post-timer Ollama pass with validation. Raw transcript always preserved.</span>
                                 </span>
                             </label>
+                        </div>
+                    </div>
+                )}
+
+                {/* ─── INTRO & OUTRO BUMPERS TAB ─── */}
+                {activeTab === 'bumpers' && (
+                    <div className="space-y-6">
+                        {/* Auto-Merge Master Switch */}
+                        <div className="bg-[#1A1428] border border-[#2E2542] p-6 rounded-3xl">
+                            <div className="flex items-start justify-between gap-4">
+                                <div>
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <div className="w-2.5 h-2.5 rounded-full bg-[#10B981] animate-pulse" />
+                                        <h3 className="text-sm font-black uppercase tracking-widest text-[#F5F2FA]">
+                                            Auto-Merge Recording Bumpers
+                                        </h3>
+                                    </div>
+                                    <p className="text-xs text-[#8882A4] leading-relaxed max-w-2xl">
+                                        When a timer or broadcast session ends, OCS will automatically stitch your custom
+                                        Intro to the beginning and Outro to the end of the recording. The resulting archive
+                                        in Sessions will be ready for immediate playback and publishing.
+                                    </p>
+                                </div>
+                                <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                                    <input
+                                        type="checkbox"
+                                        className="sr-only peer"
+                                        checked={bumpers.autoMerge !== false}
+                                        onChange={(e) => handleToggleAutoMerge(e.target.checked)}
+                                    />
+                                    <div className="w-11 h-6 bg-[#2E2542] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-[#A788FA]"></div>
+                                </label>
+                            </div>
+                        </div>
+
+                        {bumperError && (
+                            <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-xs text-red-300 flex items-center justify-between">
+                                <span>{bumperError}</span>
+                                <button onClick={() => setBumperError(null)} className="text-red-400 font-bold hover:underline">Dismiss</button>
+                            </div>
+                        )}
+
+                        {/* Two Bumpers Columns: Intro & Outro */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {/* INTRO BUMPER */}
+                            <div className="bg-[#1A1428] border border-[#2E2542] rounded-3xl p-6 flex flex-col justify-between space-y-4">
+                                <div>
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div className="flex items-center gap-2">
+                                            <span className="px-3 py-1 rounded-full bg-[#A788FA]/20 text-[#A788FA] text-[10px] font-black uppercase tracking-wider">
+                                                Intro (Beginning)
+                                            </span>
+                                            {bumpers.intro && (
+                                                <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-semibold">
+                                                    <PiCheckCircle size={14} /> Active
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <h4 className="text-base font-bold text-white mb-1">Session Intro Clip</h4>
+                                    <p className="text-xs text-[#8882A4] mb-4">
+                                        Plays first before sermon or presentation recording begins.
+                                    </p>
+
+                                    {bumpers.intro ? (
+                                        <div className="space-y-3">
+                                            <div className="w-full bg-[#0B0814] rounded-2xl overflow-hidden border border-[#2E2542] aspect-video flex items-center justify-center relative group">
+                                                {bumpers.intro.hasVideo ? (
+                                                    <video
+                                                        src={bumpers.intro.url}
+                                                        controls
+                                                        className="w-full h-full object-contain"
+                                                    />
+                                                ) : (
+                                                    <div className="p-6 flex flex-col items-center justify-center text-center gap-2 w-full">
+                                                        <PiVideo size={36} className="text-[#A788FA]" />
+                                                        <audio src={bumpers.intro.url} controls className="w-full mt-2" />
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="flex items-center justify-between text-xs bg-[#0B0814]/70 p-3 rounded-2xl border border-[#2E2542]/60">
+                                                <div className="truncate pr-2">
+                                                    <span className="font-mono text-[#F5F2FA] block truncate">{bumpers.intro.name}</span>
+                                                    <span className="text-[10px] text-[#8882A4]">
+                                                        {formatBumperBytes(bumpers.intro.sizeBytes)} • {Math.round(bumpers.intro.durationSec || 0)}s duration
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="border-2 border-dashed border-[#2E2542] rounded-2xl p-8 flex flex-col items-center justify-center text-center space-y-3 bg-[#0B0814]/40">
+                                            <div className="w-12 h-12 rounded-full bg-[#2E2542]/50 flex items-center justify-center text-[#8882A4]">
+                                                <PiFilmStrip size={24} />
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-semibold text-[#F5F2FA]">No Intro Uploaded</p>
+                                                <p className="text-[11px] text-[#8882A4]">Select an MP4, MOV, WebM, or audio file</p>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="flex items-center gap-3 pt-2">
+                                    <button
+                                        disabled={bumperBusy}
+                                        onClick={() => handleUploadBumper('intro')}
+                                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-[#A788FA] text-[#0B0814] text-xs font-black uppercase tracking-wider hover:bg-[#B89CFF] transition-all disabled:opacity-50"
+                                    >
+                                        <PiUploadSimple size={16} /> {bumpers.intro ? 'Replace Intro' : 'Upload Intro'}
+                                    </button>
+                                    {bumpers.intro && (
+                                        <button
+                                            disabled={bumperBusy}
+                                            onClick={() => handleRemoveBumper('intro')}
+                                            className="px-4 py-3 rounded-2xl bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 text-xs font-bold transition-all disabled:opacity-50"
+                                            title="Remove Intro"
+                                        >
+                                            <PiTrash size={16} />
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* OUTRO BUMPER */}
+                            <div className="bg-[#1A1428] border border-[#2E2542] rounded-3xl p-6 flex flex-col justify-between space-y-4">
+                                <div>
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div className="flex items-center gap-2">
+                                            <span className="px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-400 text-[10px] font-black uppercase tracking-wider">
+                                                Outro (End)
+                                            </span>
+                                            {bumpers.outro && (
+                                                <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-semibold">
+                                                    <PiCheckCircle size={14} /> Active
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <h4 className="text-base font-bold text-white mb-1">Session Outro Clip</h4>
+                                    <p className="text-xs text-[#8882A4] mb-4">
+                                        Appended automatically to the end of the recording session.
+                                    </p>
+
+                                    {bumpers.outro ? (
+                                        <div className="space-y-3">
+                                            <div className="w-full bg-[#0B0814] rounded-2xl overflow-hidden border border-[#2E2542] aspect-video flex items-center justify-center relative group">
+                                                {bumpers.outro.hasVideo ? (
+                                                    <video
+                                                        src={bumpers.outro.url}
+                                                        controls
+                                                        className="w-full h-full object-contain"
+                                                    />
+                                                ) : (
+                                                    <div className="p-6 flex flex-col items-center justify-center text-center gap-2 w-full">
+                                                        <PiVideo size={36} className="text-indigo-400" />
+                                                        <audio src={bumpers.outro.url} controls className="w-full mt-2" />
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="flex items-center justify-between text-xs bg-[#0B0814]/70 p-3 rounded-2xl border border-[#2E2542]/60">
+                                                <div className="truncate pr-2">
+                                                    <span className="font-mono text-[#F5F2FA] block truncate">{bumpers.outro.name}</span>
+                                                    <span className="text-[10px] text-[#8882A4]">
+                                                        {formatBumperBytes(bumpers.outro.sizeBytes)} • {Math.round(bumpers.outro.durationSec || 0)}s duration
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div className="border-2 border-dashed border-[#2E2542] rounded-2xl p-8 flex flex-col items-center justify-center text-center space-y-3 bg-[#0B0814]/40">
+                                            <div className="w-12 h-12 rounded-full bg-[#2E2542]/50 flex items-center justify-center text-[#8882A4]">
+                                                <PiFilmStrip size={24} />
+                                            </div>
+                                            <div>
+                                                <p className="text-xs font-semibold text-[#F5F2FA]">No Outro Uploaded</p>
+                                                <p className="text-[11px] text-[#8882A4]">Select an MP4, MOV, WebM, or audio file</p>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="flex items-center gap-3 pt-2">
+                                    <button
+                                        disabled={bumperBusy}
+                                        onClick={() => handleUploadBumper('outro')}
+                                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-[#A788FA] text-[#0B0814] text-xs font-black uppercase tracking-wider hover:bg-[#B89CFF] transition-all disabled:opacity-50"
+                                    >
+                                        <PiUploadSimple size={16} /> {bumpers.outro ? 'Replace Outro' : 'Upload Outro'}
+                                    </button>
+                                    {bumpers.outro && (
+                                        <button
+                                            disabled={bumperBusy}
+                                            onClick={() => handleRemoveBumper('outro')}
+                                            className="px-4 py-3 rounded-2xl bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 text-xs font-bold transition-all disabled:opacity-50"
+                                            title="Remove Outro"
+                                        >
+                                            <PiTrash size={16} />
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
                         </div>
                     </div>
                 )}

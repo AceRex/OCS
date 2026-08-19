@@ -19,6 +19,8 @@ app.on('second-instance', () => {
 });
 
 const path = require("path");
+const url = require("url");
+const { pathToFileURL, fileURLToPath } = url;
 const fs = require("fs");
 const fsp = fs.promises;
 const yauzl = require("yauzl");
@@ -28,6 +30,7 @@ const QRCode = require("qrcode");
 const { AsrFacade } = require("./src/main/asr/asrFacade");
 const { emitTimerLifecycle } = require("./src/main/timerLifecycle");
 const { SessionArchiveService } = require("./src/main/sessionArchive");
+const { probeMediaInfo } = require("./src/main/sessionAudio");
 const {
   generatePairing,
   buildPairPayload,
@@ -173,27 +176,29 @@ if (!fs.existsSync(mediaPath)) {
 ipcMain.handle("media-import", async (event) => {
   const window = BrowserWindow.fromWebContents(event.sender);
   const { canceled, filePaths } = await dialog.showOpenDialog(window, {
-    properties: ['openFile'],
+    properties: ['openFile', 'multiSelections'],
     filters: [
-      { name: 'Media', extensions: ['jpg', 'png', 'gif', 'jpeg', 'webp', 'mp4', 'webm', 'ogg', 'mov', 'avi'] },
-      { name: 'Images', extensions: ['jpg', 'png', 'gif', 'jpeg', 'webp'] },
-      { name: 'Videos', extensions: ['mp4', 'webm', 'ogg', 'mov', 'avi'] }
+      { name: 'Media', extensions: ['jpg', 'png', 'gif', 'jpeg', 'webp', 'mp4', 'webm', 'ogg', 'mov', 'avi', 'm4v', 'mkv'] },
+      { name: 'Images', extensions: ['jpg', 'png', 'gif', 'jpeg', 'webp', 'svg', 'bmp'] },
+      { name: 'Videos', extensions: ['mp4', 'webm', 'ogg', 'mov', 'avi', 'm4v', 'mkv'] }
     ]
   });
 
-  if (canceled || filePaths.length === 0) return null;
+  if (canceled || !filePaths || filePaths.length === 0) return null;
 
-  const sourcePath = filePaths[0];
-  const filename = path.basename(sourcePath);
-  const destPath = path.join(mediaPath, filename);
-
-  try {
-    await fsp.copyFile(sourcePath, destPath);
-    return `file://${destPath}`;
-  } catch (err) {
-    console.error("Failed to copy file", err);
-    return null;
+  const imported = [];
+  for (const sourcePath of filePaths) {
+    const filename = path.basename(sourcePath);
+    const destPath = path.join(mediaPath, filename);
+    try {
+      await fsp.copyFile(sourcePath, destPath);
+      imported.push(pathToFileURL(destPath).href);
+    } catch (err) {
+      console.error("Failed to copy media file", sourcePath, err);
+    }
   }
+
+  return imported.length === 1 ? imported[0] : (imported.length > 0 ? imported : null);
 });
 
 const { convertPptxToPng, collectUsedFonts } = require('pptx-glimpse');
@@ -589,7 +594,7 @@ ipcMain.handle("media-list", async () => {
     return fileStats
       .filter(Boolean)
       .sort((a, b) => b.time - a.time)
-      .map(f => `file://${path.join(mediaPath, f.name)}`);
+      .map(f => pathToFileURL(path.join(mediaPath, f.name)).href);
   } catch (err) {
     console.error("Failed to list media", err);
     return [];
@@ -597,13 +602,13 @@ ipcMain.handle("media-list", async () => {
 });
 
 ipcMain.handle("media-delete", async (event, fileUrl) => {
-  const filePath = fileUrl.replace('file://', '');
   try {
+    const filePath = fileUrl.startsWith('file://') ? fileURLToPath(fileUrl) : fileUrl;
     await fsp.unlink(filePath);
     return true;
   } catch (err) {
     if (err.code === 'ENOENT') return false;
-    console.error(err);
+    console.error("Failed to delete media", err);
     return false;
   }
 });
@@ -1408,6 +1413,30 @@ ipcMain.handle('session-delete', async (_e, id) => {
   return sessionArchive.deleteSession(id);
 });
 
+ipcMain.handle('session-delete-many', async (_e, ids) => {
+  if (!sessionArchive) throw new Error('Session archive not ready');
+  if (Array.isArray(ids)) {
+    for (const id of ids) {
+      await sessionArchive.deleteSession(id);
+    }
+  }
+  return { ok: true };
+});
+
+ipcMain.handle('session-update-transcript', async (_e, { id, text }) => {
+  if (!sessionArchive) throw new Error('Session archive not ready');
+  return sessionArchive.updateTranscript(id, text);
+});
+
+ipcMain.handle('session-open-file', async (_e, { id, filename }) => {
+  if (!sessionArchive) return { ok: false };
+  const s = await sessionArchive.getSession(id);
+  const { shell } = require('electron');
+  const target = filename ? path.join(s.paths.dir, filename) : s.paths.dir;
+  await shell.openPath(target);
+  return { ok: true, path: target };
+});
+
 ipcMain.handle('session-retry-pdf', async (_e, id) => {
   if (!sessionArchive) throw new Error('Session archive not ready');
   return sessionArchive.retryPdf(id);
@@ -1448,6 +1477,106 @@ ipcMain.handle('session-show-in-folder', async (_e, id) => {
     shell.showItemInFolder(target);
   }
   return { ok: true, path: target };
+});
+
+// ── Bumper Media Handlers (Intro / Outro auto-merge) ──────────────────────────
+const bumpersPath = path.join(app.getPath('userData'), 'bumpers');
+if (!fs.existsSync(bumpersPath)) {
+  fs.mkdirSync(bumpersPath, { recursive: true });
+}
+
+ipcMain.handle('bumper-get', async () => {
+  const introPath = appSettings.get('sessionIntroPath');
+  const outroPath = appSettings.get('sessionOutroPath');
+  const autoMerge = appSettings.get('sessionAutoMergeBumpers') !== false;
+
+  const getBumperMeta = async (filePath, type) => {
+    if (!filePath) return null;
+    try {
+      await fsp.access(filePath);
+      const st = await fsp.stat(filePath);
+      const info = probeMediaInfo(filePath);
+      return {
+        type,
+        path: filePath,
+        name: path.basename(filePath),
+        sizeBytes: st.size,
+        durationSec: info.duration || 0,
+        hasVideo: info.hasVideo,
+        hasAudio: info.hasAudio,
+        url: `file://${filePath}`,
+      };
+    } catch (_) {
+      return null;
+    }
+  };
+
+  return {
+    intro: await getBumperMeta(introPath, 'intro'),
+    outro: await getBumperMeta(outroPath, 'outro'),
+    autoMerge,
+  };
+});
+
+ipcMain.handle('bumper-upload', async (event, { type }) => {
+  if (type !== 'intro' && type !== 'outro') throw new Error('Invalid bumper type');
+  const window = BrowserWindow.fromWebContents(event.sender);
+  const { canceled, filePaths } = await dialog.showOpenDialog(window, {
+    properties: ['openFile'],
+    title: `Select ${type === 'intro' ? 'Intro' : 'Outro'} Recording Bumper`,
+    filters: [
+      { name: 'Video / Audio Bumper', extensions: ['mp4', 'mov', 'webm', 'mp3', 'wav', 'm4a', 'aac', 'ogg'] },
+      { name: 'Video Files', extensions: ['mp4', 'mov', 'webm', 'avi', 'mkv'] },
+      { name: 'Audio Files', extensions: ['mp3', 'wav', 'm4a', 'aac', 'ogg'] },
+      { name: 'All Files', extensions: ['*'] }
+    ],
+  });
+
+  if (canceled || !filePaths || filePaths.length === 0) return null;
+
+  const sourcePath = filePaths[0];
+  const ext = path.extname(sourcePath) || '.mp4';
+  const cleanName = `${type}_${Date.now()}${ext}`;
+  const destPath = path.join(bumpersPath, cleanName);
+
+  // Remove old bumper file if present
+  const oldPath = type === 'intro' ? appSettings.get('sessionIntroPath') : appSettings.get('sessionOutroPath');
+  if (oldPath && oldPath !== sourcePath) {
+    await fsp.unlink(oldPath).catch(() => {});
+  }
+
+  await fsp.copyFile(sourcePath, destPath);
+  const patch = type === 'intro' ? { sessionIntroPath: destPath } : { sessionOutroPath: destPath };
+  await appSettings.save(patch);
+
+  const st = await fsp.stat(destPath);
+  const info = probeMediaInfo(destPath);
+  return {
+    type,
+    path: destPath,
+    name: path.basename(sourcePath),
+    sizeBytes: st.size,
+    durationSec: info.duration || 0,
+    hasVideo: info.hasVideo,
+    hasAudio: info.hasAudio,
+    url: `file://${destPath}`,
+  };
+});
+
+ipcMain.handle('bumper-remove', async (_e, { type }) => {
+  if (type !== 'intro' && type !== 'outro') throw new Error('Invalid bumper type');
+  const curPath = type === 'intro' ? appSettings.get('sessionIntroPath') : appSettings.get('sessionOutroPath');
+  if (curPath) {
+    await fsp.unlink(curPath).catch(() => {});
+  }
+  const patch = type === 'intro' ? { sessionIntroPath: null } : { sessionOutroPath: null };
+  await appSettings.save(patch);
+  return { ok: true };
+});
+
+ipcMain.handle('bumper-set-auto-merge', async (_e, enabled) => {
+  await appSettings.save({ sessionAutoMergeBumpers: !!enabled });
+  return { ok: true, autoMerge: !!enabled };
 });
 
 ipcMain.handle('session-audio-url', async (_e, id) => {

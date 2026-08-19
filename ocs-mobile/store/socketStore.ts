@@ -8,7 +8,7 @@ interface SocketState {
     isPaired: boolean;
     serverIp: string;
     connectionError: string | null;
-    connect: (ip: string, pairingCode?: string) => void;
+    connect: (ip: string, pairingCode?: string, customPort?: number) => void;
     disconnect: () => void;
 }
 
@@ -18,7 +18,7 @@ export const useSocketStore = create<SocketState>((set, get) => ({
     isPaired: false,
     serverIp: '',
     connectionError: null,
-    connect: (ip: string, pairingCode?: string) => {
+    connect: (ip: string, pairingCode?: string, customPort?: number) => {
         const current = get().socket;
         if (current) current.disconnect();
 
@@ -30,7 +30,15 @@ export const useSocketStore = create<SocketState>((set, get) => ({
 
         set({ connectionError: null, isPaired: false });
 
-        const socket = io(`http://${ip}:4000`, {
+        let host = ip.trim().replace(/^https?:\/\//, '');
+        let targetPort = customPort || 4000;
+        if (host.includes(':')) {
+            const [h, p] = host.split(':');
+            host = h;
+            targetPort = parseInt(p, 10) || targetPort;
+        }
+
+        const socket = io(`http://${host}:${targetPort}`, {
             transports: ['websocket'],
             reconnectionAttempts: 5,
             timeout: 5000,

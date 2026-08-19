@@ -405,6 +405,7 @@ export default function BibleController() {
       data: {
         title: verseRef,
         body: verseText,
+        version: selectedVersion,
       },
     });
 

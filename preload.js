@@ -268,6 +268,13 @@ contextBridge.exposeInMainWorld("electron", {
      */
     speak: (text, voice) => ipcRenderer.invoke('ai-speak', { text, voice }),
   },
+  /** Recording Intro & Outro Bumpers */
+  Bumper: {
+    get: () => ipcRenderer.invoke('bumper-get'),
+    upload: (type) => ipcRenderer.invoke('bumper-upload', { type }),
+    remove: (type) => ipcRenderer.invoke('bumper-remove', { type }),
+    setAutoMerge: (enabled) => ipcRenderer.invoke('bumper-set-auto-merge', enabled),
+  },
   /** Session Folders archive (FR-5.9–5.28) */
   Session: {
     emitTimerLifecycle: (event) => ipcRenderer.send('timer-lifecycle', event),
@@ -275,6 +282,9 @@ contextBridge.exposeInMainWorld("electron", {
     get: (id) => ipcRenderer.invoke('session-get', id),
     update: (id, patch) => ipcRenderer.invoke('session-update', { id, patch }),
     delete: (id) => ipcRenderer.invoke('session-delete', id),
+    deleteMany: (ids) => ipcRenderer.invoke('session-delete-many', ids),
+    updateTranscript: (id, text) => ipcRenderer.invoke('session-update-transcript', { id, text }),
+    openFile: (id, filename) => ipcRenderer.invoke('session-open-file', { id, filename }),
     retryPdf: (id) => ipcRenderer.invoke('session-retry-pdf', id),
     status: () => ipcRenderer.invoke('session-status'),
     showInFolder: (id) => ipcRenderer.invoke('session-show-in-folder', id),

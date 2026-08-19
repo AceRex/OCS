@@ -22,5 +22,12 @@
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "jsx": "react-jsx"
-  }
+  },
+  "exclude": [
+    "node_modules",
+    "ocs-mobile",
+    "dist",
+    "voice_server",
+    "ocs_image_engine"
+  ]
 }

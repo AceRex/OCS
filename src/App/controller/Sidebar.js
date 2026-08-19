@@ -35,7 +35,7 @@ export default function Sidebar({ activeTab, onTabChange }) {
     { id: "intercom", label: "Inapp Comm", icon: PiMicrophone, isBlock: true },
     { id: "camera", label: "Cameras", icon: PiCamera, isBlock: true },
     { id: "stream", label: "Live Stream", icon: PiBroadcast, isBlock: true },
-    { id: "mobile", label: "Remote", icon: PiDeviceMobile, isBlock: true },
+    { id: "mobile", label: "Remote", icon: PiDeviceMobile, isBlock: false },
     { id: "design", label: "Design Lab", icon: PiSparkle, isBlock: true },
     { id: "settings", label: "Settings", icon: PiGear, isBlock: false },
     { id: "apps", label: "More Apps", icon: PiSquaresFour, isBlock: true },

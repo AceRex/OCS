@@ -2112,6 +2112,13 @@ export default function BroadcastEngine() {
         /\b(ecclesia\s+sticks?|ecclesiasticks?|ecclesiastics?|eclesiastes|eklesiastes?|ecclesiasti)\b/gi,
         "Ecclesiastes",
       ],
+      // Romans mishearings (e.g. Vosk "rumus", "rumas")
+      [/\b(rumus|rumas|romus|rumos|roomas)\b/gi, "Romans"],
+      // 1 Kings mishearings (e.g. Vosk "foske", "foski", "foskins", "foskis", "faskins", "faskings")
+      [/\b(foske|foski|foskey|fuski|foskins?|foskis|foskes|fuskins?|faskins?|faskings?|faskens?)\b/gi, "1 Kings"],
+      // "18" / "eighteen" mishearings (e.g. Vosk "it's a team", "empty" / "ite" after book)
+      [/\b(?:it's\s+a\s+team|its\s+a\s+team|is\s+a\s+team|eight\s+team)\b/gi, "18"],
+      [/\b(1\s+Kings|First\s+Kings)\s+(?:empty|ite|aite|aight)\b/gi, "$1 18"],
       // "verse" / "four" mishearings: "six first war" / "one of us one" / "one vast one"
       [
         /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\s+(of\s+us|us|vast|was|worse|voice|virs|vers|vas|first)\s+(war|fore|floor|ford|tree|free|tee|won|wan|fife|vive|sex|sicks|ate|hate|nigh|mine|\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\b/gi,

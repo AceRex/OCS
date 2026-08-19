@@ -35,6 +35,10 @@ export const BOOK_ALIASES = {
     '2sam': '2 Samuel', '2samuel': '2 Samuel', 'second samuel': '2 Samuel', '2 sam': '2 Samuel', '2nd samuel': '2 Samuel', '2nd sam': '2 Samuel',
     'second summer': '2 Samuel', '2nd summer': '2 Samuel', '2 summer': '2 Samuel',
     '1ki': '1 Kings', '1kings': '1 Kings', 'first kings': '1 Kings', '1 kings': '1 Kings', 'first king': '1 Kings', '1 king': '1 Kings', '1st kings': '1 Kings', '1st king': '1 Kings',
+    'foske': '1 Kings', 'foski': '1 Kings', 'foskey': '1 Kings', 'fuski': '1 Kings', 'force king': '1 Kings', 'force kings': '1 Kings', 'first key': '1 Kings', 'first keys': '1 Kings',
+    'foskins': '1 Kings', "foskin's": '1 Kings', 'foskin': '1 Kings', 'foskis': '1 Kings', "foski's": '1 Kings', 'foskes': '1 Kings', "foske's": '1 Kings',
+    'fuskins': '1 Kings', "fuskin's": '1 Kings', 'fuskin': '1 Kings', "fuski's": '1 Kings',
+    'faskins': '1 Kings', "faskin's": '1 Kings', 'faskin': '1 Kings', 'faskings': '1 Kings', 'fasking': '1 Kings', 'faskens': '1 Kings', 'fasken': '1 Kings', 'fask': '1 Kings', 'fast kings': '1 Kings', 'fast king': '1 Kings',
     '2ki': '2 Kings', '2kings': '2 Kings', 'second kings': '2 Kings', '2 kings': '2 Kings', 'second king': '2 Kings', '2 king': '2 Kings', '2nd kings': '2 Kings', '2nd king': '2 Kings',
     'kings': '1 Kings', 'king': '1 Kings',
     '1chr': '1 Chronicles', '1chronicles': '1 Chronicles', 'first chronicles': '1 Chronicles', 'first chronicle': '1 Chronicles', '1 chronicle': '1 Chronicles', '1st chronicles': '1 Chronicles', '1st chronicle': '1 Chronicles',
@@ -102,7 +106,7 @@ export const BOOK_ALIASES = {
     'acts': 'Acts', 'act': 'Acts', 'axe': 'Acts',
 
     // Epistles
-    'rom': 'Romans', 'romans': 'Romans',
+    'rom': 'Romans', 'romans': 'Romans', 'roman': 'Romans', 'rumus': 'Romans', 'rumas': 'Romans', 'romus': 'Romans', 'rumos': 'Romans', 'roomers': 'Romans', 'roomas': 'Romans', 'rhombus': 'Romans',
     '1cor': '1 Corinthians', '1corinthians': '1 Corinthians', 'first corinthians': '1 Corinthians', '1 corinthians': '1 Corinthians', 'first corinthian': '1 Corinthians', '1 corinthian': '1 Corinthians', '1st corinthians': '1 Corinthians', '1st corinthian': '1 Corinthians',
     '2cor': '2 Corinthians', '2corinthians': '2 Corinthians', 'second corinthians': '2 Corinthians', '2 corinthians': '2 Corinthians', 'second corinthian': '2 Corinthians', '2 corinthian': '2 Corinthians', '2nd corinthians': '2 Corinthians', '2nd corinthian': '2 Corinthians',
     'cor': '1 Corinthians', 'corinthian': '1 Corinthians', 'corinthians': '1 Corinthians',
@@ -437,6 +441,19 @@ const VERSE_CONNECTOR_RE = 'verse|verses|vs|v|first|was|worse|voice|virs|vers|va
  */
 export function repairReferenceConnectors(text) {
     let t = text;
+
+    // "it's a team" / "its a team" / "is a team" / "eight team" ≈ "18" (Vosk mishear of "eighteen")
+    t = t.replace(/\b(?:it's\s+a\s+team|its\s+a\s+team|is\s+a\s+team|it\s+is\s+a\s+team|eight\s+team)\b/gi, '18');
+
+    // Book + "empty" / "ite" / "aite" / "aight" → Book + 18 (Vosk mishearing of "eighteen")
+    t = t.replace(
+        /\b(genesis|exodus|leviticus|numbers|deuteronomy|joshua|judges|ruth|samuel|kings|chronicles|ezra|nehemiah|esther|job|psalms?|proverbs|ecclesiastes|ecclesiastics|ecclesia\s+sticks?|isaiah|jeremiah|jaymiah|jayemiah|jerimiah|jeremy|lamentations|ezekiel|daniel|hosea|joel|amos|obadiah|jonah|micah|nahum|habakkuk|zephaniah|haggai|zechariah|malachi|matthew|mark|luke|john|acts|romans|corinthians|galatians|ephesians|philippians|philippines|colossians|thessalonians|timothy|titus|philemon|hebrews|james|peter|jude|revelation|foske|foski|foskey|fuski|foskins?|foskis|foskes|fuskins?|faskins?|faskings?|faskens?|fast\s+kings?)(?:'s)?\s+(?:empty|ite|aite|aight)\b/gi,
+        '$1 18'
+    );
+
+    // "from the start to" / "from the statue" / "from the stat to" → "from 1 to" or "1 to"
+    t = t.replace(/\b(?:from\s+the\s+statue|from\s+the\s+start\s+to|from\s+the\s+stat\s+to)\s+(\d+)\b/gi, '1 to $1');
+    t = t.replace(/\b(?:from\s+the\s+start|from\s+the\s+beginning)\b/gi, 'verse 1');
 
     // "good to us 20" / "go to us 20" / "good to verse 20" (phonetic mishears of "go to verse 20")
     t = t.replace(/\b(?:good\s+to\s+us|go\s+to\s+us)\s+(\d+)\b/gi, 'go to verse $1');

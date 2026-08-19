@@ -31,6 +31,7 @@ voice_server/models/
 voice_server/piper/
 voice_server/piper_voices/
 ocs_image_engine/models/
+ocs-mobile/
 
 # Runtime Logs & Sessions
 session_archives/

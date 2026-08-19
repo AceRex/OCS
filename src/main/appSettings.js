@@ -21,6 +21,12 @@ const DEFAULTS = {
   transcriptionLanguage: 'en',
   /** When true, skip VAD chunks not detected as transcriptionLanguage (FR-3.64). */
   languageGateEnabled: true,
+  /** Intro bumper file path for recording auto-merge (MP4/WebM/audio). */
+  sessionIntroPath: null,
+  /** Outro bumper file path for recording auto-merge (MP4/WebM/audio). */
+  sessionOutroPath: null,
+  /** Auto-merge intro/outro bumpers when a session recording completes. ON by default. */
+  sessionAutoMergeBumpers: true,
 };
 
 let cache = null;

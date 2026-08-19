@@ -112,6 +112,8 @@ const VOSK_BOOK_ALIASES = [
   { pattern: /\b(colosians|collusions?|collations?)\b/gi, replacement: 'Colossians' },
   { pattern: /\b(philippine?s?)\b/gi, replacement: 'Philippians' },
   { pattern: /\b(ecclesia\s+sticks?|ecclesiasticks?|ecclesiastics?|eclesiastes|eklesiastes?|ecclesiasti)\b/gi, replacement: 'Ecclesiastes' },
+  { pattern: /\b(rumus|rumas|romus|rumos|roomas)\b/gi, replacement: 'Romans' },
+  { pattern: /\b(foske|foski|foskey|fuski|foskins?|foskis|foskes|fuskins?|force\s+kings?|faskins?|faskings?|faskens?|fast\s+kings?)\b/gi, replacement: '1 Kings' },
 ];
 
 // ── Compiled RegExps ─────────────────────────────────────────────────────────

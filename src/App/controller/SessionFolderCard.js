@@ -65,6 +65,8 @@ export default function SessionFolderCard({
   sizeBytes = 0,
   createdAt,
   status,
+  selected = false,
+  onToggleSelect,
   onOpen,
   onMenu,
 }) {
@@ -78,17 +80,38 @@ export default function SessionFolderCard({
     <button
       type="button"
       onClick={onOpen}
-      className="relative w-full text-left group focus:outline-none"
+      className={`relative w-full text-left group focus:outline-none transition-transform duration-200 ${selected ? 'scale-[0.98]' : 'hover:-translate-y-0.5'}`}
       style={{ filter: `drop-shadow(${theme.shadow})` }}
     >
       <div
-        className="relative rounded-[22px] overflow-visible"
+        className={`relative rounded-[22px] overflow-visible ${selected ? 'ring-2 ring-violet-400 ring-offset-2 ring-offset-black/50' : ''}`}
         style={{ background: theme.back }}
       >
         <div
           className="absolute left-[12%] -top-[12px] h-[20px] w-[34%] rounded-t-[16px] z-0"
           style={{ background: theme.back }}
         />
+
+        {/* Selection Checkbox */}
+        <div className="absolute left-2.5 -top-1.5 z-30">
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleSelect?.(e);
+            }}
+            className={`w-5 h-5 rounded-md flex items-center justify-center border transition-all ${
+              selected
+                ? 'bg-violet-600 border-white text-white shadow-md shadow-violet-900/50'
+                : 'bg-black/40 border-white/40 text-transparent hover:border-white opacity-0 group-hover:opacity-100'
+            }`}
+            aria-label={selected ? "Deselect session" : "Select session"}
+          >
+            <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="20 6 9 17 4 12" />
+            </svg>
+          </button>
+        </div>
 
         <div className="absolute right-[10%] top-[10px] w-[44%] h-[48%] pointer-events-none z-[5]">
           <div

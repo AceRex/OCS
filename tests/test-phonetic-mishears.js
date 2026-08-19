@@ -95,9 +95,18 @@ async function runTests() {
     // Leviticus
     { phrase: "levanticus 1 verse 2", expectedBook: "Leviticus", ch: 1, v: 2 },
 
-    // 1 & 2 Samuel
+    // 1 & 2 Samuel / Kings
     { phrase: "the book of first summer two verse five", expectedBook: "1 Samuel", ch: 2, v: 5 },
     { phrase: "the book of second samuel 1 1", expectedBook: "2 Samuel", ch: 1, v: 1 },
+    { phrase: "foske it's a team", expectedBook: "1 Kings", ch: 18, v: 1 },
+    { phrase: "foski 18", expectedBook: "1 Kings", ch: 18, v: 1 },
+    { phrase: "the book of foske 18", expectedBook: "1 Kings", ch: 18, v: 1 },
+    { phrase: "foskins 18", expectedBook: "1 Kings", ch: 18, v: 1 },
+    { phrase: "foski's ite", expectedBook: "1 Kings", ch: 18, v: 1 },
+    { phrase: "foskins ite", expectedBook: "1 Kings", ch: 18, v: 1 },
+    { phrase: "faskins empty", expectedBook: "1 Kings", ch: 18, v: 1 },
+    { phrase: "faskin's empty", expectedBook: "1 Kings", ch: 18, v: 1 },
+    { phrase: "the book of faskins 18", expectedBook: "1 Kings", ch: 18, v: 1 },
 
     // Exodus
     { phrase: "exodus 14 verse 14", expectedBook: "Exodus", ch: 14, v: 14 },
@@ -138,6 +147,10 @@ async function runTests() {
 
     // Amos
     { phrase: "almost three three", expectedBook: "Amos", ch: 3, v: 3 },
+
+    // Romans
+    { phrase: "the book of rumus 1 1", expectedBook: "Romans", ch: 1, v: 1 },
+    { phrase: "rumus 8 verse 1", expectedBook: "Romans", ch: 8, v: 1 },
 
     // Obadiah
     { phrase: "the book of obadiah two verse four", expectedBook: "Obadiah", ch: 2, v: 4 },

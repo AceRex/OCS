@@ -111,18 +111,18 @@ export default function MobileConnectController() {
                         </div>
                     )}
 
-                    <div className="flex flex-col items-center gap-1">
-                        <div className="text-xs uppercase tracking-widest text-white/40">Pairing Code</div>
-                        <div className="text-5xl font-mono font-bold text-cyan-300 tracking-[0.35em] select-all">
+                    <div className="flex flex-col items-center gap-1.5">
+                        <div className="text-[11px] uppercase tracking-widest text-white/40 font-bold">Pairing Code</div>
+                        <div className="text-2xl font-mono font-bold text-white tracking-[0.25em] select-all bg-white/5 border border-white/15 px-4 py-1.5 rounded-xl shadow-inner">
                             {serverInfo.pairingCode}
                         </div>
                     </div>
 
                     <div className="flex flex-col items-center gap-1">
-                        <div className="text-xs uppercase tracking-widest text-white/40">Network</div>
-                        <div className="text-2xl font-mono font-bold text-blue-400 select-all">
+                        <div className="text-[11px] uppercase tracking-widest text-white/40 font-bold">Network</div>
+                        <div className="text-xl font-mono font-bold text-white/90 select-all">
                             {serverInfo.ip}
-                            <span className="text-white/40 text-lg">:{serverInfo.port}</span>
+                            <span className="text-white/40 text-base">:{serverInfo.port}</span>
                         </div>
                     </div>
 

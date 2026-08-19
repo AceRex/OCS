@@ -77,11 +77,11 @@ function buildSimplePdf({ title, speakerName, dateStr, durationStr, lines, clean
   y -= 4;
 
   for (const line of lines) {
-    const stamp = line.stamp || '';
+    const stamp = (line.stamp || '').trim();
     const text = (line.text || '').replace(/\s+/g, ' ').trim();
     if (!text) continue;
     // Wrap long lines across multiple PDF rows
-    const full = `${stamp}  ${text}`;
+    const full = stamp ? `${stamp}  ${text}` : text;
     const max = 95;
     for (let i = 0; i < full.length; i += max) {
       write(full.slice(i, i + max), 10);
@@ -451,11 +451,18 @@ class SessionArchiveService extends EventEmitter {
 
       let audioOk = false;
       try {
+        const introPath = appSettings.get('sessionIntroPath') || null;
+        const outroPath = appSettings.get('sessionOutroPath') || null;
+        const autoMergeBumpers = appSettings.get('sessionAutoMergeBumpers') !== false;
+
         const result = await finalizeAudio({
           chunks: session.audioChunks || [],
           mime: session.audioMime || 'audio/webm',
           dir: session.dir,
           durationSec: session.meta.durationSec || 0,
+          introPath,
+          outroPath,
+          autoMergeBumpers,
           onProgress: (p) => {
             const mapped = mapAudioProgressToOverall(p);
             this._emitProgress({
@@ -468,6 +475,9 @@ class SessionArchiveService extends EventEmitter {
         });
         session.meta.files.audio = result.audioFile;
         session.meta.files.video = result.format === 'mp4' ? result.audioFile : null;
+        if (result.finalDurationSec) {
+          session.meta.durationSec = result.finalDurationSec;
+        }
         audioOk = true;
         console.log('[SessionArchive] audio saved', result.audioFile, formatBytes(result.bytes));
       } catch (err) {
@@ -588,16 +598,91 @@ class SessionArchiveService extends EventEmitter {
     const mediaPath = await this._resolveMediaPath(dir, meta);
     const pdfFile = meta.files?.pdf || PDF_NAME;
     await this._recomputeSize(dir, meta);
+
+    let transcriptText = '';
+    const rawTxtPath = path.join(dir, RAW_TXT_NAME);
+    try {
+      transcriptText = await fsp.readFile(rawTxtPath, 'utf8');
+    } catch (_) {
+      try {
+        const jsonlRaw = await fsp.readFile(path.join(dir, JSONL_NAME), 'utf8');
+        const lines = jsonlRaw.split('\n').filter(Boolean).map((l) => {
+          try { return JSON.parse(l); } catch (_) { return null; }
+        }).filter(Boolean);
+        transcriptText = formatRawTranscript(lines);
+      } catch (_) {}
+    }
+
+    const folderFiles = [];
+    try {
+      const entries = await fsp.readdir(dir, { withFileTypes: true });
+      for (const ent of entries) {
+        if (ent.isFile()) {
+          const st = await fsp.stat(path.join(dir, ent.name));
+          folderFiles.push({
+            name: ent.name,
+            sizeBytes: st.size,
+            sizeLabel: formatBytes(st.size),
+            updatedAt: st.mtime.toISOString(),
+          });
+        }
+      }
+      folderFiles.sort((a, b) => a.name.localeCompare(b.name));
+    } catch (_) {}
+
     return {
       ...meta,
+      transcriptText,
+      folderFiles,
       paths: {
         dir,
         video: mediaPath,
         audio: mediaPath,
-        pdf: meta.files.pdf ? path.join(dir, pdfFile) : null,
+        pdf: meta.files?.pdf ? path.join(dir, pdfFile) : null,
       },
       sizeLabel: formatBytes(meta.sizeBytes),
     };
+  }
+
+  async updateTranscript(id, text) {
+    const dir = path.join(this.root, id);
+    const metaPath = path.join(dir, 'meta.json');
+    const meta = JSON.parse(await fsp.readFile(metaPath, 'utf8'));
+
+    const rawTxtPath = path.join(dir, RAW_TXT_NAME);
+    await fsp.writeFile(rawTxtPath, String(text || ''), 'utf8');
+    meta.files = meta.files || {};
+    meta.files.transcriptRaw = RAW_TXT_NAME;
+
+    const lines = String(text || '')
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .map((l) => {
+        const m = l.match(/^(\[\d+:\d+(?::\d+)?\]|\d+:\d+(?::\d+)?)\s*(.*)$/);
+        return m ? { stamp: m[1], text: m[2] } : { stamp: '', text: l };
+      });
+
+    const dur = meta.durationSec || 0;
+    const durationStr = `${String(Math.floor(dur / 60)).padStart(2, '0')}:${String(dur % 60).padStart(2, '0')}`;
+    const pdfBuf = buildSimplePdf({
+      title: meta.title,
+      speakerName: meta.speakerName,
+      dateStr: new Date(meta.createdAt).toLocaleString(),
+      durationStr,
+      lines,
+      cleanupNote: meta.transcriptCleanup?.note || null,
+    });
+
+    await fsp.writeFile(path.join(dir, PDF_NAME), pdfBuf);
+    meta.files.pdf = PDF_NAME;
+    if (meta.status === 'pdf_failed') {
+      meta.status = 'ready';
+    }
+    await this._recomputeSize(dir, meta);
+    await fsp.writeFile(metaPath, JSON.stringify(meta, null, 2));
+    this.emit('session-updated', meta);
+    return this.getSession(id);
   }
 
   async updateSession(id, patch) {

@@ -34,7 +34,7 @@ export default function TimerPage() {
     const [editTime, setEditTime] = useState(0);
 
     // Interval Ref
-    const timerRef = useRef<NodeJS.Timeout | null>(null);
+    const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
     // --- Timer Logic ---
     const isTimerActive = !isPaused && time > 0;
