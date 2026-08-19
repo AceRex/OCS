@@ -50,8 +50,9 @@ const OCS_COMMANDS = [
       /\bnext\s+verse\b/i,
       /\bgo\s+(?:to\s+)?(?:the\s+)?next\s+verse\b/i,
       /\bnext\s+please\b/i,
+      /\b(?:go\s+(?:to\s+)?(?:the\s+)?)?next\b/i,
     ],
-    label: "Next Verse",
+    label: "Next",
     action: "next_verse",
   },
   {
@@ -60,8 +61,11 @@ const OCS_COMMANDS = [
       /\bprev\s+verse\b/i,
       /\bgo\s+back\b/i,
       /\bprevious\s+please\b/i,
+      /\bprevious\b/i,
+      /\bprev\b/i,
+      /\b(?:go\s+)?back\b/i,
     ],
-    label: "Previous Verse",
+    label: "Previous",
     action: "prev_verse",
   },
   {
@@ -512,6 +516,23 @@ export default function BroadcastEngine() {
     window.addEventListener("bible-context-sync", onBibleContext);
     return () =>
       window.removeEventListener("bible-context-sync", onBibleContext);
+  }, []);
+
+  // Track active display context (FR-4.9: 'scripture' | 'presentation' | 'scene' | 'timer' | 'none')
+  const activeDisplayContextRef = useRef("none");
+  useEffect(() => {
+    if (window.electron?.Presentation?.onSetContent) {
+      const unsub = window.electron.Presentation.onSetContent((content) => {
+        if (!content) {
+          activeDisplayContextRef.current = "none";
+        } else {
+          activeDisplayContextRef.current = content.type || "none";
+        }
+      });
+      return () => {
+        if (typeof unsub === "function") unsub();
+      };
+    }
   }, []);
 
   // Native ASR status + continuous auto-listen (FR-3.1 / FR-3.26 engine name)
@@ -1093,8 +1114,24 @@ export default function BroadcastEngine() {
 
   // ── Command Executor ─────────────────────────────────────────────────────
   const executeCommand = async (action, rawText = "") => {
-    if (action === "next_verse") return navigateRelative(1);
-    if (action === "prev_verse") return navigateRelative(-1);
+    if (action === "next_verse") {
+      if (activeDisplayContextRef.current === "presentation") {
+        return executeCommand("next_slide", rawText);
+      }
+      if (activeDisplayContextRef.current === "scene") {
+        return executeCommand("next_page", rawText);
+      }
+      return navigateRelative(1);
+    }
+    if (action === "prev_verse") {
+      if (activeDisplayContextRef.current === "presentation") {
+        return executeCommand("prev_slide", rawText);
+      }
+      if (activeDisplayContextRef.current === "scene") {
+        return executeCommand("prev_page", rawText);
+      }
+      return navigateRelative(-1);
+    }
     if (action === "first_verse") {
       if (!currentRefStateRef.current) {
         setCommandFeedback({ label: "No verse loaded yet", ok: false });

@@ -1097,6 +1097,103 @@ export async function smartBibleMatch(rawCommand, books, bibleElectron, currentC
 }
 
 /**
+ * Fuzzy book filter and resolver for structured Bible input and UI autocompletion (FR-3.15 / FR-2.1).
+ * Uses exact alias -> prefix/word-order -> phonetic/Levenshtein matching.
+ * @param {string} query
+ * @param {Array<{id: number, name: string}>} books
+ * @returns {Array<{id: number, name: string}>}
+ */
+export function filterBooksFuzzy(query, books) {
+    if (!books || !Array.isArray(books) || books.length === 0) return [];
+    if (!query || !query.trim()) return books;
+
+    const q = query.toLowerCase().trim();
+    const qClean = q.replace(/[^\w\s]/g, "").trim();
+
+    const results = [];
+    const seenNames = new Set();
+
+    function add(b, priority) {
+        if (!b || !b.name) return;
+        const key = b.name.toLowerCase();
+        if (!seenNames.has(key)) {
+            seenNames.add(key);
+            results.push({ book: b, priority });
+        }
+    }
+
+    // 1. Exact alias resolution from BOOK_ALIASES table
+    const aliasMatch = BOOK_ALIASES[q] || BOOK_ALIASES[qClean];
+    if (aliasMatch) {
+        const b = books.find(x => x.name.toLowerCase() === aliasMatch.toLowerCase());
+        if (b) add(b, 0);
+    }
+
+    // 2. Prefix match across all aliases in BOOK_ALIASES
+    for (const [alias, canonical] of Object.entries(BOOK_ALIASES)) {
+        if (alias === q || alias === qClean) {
+            const b = books.find(x => x.name.toLowerCase() === canonical.toLowerCase());
+            if (b) add(b, 1);
+        } else if (alias.startsWith(q) || (qClean && alias.startsWith(qClean))) {
+            const b = books.find(x => x.name.toLowerCase() === canonical.toLowerCase());
+            if (b) add(b, 2);
+        }
+    }
+
+    // 3. Direct canonical book name startsWith
+    for (const b of books) {
+        const n = b.name.toLowerCase();
+        if (n.startsWith(q) || (qClean && n.startsWith(qClean))) {
+            add(b, 3);
+        }
+    }
+
+    // 4. Direct canonical book name includes
+    for (const b of books) {
+        const n = b.name.toLowerCase();
+        if (n.includes(q) || (qClean && n.includes(qClean))) {
+            add(b, 4);
+        }
+    }
+
+    // 5. Phonetic (Metaphone) code match
+    const qPhonetic = phoneticCode(qClean.replace(/\s/g, ""));
+    if (qPhonetic) {
+        for (const b of books) {
+            const n = b.name.toLowerCase();
+            const bPhonetic = phoneticCode(n.replace(/\s/g, ""));
+            if (bPhonetic && qPhonetic === bPhonetic) {
+                add(b, 5);
+            }
+        }
+    }
+
+    // 6. Levenshtein distance fallback
+    for (const b of books) {
+        const n = b.name.toLowerCase();
+        const dist = levenshtein(qClean || q, n);
+        const maxLen = Math.max(q.length, n.length, 1);
+        if (dist <= 2 || (dist / maxLen <= 0.35)) {
+            add(b, 6 + dist);
+        }
+    }
+
+    results.sort((a, b) => a.priority - b.priority);
+    return results.map(r => r.book);
+}
+
+/**
+ * Resolve a single book query to its best matching book object (or null).
+ * @param {string} query
+ * @param {Array<{id: number, name: string}>} books
+ * @returns {{id: number, name: string}|null}
+ */
+export function resolveBookName(query, books) {
+    const list = filterBooksFuzzy(query, books);
+    return list.length > 0 ? list[0] : null;
+}
+
+/**
  * Get top-3 candidate suggestions for "Did you mean?" when no match found.
  * Returns array of { name, distance } sorted by distance ascending.
  */

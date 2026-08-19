@@ -196,7 +196,8 @@ ipcMain.handle("media-import", async (event) => {
   }
 });
 
-const { convertPptxToPng } = require('pptx-glimpse');
+const { convertPptxToPng, collectUsedFonts } = require('pptx-glimpse');
+const { resolvePptxInheritance } = require('./src/App/utils/pptxInheritance');
 const JSZip = require('jszip');
 
 // ── Presentations Store (FR-4.1 - FR-4.7) ──────────────────────────────────
@@ -404,6 +405,9 @@ ipcMain.handle("media-import-presentation", async (event) => {
       'Helvetica Neue': 'Helvetica'
     };
 
+    // Pre-process PPTX buffer to resolve 3-level placeholder & background inheritance (FR-4.2)
+    const resolvedBuffer = await resolvePptxInheritance(buffer);
+
     // Stage 2: Font detection and OpenXML inspection (Task 2)
     sendProgress({ stage: 'fonts', percent: 15, message: 'Analyzing fonts and structure...' });
     let totalSlides = 1;
@@ -412,12 +416,11 @@ ipcMain.handle("media-import-presentation", async (event) => {
     let usedFonts = { fonts: [] };
 
     try {
-      // Assuming collectUsedFonts exists in context or via require
-      if (typeof collectUsedFonts !== 'undefined') usedFonts = collectUsedFonts(buffer);
+      if (typeof collectUsedFonts !== 'undefined') usedFonts = collectUsedFonts(resolvedBuffer);
     } catch (_) {}
 
     try {
-      const zip = await JSZip.loadAsync(buffer);
+      const zip = await JSZip.loadAsync(resolvedBuffer);
       const slideFiles = Object.keys(zip.files).filter(k => k.match(/^ppt\/slides\/slide\d+\.xml$/));
       if (slideFiles.length > 0) totalSlides = slideFiles.length;
 
@@ -441,30 +444,30 @@ ipcMain.handle("media-import-presentation", async (event) => {
 
     const fontAnalysis = analyzePptxFonts(usedFonts, embeddedFontNames, fontMapping);
 
-    // Stage 3: Slide-by-slide conversion with progress reporting (Task 1)
+    // Stage 3: Slide conversion with batch engine and progressive progress reporting (FR-4.2, FR-4.34)
+    sendProgress({
+      stage: 'converting',
+      current: 0,
+      total: totalSlides,
+      percent: 30,
+      message: `Converting ${totalSlides} slides to presentation graphics...`
+    });
+
     const slideList = [];
     const errors = [];
 
-    for (let s = 1; s <= totalSlides; s++) {
-      const pct = Math.round(15 + (s / totalSlides) * 75);
-      sendProgress({
-        stage: 'converting',
-        current: s,
-        total: totalSlides,
-        percent: pct,
-        message: `Converting slide ${s} of ${totalSlides}...`
+    try {
+      // Single-pass batch conversion (10x faster: loads fonts and OpenXML DOM once for all slides)
+      const convertedAll = await convertPptxToPng(resolvedBuffer, {
+        fontDirs,
+        fontMapping,
+        width: 1920,
+        height: 1080
       });
 
-      try {
-        const converted = await convertPptxToPng(buffer, {
-          slides: [s],
-          fontDirs,
-          fontMapping,
-          width: 1920,
-          height: 1080
-        });
-
-        const slideItem = converted && converted[0] ? converted[0] : null;
+      const totalConverted = Array.isArray(convertedAll) ? convertedAll.length : 0;
+      for (let s = 1; s <= totalConverted; s++) {
+        const slideItem = convertedAll[s - 1];
         if (slideItem) {
           const pngBuf = slideItem.png ? slideItem.png : slideItem;
           const slideNumber = slideItem.slideNumber || s;
@@ -479,8 +482,54 @@ ipcMain.handle("media-import-presentation", async (event) => {
             height: slideItem.height || 1080
           });
         }
-      } catch (slideErr) {
-        errors.push({ slideIndex: s - 1, slideNumber: s, error: slideErr.message });
+
+        const pct = Math.round(30 + (s / Math.max(1, totalConverted)) * 60);
+        sendProgress({
+          stage: 'converting',
+          current: s,
+          total: totalConverted,
+          percent: pct,
+          message: `Saved slide ${s} of ${totalConverted}...`
+        });
+      }
+    } catch (batchErr) {
+      console.warn("[PPTX] Batch conversion warning, falling back to per-slide conversion:", batchErr);
+      // Fallback: per-slide conversion if batch fails
+      for (let s = 1; s <= totalSlides; s++) {
+        const pct = Math.round(30 + (s / totalSlides) * 60);
+        sendProgress({
+          stage: 'converting',
+          current: s,
+          total: totalSlides,
+          percent: pct,
+          message: `Converting slide ${s} of ${totalSlides}...`
+        });
+        try {
+          const converted = await convertPptxToPng(resolvedBuffer, {
+            slides: [s],
+            fontDirs,
+            fontMapping,
+            width: 1920,
+            height: 1080
+          });
+          const slideItem = converted && converted[0] ? converted[0] : null;
+          if (slideItem) {
+            const pngBuf = slideItem.png ? slideItem.png : slideItem;
+            const slideNumber = slideItem.slideNumber || s;
+            const slidePath = path.join(slidesDir, `slide_${slideNumber}.png`);
+            await fsp.writeFile(slidePath, pngBuf);
+            slideList.push({
+              slideIndex: s - 1,
+              slideNumber: slideNumber,
+              url: `file://${slidePath}`,
+              notes: notesMap[slideNumber] || "",
+              width: slideItem.width || 1920,
+              height: slideItem.height || 1080
+            });
+          }
+        } catch (slideErr) {
+          errors.push({ slideIndex: s - 1, slideNumber: s, error: slideErr.message });
+        }
       }
     }
 

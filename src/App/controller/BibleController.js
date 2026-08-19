@@ -1,6 +1,7 @@
 import { Button } from "../../../components/button";
 import React, { useState, useEffect, useRef } from "react";
 import { PiCaretDown, PiMagnifyingGlass, PiCheck } from "react-icons/pi";
+import { filterBooksFuzzy, resolveBookName } from "./smartBibleMatch";
 
 const versions = {
   kjv: "King James Version (KJV)",
@@ -523,10 +524,8 @@ export default function BibleController() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [books, selectedBookIndex]);
 
-  // Filtered books for suggestion dropdown
-  const filteredBooks = books.filter((b) =>
-    b.name.toLowerCase().includes((bookQuery || "").toLowerCase().trim()),
-  );
+  // Filtered books for suggestion dropdown using FR-3.15 multi-pass fuzzy matcher
+  const filteredBooks = filterBooksFuzzy(bookQuery, books);
 
   const versionList = Object.entries(versions).map(([key, name]) => ({
     key,
@@ -602,9 +601,7 @@ export default function BibleController() {
         const target = filteredBooks[activeSuggestionIndex] || filteredBooks[0];
         handleSelectBook(target);
       } else if (bookQuery.trim()) {
-        const target = books.find((b) =>
-          b.name.toLowerCase().startsWith(bookQuery.trim().toLowerCase()),
-        );
+        const target = resolveBookName(bookQuery.trim(), books);
         if (target) {
           e.preventDefault();
           handleSelectBook(target);
@@ -689,16 +686,17 @@ export default function BibleController() {
 
     hasUserSelectedRef.current = true;
 
-    // Resolve book index
+    // Resolve book index using smartBibleMatch (FR-3.15)
     let bookIdx = selectedBookIndex >= 0 ? selectedBookIndex : 0;
     if (selectedBookIndex < 0 && bookQuery.trim()) {
-      const foundIdx = books.findIndex((b) =>
-        b.name.toLowerCase().startsWith(bookQuery.trim().toLowerCase()),
-      );
-      if (foundIdx !== -1) {
-        bookIdx = foundIdx;
-        setSelectedBookIndex(foundIdx);
-        setBookQuery(books[foundIdx].name);
+      const target = resolveBookName(bookQuery.trim(), books);
+      if (target) {
+        const foundIdx = books.findIndex((b) => b.id === target.id || b.name === target.name);
+        if (foundIdx !== -1) {
+          bookIdx = foundIdx;
+          setSelectedBookIndex(foundIdx);
+          setBookQuery(target.name);
+        }
       }
     } else if (selectedBookIndex < 0 && books.length > 0) {
       bookIdx = 0;
@@ -715,6 +713,30 @@ export default function BibleController() {
     const chIdx = chNum - 1;
     setSelectedChapterIndex(chIdx);
 
+    const ver = selectedVersion || "kjv";
+
+    // Ensure chapter verses are fetched to accurately clamp verse bounds
+    let currentChapterVerses = verses;
+    if (
+      !currentChapterVerses ||
+      currentChapterVerses.length === 0 ||
+      selectedBookIndex !== bookIdx ||
+      selectedChapterIndex !== chIdx
+    ) {
+      try {
+        currentChapterVerses = await electron.Bible.getChapter(
+          ver,
+          bookIdx,
+          chIdx + 1,
+        );
+        setVerses(currentChapterVerses);
+      } catch (err) {
+        console.error("Failed to load chapter verses for bounds clamping:", err);
+      }
+    }
+
+    const maxVerses = Math.max(1, currentChapterVerses?.length || 150);
+
     const parts = val
       .split(",")
       .map((s) => s.trim())
@@ -724,45 +746,39 @@ export default function BibleController() {
       if (p.includes("-")) {
         const [s, e] = p.split("-").map((x) => parseInt(x, 10));
         if (!isNaN(s) && !isNaN(e)) {
-          for (let i = Math.min(s, e); i <= Math.max(s, e); i++) {
-            if (i >= 1) indices.push(i - 1);
+          const sClamped = Math.max(1, Math.min(maxVerses, s));
+          const eClamped = Math.max(1, Math.min(maxVerses, e));
+          for (let i = Math.min(sClamped, eClamped); i <= Math.max(sClamped, eClamped); i++) {
+            indices.push(i - 1);
           }
         }
       } else {
         const v = parseInt(p, 10);
-        if (!isNaN(v) && v >= 1) {
-          indices.push(v - 1);
+        if (!isNaN(v)) {
+          const vClamped = Math.max(1, Math.min(maxVerses, v));
+          indices.push(vClamped - 1);
         }
       }
     }
-    const unique = Array.from(new Set(indices));
+    const unique = Array.from(new Set(indices)).sort((a, b) => a - b);
     if (unique.length > 0) {
       const newSet = new Set(unique);
       setSelectedVerseIndices(newSet);
-      const ver = selectedVersion || "kjv";
 
-      // Auto-load and present immediately!
-      if (
-        verses.length > 0 &&
-        selectedBookIndex === bookIdx &&
-        selectedChapterIndex === chIdx
-      ) {
-        presentVerses(newSet, verses, bookIdx, chIdx, ver);
-        scrollToVerse(unique);
+      // Update input text with clamped numbers (e.g. 999 -> 31, 1-999 -> 1-31)
+      const isContiguous = unique.every(
+        (val, i, arr) => i === 0 || val === arr[i - 1] + 1,
+      );
+      if (unique.length === 1) {
+        setVerseInput((unique[0] + 1).toString());
+      } else if (isContiguous) {
+        setVerseInput(`${unique[0] + 1}-${unique[unique.length - 1] + 1}`);
       } else {
-        try {
-          const fetchedVerses = await electron.Bible.getChapter(
-            ver,
-            bookIdx,
-            chIdx + 1,
-          );
-          setVerses(fetchedVerses);
-          presentVerses(newSet, fetchedVerses, bookIdx, chIdx, ver);
-          scrollToVerse(unique);
-        } catch (err) {
-          console.error("Failed to auto-load chapter verses:", err);
-        }
+        setVerseInput(unique.map((i) => i + 1).join(","));
       }
+
+      presentVerses(newSet, currentChapterVerses, bookIdx, chIdx, ver);
+      scrollToVerse(unique);
     }
   };
 
@@ -997,6 +1013,9 @@ export default function BibleController() {
             onFocus={(e) => {
               isUserEditingVerseRef.current = true;
               e.target.select();
+            }}
+            onBlur={(e) => {
+              commitVerse(e.target.value);
             }}
             onKeyDown={handleVerseKeyDown}
             placeholder="verse"

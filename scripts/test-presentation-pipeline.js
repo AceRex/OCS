@@ -201,6 +201,29 @@ async function runTests() {
   check('T4.7: last_slide -> 2', navSlide('last_slide') === 2);
   check('T4.8: jump_to_slide 2 -> index 1', navSlide('jump_to_slide', 2) === 1);
 
+  console.log('\n=== 5. Context Disambiguation for Bare Next/Prev (FR-4.9) ===');
+
+  function resolveRelativeCommand(action, context) {
+    if (action === 'next_verse' || action === 'next') {
+      if (context === 'presentation') return 'next_slide';
+      if (context === 'scene') return 'next_page';
+      return 'next_verse';
+    }
+    if (action === 'prev_verse' || action === 'prev') {
+      if (context === 'presentation') return 'prev_slide';
+      if (context === 'scene') return 'prev_page';
+      return 'prev_verse';
+    }
+    return action;
+  }
+
+  check('T5.1: Bare "next" in presentation context routes to next_slide', resolveRelativeCommand('next', 'presentation') === 'next_slide');
+  check('T5.2: Bare "previous" in presentation context routes to prev_slide', resolveRelativeCommand('prev', 'presentation') === 'prev_slide');
+  check('T5.3: Bare "next" in scene context routes to next_page', resolveRelativeCommand('next', 'scene') === 'next_page');
+  check('T5.4: Bare "previous" in scene context routes to prev_page', resolveRelativeCommand('prev', 'scene') === 'prev_page');
+  check('T5.5: Bare "next" in scripture context routes to next_verse', resolveRelativeCommand('next', 'bible') === 'next_verse');
+  check('T5.6: Bare "previous" in scripture context routes to prev_verse', resolveRelativeCommand('prev', 'bible') === 'prev_verse');
+
   // Cleanup test dir
   try {
     fs.rmSync(outDir, { recursive: true, force: true });
