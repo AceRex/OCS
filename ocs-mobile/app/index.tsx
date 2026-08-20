@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,8 @@ import {
   TouchableOpacity,
   useWindowDimensions,
   StatusBar,
+  Modal,
+  TextInput,
 } from "react-native";
 import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -22,15 +24,36 @@ import {
   House,
   CaretRight,
   Link,
+  FileArrowUp,
+  PencilSimple,
+  Check,
+  X,
 } from "phosphor-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { useSocketStore } from "../store/socketStore";
 
 export default function Dashboard() {
   const router = useRouter();
   const { width } = useWindowDimensions();
+  const { isConnected, isPaired, deviceName, setDeviceName } = useSocketStore();
+
+  const [renameModalVisible, setRenameModalVisible] = useState(false);
+  const [tempName, setTempName] = useState(deviceName);
 
   // Fixed 2 columns unless very small screen
   const numColumns = width < 380 ? 1 : 2;
+
+  const handleOpenRename = () => {
+    setTempName(deviceName);
+    setRenameModalVisible(true);
+  };
+
+  const handleSaveRename = () => {
+    if (tempName.trim()) {
+      setDeviceName(tempName.trim());
+    }
+    setRenameModalVisible(false);
+  };
 
   const cards = [
     {
@@ -40,6 +63,14 @@ export default function Dashboard() {
       gradient: ["#FF416C", "#FF4B2B"], // Red/Pink Gradient
       iconColor: "#ffffff",
       description: "Host Setup",
+    },
+    {
+      id: "assets",
+      label: "Media Share",
+      icon: FileArrowUp,
+      gradient: ["#F2994A", "#F2C94C"], // Amber/Orange Gradient
+      iconColor: "#ffffff",
+      description: "Send Assets",
     },
     {
       id: "timer",
@@ -71,23 +102,7 @@ export default function Dashboard() {
       icon: Microphone,
       gradient: ["#f12711", "#f5af19"], // Orange/Red Gradient
       iconColor: "#ffffff",
-      description: "Team Chat",
-    },
-    {
-      id: "camera",
-      label: "Camera",
-      icon: Camera,
-      gradient: ["#000000", "#434343"], // Dark Gradient
-      iconColor: "#ffffff",
-      description: "Remote View",
-    },
-    {
-      id: "settings",
-      label: "Settings",
-      icon: Gear,
-      gradient: ["#4B79A1", "#283E51"], // Steel Blue Gradient
-      iconColor: "#ffffff",
-      description: "Config",
+      description: "Push-to-Talk",
     },
   ];
 
@@ -96,22 +111,95 @@ export default function Dashboard() {
       <StatusBar barStyle="light-content" />
       <ScrollView contentContainerStyle={{ padding: 20 }}>
         {/* Header */}
-        <View className="flex-row items-center justify-between mb-8 mt-2">
+        <View className="flex-row items-center justify-between mb-6 mt-2">
           <View>
             <Text className="text-3xl font-black text-white tracking-tight">
               OCS<Text className="text-green-400">.</Text>
             </Text>
-            <Text className="text-white/40 text-xs uppercase tracking-[0.2em] font-medium">
-              Controller Mobile
-            </Text>
+            <TouchableOpacity
+              onPress={handleOpenRename}
+              className="flex-row items-center gap-1.5 mt-0.5"
+            >
+              <Text className="text-white/60 text-xs font-semibold">
+                {deviceName || "Mobile Companion"}
+              </Text>
+              <PencilSimple size={12} color="rgba(255,255,255,0.4)" />
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            onPress={() => router.push("/settings" as any)}
-            className="w-10 h-10 rounded-full bg-white/5 border border-white/10 items-center justify-center active:bg-white/10"
-          >
-            <Gear color="white" size={20} />
-          </TouchableOpacity>
+          <View className="flex-row items-center gap-2">
+            <View
+              className={`px-3 py-1.5 rounded-full flex-row items-center gap-1.5 border ${
+                isPaired
+                  ? "bg-green-500/10 border-green-500/30"
+                  : isConnected
+                  ? "bg-amber-500/10 border-amber-500/30"
+                  : "bg-white/5 border-white/10"
+              }`}
+            >
+              <View
+                className={`w-2 h-2 rounded-full ${
+                  isPaired
+                    ? "bg-green-400"
+                    : isConnected
+                    ? "bg-amber-400"
+                    : "bg-white/30"
+                }`}
+              />
+              <Text
+                className={`text-[11px] font-bold ${
+                  isPaired
+                    ? "text-green-400"
+                    : isConnected
+                    ? "text-amber-400"
+                    : "text-white/40"
+                }`}
+              >
+                {isPaired ? "Paired" : isConnected ? "Connecting" : "Offline"}
+              </Text>
+            </View>
+          </View>
         </View>
+
+        {/* Rename Modal */}
+        <Modal
+          visible={renameModalVisible}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setRenameModalVisible(false)}
+        >
+          <View className="flex-1 bg-black/80 justify-center items-center p-6">
+            <View className="w-full bg-[#1e1e24] border border-white/15 rounded-3xl p-6 shadow-2xl">
+              <Text className="text-white font-bold text-lg mb-1">
+                Device Name
+              </Text>
+              <Text className="text-white/50 text-xs mb-4">
+                This name will appear on the desktop Controller device list.
+              </Text>
+              <TextInput
+                value={tempName}
+                onChangeText={setTempName}
+                placeholder="e.g. Pastor's Phone"
+                placeholderTextColor="#666"
+                className="bg-black/50 border border-white/20 text-white rounded-xl p-3.5 text-base font-semibold mb-6"
+                autoFocus
+              />
+              <View className="flex-row gap-3">
+                <TouchableOpacity
+                  onPress={() => setRenameModalVisible(false)}
+                  className="flex-1 py-3 bg-white/10 rounded-xl items-center"
+                >
+                  <Text className="text-white/70 font-bold text-sm">Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={handleSaveRename}
+                  className="flex-1 py-3 bg-blue-600 rounded-xl items-center"
+                >
+                  <Text className="text-white font-bold text-sm">Save Name</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
 
         {/* Grid */}
         <View className="flex-row flex-wrap justify-between">
@@ -133,13 +221,15 @@ export default function Dashboard() {
                   colors={card.gradient as [string, string, ...string[]]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
-                  className="rounded-[24px] p-5 h-44 justify-between relative overflow-hidden shadow-lg"
+                  className="p-5 h-44 justify-between relative overflow-hidden shadow-lg"
                   style={{
                     shadowColor: card.gradient[0],
                     shadowOffset: { width: 0, height: 8 },
                     shadowOpacity: 0.3,
                     shadowRadius: 10,
                     elevation: 10,
+                    borderRadius: 12,
+                    padding: 5,
                   }}
                 >
                   {/* Background Accents */}

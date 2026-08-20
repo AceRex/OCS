@@ -25,6 +25,8 @@ export default function RootLayout() {
         <Stack.Screen name="connect" />
         <Stack.Screen name="bible" />
         <Stack.Screen name="timer" />
+        <Stack.Screen name="assets" />
+        <Stack.Screen name="intercom" />
         <Stack.Screen name="modal" options={{ presentation: "modal", title: "Modal" }} />
       </Stack>
       <StatusBar style="auto" />

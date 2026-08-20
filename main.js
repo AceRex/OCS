@@ -308,6 +308,233 @@ function analyzePptxFonts(usedFonts, embeddedFontNames, fontMapping) {
   };
 }
 
+async function processPptxDeck(destPath, filename, sendProgress = () => {}) {
+  // Create a folder for the slide images
+  const slidesDir = path.join(mediaPath, `${filename}_slides`);
+  try {
+    await fsp.mkdir(slidesDir, { recursive: true });
+  } catch (_) {}
+
+  const buffer = await fsp.readFile(destPath);
+  const os = require('os');
+  const fontDirs = [
+    '/System/Library/Fonts',
+    '/System/Library/Fonts/Supplemental',
+    '/Library/Fonts',
+    path.join(os.homedir(), 'Library/Fonts'),
+    '/Library/Application Support/Microsoft/Fonts',
+    'C:\\Windows\\Fonts',
+    'C:\\Program Files\\Microsoft Office\\root\\vfs\\Fonts',
+    '/usr/share/fonts',
+    '/usr/local/share/fonts'
+  ].filter(d => {
+    try { return fs.existsSync(d); } catch (_) { return false; }
+  });
+
+  const fontMapping = {
+    'Century Gothic': 'Arial',
+    'Aptos': 'Arial',
+    'Aptos Display': 'Arial',
+    'Calibri': 'Arial',
+    'Calibri Light': 'Arial',
+    'Segoe UI': 'Arial',
+    'Segoe UI Semibold': 'Arial',
+    'Segoe UI Light': 'Arial',
+    'Tahoma': 'Arial',
+    'Trebuchet MS': 'Arial',
+    'Verdana': 'Arial',
+    'Impact': 'Arial Black',
+    'Georgia': 'Times New Roman',
+    'Garamond': 'Times New Roman',
+    'Book Antiqua': 'Times New Roman',
+    'Palatino': 'Times New Roman',
+    'Palatino Linotype': 'Times New Roman',
+    'Consolas': 'Courier New',
+    'Lucida Console': 'Courier New',
+    'Franklin Gothic Medium': 'Arial',
+    'Gill Sans MT': 'Arial',
+    'Century': 'Times New Roman',
+    'Baskerville': 'Times New Roman',
+    'Montserrat': 'Arial',
+    'Montserrat ExtraBold': 'Arial Bold',
+    'Montserrat Medium': 'Arial',
+    'Montserrat SemiBold': 'Arial Bold',
+    'Montserrat Light': 'Arial',
+    'Montserrat Black': 'Arial Black',
+    'Poppins': 'Arial',
+    'Poppins Medium': 'Arial',
+    'Poppins SemiBold': 'Arial Bold',
+    'Poppins Bold': 'Arial Bold',
+    'Roboto': 'Arial',
+    'Roboto Medium': 'Arial',
+    'Roboto Bold': 'Arial Bold',
+    'Open Sans': 'Arial',
+    'Open Sans SemiBold': 'Arial Bold',
+    'Lato': 'Arial',
+    'Lato Bold': 'Arial Bold',
+    'Inter': 'Arial',
+    'Oswald': 'Arial',
+    'Raleway': 'Arial',
+    'Nunito': 'Arial',
+    'Playfair Display': 'Georgia',
+    'Merriweather': 'Georgia',
+    'Lora': 'Georgia',
+    'Bebas Neue': 'Arial Black',
+    'Futura': 'Arial',
+    'Helvetica Neue': 'Helvetica'
+  };
+
+  // Pre-process PPTX buffer to resolve 3-level placeholder & background inheritance (FR-4.2)
+  const resolvedBuffer = await resolvePptxInheritance(buffer);
+
+  // Stage 2: Font detection and OpenXML inspection (Task 2)
+  sendProgress({ stage: 'fonts', percent: 15, message: 'Analyzing fonts and structure...' });
+  let totalSlides = 1;
+  let notesMap = {};
+  let embeddedFontNames = [];
+  let usedFonts = { fonts: [] };
+
+  try {
+    if (typeof collectUsedFonts !== 'undefined') usedFonts = collectUsedFonts(resolvedBuffer);
+  } catch (_) {}
+
+  try {
+    const zip = await JSZip.loadAsync(resolvedBuffer);
+    const slideFiles = Object.keys(zip.files).filter(k => k.match(/^ppt\/slides\/slide\d+\.xml$/));
+    if (slideFiles.length > 0) totalSlides = slideFiles.length;
+
+    const fontFiles = Object.keys(zip.files).filter(k => k.startsWith('ppt/fonts/'));
+    embeddedFontNames = fontFiles.map(fn => path.basename(fn, path.extname(fn)));
+
+    // Extract speaker notes via OpenXML (FR-4.3)
+    const noteFiles = Object.keys(zip.files).filter(k => k.startsWith("ppt/notesSlides/notesSlide"));
+    for (const nf of noteFiles) {
+      const match = nf.match(/notesSlide(\d+)\.xml/);
+      const slideNum = match ? parseInt(match[1], 10) : null;
+      if (slideNum) {
+        const xml = await zip.file(nf).async("string");
+        const texts = [...xml.matchAll(/<a:t>(.*?)<\/a:t>/gs)].map(m => m[1]).join(" ").trim();
+        notesMap[slideNum] = texts;
+      }
+    }
+  } catch (err) {
+    console.warn("[PPTX] Zip parsing warning:", err);
+  }
+
+  const fontAnalysis = analyzePptxFonts(usedFonts, embeddedFontNames, fontMapping);
+
+  // Stage 3: Slide conversion with batch engine and progressive progress reporting (FR-4.2, FR-4.34)
+  sendProgress({
+    stage: 'converting',
+    current: 0,
+    total: totalSlides,
+    percent: 30,
+    message: `Converting ${totalSlides} slides to presentation graphics...`
+  });
+
+  const slideList = [];
+  const errors = [];
+
+  try {
+    // Single-pass batch conversion (10x faster: loads fonts and OpenXML DOM once for all slides)
+    const convertedAll = await convertPptxToPng(resolvedBuffer, {
+      fontDirs,
+      fontMapping,
+      width: 1920,
+      height: 1080
+    });
+
+    const totalConverted = Array.isArray(convertedAll) ? convertedAll.length : 0;
+    for (let s = 1; s <= totalConverted; s++) {
+      const slideItem = convertedAll[s - 1];
+      if (slideItem) {
+        const pngBuf = slideItem.png ? slideItem.png : slideItem;
+        const slideNumber = slideItem.slideNumber || s;
+        const slidePath = path.join(slidesDir, `slide_${slideNumber}.png`);
+        await fsp.writeFile(slidePath, pngBuf);
+        slideList.push({
+          slideIndex: s - 1,
+          slideNumber: slideNumber,
+          url: `file://${slidePath}`,
+          notes: notesMap[slideNumber] || "",
+          width: slideItem.width || 1920,
+          height: slideItem.height || 1080
+        });
+      }
+
+      const pct = Math.round(30 + (s / Math.max(1, totalConverted)) * 60);
+      sendProgress({
+        stage: 'converting',
+        current: s,
+        total: totalConverted,
+        percent: pct,
+        message: `Saved slide ${s} of ${totalConverted}...`
+      });
+    }
+  } catch (batchErr) {
+    console.warn("[PPTX] Batch conversion warning, falling back to per-slide conversion:", batchErr);
+    for (let s = 1; s <= totalSlides; s++) {
+      const pct = Math.round(30 + (s / totalSlides) * 60);
+      sendProgress({
+        stage: 'converting',
+        current: s,
+        total: totalSlides,
+        percent: pct,
+        message: `Converting slide ${s} of ${totalSlides}...`
+      });
+      try {
+        const converted = await convertPptxToPng(resolvedBuffer, {
+          slides: [s],
+          fontDirs,
+          fontMapping,
+          width: 1920,
+          height: 1080
+        });
+        const slideItem = converted && converted[0] ? converted[0] : null;
+        if (slideItem) {
+          const pngBuf = slideItem.png ? slideItem.png : slideItem;
+          const slideNumber = slideItem.slideNumber || s;
+          const slidePath = path.join(slidesDir, `slide_${slideNumber}.png`);
+          await fsp.writeFile(slidePath, pngBuf);
+          slideList.push({
+            slideIndex: s - 1,
+            slideNumber: slideNumber,
+            url: `file://${slidePath}`,
+            notes: notesMap[slideNumber] || "",
+            width: slideItem.width || 1920,
+            height: slideItem.height || 1080
+          });
+        }
+      } catch (slideErr) {
+        errors.push({ slideIndex: s - 1, slideNumber: s, error: slideErr.message });
+      }
+    }
+  }
+
+  // Stage 4: Finalizing
+  sendProgress({ stage: 'finalizing', percent: 95, message: 'Finalizing slide deck...' });
+
+  const deck = {
+    id: `deck-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    fileUrl: `file://${destPath}`,
+    filename: filename,
+    name: path.basename(filename, path.extname(filename)),
+    slideCount: slideList.length,
+    slides: slideList,
+    fontAnalysis: fontAnalysis,
+    errors: errors.length > 0 ? errors : undefined,
+    importedAt: Date.now()
+  };
+
+  const idx = presentationsStore.findIndex(d => d.filename === filename);
+  if (idx >= 0) presentationsStore[idx] = deck;
+  else presentationsStore.push(deck);
+  savePresentations();
+
+  sendProgress({ stage: 'done', percent: 100, message: 'Import complete!' });
+  return deck;
+}
+
 ipcMain.handle("media-import-presentation", async (event) => {
   const window = BrowserWindow.fromWebContents(event.sender);
   const sendProgress = (data) => {
@@ -334,232 +561,7 @@ ipcMain.handle("media-import-presentation", async (event) => {
   try {
     sendProgress({ stage: 'reading', percent: 5, message: 'Reading presentation file...' });
     await fsp.copyFile(sourcePath, destPath);
-    
-    // Create a folder for the slide images
-    const slidesDir = path.join(mediaPath, `${filename}_slides`);
-    try {
-      await fsp.mkdir(slidesDir, { recursive: true });
-    } catch (_) {}
-
-    const buffer = await fsp.readFile(destPath);
-    const os = require('os');
-    const fontDirs = [
-      '/System/Library/Fonts',
-      '/System/Library/Fonts/Supplemental',
-      '/Library/Fonts',
-      path.join(os.homedir(), 'Library/Fonts'),
-      '/Library/Application Support/Microsoft/Fonts',
-      'C:\\Windows\\Fonts',
-      'C:\\Program Files\\Microsoft Office\\root\\vfs\\Fonts',
-      '/usr/share/fonts',
-      '/usr/local/share/fonts'
-    ].filter(d => {
-      try { return fs.existsSync(d); } catch (_) { return false; }
-    });
-
-    const fontMapping = {
-      'Century Gothic': 'Arial',
-      'Aptos': 'Arial',
-      'Aptos Display': 'Arial',
-      'Calibri': 'Arial',
-      'Calibri Light': 'Arial',
-      'Segoe UI': 'Arial',
-      'Segoe UI Semibold': 'Arial',
-      'Segoe UI Light': 'Arial',
-      'Tahoma': 'Arial',
-      'Trebuchet MS': 'Arial',
-      'Verdana': 'Arial',
-      'Impact': 'Arial Black',
-      'Georgia': 'Times New Roman',
-      'Garamond': 'Times New Roman',
-      'Book Antiqua': 'Times New Roman',
-      'Palatino': 'Times New Roman',
-      'Palatino Linotype': 'Times New Roman',
-      'Consolas': 'Courier New',
-      'Lucida Console': 'Courier New',
-      'Franklin Gothic Medium': 'Arial',
-      'Gill Sans MT': 'Arial',
-      'Century': 'Times New Roman',
-      'Baskerville': 'Times New Roman',
-      'Montserrat': 'Arial',
-      'Montserrat ExtraBold': 'Arial Bold',
-      'Montserrat Medium': 'Arial',
-      'Montserrat SemiBold': 'Arial Bold',
-      'Montserrat Light': 'Arial',
-      'Montserrat Black': 'Arial Black',
-      'Poppins': 'Arial',
-      'Poppins Medium': 'Arial',
-      'Poppins SemiBold': 'Arial Bold',
-      'Poppins Bold': 'Arial Bold',
-      'Roboto': 'Arial',
-      'Roboto Medium': 'Arial',
-      'Roboto Bold': 'Arial Bold',
-      'Open Sans': 'Arial',
-      'Open Sans SemiBold': 'Arial Bold',
-      'Lato': 'Arial',
-      'Lato Bold': 'Arial Bold',
-      'Inter': 'Arial',
-      'Oswald': 'Arial',
-      'Raleway': 'Arial',
-      'Nunito': 'Arial',
-      'Playfair Display': 'Georgia',
-      'Merriweather': 'Georgia',
-      'Lora': 'Georgia',
-      'Bebas Neue': 'Arial Black',
-      'Futura': 'Arial',
-      'Helvetica Neue': 'Helvetica'
-    };
-
-    // Pre-process PPTX buffer to resolve 3-level placeholder & background inheritance (FR-4.2)
-    const resolvedBuffer = await resolvePptxInheritance(buffer);
-
-    // Stage 2: Font detection and OpenXML inspection (Task 2)
-    sendProgress({ stage: 'fonts', percent: 15, message: 'Analyzing fonts and structure...' });
-    let totalSlides = 1;
-    let notesMap = {};
-    let embeddedFontNames = [];
-    let usedFonts = { fonts: [] };
-
-    try {
-      if (typeof collectUsedFonts !== 'undefined') usedFonts = collectUsedFonts(resolvedBuffer);
-    } catch (_) {}
-
-    try {
-      const zip = await JSZip.loadAsync(resolvedBuffer);
-      const slideFiles = Object.keys(zip.files).filter(k => k.match(/^ppt\/slides\/slide\d+\.xml$/));
-      if (slideFiles.length > 0) totalSlides = slideFiles.length;
-
-      const fontFiles = Object.keys(zip.files).filter(k => k.startsWith('ppt/fonts/'));
-      embeddedFontNames = fontFiles.map(fn => path.basename(fn, path.extname(fn)));
-
-      // Extract speaker notes via OpenXML (FR-4.3)
-      const noteFiles = Object.keys(zip.files).filter(k => k.startsWith("ppt/notesSlides/notesSlide"));
-      for (const nf of noteFiles) {
-        const match = nf.match(/notesSlide(\d+)\.xml/);
-        const slideNum = match ? parseInt(match[1], 10) : null;
-        if (slideNum) {
-          const xml = await zip.file(nf).async("string");
-          const texts = [...xml.matchAll(/<a:t>(.*?)<\/a:t>/gs)].map(m => m[1]).join(" ").trim();
-          notesMap[slideNum] = texts;
-        }
-      }
-    } catch (err) {
-      console.warn("[PPTX] Zip parsing warning:", err);
-    }
-
-    const fontAnalysis = analyzePptxFonts(usedFonts, embeddedFontNames, fontMapping);
-
-    // Stage 3: Slide conversion with batch engine and progressive progress reporting (FR-4.2, FR-4.34)
-    sendProgress({
-      stage: 'converting',
-      current: 0,
-      total: totalSlides,
-      percent: 30,
-      message: `Converting ${totalSlides} slides to presentation graphics...`
-    });
-
-    const slideList = [];
-    const errors = [];
-
-    try {
-      // Single-pass batch conversion (10x faster: loads fonts and OpenXML DOM once for all slides)
-      const convertedAll = await convertPptxToPng(resolvedBuffer, {
-        fontDirs,
-        fontMapping,
-        width: 1920,
-        height: 1080
-      });
-
-      const totalConverted = Array.isArray(convertedAll) ? convertedAll.length : 0;
-      for (let s = 1; s <= totalConverted; s++) {
-        const slideItem = convertedAll[s - 1];
-        if (slideItem) {
-          const pngBuf = slideItem.png ? slideItem.png : slideItem;
-          const slideNumber = slideItem.slideNumber || s;
-          const slidePath = path.join(slidesDir, `slide_${slideNumber}.png`);
-          await fsp.writeFile(slidePath, pngBuf);
-          slideList.push({
-            slideIndex: s - 1,
-            slideNumber: slideNumber,
-            url: `file://${slidePath}`,
-            notes: notesMap[slideNumber] || "",
-            width: slideItem.width || 1920,
-            height: slideItem.height || 1080
-          });
-        }
-
-        const pct = Math.round(30 + (s / Math.max(1, totalConverted)) * 60);
-        sendProgress({
-          stage: 'converting',
-          current: s,
-          total: totalConverted,
-          percent: pct,
-          message: `Saved slide ${s} of ${totalConverted}...`
-        });
-      }
-    } catch (batchErr) {
-      console.warn("[PPTX] Batch conversion warning, falling back to per-slide conversion:", batchErr);
-      // Fallback: per-slide conversion if batch fails
-      for (let s = 1; s <= totalSlides; s++) {
-        const pct = Math.round(30 + (s / totalSlides) * 60);
-        sendProgress({
-          stage: 'converting',
-          current: s,
-          total: totalSlides,
-          percent: pct,
-          message: `Converting slide ${s} of ${totalSlides}...`
-        });
-        try {
-          const converted = await convertPptxToPng(resolvedBuffer, {
-            slides: [s],
-            fontDirs,
-            fontMapping,
-            width: 1920,
-            height: 1080
-          });
-          const slideItem = converted && converted[0] ? converted[0] : null;
-          if (slideItem) {
-            const pngBuf = slideItem.png ? slideItem.png : slideItem;
-            const slideNumber = slideItem.slideNumber || s;
-            const slidePath = path.join(slidesDir, `slide_${slideNumber}.png`);
-            await fsp.writeFile(slidePath, pngBuf);
-            slideList.push({
-              slideIndex: s - 1,
-              slideNumber: slideNumber,
-              url: `file://${slidePath}`,
-              notes: notesMap[slideNumber] || "",
-              width: slideItem.width || 1920,
-              height: slideItem.height || 1080
-            });
-          }
-        } catch (slideErr) {
-          errors.push({ slideIndex: s - 1, slideNumber: s, error: slideErr.message });
-        }
-      }
-    }
-
-    // Stage 4: Finalizing
-    sendProgress({ stage: 'finalizing', percent: 95, message: 'Finalizing slide deck...' });
-
-    const deck = {
-      id: `deck-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      fileUrl: `file://${destPath}`,
-      filename: filename,
-      name: path.basename(filename, path.extname(filename)),
-      slideCount: slideList.length,
-      slides: slideList,
-      fontAnalysis: fontAnalysis,
-      errors: errors.length > 0 ? errors : undefined,
-      importedAt: Date.now()
-    };
-
-    const idx = presentationsStore.findIndex(d => d.filename === filename);
-    if (idx >= 0) presentationsStore[idx] = deck;
-    else presentationsStore.push(deck);
-    savePresentations();
-
-    sendProgress({ stage: 'done', percent: 100, message: 'Import complete!' });
-    return deck;
+    return await processPptxDeck(destPath, filename, sendProgress);
   } catch (err) {
     console.error("Failed to copy presentation or convert slides", err);
     sendProgress({ stage: 'error', percent: 100, error: err.message, message: `Import failed: ${err.message}` });
@@ -726,6 +728,17 @@ serverApp.get('/pair-info', (_req, res) => {
   });
 });
 
+let pendingAssetTransfers = new Map();
+
+function broadcastDevicesUpdated() {
+  const pairedDevices = connectedDevices.filter(d => d.paired);
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send('mobile-devices-updated', pairedDevices);
+    }
+  }
+}
+
 /**
  * Socket.IO auth (FR-6.10 / NFR-26):
  * - Connection is allowed so the socket can attempt to pair
@@ -738,6 +751,8 @@ io.on('connection', (socket) => {
     id: socket.id,
     ip: socket.handshake.address,
     paired: false,
+    name: (socket.handshake.auth && socket.handshake.auth.deviceName) || 'Mobile',
+    isVoiceActive: false,
     connectedAt: Date.now(),
   };
   connectedDevices.push(device);
@@ -758,8 +773,9 @@ io.on('connection', (socket) => {
     device.paired = true;
     device.name = socket.handshake.auth.deviceName || 'Mobile';
     console.log('[Remote] paired via handshake:', socket.id);
-    socket.emit('pair-result', { ok: true });
+    socket.emit('pair-result', { ok: true, deviceName: device.name });
     notifyController('mobile-connected', device);
+    broadcastDevicesUpdated();
   } else {
     // Unpaired — connected but cannot control. Surface in debug/UI as pending.
     notifyController('mobile-unpaired-attempt', {
@@ -808,8 +824,61 @@ io.on('connection', (socket) => {
     markPaired(socket.id);
     device.paired = true;
     device.name = payload.deviceName || device.name || 'Mobile';
-    socket.emit('pair-result', { ok: true });
+    socket.emit('pair-result', { ok: true, deviceName: device.name });
     notifyController('mobile-connected', device);
+    broadcastDevicesUpdated();
+  });
+
+  socket.on('device-rename', (payload = {}) => {
+    const newName = (payload.name || '').trim();
+    if (newName) {
+      device.name = newName;
+      socket.emit('device-renamed', { name: newName });
+      broadcastDevicesUpdated();
+    }
+  });
+
+  socket.on('mobile-voice-state', (payload = {}) => {
+    device.isVoiceActive = !!payload.active;
+    broadcastDevicesUpdated();
+  });
+
+  // Task 3: Secondary Voice Input (FR-3.35 - FR-3.40)
+  socket.on('mobile-audio', async (payload = {}, ack = () => {}) => {
+    if (!isPaired(socket.id)) {
+      ack({ ok: false, error: 'Pairing required before sending voice audio' });
+      return;
+    }
+
+    try {
+      let pcmBuffer;
+      if (Buffer.isBuffer(payload.pcm)) {
+        pcmBuffer = payload.pcm;
+      } else if (payload.pcm && typeof payload.pcm === 'object' && payload.pcm.data) {
+        pcmBuffer = Buffer.from(payload.pcm.data);
+      } else if (typeof payload.pcmBase64 === 'string') {
+        const clean = payload.pcmBase64.includes('base64,') ? payload.pcmBase64.split('base64,')[1] : payload.pcmBase64;
+        pcmBuffer = Buffer.from(clean, 'base64');
+      } else if (typeof payload.dataBase64 === 'string') {
+        const clean = payload.dataBase64.includes('base64,') ? payload.dataBase64.split('base64,')[1] : payload.dataBase64;
+        pcmBuffer = Buffer.from(clean, 'base64');
+      } else {
+        ack({ ok: false, error: 'No audio data provided' });
+        return;
+      }
+
+      console.log(`[Remote Voice] Received secondary PTT audio from ${device.name}: ${pcmBuffer.length} bytes`);
+      const result = await asrEngine.transcribeSecondary(pcmBuffer);
+      ack({
+        ok: true,
+        text: result?.text || '',
+        confidence: result?.confidence ?? 1.0,
+        ignored: !!result?.ignored,
+      });
+    } catch (err) {
+      console.error('[Remote Voice] Error in transcribeSecondary:', err);
+      ack({ ok: false, error: err.message });
+    }
   });
 
   socket.on('disconnect', () => {
@@ -817,6 +886,57 @@ io.on('connection', (socket) => {
     unmarkPaired(socket.id);
     connectedDevices = connectedDevices.filter(d => d.id !== socket.id);
     notifyController('mobile-disconnected', { id: socket.id });
+    broadcastDevicesUpdated();
+  });
+
+  // Task 3: Asset transfer from mobile
+  socket.on('mobile-asset-transfer', async (payload = {}, ack = () => {}) => {
+    if (!isPaired(socket.id)) {
+      ack({ ok: false, error: 'Pairing required before sending assets' });
+      return;
+    }
+
+    const { name, type, size, mimeType, dataBase64 } = payload;
+    if (!name || !dataBase64) {
+      ack({ ok: false, error: 'Invalid asset payload' });
+      return;
+    }
+
+    // Size limit check (50MB)
+    const MAX_SIZE_BYTES = 50 * 1024 * 1024;
+    if (size && size > MAX_SIZE_BYTES) {
+      ack({ ok: false, error: 'File exceeds 50MB limit' });
+      return;
+    }
+
+    const transferId = `xfer-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    pendingAssetTransfers.set(transferId, {
+      transferId,
+      socketId: socket.id,
+      device: { id: socket.id, name: device.name, ip: device.ip },
+      payload,
+      ack,
+      createdAt: Date.now(),
+    });
+
+    console.log(`[Remote Asset] Incoming transfer ${transferId} from ${device.name}: ${name} (${type}, ${size} bytes)`);
+
+    // Surface accept/reject prompt to desktop
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send('mobile-asset-request', {
+          transferId,
+          deviceId: socket.id,
+          deviceName: device.name,
+          deviceIp: device.ip,
+          fileName: name,
+          fileType: type || 'media',
+          fileSize: size || 0,
+          mimeType: mimeType || '',
+          previewDataUrl: type === 'image' ? (dataBase64.startsWith('data:') ? dataBase64 : `data:${mimeType || 'image/jpeg'};base64,${dataBase64}`) : null,
+        });
+      }
+    }
   });
 
   // Handle commands from mobile — gated by pairing (NFR-26)
@@ -935,6 +1055,119 @@ ipcMain.handle('pairing-rotate', async () => {
     pairingQrDataUrl,
     devices: connectedDevices.filter(d => d.paired),
   };
+});
+
+ipcMain.handle('mobile-device-rename', async (_event, { deviceId, name }) => {
+  const dev = connectedDevices.find(d => d.id === deviceId);
+  if (dev) {
+    dev.name = (name || '').trim() || dev.name;
+    const sock = io.sockets.sockets.get(deviceId);
+    if (sock) sock.emit('device-renamed', { name: dev.name });
+    broadcastDevicesUpdated();
+    return { ok: true, name: dev.name };
+  }
+  return { ok: false, error: 'Device not found' };
+});
+
+ipcMain.handle('mobile-asset-respond', async (_event, { transferId, accepted, targetRole, applyToCanvas }) => {
+  const transfer = pendingAssetTransfers.get(transferId);
+  if (!transfer) return { ok: false, error: 'Transfer expired or not found' };
+
+  pendingAssetTransfers.delete(transferId);
+
+  if (!accepted) {
+    if (typeof transfer.ack === 'function') {
+      transfer.ack({ ok: false, error: 'Declined by operator' });
+    }
+    return { ok: true, action: 'rejected' };
+  }
+
+  try {
+    const rawData = transfer.payload.dataBase64;
+    const cleanBase64 = rawData.includes('base64,') ? rawData.split('base64,')[1] : rawData;
+    const buf = Buffer.from(cleanBase64, 'base64');
+
+    const originalName = path.basename(transfer.payload.name || 'asset');
+    let filename = originalName;
+    let destPath = path.join(mediaPath, filename);
+
+    // If destination exists, add timestamp prefix to prevent overwrite
+    if (fs.existsSync(destPath)) {
+      const ext = path.extname(originalName);
+      const base = path.basename(originalName, ext);
+      filename = `${base}_${Date.now()}${ext}`;
+      destPath = path.join(mediaPath, filename);
+    }
+
+    await fsp.writeFile(destPath, buf);
+    console.log(`[Remote Asset] Saved accepted file to ${destPath}`);
+
+    const fileType = (transfer.payload.type || '').toLowerCase();
+    const isPptx = fileType === 'presentation' || filename.toLowerCase().endsWith('.pptx') || filename.toLowerCase().endsWith('.ppt');
+    const isAudio = fileType === 'audio' || /\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(filename);
+    const isImage = fileType === 'image' || /\.(png|jpe?g|webp|gif|svg|bmp)$/i.test(filename);
+    const isVideo = fileType === 'video' || /\.(mp4|webm|mov|mkv|avi)$/i.test(filename);
+
+    let resultPayload = { filename, fileUrl: pathToFileURL(destPath).href };
+
+    // Task 4.1: Audio routing into bumper system
+    if (isAudio) {
+      if (targetRole === 'intro') {
+        const appSettings = require('./src/main/appSettings');
+        await appSettings.save({ sessionIntroPath: destPath });
+        console.log(`[Remote Asset] Audio set as Session Intro Bumper: ${destPath}`);
+      } else if (targetRole === 'outro') {
+        const appSettings = require('./src/main/appSettings');
+        await appSettings.save({ sessionOutroPath: destPath });
+        console.log(`[Remote Asset] Audio set as Session Outro Bumper: ${destPath}`);
+      }
+    }
+
+    // Task 4.2: PPTX routing into presentation pipeline
+    if (isPptx) {
+      const deck = await processPptxDeck(destPath, filename);
+      resultPayload.deck = deck;
+    }
+
+    // Task 4.3: Image / Video routing into media library and canvas
+    if (isImage || isVideo) {
+      // Broadcast updated media list to all windows
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) {
+          win.webContents.send('media-imported', pathToFileURL(destPath).href);
+        }
+      }
+
+      if (applyToCanvas) {
+        const fileUrl = pathToFileURL(destPath).href;
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) {
+            win.webContents.send('canvas-set-background', {
+              url: fileUrl,
+              type: isVideo ? 'video' : 'image',
+              crop: { x: 0, y: 0 }
+            });
+          }
+        }
+      }
+    }
+
+    if (typeof transfer.ack === 'function') {
+      transfer.ack({
+        ok: true,
+        message: 'Asset accepted and saved',
+        role: targetRole || 'media',
+      });
+    }
+
+    return { ok: true, action: 'accepted', ...resultPayload };
+  } catch (err) {
+    console.error('[Remote Asset] Error processing accepted asset:', err);
+    if (typeof transfer.ack === 'function') {
+      transfer.ack({ ok: false, error: err.message });
+    }
+    return { ok: false, error: err.message };
+  }
 });
 
 ipcMain.on('mobile-disconnect-device', (event, deviceId) => {

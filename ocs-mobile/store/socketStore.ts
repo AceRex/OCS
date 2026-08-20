@@ -2,14 +2,27 @@
 import { create } from 'zustand';
 import { io, Socket } from 'socket.io-client';
 
+interface AssetPayload {
+    name: string;
+    type: 'image' | 'video' | 'audio' | 'presentation' | 'media';
+    size: number;
+    mimeType?: string;
+    dataBase64: string;
+}
+
 interface SocketState {
     socket: Socket | null;
     isConnected: boolean;
     isPaired: boolean;
     serverIp: string;
+    deviceName: string;
     connectionError: string | null;
+    setDeviceName: (name: string) => void;
     connect: (ip: string, pairingCode?: string, customPort?: number) => void;
     disconnect: () => void;
+    sendAsset: (asset: AssetPayload) => Promise<{ ok: boolean; error?: string; message?: string; role?: string }>;
+    setVoiceActive: (active: boolean) => void;
+    sendVoiceAudio: (audioData: { dataBase64: string; format?: string; durationMs?: number }) => Promise<{ ok: boolean; error?: string; text?: string; confidence?: number }>;
 }
 
 export const useSocketStore = create<SocketState>((set, get) => ({
@@ -17,7 +30,23 @@ export const useSocketStore = create<SocketState>((set, get) => ({
     isConnected: false,
     isPaired: false,
     serverIp: '',
+    deviceName: 'Mobile Companion',
     connectionError: null,
+    setVoiceActive: (active: boolean) => {
+        const { socket } = get();
+        if (socket && socket.connected) {
+            socket.emit('mobile-voice-state', { active });
+        }
+    },
+    setDeviceName: (name: string) => {
+        const trimmed = (name || '').trim();
+        if (!trimmed) return;
+        set({ deviceName: trimmed });
+        const { socket } = get();
+        if (socket && socket.connected) {
+            socket.emit('device-rename', { name: trimmed });
+        }
+    },
     connect: (ip: string, pairingCode?: string, customPort?: number) => {
         const current = get().socket;
         if (current) current.disconnect();
@@ -38,6 +67,8 @@ export const useSocketStore = create<SocketState>((set, get) => ({
             targetPort = parseInt(p, 10) || targetPort;
         }
 
+        const currentDeviceName = get().deviceName || 'Mobile Companion';
+
         const socket = io(`http://${host}:${targetPort}`, {
             transports: ['websocket'],
             reconnectionAttempts: 5,
@@ -45,7 +76,7 @@ export const useSocketStore = create<SocketState>((set, get) => ({
             auth: {
                 code,
                 token: code, // desktop accepts either code or opaque token
-                deviceName: 'OCS Mobile',
+                deviceName: currentDeviceName,
             },
         });
 
@@ -53,17 +84,26 @@ export const useSocketStore = create<SocketState>((set, get) => ({
             console.log('Connected to server — awaiting pair confirmation');
             set({ isConnected: true, connectionError: null });
             // Fallback if handshake auth was ignored by an older desktop build
-            socket.emit('pair', { code, token: code, deviceName: 'OCS Mobile' });
+            socket.emit('pair', { code, token: code, deviceName: get().deviceName || 'Mobile Companion' });
         });
 
-        socket.on('pair-result', (result: { ok: boolean; error?: string }) => {
+        socket.on('pair-result', (result: { ok: boolean; error?: string; deviceName?: string }) => {
             if (result?.ok) {
                 set({ isPaired: true, connectionError: null });
+                if (result.deviceName) {
+                    set({ deviceName: result.deviceName });
+                }
             } else {
                 set({
                     isPaired: false,
                     connectionError: result?.error || 'Invalid pairing code',
                 });
+            }
+        });
+
+        socket.on('device-renamed', (payload: { name?: string }) => {
+            if (payload?.name) {
+                set({ deviceName: payload.name });
             }
         });
 
@@ -92,5 +132,51 @@ export const useSocketStore = create<SocketState>((set, get) => ({
             socket.disconnect();
         }
         set({ socket: null, isConnected: false, isPaired: false, connectionError: null });
+    },
+    sendAsset: (asset: AssetPayload): Promise<{ ok: boolean; error?: string; message?: string; role?: string }> => {
+        return new Promise((resolve) => {
+            const { socket, isPaired } = get();
+            if (!socket || !socket.connected || !isPaired) {
+                resolve({ ok: false, error: 'Must be connected and paired with desktop to send assets' });
+                return;
+            }
+
+            // Size limit: 50MB
+            const MAX_BYTES = 50 * 1024 * 1024;
+            if (asset.size > MAX_BYTES) {
+                resolve({ ok: false, error: 'File exceeds 50MB limit' });
+                return;
+            }
+
+            socket.emit('mobile-asset-transfer', asset, (response: { ok: boolean; error?: string; message?: string; role?: string }) => {
+                if (response?.ok) {
+                    resolve({ ok: true, message: response.message || 'Asset accepted by desktop operator', role: response.role });
+                } else {
+                    resolve({ ok: false, error: response?.error || 'Transfer declined or failed' });
+                }
+            });
+        });
+    },
+    sendVoiceAudio: (audioData: { dataBase64: string; format?: string; durationMs?: number }): Promise<{ ok: boolean; error?: string; text?: string; confidence?: number }> => {
+        return new Promise((resolve) => {
+            const { socket, isPaired } = get();
+            if (!socket || !socket.connected || !isPaired) {
+                resolve({ ok: false, error: 'Must be paired with desktop to send voice input' });
+                return;
+            }
+
+            socket.emit('mobile-audio', {
+                dataBase64: audioData.dataBase64,
+                format: audioData.format || 'pcm',
+                durationMs: audioData.durationMs,
+                source: 'secondary',
+            }, (response: { ok: boolean; error?: string; text?: string; confidence?: number }) => {
+                if (response?.ok) {
+                    resolve({ ok: true, text: response.text, confidence: response.confidence });
+                } else {
+                    resolve({ ok: false, error: response?.error || 'Voice transcription failed' });
+                }
+            });
+        });
     }
 }));

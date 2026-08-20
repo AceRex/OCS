@@ -1,6 +1,6 @@
 
 import React, { useEffect, useState } from 'react';
-import { PiDeviceMobile, PiWarning, PiArrowsClockwise, PiQrCode } from "react-icons/pi";
+import { PiDeviceMobile, PiWarning, PiArrowsClockwise, PiQrCode, PiPencilSimple, PiCheck, PiMicrophone } from "react-icons/pi";
 
 export default function MobileConnectController() {
     const [serverInfo, setServerInfo] = useState({
@@ -12,6 +12,8 @@ export default function MobileConnectController() {
     const [connectedDevices, setConnectedDevices] = useState([]);
     const [status, setStatus] = useState('offline'); // offline, ready, connected
     const [rejectedAttempts, setRejectedAttempts] = useState(0);
+    const [editingDeviceId, setEditingDeviceId] = useState(null);
+    const [editNameText, setEditNameText] = useState("");
 
     const applyInfo = (info) => {
         setServerInfo({
@@ -39,12 +41,33 @@ export default function MobileConnectController() {
         setRejectedAttempts(0);
     };
 
+    const startRename = (device) => {
+        setEditingDeviceId(device.id);
+        setEditNameText(device.name || "Mobile Device");
+    };
+
+    const saveRename = async (deviceId) => {
+        const trimmed = editNameText.trim();
+        if (trimmed && window.electron?.Network?.renameDevice) {
+            await window.electron.Network.renameDevice(deviceId, trimmed);
+            setConnectedDevices(prev => prev.map(d => d.id === deviceId ? { ...d, name: trimmed } : d));
+        }
+        setEditingDeviceId(null);
+    };
+
     useEffect(() => {
         refreshInfo();
 
+        const cleanupDevicesUpdated = window.electron?.Network?.onDevicesUpdated
+            ? window.electron.Network.onDevicesUpdated((devices) => {
+                setConnectedDevices(devices || []);
+                setStatus(devices && devices.length > 0 ? 'connected' : 'ready');
+            })
+            : () => {};
+
         const cleanupConnect = window.electron.Network.onMobileConnected((device) => {
             setConnectedDevices(prev => {
-                if (prev.some(d => d.id === device.id)) return prev;
+                if (prev.some(d => d.id === device.id)) return prev.map(d => d.id === device.id ? device : d);
                 return [...prev, device];
             });
             setStatus('connected');
@@ -65,6 +88,7 @@ export default function MobileConnectController() {
             : () => {};
 
         return () => {
+            cleanupDevicesUpdated();
             cleanupConnect();
             cleanupDisconnect();
             cleanupUnpaired();
@@ -88,7 +112,7 @@ export default function MobileConnectController() {
                             <PiArrowsClockwise className="text-light hover:text-white" size={16} />
                         </button>
                     </h1>
-                    <p className="text-ash/60 text-sm">Pair a mobile device with a QR code or 6-digit code — unpaired devices cannot control the display</p>
+                    <p className="text-ash/60 text-sm">Pair and manage mobile companion devices in real-time — send assets and control displays</p>
                 </div>
             </header>
 
@@ -162,25 +186,66 @@ export default function MobileConnectController() {
                         ) : (
                             <div className="space-y-3">
                                 {connectedDevices.map((device, idx) => (
-                                    <div key={device.id || idx} className="flex items-center justify-between p-4 bg-white/5 rounded-xl border border-white/5">
-                                        <div className="flex items-center gap-3">
-                                            <div className="w-10 h-10 bg-green-500/20 text-green-400 rounded-full flex items-center justify-center">
-                                                <PiDeviceMobile size={20} />
+                                    <div key={device.id || idx} className="flex items-center justify-between p-4 bg-white/5 rounded-xl border border-white/5 hover:border-white/10 transition-colors">
+                                        <div className="flex items-center gap-3 flex-1 min-w-0 mr-3">
+                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                                                device.isVoiceActive
+                                                    ? 'bg-amber-500/20 text-amber-400 border border-amber-500/40 animate-pulse'
+                                                    : 'bg-green-500/20 text-green-400'
+                                            }`}>
+                                                {device.isVoiceActive ? <PiMicrophone size={20} /> : <PiDeviceMobile size={20} />}
                                             </div>
-                                            <div>
-                                                <div className="font-bold">{device.name || `Device ${idx + 1}`}</div>
-                                                <div className="text-xs text-white/40 font-mono">{device.ip || device.id}</div>
+                                            <div className="flex-1 min-w-0">
+                                                {editingDeviceId === device.id ? (
+                                                    <div className="flex items-center gap-2">
+                                                        <input
+                                                            type="text"
+                                                            value={editNameText}
+                                                            onChange={(e) => setEditNameText(e.target.value)}
+                                                            onKeyDown={(e) => e.key === 'Enter' && saveRename(device.id)}
+                                                            autoFocus
+                                                            className="bg-black/50 border border-blue-500/50 text-white px-2 py-0.5 rounded text-sm font-bold w-40"
+                                                        />
+                                                        <button
+                                                            onClick={() => saveRename(device.id)}
+                                                            className="p-1 bg-blue-600 hover:bg-blue-500 text-white rounded"
+                                                            title="Save Name"
+                                                        >
+                                                            <PiCheck size={14} />
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <div className="flex items-center gap-2 group">
+                                                        <span className="font-bold text-white text-sm truncate" title={device.name}>
+                                                            {device.name || `Device ${idx + 1}`}
+                                                        </span>
+                                                        <button
+                                                            onClick={() => startRename(device)}
+                                                            className="opacity-0 group-hover:opacity-100 text-white/40 hover:text-white p-0.5 transition-opacity"
+                                                            title="Rename Device"
+                                                        >
+                                                            <PiPencilSimple size={14} />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                                <div className="text-xs text-white/40 font-mono truncate">{device.ip || device.id}</div>
                                             </div>
                                         </div>
-                                        <div className="flex items-center gap-2">
-                                            <div className="flex items-center gap-2 text-xs text-green-400 bg-green-500/10 px-2 py-1 rounded-full">
-                                                <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                                        <div className="flex items-center gap-2 flex-shrink-0">
+                                            {device.isVoiceActive && (
+                                                <div className="flex items-center gap-1.5 text-xs text-amber-300 bg-amber-500/10 px-2 py-1 rounded-full border border-amber-500/20 animate-pulse">
+                                                    <div className="w-1.5 h-1.5 bg-amber-400 rounded-full"></div>
+                                                    Mic Live
+                                                </div>
+                                            )}
+                                            <div className="flex items-center gap-1.5 text-xs text-green-400 bg-green-500/10 px-2.5 py-1 rounded-full border border-green-500/20">
+                                                <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
                                                 Paired
                                             </div>
                                             {window.electron?.Network?.disconnectDevice && (
                                                 <button
                                                     onClick={() => window.electron.Network.disconnectDevice(device.id)}
-                                                    className="text-xs text-red-300/80 hover:text-red-300 px-2 py-1 rounded border border-red-500/20"
+                                                    className="text-xs text-red-300/80 hover:text-red-300 px-2 py-1 rounded border border-red-500/20 hover:bg-red-500/10 transition-colors"
                                                 >
                                                     Disconnect
                                                 </button>

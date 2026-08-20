@@ -104,6 +104,8 @@ function NextTimerBanner() {
   );
 }
 
+import IncomingAssetModal from "./IncomingAssetModal";
+
 function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [previewMode, setPreviewMode] = useState(null); // 'speaker', 'general', or null
@@ -233,6 +235,8 @@ function App() {
         error={saveProgress?.error || null}
         onDismiss={() => setSaveProgress(null)}
       />
+
+      <IncomingAssetModal />
     </section>
   );
 }

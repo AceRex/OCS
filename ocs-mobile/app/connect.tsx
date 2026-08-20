@@ -169,7 +169,7 @@ export default function ConnectScreen() {
   return (
     <SafeAreaView className="flex-1 bg-[#121212]">
       {/* Header */}
-      <View className="flex-row items-center justify-between p-4 border-b border-white/10">
+      {/* <View className="flex-row items-center justify-between p-4 border-b border-white/10">
         <TouchableOpacity onPress={() => router.back()} className="p-1">
           <ArrowLeft size={24} color="white" />
         </TouchableOpacity>
@@ -177,10 +177,10 @@ export default function ConnectScreen() {
           Connect to Desktop
         </Text>
         <View className="w-6" />
-      </View>
+      </View> */}
 
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
         className="flex-1"
         keyboardVerticalOffset={Platform.OS === "ios" ? 10 : 0}
       >
@@ -189,10 +189,12 @@ export default function ConnectScreen() {
             contentContainerStyle={{
               flexGrow: 1,
               justifyContent: "center",
-              padding: 24,
+              paddingHorizontal: 24,
+              paddingVertical: 20,
             }}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
+            bounces={false}
           >
             <View className="w-full bg-white/5 p-6 rounded-3xl border border-white/10 items-center shadow-2xl">
               <View className="mb-4 bg-blue-500/20 p-5 rounded-2xl border border-blue-500/30">

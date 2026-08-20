@@ -2482,12 +2482,13 @@ export default function BroadcastEngine() {
     const ss = String(Math.floor(elapsed % 60)).padStart(2, "0");
     const relStamp = `${mm}:${ss}`;
 
-    // Arm trigger window when OCS/Media heard (Pass A or B)
-    if (TRIGGER_DETECT_RE.test(rawText)) {
+    // Arm trigger window when OCS/Media heard (Pass A or B) or when secondary PTT input is active
+    const isSecondary = res.source === "secondary";
+    if (TRIGGER_DETECT_RE.test(rawText) || isSecondary) {
       triggerArmedUntilRef.current = Date.now() + TRIGGER_ARM_MS;
       TRIGGER_DETECT_RE.lastIndex = 0;
     }
-    const triggerArmed = Date.now() < triggerArmedUntilRef.current;
+    const triggerArmed = isSecondary || Date.now() < triggerArmedUntilRef.current;
     const commandText = stripTriggerWords(rawText) || rawText;
 
     const utteranceId = res.utteranceId ?? null;
@@ -2499,23 +2500,23 @@ export default function BroadcastEngine() {
     }
 
     if (res.isFinal) {
-      // Dedup only within ~800ms so rapid double-emits are ignored, but retries work
-      const dedupeKey = `${pass}:${role}:${commandText}`;
+      // Dedup only within ~800ms so rapid double-emits/cross-source echoes are ignored, but retries work
+      const dedupeKey = isSecondary ? `sec:${commandText}` : `${pass}:${role}:${commandText}`;
       const nowFinal = Date.now();
       if (
-        dedupeKey === lastFinalTextRef.current.key &&
-        nowFinal - lastFinalTextRef.current.time < 800
+        nowFinal - lastFinalTextRef.current.time < 800 &&
+        (dedupeKey === lastFinalTextRef.current.key || lastFinalTextRef.current.command === commandText)
       ) {
         lastPartialTextRef.current = "";
         setInterimText("");
         setIsSpeakingNow(false);
         return;
       }
-      lastFinalTextRef.current = { key: dedupeKey, time: nowFinal };
+      lastFinalTextRef.current = { key: dedupeKey, command: commandText, time: nowFinal };
       lastPartialTextRef.current = "";
 
       // Pass A finals while not in trigger window: commands only (Strict)
-      // Pass B finals: commands + gated scripture
+      // Pass B finals & Secondary PTT: commands + gated scripture
       // Commands only settle on final (or Pass B) — avoid double next-verse from probe+final
       const runCommands = role !== "probe";
       const handled =
@@ -2532,6 +2533,7 @@ export default function BroadcastEngine() {
           shape = matchReferenceShape(commandText);
         // Ambient: COMPLETE shape is enough. Short jumps need context or trigger.
         const shouldTryScripture =
+          isSecondary ||
           pass === "B" ||
           triggerArmed ||
           sensitivity === "loose" ||
@@ -2546,8 +2548,8 @@ export default function BroadcastEngine() {
             ambientShapeRef.current.timer = null;
           }
           handleTranscriptionRef.current(commandText, booksRef.current, {
-            pass,
-            triggerArmed: triggerArmed || pass === "B",
+            pass: isSecondary ? "SEC" : pass,
+            triggerArmed: triggerArmed || pass === "B" || isSecondary,
             utteranceId,
             role: role === "probe" ? "probe" : "final",
             confidence: res.confidence ?? null,
@@ -2561,7 +2563,8 @@ export default function BroadcastEngine() {
         const displayBody = liveTranscriptCorrectionRef.current
           ? correctLiveTranscript(commandText)
           : commandText;
-        const tag = pass === "B" ? `[B] ${displayBody}` : displayBody;
+        const prefix = isSecondary ? "[Remote PTT] " : pass === "B" ? "[B] " : "";
+        const tag = `${prefix}${displayBody}`;
         if (
           newLines.length > 0 &&
           !newLines[newLines.length - 1].isFinal &&

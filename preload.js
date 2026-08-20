@@ -239,6 +239,18 @@ contextBridge.exposeInMainWorld("electron", {
       ipcRenderer.on('mobile-unpaired-attempt', listener);
       return () => ipcRenderer.removeListener('mobile-unpaired-attempt', listener);
     },
+    renameDevice: (deviceId, name) => ipcRenderer.invoke('mobile-device-rename', { deviceId, name }),
+    onDevicesUpdated: (callback) => {
+      const listener = (event, val) => callback(val);
+      ipcRenderer.on('mobile-devices-updated', listener);
+      return () => ipcRenderer.removeListener('mobile-devices-updated', listener);
+    },
+    onAssetRequest: (callback) => {
+      const listener = (event, val) => callback(val);
+      ipcRenderer.on('mobile-asset-request', listener);
+      return () => ipcRenderer.removeListener('mobile-asset-request', listener);
+    },
+    respondAsset: (payload) => ipcRenderer.invoke('mobile-asset-respond', payload),
     onMobileAction: (callback) => {
       const listener = (event, val) => callback(val);
       ipcRenderer.on('mobile-action', listener);
