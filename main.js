@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, screen, ipcMain, session, dialog } = require("electron");
+const { app, BrowserWindow, Menu, screen, ipcMain, session, dialog, Notification } = require("electron");
 
 // ── Single Instance Lock (Enforce app only loads once) ──────────────────────
 const gotTheLock = app.requestSingleInstanceLock();
@@ -1086,6 +1086,25 @@ io.on('connection', (socket) => {
         }
       }
 
+      // Push OS notification to desktop
+      if (Notification.isSupported()) {
+        try {
+          const notif = new Notification({
+            title: 'OCS — New Scene Received',
+            body: `${device.name} shared "${scene.name}". Click to view in Controller.`,
+            silent: false,
+          });
+          notif.on('click', () => {
+            if (controllerWindow && !controllerWindow.isDestroyed()) {
+              if (controllerWindow.isMinimized()) controllerWindow.restore();
+              controllerWindow.show();
+              controllerWindow.focus();
+            }
+          });
+          notif.show();
+        } catch (_) {}
+      }
+
       console.log(`[Remote Scene] Imported scene "${scene.name}" from ${device.name}`);
       ack({ ok: true, scene, message: `Scene "${scene.name}" added to desktop library` });
     } catch (err) {
@@ -1140,6 +1159,29 @@ io.on('connection', (socket) => {
           mimeType: mimeType || '',
           previewDataUrl: type === 'image' ? (dataBase64.startsWith('data:') ? dataBase64 : `data:${mimeType || 'image/jpeg'};base64,${dataBase64}`) : null,
         });
+      }
+    }
+
+    // Trigger OS Desktop Push Notification
+    if (Notification.isSupported()) {
+      try {
+        const fileTypeName = type === 'image' ? 'Image' : type === 'presentation' ? 'Presentation' : type === 'audio' ? 'Audio Track' : 'Document';
+        const notif = new Notification({
+          title: `OCS — Incoming ${fileTypeName} Request`,
+          body: `${device.name} wants to share "${name}" with your presentation. Click to review & accept.`,
+          silent: false,
+          urgency: 'critical',
+        });
+        notif.on('click', () => {
+          if (controllerWindow && !controllerWindow.isDestroyed()) {
+            if (controllerWindow.isMinimized()) controllerWindow.restore();
+            controllerWindow.show();
+            controllerWindow.focus();
+          }
+        });
+        notif.show();
+      } catch (notifErr) {
+        console.warn('[Notification] Could not display desktop notification:', notifErr.message);
       }
     }
   });
