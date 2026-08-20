@@ -8,6 +8,11 @@ if (!gotTheLock) {
   process.exit(0);
 }
 
+app.setName('OCS');
+if (process.platform === 'win32') {
+  app.setAppUserModelId('com.acerex.ocs');
+}
+
 app.on('second-instance', () => {
   console.log('[App] Second instance launch attempted. Focusing primary controller.');
   const windows = BrowserWindow.getAllWindows();
@@ -80,6 +85,9 @@ let pairing = generatePairing();
 let pairingQrDataUrl = null;
 /** @type {SessionArchiveService|null} */
 let sessionArchive = null;
+let controllerWindow = null;
+let speakerWindow = null;
+let generalWindow = null;
 
 function detectPython() {
   // Still used by optional ocs_image_engine design tools — not for ASR.
@@ -1006,7 +1014,7 @@ io.on('connection', (socket) => {
     };
 
     if (target && target !== 'all') {
-      socketServer.to(target).emit('intercom-message', message);
+      io.to(target).emit('intercom-message', message);
     } else {
       socket.broadcast.emit('intercom-message', message);
     }
@@ -1456,7 +1464,7 @@ function createWindows() {
   const tertiaryDisplay = displays.length > 2 ? displays[2] : null;
 
   // 1. Speaker Window (Stage Display) - Shows Timer + Bible
-  const speakerWindow = new BrowserWindow({
+  speakerWindow = new BrowserWindow({
     width: secondaryDisplay ? secondaryDisplay.bounds.width : 800,
     height: secondaryDisplay ? secondaryDisplay.bounds.height : 600,
     x: secondaryDisplay ? secondaryDisplay.bounds.x : 50,
@@ -1472,7 +1480,7 @@ function createWindows() {
   });
 
   // 2. General Window (Projector) - Shows Bible ONLY
-  const generalWindow = new BrowserWindow({
+  generalWindow = new BrowserWindow({
     width: tertiaryDisplay ? tertiaryDisplay.bounds.width : (secondaryDisplay ? secondaryDisplay.bounds.width : 800),
     height: tertiaryDisplay ? tertiaryDisplay.bounds.height : (secondaryDisplay ? secondaryDisplay.bounds.height : 600),
     x: tertiaryDisplay ? tertiaryDisplay.bounds.x : (secondaryDisplay ? secondaryDisplay.bounds.x + 50 : 100),
@@ -1488,7 +1496,7 @@ function createWindows() {
   });
 
   // 3. Controller Window
-  const controllerWindow = new BrowserWindow({
+  controllerWindow = new BrowserWindow({
     width: primaryDisplay.bounds.width,
     height: primaryDisplay.bounds.height,
     x: primaryDisplay.bounds.x,
