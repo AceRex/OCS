@@ -178,6 +178,16 @@ contextBridge.exposeInMainWorld("electron", {
     list: () => ipcRenderer.invoke('scene-list'),
     save: (scene) => ipcRenderer.invoke('scene-save', scene),
     delete: (sceneId) => ipcRenderer.invoke('scene-delete', sceneId),
+    onSceneImported: (callback) => {
+      const listener = (_e, val) => callback(val);
+      ipcRenderer.on('scene-imported', listener);
+      return () => ipcRenderer.removeListener('scene-imported', listener);
+    },
+    onSceneListUpdated: (callback) => {
+      const listener = (_e, val) => callback(val);
+      ipcRenderer.on('scene-list-updated', listener);
+      return () => ipcRenderer.removeListener('scene-list-updated', listener);
+    },
   },
   Aligner: {
     startScene: (scene, pageIndex = 0, sequenceIndex = 0) => ipcRenderer.send('scene-read-along-start', { scene, pageIndex, sequenceIndex }),

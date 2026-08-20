@@ -288,10 +288,6 @@ export default function MobileConnectController() {
                           Mic Live
                         </div>
                       )}
-                      <div className="flex items-center gap-1.5 text-xs text-white bg-green-500/10 px-2.5 py-1 rounded-[4px] border border-green-500/20">
-                        <div className="w-1.5 h-1.5 bg-green-500 rounded-full"></div>
-                        Paired
-                      </div>
                       {window.electron?.Network?.disconnectDevice && (
                         <button
                           onClick={() =>
@@ -302,6 +298,10 @@ export default function MobileConnectController() {
                           Disconnect
                         </button>
                       )}
+                      {/* paired status */}
+                      <div className="w-4 h-4 border border-green bg-green/20 rounded-full flex items-center justify-center">
+                        <div className="w-1.5 h-1.5 bg-green rounded-full animate-pulse"></div>
+                      </div>
                     </div>
                   </div>
                 ))}

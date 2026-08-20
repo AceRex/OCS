@@ -316,6 +316,33 @@ async function processPptxDeck(destPath, filename, sendProgress = () => {}) {
     await fsp.mkdir(slidesDir, { recursive: true });
   } catch (_) {}
 
+  // Handle PDF documents as presentation decks
+  if (filename.toLowerCase().endsWith('.pdf')) {
+    const { convertPdfToPngSlides } = require('./src/main/pdfConverter');
+    sendProgress({ stage: 'converting', percent: 10, message: 'Rendering PDF slides...' });
+    const pdfResult = await convertPdfToPngSlides(destPath, slidesDir, sendProgress);
+    
+    const deck = {
+      id: `deck-${Date.now()}`,
+      name: filename.replace(/\.pdf$/i, ''),
+      filename: filename,
+      fileUrl: `file://${destPath}`,
+      slideCount: pdfResult.totalSlides,
+      slides: pdfResult.slideList,
+      errors: [],
+      fontAnalysis: null,
+      importedAt: Date.now(),
+    };
+
+    const existingIdx = presentationsStore.findIndex(d => d.filename === filename);
+    if (existingIdx >= 0) presentationsStore[existingIdx] = deck;
+    else presentationsStore.push(deck);
+    savePresentations();
+
+    sendProgress({ stage: 'done', percent: 100, message: 'PDF conversion complete!' });
+    return deck;
+  }
+
   const buffer = await fsp.readFile(destPath);
   const os = require('os');
   const fontDirs = [
@@ -549,7 +576,9 @@ ipcMain.handle("media-import-presentation", async (event) => {
   const { canceled, filePaths } = await dialog.showOpenDialog(window, {
     properties: ['openFile'],
     filters: [
-      { name: 'PowerPoint Presentations', extensions: ['pptx', 'ppt'] }
+      { name: 'Presentations & PDF Documents', extensions: ['pptx', 'ppt', 'pdf'] },
+      { name: 'PowerPoint Presentations', extensions: ['pptx', 'ppt'] },
+      { name: 'PDF Documents', extensions: ['pdf'] }
     ]
   });
 
@@ -991,6 +1020,61 @@ io.on('connection', (socket) => {
     broadcastDevicesUpdated();
   });
 
+  // Mobile Companion Scene / Song Transfer & Creation
+  socket.on('mobile-scene-transfer', async (payload = {}, ack = () => {}) => {
+    if (!isPaired(socket.id)) {
+      ack({ ok: false, error: 'Pairing required before sharing scenes' });
+      return;
+    }
+
+    try {
+      const sceneData = payload.scene || payload;
+      if (!sceneData || !sceneData.name) {
+        ack({ ok: false, error: 'Scene must have a name' });
+        return;
+      }
+
+      const sceneId = sceneData.id || `scene-${Date.now()}`;
+      const scene = {
+        id: sceneId,
+        name: sceneData.name,
+        sceneType: sceneData.sceneType || 'song',
+        navMode: sceneData.navMode || 'read_along',
+        pages: Array.isArray(sceneData.pages) && sceneData.pages.length > 0
+          ? sceneData.pages
+          : [{ label: 'Section 1', content: sceneData.content || '', translation: sceneData.translation || '' }],
+        style: sceneData.style || {
+          fontSize: 32,
+          textAlign: 'center',
+          fontFamily: 'sans',
+          color: '#ffffff',
+          backgroundColor: 'transparent',
+        },
+        createdAt: sceneData.createdAt || Date.now(),
+        author: device.name || 'Mobile Companion',
+      };
+
+      const idx = scenesStore.findIndex(s => s.id === scene.id);
+      if (idx >= 0) scenesStore[idx] = scene;
+      else scenesStore.push(scene);
+      saveScenes();
+
+      // Broadcast to all desktop windows
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) {
+          win.webContents.send('scene-list-updated', scenesStore);
+          win.webContents.send('scene-imported', scene);
+        }
+      }
+
+      console.log(`[Remote Scene] Imported scene "${scene.name}" from ${device.name}`);
+      ack({ ok: true, scene, message: `Scene "${scene.name}" added to desktop library` });
+    } catch (err) {
+      console.error('[Remote Scene] Failed to import scene:', err);
+      ack({ ok: false, error: err.message });
+    }
+  });
+
   // Task 3: Asset transfer from mobile
   socket.on('mobile-asset-transfer', async (payload = {}, ack = () => {}) => {
     if (!isPaired(socket.id)) {
@@ -1206,10 +1290,9 @@ ipcMain.handle('mobile-asset-respond', async (_event, { transferId, accepted, ta
 
     const fileType = (transfer.payload.type || '').toLowerCase();
     const isAudio = fileType === 'audio' || /\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(filename);
-    const isPptx = /\.(pptx|ppt)$/i.test(filename);
+    const isPptxOrPdf = fileType === 'presentation' || /\.(pptx|ppt|pdf)$/i.test(filename);
     const isImage = fileType === 'image' || /\.(png|jpe?g|webp|gif|svg|bmp)$/i.test(filename);
     const isVideo = fileType === 'video' || /\.(mp4|webm|mov|mkv|avi)$/i.test(filename);
-    const isPdf = /\.pdf$/i.test(filename);
 
     let resultPayload = { filename, fileUrl: pathToFileURL(destPath).href };
 
@@ -1233,8 +1316,8 @@ ipcMain.handle('mobile-asset-respond', async (_event, { transferId, accepted, ta
       }
     }
 
-    // Task 4.2: PPTX routing into presentation pipeline
-    if (isPptx) {
+    // Task 4.2: PPTX / PDF routing into presentation pipeline
+    if (isPptxOrPdf) {
       try {
         const deck = await processPptxDeck(destPath, filename);
         resultPayload.deck = deck;
@@ -1248,8 +1331,8 @@ ipcMain.handle('mobile-asset-respond', async (_event, { transferId, accepted, ta
       }
     }
 
-    // Task 4.3: Image / Video / PDF routing into media library and canvas
-    if (isImage || isVideo || isPdf || (!isAudio && !isPptx)) {
+    // Task 4.3: Image / Video routing into media library and canvas
+    if (isImage || isVideo || (!isAudio && !isPptxOrPdf)) {
       const fileUrl = pathToFileURL(destPath).href;
       // Broadcast updated media list to all windows
       for (const win of BrowserWindow.getAllWindows()) {

@@ -534,10 +534,24 @@ export default function PresentationController() {
         const unsubMedia = window.electron?.Media?.onMediaUpdated?.(() => {
             refreshMedia();
         });
+        const unsubSceneImport = window.electron?.Scene?.onSceneImported?.((scene) => {
+            setScenes(prev => {
+                const exists = prev.some(s => s.id === scene.id);
+                if (exists) return prev.map(s => s.id === scene.id ? scene : s);
+                return [scene, ...prev];
+            });
+            setPreviewScene({ scene, pageIndex: 0, sequenceIndex: 0 });
+            setActiveTab('scene');
+        });
+        const unsubSceneList = window.electron?.Scene?.onSceneListUpdated?.((list) => {
+            if (Array.isArray(list)) setScenes(list);
+        });
 
         return () => {
             unsubDecks?.();
             unsubMedia?.();
+            unsubSceneImport?.();
+            unsubSceneList?.();
         };
     }, []);
 
