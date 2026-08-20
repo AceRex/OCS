@@ -218,6 +218,18 @@ const savePresentations = () => {
   try { fs.writeFileSync(presentationsFilePath, JSON.stringify(presentationsStore, null, 2), 'utf8'); } catch (_) {}
 };
 
+// ── Scenes Store (FR-4.28–FR-4.31) ──────────────────────────────────────────
+const scenesFilePath = path.join(app.getPath('userData'), 'scenes.json');
+let scenesStore = [];
+try {
+  if (fs.existsSync(scenesFilePath)) {
+    scenesStore = JSON.parse(fs.readFileSync(scenesFilePath, 'utf8'));
+  }
+} catch (_) { scenesStore = []; }
+const saveScenes = () => {
+  try { fs.writeFileSync(scenesFilePath, JSON.stringify(scenesStore, null, 2), 'utf8'); } catch (_) {}
+};
+
 ipcMain.handle('presentation-list', () => presentationsStore);
 ipcMain.handle('presentation-save', (event, deck) => {
   const idx = presentationsStore.findIndex(d => d.id === deck.id);
@@ -1632,18 +1644,6 @@ function createWindows() {
   });
 
   // ── Scene IPC (FR-4.28–FR-4.31) ────────────────────────────────────────────
-  // Persist scenes as JSON in userData (no SQLite migration needed for Phase 2)
-  const scenesFilePath = path.join(app.getPath('userData'), 'scenes.json');
-  let scenesStore = [];
-  try {
-    if (fs.existsSync(scenesFilePath)) {
-      scenesStore = JSON.parse(fs.readFileSync(scenesFilePath, 'utf8'));
-    }
-  } catch (_) { scenesStore = []; }
-  const saveScenes = () => {
-    try { fs.writeFileSync(scenesFilePath, JSON.stringify(scenesStore, null, 2), 'utf8'); } catch (_) {}
-  };
-
   ipcMain.handle('scene-list', () => scenesStore);
   ipcMain.handle('scene-save', (event, scene) => {
     const idx = scenesStore.findIndex(s => s.id === scene.id);
