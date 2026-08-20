@@ -106,18 +106,26 @@ class NdiEngine extends EventEmitter {
     let frameCountProgram = 0;
     let frameCountStage = 0;
     let lastFpsCalculation = Date.now();
+    let isCapturingProgram = false;
+    let isCapturingStage = false;
 
     this.captureTimer = setInterval(async () => {
       if (!this.isRunning) return;
 
       const now = Date.now();
 
-      // Program Window Frame Capture
-      if (this.programWindow && !this.programWindow.isDestroyed() && (this.mjpegProgramClients.size > 0 || this.stats.nativeNdiAvailable)) {
+      // Program Window Frame Capture (Low Latency)
+      if (
+        this.programWindow &&
+        !this.programWindow.isDestroyed() &&
+        (this.mjpegProgramClients.size > 0 || this.stats.nativeNdiAvailable) &&
+        !isCapturingProgram
+      ) {
+        isCapturingProgram = true;
         try {
           const image = await this.programWindow.webContents.capturePage();
           if (!image.isEmpty()) {
-            this.programFrameBuffer = image.toJPEG(85);
+            this.programFrameBuffer = image.toJPEG(80);
             frameCountProgram++;
             this.stats.programFramesSent++;
 
@@ -125,20 +133,32 @@ class NdiEngine extends EventEmitter {
             this._broadcastMjpegFrame(this.mjpegProgramClients, this.programFrameBuffer);
           }
         } catch (_) {}
+        finally {
+          isCapturingProgram = false;
+        }
       }
 
-      // Stage Window Frame Capture
-      if (this.stageWindow && !this.stageWindow.isDestroyed() && (this.mjpegStageClients.size > 0 || this.stats.nativeNdiAvailable)) {
+      // Stage Window Frame Capture (Low Latency)
+      if (
+        this.stageWindow &&
+        !this.stageWindow.isDestroyed() &&
+        (this.mjpegStageClients.size > 0 || this.stats.nativeNdiAvailable) &&
+        !isCapturingStage
+      ) {
+        isCapturingStage = true;
         try {
           const image = await this.stageWindow.webContents.capturePage();
           if (!image.isEmpty()) {
-            this.stageFrameBuffer = image.toJPEG(85);
+            this.stageFrameBuffer = image.toJPEG(80);
             frameCountStage++;
             this.stats.stageFramesSent++;
 
             this._broadcastMjpegFrame(this.mjpegStageClients, this.stageFrameBuffer);
           }
         } catch (_) {}
+        finally {
+          isCapturingStage = false;
+        }
       }
 
       // Compute rolling FPS stats every second
@@ -154,6 +174,12 @@ class NdiEngine extends EventEmitter {
         this.emit('stats', this.getStatus());
       }
     }, frameIntervalMs);
+
+    // Initial instant background capture
+    setTimeout(() => {
+      this._captureSingleFrame('program');
+      this._captureSingleFrame('stage');
+    }, 500);
 
     // 2. Start mDNS NDI LAN Advertiser
     this._startMdnsAdvertisement();
@@ -266,23 +292,66 @@ class NdiEngine extends EventEmitter {
   }
 
   /**
+   * Capture a single frame immediately for a given window
+   */
+  async _captureSingleFrame(streamType = 'program') {
+    const win = streamType === 'stage' ? this.stageWindow : this.programWindow;
+    if (!win || win.isDestroyed()) return;
+
+    try {
+      const image = await win.webContents.capturePage();
+      if (!image.isEmpty()) {
+        const buf = image.toJPEG(80);
+        if (streamType === 'stage') {
+          this.stageFrameBuffer = buf;
+          this._broadcastMjpegFrame(this.mjpegStageClients, buf);
+        } else {
+          this.programFrameBuffer = buf;
+          this._broadcastMjpegFrame(this.mjpegProgramClients, buf);
+        }
+      }
+    } catch (_) {}
+  }
+
+  /**
    * Handle incoming HTTP MJPEG Stream Request
    */
   handleMjpegRequest(req, res, streamType = 'program') {
+    if (res.socket) {
+      try {
+        res.socket.setNoDelay(true);
+        res.socket.setKeepAlive(true, 1000);
+      } catch (_) {}
+    }
+
     res.writeHead(200, {
       'Content-Type': 'multipart/x-mixed-replace; boundary=ocs-frame',
-      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
       'Connection': 'close',
       'Pragma': 'no-cache',
+      'Expires': '0',
       'Access-Control-Allow-Origin': '*',
     });
 
     try {
+      if (typeof res.flushHeaders === 'function') res.flushHeaders();
       res.write('--ocs-frame\r\n');
     } catch (_) {}
 
     const clientSet = streamType === 'stage' ? this.mjpegStageClients : this.mjpegProgramClients;
     clientSet.add(res);
+
+    // Send the latest cached frame immediately for 0ms initial start latency
+    const cached = streamType === 'stage' ? this.stageFrameBuffer : this.programFrameBuffer;
+    if (cached && cached.length > 0) {
+      try {
+        res.write(`--ocs-frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${cached.length}\r\n\r\n`);
+        res.write(cached);
+        res.write('\r\n');
+      } catch (_) {}
+    } else {
+      this._captureSingleFrame(streamType);
+    }
 
     req.on('close', () => {
       clientSet.delete(res);

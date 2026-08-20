@@ -63,14 +63,15 @@ async function runTests() {
 
   // Test /stream/program.mjpg header check
   const mjpegRes = await new Promise((resolve, reject) => {
-    const req = http.get(`http://127.0.0.1:${TEST_PORT}/stream/program.mjpg`, (res) => {
+    const req = http.request(`http://127.0.0.1:${TEST_PORT}/stream/program.mjpg`, (res) => {
       resolve({ statusCode: res.statusCode, headers: res.headers });
+      res.destroy();
       req.destroy();
     });
     req.on('error', (err) => {
-      // ECONNRESET is expected when destroying the client
       if (err.code !== 'ECONNRESET') reject(err);
     });
+    req.end();
   });
   assert.strictEqual(mjpegRes.statusCode, 200, 'MJPEG stream should return 200 OK');
   assert(

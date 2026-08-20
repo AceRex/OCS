@@ -753,6 +753,9 @@ serverApp.get('/api/ndi/sources', async (_req, res) => {
 });
 
 let pendingAssetTransfers = new Map();
+let latestOverlayContent = null;
+let latestOverlayStyle = null;
+let latestOverlayTimer = null;
 
 function broadcastDevicesUpdated() {
   const pairedDevices = connectedDevices.filter(d => d.paired);
@@ -770,6 +773,14 @@ function broadcastDevicesUpdated() {
  */
 io.on('connection', (socket) => {
   console.log('[Remote] socket connected', socket.id);
+
+  // Send current active overlay state to newly connected client (OBS Browser Source / Web View)
+  try {
+    if (latestOverlayContent) socket.emit('overlay-content', latestOverlayContent);
+    if (latestOverlayStyle) socket.emit('overlay-style', latestOverlayStyle);
+    if (latestOverlayTimer != null) socket.emit('overlay-timer', latestOverlayTimer);
+    if (currentCanvasState) socket.emit('overlay-canvas', currentCanvasState);
+  } catch (_) {}
 
   const device = {
     id: socket.id,
@@ -1378,6 +1389,8 @@ function createWindows() {
 
   // IPC Handlers
   ipcMain.on("activate_set_timer", (event, value) => {
+    latestOverlayTimer = value;
+    if (io) io.emit("overlay-timer", value);
     // Timer -> Speaker View (Always)
     if (!speakerWindow.isDestroyed()) speakerWindow.webContents.send("set-timer", value);
     // Timer -> General View (Always - view.js now checks 'mode' and 'isEventMode' to decide whether to show it)
@@ -1417,6 +1430,7 @@ function createWindows() {
 
   function broadcastCanvasState(state, allowedTargets = null) {
     if (state) currentCanvasState = state;
+    if (io) io.emit("overlay-canvas", currentCanvasState);
     const speakerAllowed = allowedTargets === null || allowedTargets.includes('speaker') || allowedTargets.includes('all');
     const generalAllowed = allowedTargets === null || allowedTargets.includes('general') || allowedTargets.includes('all');
 
@@ -1468,6 +1482,9 @@ function createWindows() {
   });
 
   ipcMain.on("activate_set_content", (event, value) => {
+    latestOverlayContent = value;
+    if (io) io.emit("overlay-content", value);
+
     const summary = value == null
       ? 'null (black)'
       : `${value.type || '?'} ${value.data && value.data.title ? value.data.title : ''}`.trim();
@@ -1513,6 +1530,9 @@ function createWindows() {
   });
 
   ipcMain.on("activate_set_style", (event, value) => {
+    latestOverlayStyle = value;
+    if (io) io.emit("overlay-style", value);
+
     // FR-4.9 fix: respect target array just like activate_set_content
     const allowedTargets = Array.isArray(value?.target) ? value.target : null;
     if (!speakerWindow.isDestroyed() && (allowedTargets === null || allowedTargets.includes('speaker')))

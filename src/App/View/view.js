@@ -495,7 +495,115 @@ function App({ mode: propMode }) {
       });
     }
 
+    // If running in OBS Studio Browser Source / Web Browser overlay mode (no Electron preload)
+    let socket = null;
+    if (!window.electron) {
+      console.log(`[View Browser Mode] Initializing Socket.IO overlay sync for mode=${mode}`);
+      try {
+        const ioFunc = typeof window !== 'undefined' ? window.io : null;
+        if (typeof ioFunc === 'function') {
+          socket = ioFunc(typeof window !== 'undefined' ? window.location.origin : 'http://127.0.0.1:4000', {
+            transports: ['websocket', 'polling'],
+            reconnection: true,
+          });
+        }
+
+        socket.on('overlay-timer', (value) => {
+          let newTime, newEventMode, newTheme;
+          if (typeof value === 'object' && value !== null) {
+            newTime = value.time;
+            newEventMode = value.isEventMode || false;
+            newTheme = value.theme || 'default';
+          } else {
+            newTime = value;
+            newEventMode = false;
+            newTheme = 'default';
+          }
+
+          if (mode === 'general' && !newEventMode) {
+            setCountDown(null);
+            setIsEventMode(false);
+            return;
+          }
+
+          setIsEventMode(newEventMode);
+          setTheme(newTheme);
+          setCountDown((prev) => {
+            if (newTime === 0 && prev === null) {
+              setTimeUp(false);
+              return null;
+            }
+            if (newTime === 0) setTimeUp(true);
+            else setTimeUp(false);
+            return newTime;
+          });
+        });
+
+        socket.on('overlay-content', (value) => {
+          if (value && value.target && Array.isArray(value.target)) {
+            if (!value.target.includes(mode) && !value.target.includes('all') && mode !== 'controller') {
+              setPresentationContent(null);
+              setCanvasState((prev) => ({
+                ...prev,
+                contentSlot: { type: 'none', data: null },
+              }));
+              return;
+            }
+          }
+          setPresentationContent(value);
+          setCanvasState((prev) => ({
+            ...prev,
+            contentSlot: value == null
+              ? { type: 'none', data: null }
+              : { type: value.type || 'none', data: value.data || value },
+          }));
+        });
+
+        socket.on('overlay-style', (value) => {
+          if (!value) return;
+          if (value.target && Array.isArray(value.target)) {
+            if (!value.target.includes(mode) && !value.target.includes('all')) return;
+          }
+          setPresentationStyle((prev) => ({ ...prev, ...value }));
+          setCanvasState((prev) => {
+            const bg = { ...prev.background };
+            if (value.backgroundImage) {
+              bg.type = 'image';
+              bg.url = value.backgroundImage;
+            } else if (value.backgroundVideo) {
+              bg.type = 'video';
+              bg.url = value.backgroundVideo;
+            } else if (value.backgroundColor) {
+              bg.type = 'color';
+              bg.color = value.backgroundColor;
+            }
+            if (value.backgroundX != null) bg.panX = value.backgroundX - 50;
+            if (value.backgroundY != null) bg.panY = value.backgroundY - 50;
+            return { ...prev, background: bg };
+          });
+        });
+
+        socket.on('overlay-canvas', (state) => {
+          if (state) {
+            setCanvasState((prev) => ({
+              ...prev,
+              ...state,
+              background: { ...prev.background, ...(state.background || {}) },
+              contentSlot: state.contentSlot || prev.contentSlot,
+              pinnedLayers: state.pinnedLayers || prev.pinnedLayers,
+              chrome: { ...prev.chrome, ...(state.chrome || {}) },
+            }));
+          }
+        });
+      } catch (err) {
+        console.warn('[View Browser Mode] Socket.IO initialization notice:', err);
+      }
+    }
+
     return () => {
+      if (socket) {
+        try { socket.disconnect(); } catch (_) {}
+      }
       if (window.electron && window.electron.Timer) {
         window.electron.Timer.removeSetTimerListener();
       }
@@ -586,9 +694,6 @@ function App({ mode: propMode }) {
       <h1 className="text-[12vw] font-black text-light uppercase tracking-tight leading-none">TIME UP</h1>
     </div>
   );
-
-  // Debug check
-  if (!window.electron) return <div style={{ color: 'red', fontSize: 50, backgroundColor: 'white' }}>ELECTRON PRELOAD FAILED</div>;
 
   const hasContentSlot = canvasState.contentSlot && canvasState.contentSlot.type !== 'none' && canvasState.contentSlot.data != null;
   const hasBackgroundMedia = canvasState.background && canvasState.background.url != null;
