@@ -22,7 +22,7 @@ interface SocketState {
     disconnect: () => void;
     sendAsset: (asset: AssetPayload) => Promise<{ ok: boolean; error?: string; message?: string; role?: string }>;
     setVoiceActive: (active: boolean) => void;
-    sendVoiceAudio: (audioData: { dataBase64: string; format?: string; durationMs?: number }) => Promise<{ ok: boolean; error?: string; text?: string; confidence?: number }>;
+    sendVoiceAudio: (audioData: { dataBase64: string; format?: string; durationMs?: number; role?: string }) => Promise<{ ok: boolean; error?: string; text?: string; confidence?: number }>;
     peers: Array<{ id: string; name: string; ip: string; isVoiceActive?: boolean }>;
     incomingIntercom: { fromName: string; audioBase64: string; format: string; timestamp: number } | null;
     fetchPeers: () => Promise<Array<{ id: string; name: string; ip: string; isVoiceActive?: boolean }>>;
@@ -204,7 +204,7 @@ export const useSocketStore = create<SocketState>((set, get) => ({
             });
         });
     },
-    sendVoiceAudio: (audioData: { dataBase64: string; format?: string; durationMs?: number }): Promise<{ ok: boolean; error?: string; text?: string; confidence?: number }> => {
+    sendVoiceAudio: (audioData: { dataBase64: string; format?: string; durationMs?: number; role?: string }): Promise<{ ok: boolean; error?: string; text?: string; confidence?: number }> => {
         return new Promise((resolve) => {
             const { socket, isPaired } = get();
             if (!socket || !socket.connected || !isPaired) {
@@ -217,6 +217,7 @@ export const useSocketStore = create<SocketState>((set, get) => ({
                 format: audioData.format || 'pcm',
                 durationMs: audioData.durationMs,
                 source: 'secondary',
+                role: audioData.role || 'final',
             }, (response: { ok: boolean; error?: string; text?: string; confidence?: number }) => {
                 if (response?.ok) {
                     resolve({ ok: true, text: response.text, confidence: response.confidence });

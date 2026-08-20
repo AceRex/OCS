@@ -883,7 +883,7 @@ io.on('connection', (socket) => {
         source: 'secondary',
         deviceName: device.name,
         utteranceId: `sec-${Date.now()}`,
-        role: 'final',
+        role: payload.role || 'final',
       });
 
       ack({

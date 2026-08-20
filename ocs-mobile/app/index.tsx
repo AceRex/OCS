@@ -90,7 +90,7 @@ export default function Dashboard() {
     },
     {
       id: "presentation",
-      label: "Media",
+      label: "Teleprompter",
       icon: Monitor,
       gradient: ["#8E2DE2", "#4A00E0"], // Purple Gradient
       iconColor: "#ffffff",

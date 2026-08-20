@@ -496,6 +496,18 @@ export default function BroadcastEngine() {
     return () => unsub?.();
   }, []);
 
+  // Load Bible books on mount so voice scripture resolution works immediately
+  useEffect(() => {
+    if (window.electron?.Bible?.getBooks) {
+      window.electron.Bible.getBooks().then((res) => {
+        if (Array.isArray(res) && res.length > 0) {
+          setBooks(res);
+          booksRef.current = res;
+        }
+      }).catch((err) => console.error("[Voice] Failed to load initial bible books:", err));
+    }
+  }, []);
+
   // Sync voice context when operator selects a verse in BibleController (UI → voice)
   useEffect(() => {
     const onBibleContext = (e) => {
@@ -2575,7 +2587,9 @@ export default function BroadcastEngine() {
         const displayBody = liveTranscriptCorrectionRef.current
           ? correctLiveTranscript(commandText)
           : commandText;
-        const prefix = isSecondary ? "[Remote PTT] " : pass === "B" ? "[B] " : "";
+        const prefix = isSecondary
+          ? (res.role === "mic" ? `[Wireless Mic - ${res.deviceName || "Mobile"}] ` : "[Remote PTT] ")
+          : pass === "B" ? "[B] " : "";
         const tag = `${prefix}${displayBody}`;
         if (
           newLines.length > 0 &&
