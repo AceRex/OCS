@@ -625,10 +625,11 @@ ipcMain.handle("media-list", async () => {
   try {
     const files = await fsp.readdir(mediaPath);
     const fileStats = await Promise.all(files.map(async (file) => {
-      if (file.startsWith('.')) return null;
+      if (file.startsWith('.') || file.endsWith('_slides')) return null;
       const filePath = path.join(mediaPath, file);
       try {
         const stat = await fsp.stat(filePath);
+        if (stat.isDirectory()) return null;
         return { name: file, time: stat.mtime.getTime() };
       } catch (err) {
         return null;
@@ -648,7 +649,13 @@ ipcMain.handle("media-list", async () => {
 ipcMain.handle("media-delete", async (event, fileUrl) => {
   try {
     const filePath = fileUrl.startsWith('file://') ? fileURLToPath(fileUrl) : fileUrl;
-    await fsp.unlink(filePath);
+    const stat = await fsp.stat(filePath).catch(() => null);
+    if (!stat) return false;
+    if (stat.isDirectory()) {
+      await fsp.rm(filePath, { recursive: true, force: true });
+    } else {
+      await fsp.unlink(filePath);
+    }
     return true;
   } catch (err) {
     if (err.code === 'ENOENT') return false;
