@@ -3,11 +3,13 @@ import { PiMicrophone, PiCheck, PiSparkle, PiX } from "react-icons/pi";
 
 export default function MobileVoiceNotification() {
   const [notification, setNotification] = useState(null);
+  const [activeWirelessMic, setActiveWirelessMic] = useState(null);
 
   useEffect(() => {
-    if (!window.electron?.Asr?.onTranscript) return;
+    const AsrApi = window.electron?.Asr || window.electron?.Vosk;
+    if (!AsrApi?.onTranscript) return;
 
-    const unsubTranscript = window.electron.Asr.onTranscript((payload) => {
+    const unsubTranscript = AsrApi.onTranscript((payload) => {
       if (payload?.source === "secondary" && payload?.text) {
         setNotification({
           status: "completed",

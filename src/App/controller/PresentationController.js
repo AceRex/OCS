@@ -514,11 +514,30 @@ export default function PresentationController() {
                 setScenes(Array.isArray(list) ? list : []);
             }).catch(() => {});
         }
-        if (window.electron?.Presentation?.list) {
-            window.electron.Presentation.list().then(list => {
-                setPresentations(Array.isArray(list) ? list : []);
-            }).catch(() => {});
-        }
+        const loadDecks = () => {
+            if (window.electron?.Presentation?.list) {
+                window.electron.Presentation.list().then(list => {
+                    setPresentations(Array.isArray(list) ? list : []);
+                }).catch(() => {});
+            }
+        };
+        loadDecks();
+
+        const unsubDecks = window.electron?.Presentation?.onDecksUpdated?.((payload) => {
+            loadDecks();
+            if (payload?.deck) {
+                setSelectedPresentation(payload.deck);
+                setActiveTab('presentation');
+            }
+        });
+        const unsubMedia = window.electron?.Media?.onMediaUpdated?.(() => {
+            refreshMedia();
+        });
+
+        return () => {
+            unsubDecks?.();
+            unsubMedia?.();
+        };
     }, []);
 
     // Listen to Reference Aligner advance/suggestion/update events

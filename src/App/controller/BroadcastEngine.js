@@ -484,6 +484,18 @@ export default function BroadcastEngine() {
     isTranscribingRef.current = isTranscribing;
   }, [isTranscribing]);
 
+  // Always process remote secondary voice transcripts (Mobile PTT) regardless of desktop mic state
+  useEffect(() => {
+    const AsrApi = window.electron?.Asr || window.electron?.Vosk;
+    if (!AsrApi?.onTranscript) return;
+    const unsub = AsrApi.onTranscript((payload) => {
+      if (payload?.source === "secondary") {
+        handleTranscriptResultRef.current?.(payload);
+      }
+    });
+    return () => unsub?.();
+  }, []);
+
   // Sync voice context when operator selects a verse in BibleController (UI → voice)
   useEffect(() => {
     const onBibleContext = (e) => {

@@ -188,6 +188,24 @@ export default function SettingsController() {
             }
         };
         loadMedia();
+
+        const unsubMedia = window.electron?.Media?.onMediaUpdated?.(() => {
+            loadMedia();
+        });
+
+        const unsubBumpers = window.electron?.Bumper?.onBumpersUpdated?.(async () => {
+            if (window.electron?.Bumper?.get) {
+                try {
+                    const b = await window.electron.Bumper.get();
+                    if (b) setBumpers(b);
+                } catch (_) {}
+            }
+        });
+
+        return () => {
+            unsubMedia?.();
+            unsubBumpers?.();
+        };
     }, []);
 
     const updateStyle = (key, value) => {

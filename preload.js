@@ -218,7 +218,34 @@ contextBridge.exposeInMainWorld("electron", {
     importPresentation: () => ipcRenderer.invoke("media-import-presentation"),
     list: () => ipcRenderer.invoke("media-list"),
     delete: (filename) => ipcRenderer.invoke("media-delete", filename),
-    deletePresentation: (fileUrl) => ipcRenderer.invoke("presentation-delete", fileUrl)
+    deletePresentation: (fileUrl) => ipcRenderer.invoke("presentation-delete", fileUrl),
+    onMediaUpdated: (callback) => {
+      const listener = (_e, val) => callback(val);
+      ipcRenderer.on('media-list-updated', listener);
+      ipcRenderer.on('media-imported', listener);
+      return () => {
+        ipcRenderer.removeListener('media-list-updated', listener);
+        ipcRenderer.removeListener('media-imported', listener);
+      };
+    },
+  },
+  Presentation: {
+    import: () => ipcRenderer.invoke("presentation-import"),
+    importPresentation: () => ipcRenderer.invoke("media-import-presentation"),
+    list: () => ipcRenderer.invoke("presentation-list"),
+    setContent: (content) => ipcRenderer.invoke("presentation-set-content", content),
+    setStyle: (style) => ipcRenderer.invoke("presentation-set-style", style),
+    deletePresentation: (fileUrl) => ipcRenderer.invoke("presentation-delete", fileUrl),
+    onImportProgress: (callback) => {
+      const listener = (_e, val) => callback(val);
+      ipcRenderer.on('presentation-import-progress', listener);
+      return () => ipcRenderer.removeListener('presentation-import-progress', listener);
+    },
+    onDecksUpdated: (callback) => {
+      const listener = (_e, val) => callback(val);
+      ipcRenderer.on('presentation-decks-updated', listener);
+      return () => ipcRenderer.removeListener('presentation-decks-updated', listener);
+    },
   },
   Network: {
     getServerInfo: () => ipcRenderer.invoke('get-server-info'),
