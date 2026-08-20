@@ -1205,10 +1205,11 @@ ipcMain.handle('mobile-asset-respond', async (_event, { transferId, accepted, ta
     console.log(`[Remote Asset] Saved accepted file to ${destPath}`);
 
     const fileType = (transfer.payload.type || '').toLowerCase();
-    const isPptx = fileType === 'presentation' || filename.toLowerCase().endsWith('.pptx') || filename.toLowerCase().endsWith('.ppt');
     const isAudio = fileType === 'audio' || /\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(filename);
+    const isPptx = /\.(pptx|ppt)$/i.test(filename);
     const isImage = fileType === 'image' || /\.(png|jpe?g|webp|gif|svg|bmp)$/i.test(filename);
     const isVideo = fileType === 'video' || /\.(mp4|webm|mov|mkv|avi)$/i.test(filename);
+    const isPdf = /\.pdf$/i.test(filename);
 
     let resultPayload = { filename, fileUrl: pathToFileURL(destPath).href };
 
@@ -1234,17 +1235,21 @@ ipcMain.handle('mobile-asset-respond', async (_event, { transferId, accepted, ta
 
     // Task 4.2: PPTX routing into presentation pipeline
     if (isPptx) {
-      const deck = await processPptxDeck(destPath, filename);
-      resultPayload.deck = deck;
-      for (const win of BrowserWindow.getAllWindows()) {
-        if (!win.isDestroyed()) {
-          win.webContents.send('presentation-decks-updated', { deck, filename });
+      try {
+        const deck = await processPptxDeck(destPath, filename);
+        resultPayload.deck = deck;
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) {
+            win.webContents.send('presentation-decks-updated', { deck, filename });
+          }
         }
+      } catch (deckErr) {
+        console.warn('[Remote Asset] Could not process presentation deck:', deckErr.message);
       }
     }
 
-    // Task 4.3: Image / Video routing into media library and canvas
-    if (isImage || isVideo) {
+    // Task 4.3: Image / Video / PDF routing into media library and canvas
+    if (isImage || isVideo || isPdf || (!isAudio && !isPptx)) {
       const fileUrl = pathToFileURL(destPath).href;
       // Broadcast updated media list to all windows
       for (const win of BrowserWindow.getAllWindows()) {

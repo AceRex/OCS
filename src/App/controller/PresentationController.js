@@ -986,6 +986,22 @@ export default function PresentationController() {
         setContextMenu(null);
     };
 
+    const handleDeletePresentation = async (deckId) => {
+        try {
+            if (window.electron?.Presentation?.delete) {
+                await window.electron.Presentation.delete(deckId);
+            } else if (window.electron?.Presentation?.deletePresentation) {
+                await window.electron.Presentation.deletePresentation(deckId);
+            }
+            setPresentations(prev => prev.filter(d => d.id !== deckId && d.fileUrl !== deckId));
+            if (selectedPresentation && (selectedPresentation.id === deckId || selectedPresentation.fileUrl === deckId)) {
+                setSelectedPresentation(null);
+            }
+        } catch (err) {
+            console.error("Failed to delete presentation deck:", err);
+        }
+    };
+
     const handleAssetContextMenu = (e, fileUrl) => {
         e.preventDefault();
         e.stopPropagation();

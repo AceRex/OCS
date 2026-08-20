@@ -112,9 +112,12 @@ export const useSocketStore = create<SocketState>((set, get) => ({
         const currentDeviceName = get().deviceName || 'Mobile Companion';
 
         const socket = io(`http://${host}:${targetPort}`, {
-            transports: ['websocket'],
-            reconnectionAttempts: 5,
-            timeout: 5000,
+            transports: ['websocket', 'polling'],
+            reconnection: true,
+            reconnectionAttempts: Infinity,
+            reconnectionDelay: 1000,
+            reconnectionDelayMax: 5000,
+            timeout: 15000,
             auth: {
                 code,
                 token: code, // desktop accepts either code or opaque token
@@ -125,6 +128,11 @@ export const useSocketStore = create<SocketState>((set, get) => ({
         socket.on('connect', () => {
             console.log('Connected to server — awaiting pair confirmation');
             set({ isConnected: true, connectionError: null });
+            socket.emit('pair', { code, token: code, deviceName: get().deviceName || 'Mobile Companion' });
+        });
+
+        socket.on('reconnect', () => {
+            console.log('Reconnected to server — refreshing pairing');
             socket.emit('pair', { code, token: code, deviceName: get().deviceName || 'Mobile Companion' });
         });
 
@@ -167,8 +175,10 @@ export const useSocketStore = create<SocketState>((set, get) => ({
         });
 
         socket.on('connect_error', (err) => {
-            console.error('Connection Error:', err.message);
-            set({ connectionError: `Connection failed: ${err.message}`, isPaired: false });
+            console.warn('[Remote Socket] Connection notice:', err.message);
+            if (!get().isPaired) {
+                set({ connectionError: `Connection failed: ${err.message}` });
+            }
         });
 
         set({ socket, serverIp: ip });
