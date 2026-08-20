@@ -367,4 +367,15 @@ contextBridge.exposeInMainWorld("electron", {
     get: () => ipcRenderer.invoke('settings-get'),
     set: (patch) => ipcRenderer.invoke('settings-set', patch),
   },
+  Ndi: {
+    getStatus: () => ipcRenderer.invoke('ndi:get-status'),
+    setConfig: (config) => ipcRenderer.invoke('ndi:set-config', config),
+    discoverSources: () => ipcRenderer.invoke('ndi:discover-sources'),
+    restartStream: () => ipcRenderer.invoke('ndi:restart-stream'),
+    onStatusUpdate: (callback) => {
+      const listener = (_e, payload) => callback(payload);
+      ipcRenderer.on('ndi-status-update', listener);
+      return () => ipcRenderer.removeListener('ndi-status-update', listener);
+    },
+  },
 });

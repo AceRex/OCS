@@ -6,6 +6,7 @@ import BibleController from "./BibleController";
 import PresentationController from "./PresentationController";
 import DesignLabController from "./DesignLabController";
 import SettingsController from "./SettingsController";
+import NdiController from "./NdiController";
 import BroadcastEngine from "./BroadcastEngine";
 import SessionsController from "./SessionsController";
 import SessionSaveProgress from "./SessionSaveProgress";
@@ -210,6 +211,11 @@ function App() {
               className={`w-full h-full ${activeTab === "settings" ? "block" : "hidden"}`}
             >
               <SettingsController />
+            </div>
+            <div
+              className={`w-full h-full ${activeTab === "ndi" || activeTab === "stream" ? "block" : "hidden"}`}
+            >
+              <NdiController />
             </div>
             <div
               className={`w-full h-full ${activeTab === "apps" ? "block" : "hidden"}`}

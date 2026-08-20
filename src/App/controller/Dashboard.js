@@ -57,11 +57,11 @@ export default function Dashboard({ onNavigate }) {
       description: "USB & Mobile camera integration",
     },
     {
-      id: "stream",
-      label: "Live Stream",
+      id: "ndi",
+      label: "NDI & Broadcast",
       icon: PiBroadcast,
-      gradient: "from-[#D31027] to-[#EA384D]",
-      description: "RTMP Streaming & Scene management",
+      gradient: "from-[#00c6ff] to-[#0072ff]",
+      description: "NDI, OBS & vMix transparent broadcast streaming",
     },
     {
       id: "settings",

@@ -11,6 +11,9 @@ function App({ mode: propMode }) {
   const viewMode = propMode || (typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('mode')
     : null);
+  const isAlphaMode = typeof window !== 'undefined'
+    ? (new URLSearchParams(window.location.search).get('alpha') === '1' || new URLSearchParams(window.location.search).get('mode') === 'overlay')
+    : false;
 
   // 4-Band Compositor Canvas State (FR-4.13, FR-4.14, FR-4.15)
   const [canvasState, setCanvasState] = useState({
@@ -173,7 +176,7 @@ function App({ mode: propMode }) {
       const refPosClass = refPositionMap[bibleRefPosition] || refPositionMap['top-center'];
       const bodyAlign = bodyAlignMap[bibleBodyPosition] || bodyAlignMap['center'];
       const useCustomBg = !!backgroundImage || !!backgroundVideo;
-      const bgColor = useCustomBg ? '#000000' : (backgroundColor || '#0B0814');
+      const bgColor = isAlphaMode ? 'transparent' : (useCustomBg ? '#000000' : (backgroundColor || '#0B0814'));
       const activeIdx = typeof readAlong?.activeIndex === 'number' ? readAlong.activeIndex : -1;
       const baseColor = textColor || '#F5F2FA';
 
@@ -597,7 +600,7 @@ function App({ mode: propMode }) {
   console.log(`[View ${viewMode}] RENDER: isPresenting=${isPresenting}, hasContentSlot=${hasContentSlot}, countdown=${countdown}, type=${canvasState.contentSlot?.type}`);
 
   return (
-    <div className="h-screen flex flex-col justify-center items-center w-full bg-primary overflow-hidden" style={{ color: 'white' }}>
+    <div className={`h-screen flex flex-col justify-center items-center w-full ${isAlphaMode ? 'bg-transparent' : 'bg-primary'} overflow-hidden`} style={{ color: 'white', backgroundColor: isAlphaMode ? 'transparent' : undefined }}>
       {sessionRec.recording && (
         <div
           className="absolute top-6 right-8 z-50 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/50 border border-red-500/40"
@@ -612,7 +615,7 @@ function App({ mode: propMode }) {
           {isPresenting ? renderPresentation() : (
             !showSplitTimer && (
               countdown === null ? (
-                <div className="w-full h-full flex items-center justify-center bg-primary" style={{ backgroundColor: '#282828' }}>
+                <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: isAlphaMode ? 'transparent' : '#282828' }}>
                   <div className="flex flex-col items-center animate-pulse">
                     <h1 className="text-[15vw] font-black text-light tracking-tighter leading-none opacity-20" style={{ color: '#F6F3F1' }}>OCS</h1>
                     <p className="text-light/30 text-2xl font-medium tracking-[1em] uppercase mt-4" style={{ color: '#F6F3F1' }}>Service is Starting</p>

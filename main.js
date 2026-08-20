@@ -46,6 +46,7 @@ const appSettings = require("./src/main/appSettings");
 const sleepPrevention = require("./src/main/sleepPrevention");
 const { ReferenceAligner } = require("./src/main/aligner/referenceAligner");
 const { SceneAutoAdvanceManager } = require("./src/main/aligner/sceneAutoAdvance");
+const { ndiEngine } = require("./src/main/ndi/ndiEngine");
 
 const globalAligner = new ReferenceAligner();
 const sceneAutoAdvance = new SceneAutoAdvanceManager({ aligner: globalAligner });
@@ -728,6 +729,29 @@ serverApp.get('/pair-info', (_req, res) => {
   });
 });
 
+// Serve static directory for OBS Browser Sources & overlay views
+serverApp.use(express.static(__dirname));
+
+// NDI & Broadcast Overlays (for OBS Browser Source, vMix, etc.)
+serverApp.get('/overlay/program', (_req, res) => {
+  res.redirect('/view.html?mode=general&alpha=1');
+});
+serverApp.get('/overlay/stage', (_req, res) => {
+  res.redirect('/view.html?mode=speaker&alpha=1');
+});
+serverApp.get('/stream/program.mjpg', (req, res) => {
+  ndiEngine.handleMjpegRequest(req, res, 'program');
+});
+serverApp.get('/stream/stage.mjpg', (req, res) => {
+  ndiEngine.handleMjpegRequest(req, res, 'stage');
+});
+serverApp.get('/api/ndi/status', (_req, res) => {
+  res.json(ndiEngine.getStatus());
+});
+serverApp.get('/api/ndi/sources', async (_req, res) => {
+  res.json(await ndiEngine.discoverSources());
+});
+
 let pendingAssetTransfers = new Map();
 
 function broadcastDevicesUpdated() {
@@ -1338,6 +1362,20 @@ function createWindows() {
   generalWindow.loadFile("view.html", { search: "mode=general" });
   controllerWindow.loadFile("controller.html");
 
+  // Initialize NDI and Broadcast Video Engine
+  ndiEngine.init({
+    programWindow: generalWindow,
+    stageWindow: speakerWindow,
+    io,
+    port: PORT,
+  });
+
+  ndiEngine.on('stats', (status) => {
+    if (controllerWindow && !controllerWindow.isDestroyed()) {
+      controllerWindow.webContents.send('ndi-status-update', status);
+    }
+  });
+
   // IPC Handlers
   ipcMain.on("activate_set_timer", (event, value) => {
     // Timer -> Speaker View (Always)
@@ -1926,6 +1964,24 @@ ipcMain.handle('settings-set', async (_e, patch) => {
     });
   }
   return saved;
+});
+
+// ── NDI & Broadcast Streaming Handlers ─────────────────────────────────────────
+ipcMain.handle('ndi:get-status', () => ndiEngine.getStatus());
+ipcMain.handle('ndi:set-config', (_event, config) => {
+  const updated = ndiEngine.setConfig(config);
+  if (config.enabled && !ndiEngine.isRunning) {
+    ndiEngine.start();
+  } else if (config.enabled === false && ndiEngine.isRunning) {
+    ndiEngine.stop();
+  }
+  return ndiEngine.getStatus();
+});
+ipcMain.handle('ndi:discover-sources', async () => await ndiEngine.discoverSources());
+ipcMain.handle('ndi:restart-stream', () => {
+  ndiEngine.stop();
+  ndiEngine.start();
+  return ndiEngine.getStatus();
 });
 
 // Legacy alias used by older debug UI

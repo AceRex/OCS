@@ -16,6 +16,9 @@ import {
     PiPlayCircle,
     PiFilmStrip,
     PiClock,
+    PiBroadcast,
+    PiCopy,
+    PiCheck,
 } from "react-icons/pi";
 
 const TRANSLATIONS = ['KJV', 'NIV', 'ESV', 'NKJV', 'NLT', 'AMP', 'MSG', 'CSB', 'NASB', 'RSV'];
@@ -222,6 +225,7 @@ export default function SettingsController() {
         { id: 'media', label: 'Media', icon: <PiPaintBucket /> },
         { id: 'bumpers', label: 'Intro & Outro', icon: <PiFilmStrip /> },
         { id: 'privacy', label: 'Privacy & AI', icon: <PiMicrophone /> },
+        { id: 'ndi', label: 'NDI & Broadcast', icon: <PiBroadcast /> },
     ];
 
     return (
@@ -865,6 +869,49 @@ export default function SettingsController() {
                                             <PiTrash size={16} />
                                         </button>
                                     )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* ─── NDI & BROADCAST STREAMING TAB ─── */}
+                {activeTab === 'ndi' && (
+                    <div className="space-y-6">
+                        <div className="bg-[#1A1428] border border-[#2E2542] p-6 rounded-3xl">
+                            <div className="flex items-center justify-between mb-4">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center">
+                                        <PiBroadcast size={22} />
+                                    </div>
+                                    <div>
+                                        <h3 className="font-bold text-base text-white">NDI & Broadcast Streaming</h3>
+                                        <p className="text-xs text-[#8882A4]">Broadcast OCS outputs to OBS Studio, vMix, Zoom, and TriCaster across the local network.</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                <div className="bg-[#0B0814] p-4 rounded-2xl border border-[#2E2542] space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-bold text-white">Channel 1: Program Output</span>
+                                        <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">1080p • Alpha</span>
+                                    </div>
+                                    <p className="text-xs text-[#8882A4]">Main projector feed, Bible scripture, lyrics & slide decks with transparent background.</p>
+                                    <p className="text-[11px] font-mono text-cyan-400 bg-white/5 p-2 rounded-xl border border-white/5 break-all">
+                                        http://127.0.0.1:4000/overlay/program
+                                    </p>
+                                </div>
+
+                                <div className="bg-[#0B0814] p-4 rounded-2xl border border-[#2E2542] space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <span className="text-xs font-bold text-white">Channel 2: Stage Display</span>
+                                        <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-400 text-[10px] font-bold">Confidence Feed</span>
+                                    </div>
+                                    <p className="text-xs text-[#8882A4]">Live stage display with synchronized countdown timer, active passage & speaker notes.</p>
+                                    <p className="text-[11px] font-mono text-purple-400 bg-white/5 p-2 rounded-xl border border-white/5 break-all">
+                                        http://127.0.0.1:4000/overlay/stage
+                                    </p>
                                 </div>
                             </div>
                         </div>
