@@ -356,6 +356,12 @@ function SceneTab({
                         <div
                             key={scene.id}
                             onClick={() => onLoadToPreview(scene, isPreviewingThisScene ? previewScene.pageIndex : 0, isPreviewingThisScene ? previewScene.sequenceIndex : 0)}
+                            onDoubleClick={() => {
+                                const pIdx = isPreviewingThisScene ? (previewScene.pageIndex || 0) : 0;
+                                const sIdx = isPreviewingThisScene ? (previewScene.sequenceIndex || 0) : 0;
+                                onLoadToPreview(scene, pIdx, sIdx);
+                                activateScene(scene, pIdx, sIdx);
+                            }}
                             className={`p-3 rounded-xl border transition-all flex flex-col gap-2 cursor-pointer select-none ${
                                 isActive
                                     ? 'bg-orange-500/15 border-orange-500/50 shadow-md ring-1 ring-orange-500/30'
@@ -766,6 +772,8 @@ export default function PresentationController() {
     };
 
     const activateScene = (scene, pageIdx = 0, seqIdx = 0) => {
+        setIsPresentingSlide(false);
+        setIsPresentingCustom(false);
         setActiveSceneId(scene.id);
         setActivePageIndex(pageIdx);
         setActiveSequenceIndex(seqIdx);
@@ -1576,7 +1584,12 @@ export default function PresentationController() {
                         ) : previewScene ? (
                             /* Clean High-Fidelity Scene Slide Preview with Background Image & Animation */
                             <div
-                                className="aspect-video w-full max-h-full rounded-lg overflow-hidden relative shadow-2xl border border-white/10 flex flex-col justify-center items-center p-[4%] transition-all select-none"
+                                onDoubleClick={() => {
+                                    if (previewScene?.scene) {
+                                        activateScene(previewScene.scene, previewScene.pageIndex || 0, previewScene.sequenceIndex || 0);
+                                    }
+                                }}
+                                className="aspect-video w-full max-h-full rounded-lg overflow-hidden relative shadow-2xl border border-white/10 flex flex-col justify-center items-center p-[4%] transition-all select-none cursor-pointer"
                                 style={{
                                     backgroundColor: previewScene.scene.style?.backgroundColor || '#000000',
                                     containerType: 'size',
