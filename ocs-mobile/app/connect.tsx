@@ -167,75 +167,50 @@ export default function ConnectScreen() {
   const ready = isConnected && isPaired;
 
   return (
-    <SafeAreaView className="flex-1 bg-[#121212]">
-      {/* Header */}
-      {/* <View className="flex-row items-center justify-between p-4 border-b border-white/10">
-        <TouchableOpacity onPress={() => router.back()} className="p-1">
-          <ArrowLeft size={24} color="white" />
-        </TouchableOpacity>
-        <Text className="text-white text-lg font-bold">
-          Connect to Desktop
-        </Text>
-        <View className="w-6" />
-      </View> */}
-
+    <SafeAreaView style={styles.container}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        className="flex-1"
+        style={styles.keyboardAvoid}
         keyboardVerticalOffset={Platform.OS === "ios" ? 10 : 0}
       >
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
           <ScrollView
-            contentContainerStyle={{
-              flexGrow: 1,
-              justifyContent: "center",
-              paddingHorizontal: 24,
-              paddingVertical: 20,
-            }}
+            contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
             bounces={false}
           >
-            <View className="w-full bg-white/5 p-6 rounded-3xl border border-white/10 items-center shadow-2xl">
-              <View className="mb-4 bg-blue-500/20 p-5 rounded-2xl border border-blue-500/30">
+            <View style={styles.card}>
+              <View style={styles.monitorIconBox}>
                 <Monitor size={40} color="#60A5FA" weight="duotone" />
               </View>
 
-              <Text className="text-white font-bold text-xl mb-1">
-                Pair Remote
-              </Text>
-              <Text className="text-white/50 text-center text-xs mb-5 leading-relaxed">
-                Scan the QR code on your desktop screen or enter the IP and
-                6-digit code.
+              <Text style={styles.title}>Pair Remote</Text>
+              <Text style={styles.subtitle}>
+                Scan the QR code on your desktop screen or enter the IP and 6-digit code.
               </Text>
 
               {/* Scan QR Code Button */}
               <TouchableOpacity
                 onPress={openScanner}
                 activeOpacity={0.8}
-                className="w-full bg-white/10 hover:bg-white/15 border border-white/20 p-4 rounded-2xl flex-row items-center justify-center gap-3 mb-4 shadow-md"
+                style={styles.scanButton}
               >
                 <QrCode size={22} color="#60A5FA" weight="bold" />
-                <Text className="text-white font-bold text-sm">
-                  Scan QR / Barcode
-                </Text>
+                <Text style={styles.scanButtonText}>Scan QR / Barcode</Text>
               </TouchableOpacity>
 
-              <View className="w-full flex-row items-center gap-3 my-2">
-                <View className="flex-1 h-[1px] bg-white/10" />
-                <Text className="text-white/30 text-[10px] uppercase font-bold tracking-widest">
-                  or manual
-                </Text>
-                <View className="flex-1 h-[1px] bg-white/10" />
+              <View style={styles.dividerRow}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>or manual</Text>
+                <View style={styles.dividerLine} />
               </View>
 
               {/* IP Input */}
-              <View className="w-full mb-3">
-                <Text className="text-white/50 text-[10px] uppercase font-bold tracking-wider mb-1.5 ml-1">
-                  Desktop IP Address
-                </Text>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Desktop IP Address</Text>
                 <TextInput
-                  className="w-full bg-black/60 border border-white/15 text-white px-4 py-3.5 rounded-xl text-center text-base font-mono"
+                  style={styles.textInput}
                   placeholder="192.168.1.X"
                   placeholderTextColor="#555"
                   value={ip}
@@ -247,12 +222,10 @@ export default function ConnectScreen() {
               </View>
 
               {/* Pairing Code Input */}
-              <View className="w-full mb-4">
-                <Text className="text-white/50 text-[10px] uppercase font-bold tracking-wider mb-1.5 ml-1">
-                  6-Digit Pairing Code
-                </Text>
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>6-Digit Pairing Code</Text>
                 <TextInput
-                  className="w-full bg-black/60 border border-white/15 text-white px-4 py-3 rounded-xl text-center text-xl font-mono tracking-[0.25em]"
+                  style={[styles.textInput, styles.pairingInput]}
                   placeholder="000000"
                   placeholderTextColor="#555"
                   value={pairingCode}
@@ -264,11 +237,9 @@ export default function ConnectScreen() {
 
               {/* Connection Error Banner */}
               {connectionError && (
-                <View className="mb-4 bg-red-500/10 p-3 rounded-xl border border-red-500/20 w-full flex-row items-center gap-2">
+                <View style={styles.errorBox}>
                   <XCircle size={16} color="#F87171" weight="bold" />
-                  <Text className="text-red-400 text-xs flex-1 font-medium">
-                    {connectionError}
-                  </Text>
+                  <Text style={styles.errorText}>{connectionError}</Text>
                 </View>
               )}
 
@@ -277,18 +248,18 @@ export default function ConnectScreen() {
                 <TouchableOpacity
                   onPress={disconnect}
                   activeOpacity={0.8}
-                  className="w-full bg-red-500/20 border border-red-500/40 p-4 rounded-2xl items-center flex-row justify-center gap-2"
+                  style={styles.disconnectButton}
                 >
                   <XCircle size={20} color="#F87171" weight="bold" />
-                  <Text className="text-red-400 font-bold">Disconnect</Text>
+                  <Text style={styles.disconnectText}>Disconnect</Text>
                 </TouchableOpacity>
               ) : (
                 <TouchableOpacity
                   onPress={handleManualConnect}
                   activeOpacity={0.8}
-                  className="w-full bg-blue-600 active:bg-blue-700 p-4 rounded-2xl items-center shadow-lg shadow-blue-600/30"
+                  style={styles.connectButton}
                 >
-                  <Text className="text-white font-bold text-base">
+                  <Text style={styles.connectText}>
                     {isConnected && !isPaired ? "Pairing…" : "Connect & Pair"}
                   </Text>
                 </TouchableOpacity>
@@ -296,11 +267,9 @@ export default function ConnectScreen() {
 
               {/* Paired Status Badge */}
               {ready && (
-                <View className="mt-4 flex-row items-center gap-2 bg-green-500/15 px-4 py-2 rounded-full border border-green-500/30">
+                <View style={styles.pairedBadge}>
                   <CheckCircle size={16} color="#4ADE80" weight="fill" />
-                  <Text className="text-green-400 text-xs font-bold">
-                    Paired with {serverIp}
-                  </Text>
+                  <Text style={styles.pairedText}>Paired with {serverIp}</Text>
                 </View>
               )}
             </View>
@@ -315,20 +284,18 @@ export default function ConnectScreen() {
         transparent={false}
         onRequestClose={() => setIsScannerOpen(false)}
       >
-        <SafeAreaView className="flex-1 bg-black">
-          <View className="flex-row items-center justify-between p-4 z-20 border-b border-white/10 bg-black/60 backdrop-blur-md">
+        <SafeAreaView style={styles.scannerContainer}>
+          <View style={styles.scannerHeader}>
             <TouchableOpacity
               onPress={() => setIsScannerOpen(false)}
-              className="w-10 h-10 rounded-full bg-white/10 items-center justify-center"
+              style={styles.scannerCloseButton}
             >
               <X size={20} color="white" weight="bold" />
             </TouchableOpacity>
-            <Text className="text-white text-base font-bold">
-              Scan Desktop QR Code
-            </Text>
+            <Text style={styles.scannerHeaderTitle}>Scan Desktop QR Code</Text>
             <TouchableOpacity
               onPress={() => setTorch(!torch)}
-              className={`w-10 h-10 rounded-full items-center justify-center ${torch ? "bg-yellow-500" : "bg-white/10"}`}
+              style={[styles.scannerCloseButton, torch ? styles.torchActive : null]}
             >
               <Lightning
                 size={20}
@@ -338,7 +305,7 @@ export default function ConnectScreen() {
             </TouchableOpacity>
           </View>
 
-          <View className="flex-1 relative justify-center items-center overflow-hidden">
+          <View style={styles.scannerBody}>
             <CameraView
               style={StyleSheet.absoluteFill}
               enableTorch={torch}
@@ -349,13 +316,13 @@ export default function ConnectScreen() {
             />
 
             {/* Scanner Viewfinder Overlay */}
-            <View className="w-64 h-64 border-2 border-cyan-400/80 rounded-3xl relative justify-center items-center shadow-2xl bg-black/10">
-              <View className="w-60 h-60 border border-white/20 rounded-2xl" />
-              <View className="absolute top-1/2 left-4 right-4 h-0.5 bg-cyan-400 shadow-md shadow-cyan-400" />
+            <View style={styles.viewFinder}>
+              <View style={styles.viewFinderInner} />
+              <View style={styles.laserLine} />
             </View>
 
-            <View className="absolute bottom-10 px-6 py-3 rounded-full bg-black/80 border border-white/20">
-              <Text className="text-white/80 text-xs font-medium text-center">
+            <View style={styles.scannerTipBox}>
+              <Text style={styles.scannerTipText}>
                 Point camera at the QR code in OCS Desktop → Remote
               </Text>
             </View>
@@ -365,3 +332,258 @@ export default function ConnectScreen() {
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#121212",
+  },
+  keyboardAvoid: {
+    flex: 1,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    justifyContent: "center",
+    paddingHorizontal: 24,
+    paddingVertical: 20,
+  },
+  card: {
+    width: "100%",
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    padding: 24,
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    alignItems: "center",
+  },
+  monitorIconBox: {
+    marginBottom: 16,
+    backgroundColor: "rgba(59, 130, 246, 0.2)",
+    padding: 20,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(59, 130, 246, 0.3)",
+  },
+  title: {
+    color: "white",
+    fontWeight: "bold",
+    fontSize: 20,
+    marginBottom: 4,
+  },
+  subtitle: {
+    color: "rgba(255, 255, 255, 0.5)",
+    textAlign: "center",
+    fontSize: 12,
+    marginBottom: 20,
+    lineHeight: 18,
+  },
+  scanButton: {
+    width: "100%",
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    padding: 16,
+    borderRadius: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
+    marginBottom: 16,
+  },
+  scanButtonText: {
+    color: "white",
+    fontWeight: "bold",
+    fontSize: 14,
+  },
+  dividerRow: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginVertical: 8,
+  },
+  dividerLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+  },
+  dividerText: {
+    color: "rgba(255, 255, 255, 0.3)",
+    fontSize: 10,
+    textTransform: "uppercase",
+    fontWeight: "bold",
+    letterSpacing: 1.5,
+  },
+  inputGroup: {
+    width: "100%",
+    marginBottom: 14,
+  },
+  inputLabel: {
+    color: "rgba(255, 255, 255, 0.5)",
+    fontSize: 10,
+    textTransform: "uppercase",
+    fontWeight: "bold",
+    letterSpacing: 1,
+    marginBottom: 6,
+    marginLeft: 4,
+  },
+  textInput: {
+    width: "100%",
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.15)",
+    color: "white",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 12,
+    textAlign: "center",
+    fontSize: 16,
+    fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
+  },
+  pairingInput: {
+    fontSize: 20,
+    letterSpacing: 6,
+  },
+  errorBox: {
+    marginBottom: 16,
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    padding: 12,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.2)",
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  errorText: {
+    color: "#F87171",
+    fontSize: 12,
+    flex: 1,
+    fontWeight: "500",
+  },
+  connectButton: {
+    width: "100%",
+    backgroundColor: "#2563EB",
+    padding: 16,
+    borderRadius: 16,
+    alignItems: "center",
+  },
+  connectText: {
+    color: "white",
+    fontWeight: "bold",
+    fontSize: 16,
+  },
+  disconnectButton: {
+    width: "100%",
+    backgroundColor: "rgba(239, 68, 68, 0.2)",
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.4)",
+    padding: 16,
+    borderRadius: 16,
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 8,
+  },
+  disconnectText: {
+    color: "#F87171",
+    fontWeight: "bold",
+  },
+  pairedBadge: {
+    marginTop: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "rgba(34, 197, 94, 0.15)",
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 9999,
+    borderWidth: 1,
+    borderColor: "rgba(34, 197, 94, 0.3)",
+  },
+  pairedText: {
+    color: "#4ADE80",
+    fontSize: 12,
+    fontWeight: "bold",
+  },
+  scannerContainer: {
+    flex: 1,
+    backgroundColor: "black",
+  },
+  scannerHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 16,
+    zIndex: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.1)",
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
+  },
+  scannerCloseButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  torchActive: {
+    backgroundColor: "#EAB308",
+  },
+  scannerHeaderTitle: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "bold",
+  },
+  scannerBody: {
+    flex: 1,
+    position: "relative",
+    justifyContent: "center",
+    alignItems: "center",
+    overflow: "hidden",
+  },
+  viewFinder: {
+    width: 256,
+    height: 256,
+    borderWidth: 2,
+    borderColor: "rgba(34, 211, 238, 0.8)",
+    borderRadius: 24,
+    position: "relative",
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.1)",
+  },
+  viewFinderInner: {
+    width: 240,
+    height: 240,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+    borderRadius: 16,
+  },
+  laserLine: {
+    position: "absolute",
+    top: "50%",
+    left: 16,
+    right: 16,
+    height: 2,
+    backgroundColor: "#22D3EE",
+  },
+  scannerTipBox: {
+    position: "absolute",
+    bottom: 40,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderRadius: 9999,
+    backgroundColor: "rgba(0, 0, 0, 0.8)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  scannerTipText: {
+    color: "rgba(255, 255, 255, 0.8)",
+    fontSize: 12,
+    fontWeight: "500",
+    textAlign: "center",
+  },
+});
