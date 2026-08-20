@@ -132,8 +132,8 @@ export default function Dashboard() {
                 isPaired
                   ? "bg-green-500/10 border-green-500/30"
                   : isConnected
-                  ? "bg-amber-500/10 border-amber-500/30"
-                  : "bg-white/5 border-white/10"
+                    ? "bg-amber-500/10 border-amber-500/30"
+                    : "bg-white/5 border-white/10"
               }`}
             >
               <View
@@ -141,8 +141,8 @@ export default function Dashboard() {
                   isPaired
                     ? "bg-green-400"
                     : isConnected
-                    ? "bg-amber-400"
-                    : "bg-white/30"
+                      ? "bg-amber-400"
+                      : "bg-white/30"
                 }`}
               />
               <Text
@@ -150,8 +150,8 @@ export default function Dashboard() {
                   isPaired
                     ? "text-green-400"
                     : isConnected
-                    ? "text-amber-400"
-                    : "text-white/40"
+                      ? "text-amber-400"
+                      : "text-white/40"
                 }`}
               >
                 {isPaired ? "Paired" : isConnected ? "Connecting" : "Offline"}
@@ -188,13 +188,17 @@ export default function Dashboard() {
                   onPress={() => setRenameModalVisible(false)}
                   className="flex-1 py-3 bg-white/10 rounded-xl items-center"
                 >
-                  <Text className="text-white/70 font-bold text-sm">Cancel</Text>
+                  <Text className="text-white/70 font-bold text-sm">
+                    Cancel
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   onPress={handleSaveRename}
                   className="flex-1 py-3 bg-blue-600 rounded-xl items-center"
                 >
-                  <Text className="text-white font-bold text-sm">Save Name</Text>
+                  <Text className="text-white font-bold text-sm">
+                    Save Name
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -233,8 +237,8 @@ export default function Dashboard() {
                   }}
                 >
                   {/* Background Accents */}
-                  <View className="absolute -right-6 -top-6 rounded-full w-24 h-24 bg-white/20 blur-xl" />
-                  <View className="absolute -left-6 -bottom-6 rounded-full w-32 h-32 bg-black/10 blur-xl" />
+                  {/* <View className="absolute -right-6 -top-6 rounded-full w-24 h-24 bg-white/20 blur-xl" />
+                  <View className="absolute -left-6 -bottom-6 rounded-full w-32 h-32 bg-black/10 blur-xl" /> */}
 
                   <View className="flex-row justify-between items-start z-10">
                     <View className="w-10 h-10 rounded-2xl bg-white/20 items-center justify-center backdrop-blur-sm border border-white/10">

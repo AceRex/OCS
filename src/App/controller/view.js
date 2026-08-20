@@ -105,6 +105,7 @@ function NextTimerBanner() {
 }
 
 import IncomingAssetModal from "./IncomingAssetModal";
+import MobileVoiceNotification from "./MobileVoiceNotification";
 
 function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
@@ -237,6 +238,7 @@ function App() {
       />
 
       <IncomingAssetModal />
+      <MobileVoiceNotification />
     </section>
   );
 }

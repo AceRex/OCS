@@ -867,17 +867,84 @@ io.on('connection', (socket) => {
         return;
       }
 
-      console.log(`[Remote Voice] Received secondary PTT audio from ${device.name}: ${pcmBuffer.length} bytes`);
-      const result = await asrEngine.transcribeSecondary(pcmBuffer);
+      console.log(`[Remote Voice] Received secondary audio from ${device.name}: ${pcmBuffer.length} bytes`);
+      const { decodeAudioToPcm16k } = require('./src/main/audioDecoder');
+      const pcm16k = await decodeAudioToPcm16k(pcmBuffer);
+      console.log(`[Remote Voice] Decoded to ${pcm16k.length} bytes 16kHz PCM`);
+
+      const result = await asrEngine.transcribeSecondary(pcm16k);
+      const text = result?.text || '';
+      
+      // Broadcast transcript to desktop windows with source: 'secondary' and deviceName
+      broadcastAsrEvent('asr-transcript', {
+        text,
+        isFinal: true,
+        confidence: result?.confidence ?? 1.0,
+        source: 'secondary',
+        deviceName: device.name,
+        utteranceId: `sec-${Date.now()}`,
+        role: 'final',
+      });
+
       ack({
         ok: true,
-        text: result?.text || '',
+        text,
         confidence: result?.confidence ?? 1.0,
         ignored: !!result?.ignored,
       });
     } catch (err) {
       console.error('[Remote Voice] Error in transcribeSecondary:', err);
       ack({ ok: false, error: err.message });
+    }
+  });
+
+  // Intercom Mode 1: Peer-to-Peer / Group Speak
+  socket.on('intercom-get-peers', (ack = () => {}) => {
+    if (!isPaired(socket.id)) return ack({ ok: false, peers: [] });
+    const peers = connectedDevices
+      .filter(d => d.paired && d.id !== socket.id)
+      .map(d => ({ id: d.id, name: d.name, ip: d.ip, isVoiceActive: !!d.isVoiceActive }));
+    ack({ ok: true, peers });
+  });
+
+  socket.on('intercom-speak', (payload = {}, ack = () => {}) => {
+    if (!isPaired(socket.id)) return ack({ ok: false, error: 'Pairing required' });
+    const { target, audioBase64, format, durationMs } = payload;
+    if (!audioBase64) return ack({ ok: false, error: 'No audio provided' });
+
+    const message = {
+      fromId: socket.id,
+      fromName: device.name,
+      audioBase64,
+      format: format || 'm4a',
+      durationMs: durationMs || 0,
+      timestamp: Date.now(),
+      target: target || 'all',
+    };
+
+    if (target && target !== 'all') {
+      socketServer.to(target).emit('intercom-message', message);
+    } else {
+      socket.broadcast.emit('intercom-message', message);
+    }
+    ack({ ok: true });
+  });
+
+  // Intercom Mode 3: Wireless Microphone Audio Stream
+  socket.on('mobile-mic-stream', (payload = {}) => {
+    if (!isPaired(socket.id)) return;
+    const { volume, active } = payload;
+    device.isVoiceActive = !!active;
+    broadcastDevicesUpdated();
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send('mobile-mic-meter', {
+          deviceId: socket.id,
+          deviceName: device.name,
+          volume: volume ?? 0,
+          active: !!active,
+        });
+      }
     }
   });
 
@@ -1112,14 +1179,21 @@ ipcMain.handle('mobile-asset-respond', async (_event, { transferId, accepted, ta
 
     // Task 4.1: Audio routing into bumper system
     if (isAudio) {
+      const appSettings = require('./src/main/appSettings');
       if (targetRole === 'intro') {
-        const appSettings = require('./src/main/appSettings');
         await appSettings.save({ sessionIntroPath: destPath });
         console.log(`[Remote Asset] Audio set as Session Intro Bumper: ${destPath}`);
       } else if (targetRole === 'outro') {
-        const appSettings = require('./src/main/appSettings');
         await appSettings.save({ sessionOutroPath: destPath });
         console.log(`[Remote Asset] Audio set as Session Outro Bumper: ${destPath}`);
+      }
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) {
+          win.webContents.send('session-bumpers-updated', {
+            intro: appSettings.get('sessionIntroPath'),
+            outro: appSettings.get('sessionOutroPath'),
+          });
+        }
       }
     }
 
@@ -1127,19 +1201,25 @@ ipcMain.handle('mobile-asset-respond', async (_event, { transferId, accepted, ta
     if (isPptx) {
       const deck = await processPptxDeck(destPath, filename);
       resultPayload.deck = deck;
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) {
+          win.webContents.send('presentation-decks-updated', { deck, filename });
+        }
+      }
     }
 
     // Task 4.3: Image / Video routing into media library and canvas
     if (isImage || isVideo) {
+      const fileUrl = pathToFileURL(destPath).href;
       // Broadcast updated media list to all windows
       for (const win of BrowserWindow.getAllWindows()) {
         if (!win.isDestroyed()) {
-          win.webContents.send('media-imported', pathToFileURL(destPath).href);
+          win.webContents.send('media-imported', fileUrl);
+          win.webContents.send('media-list-updated', { url: fileUrl });
         }
       }
 
       if (applyToCanvas) {
-        const fileUrl = pathToFileURL(destPath).href;
         for (const win of BrowserWindow.getAllWindows()) {
           if (!win.isDestroyed()) {
             win.webContents.send('canvas-set-background', {

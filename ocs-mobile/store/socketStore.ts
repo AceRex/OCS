@@ -23,6 +23,12 @@ interface SocketState {
     sendAsset: (asset: AssetPayload) => Promise<{ ok: boolean; error?: string; message?: string; role?: string }>;
     setVoiceActive: (active: boolean) => void;
     sendVoiceAudio: (audioData: { dataBase64: string; format?: string; durationMs?: number }) => Promise<{ ok: boolean; error?: string; text?: string; confidence?: number }>;
+    peers: Array<{ id: string; name: string; ip: string; isVoiceActive?: boolean }>;
+    incomingIntercom: { fromName: string; audioBase64: string; format: string; timestamp: number } | null;
+    fetchPeers: () => Promise<Array<{ id: string; name: string; ip: string; isVoiceActive?: boolean }>>;
+    speakToPeer: (payload: { target: string; audioBase64: string; format?: string; durationMs?: number }) => Promise<{ ok: boolean; error?: string }>;
+    streamMicChunk: (payload: { volume: number; active: boolean }) => void;
+    clearIncomingIntercom: () => void;
 }
 
 export const useSocketStore = create<SocketState>((set, get) => ({
@@ -32,6 +38,15 @@ export const useSocketStore = create<SocketState>((set, get) => ({
     serverIp: '',
     deviceName: 'Mobile Companion',
     connectionError: null,
+    peers: [],
+    incomingIntercom: null,
+    clearIncomingIntercom: () => set({ incomingIntercom: null }),
+    streamMicChunk: (payload: { volume: number; active: boolean }) => {
+        const { socket } = get();
+        if (socket && socket.connected) {
+            socket.emit('mobile-mic-stream', payload);
+        }
+    },
     setVoiceActive: (active: boolean) => {
         const { socket } = get();
         if (socket && socket.connected) {
@@ -46,6 +61,33 @@ export const useSocketStore = create<SocketState>((set, get) => ({
         if (socket && socket.connected) {
             socket.emit('device-rename', { name: trimmed });
         }
+    },
+    fetchPeers: (): Promise<Array<{ id: string; name: string; ip: string; isVoiceActive?: boolean }>> => {
+        return new Promise((resolve) => {
+            const { socket, isPaired } = get();
+            if (!socket || !socket.connected || !isPaired) {
+                resolve([]);
+                return;
+            }
+            socket.emit('intercom-get-peers', (res: { ok: boolean; peers: any[] }) => {
+                const list = res?.ok ? res.peers || [] : [];
+                set({ peers: list });
+                resolve(list);
+            });
+        });
+    },
+    speakToPeer: (payload: { target: string; audioBase64: string; format?: string; durationMs?: number }): Promise<{ ok: boolean; error?: string }> => {
+        return new Promise((resolve) => {
+            const { socket, isPaired } = get();
+            if (!socket || !socket.connected || !isPaired) {
+                resolve({ ok: false, error: 'Must be connected to speak' });
+                return;
+            }
+            socket.emit('intercom-speak', payload, (res: { ok: boolean; error?: string }) => {
+                if (res?.ok) resolve({ ok: true });
+                else resolve({ ok: false, error: res?.error || 'Failed to send audio message' });
+            });
+        });
     },
     connect: (ip: string, pairingCode?: string, customPort?: number) => {
         const current = get().socket;
@@ -83,7 +125,6 @@ export const useSocketStore = create<SocketState>((set, get) => ({
         socket.on('connect', () => {
             console.log('Connected to server — awaiting pair confirmation');
             set({ isConnected: true, connectionError: null });
-            // Fallback if handshake auth was ignored by an older desktop build
             socket.emit('pair', { code, token: code, deviceName: get().deviceName || 'Mobile Companion' });
         });
 
@@ -93,6 +134,7 @@ export const useSocketStore = create<SocketState>((set, get) => ({
                 if (result.deviceName) {
                     set({ deviceName: result.deviceName });
                 }
+                get().fetchPeers();
             } else {
                 set({
                     isPaired: false,
@@ -105,6 +147,11 @@ export const useSocketStore = create<SocketState>((set, get) => ({
             if (payload?.name) {
                 set({ deviceName: payload.name });
             }
+        });
+
+        socket.on('intercom-message', (message: { fromName: string; audioBase64: string; format: string; timestamp: number }) => {
+            console.log('[Intercom] Received audio message from:', message.fromName);
+            set({ incomingIntercom: message });
         });
 
         socket.on('pair-required', (payload: { message?: string }) => {
