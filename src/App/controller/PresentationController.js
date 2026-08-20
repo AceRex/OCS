@@ -473,6 +473,7 @@ export default function PresentationController() {
     // Scene Loaded in Preview Canvas: { scene, pageIndex, sequenceIndex }
     const [previewScene, setPreviewScene] = useState(null);
 
+    const [isPresentingCustom, setIsPresentingCustom] = useState(false);
     const [background, setBackground] = useState({ url: null, type: 'image', x: 50, y: 50, width: 100, height: 100 });
     const [layers, setLayers] = useState([
         { id: 'text-1', type: 'text', content: "Welcome", x: 50, y: 50, style: { fontSize: 5, color: '#ffffff', fontFamily: 'sans', width: 0 } }
@@ -1265,13 +1266,32 @@ export default function PresentationController() {
         const targetArr = [];
         if (targets.general) targetArr.push('general');
         if (targets.speaker) targetArr.push('speaker');
-        if (targetArr.length === 0) return;
+        const finalTargets = targetArr.length > 0 ? targetArr : ['general', 'speaker'];
 
-        // If previewing a scene, present that scene
+        // If in scene tab or previewing a scene, present that scene
         if (previewScene) {
             activateScene(previewScene.scene, previewScene.pageIndex, previewScene.sequenceIndex || 0);
             return;
+        } else if (activeTab === 'scene' && scenes.length > 0) {
+            const sc = scenes.find(s => s.id === activeSceneId) || scenes[0];
+            if (sc) {
+                activateScene(sc, activePageIndex || 0, activeSequenceIndex || 0);
+                return;
+            }
         }
+
+        // If in presentation tab, present selected or first deck
+        if (activeTab === 'presentation') {
+            const deck = selectedPresentation || presentations[0];
+            if (deck) {
+                handlePresentSlide(deck, activeSlideIndex || 0);
+                return;
+            }
+        }
+
+        setIsPresentingCustom(true);
+        setIsPresentingSlide(false);
+        setIsPresentingScene(false);
 
         const payload = {
             type: 'custom_layers',
@@ -1295,9 +1315,16 @@ export default function PresentationController() {
                 muted: videoMuted || videoVolume === 0,
                 aspectRatio: videoAspectRatio,
             },
-            target: targetArr,
+            target: finalTargets,
         };
         window.electron.Presentation.setContent(payload);
+    };
+
+    const handleStopCustomPresentation = () => {
+        setIsPresentingCustom(false);
+        if (window.electron?.Presentation?.setContent) {
+            window.electron.Presentation.setContent(null);
+        }
     };
 
     const toggleTarget = (key) => {
@@ -1962,32 +1989,52 @@ export default function PresentationController() {
                         </div>
                         <button
                             onClick={() => {
-                                if (activeTab === 'presentation' && selectedPresentation) {
-                                    if (isPresentingSlide && activeDeckId === selectedPresentation.id) {
-                                        handleStopSlidePresentation();
-                                    } else {
-                                        handlePresentSlide(selectedPresentation, activeSlideIndex);
+                                if (activeTab === 'presentation') {
+                                    const deck = selectedPresentation || presentations[0];
+                                    if (deck) {
+                                        if (isPresentingSlide && activeDeckId === deck.id) {
+                                            handleStopSlidePresentation();
+                                        } else {
+                                            handlePresentSlide(deck, activeSlideIndex || 0);
+                                        }
+                                    }
+                                } else if (activeTab === 'scene') {
+                                    if (isPresentingScene) {
+                                        handleStopScene();
+                                    } else if (previewScene) {
+                                        activateScene(previewScene.scene, previewScene.pageIndex, previewScene.sequenceIndex || 0);
+                                    } else if (scenes.length > 0) {
+                                        const sc = scenes.find(s => s.id === activeSceneId) || scenes[0];
+                                        if (sc) activateScene(sc, activePageIndex || 0, activeSequenceIndex || 0);
                                     }
                                 } else {
-                                    handlePresent();
+                                    if (isPresentingCustom) {
+                                        handleStopCustomPresentation();
+                                    } else {
+                                        handlePresent();
+                                    }
                                 }
                             }}
                             className={`${
-                                activeTab === 'presentation' && selectedPresentation
-                                    ? (isPresentingSlide && activeDeckId === selectedPresentation.id
+                                activeTab === 'presentation'
+                                    ? (isPresentingSlide
                                         ? 'bg-red hover:bg-red/90'
                                         : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500')
-                                    : previewScene
-                                    ? 'bg-gradient-to-r from-orange-500 to-purple-600 hover:from-orange-400 hover:to-purple-500'
-                                    : 'bg-red hover:bg-red/90'
+                                    : activeTab === 'scene'
+                                    ? (isPresentingScene
+                                        ? 'bg-red hover:bg-red/90'
+                                        : 'bg-gradient-to-r from-orange-500 to-purple-600 hover:from-orange-400 hover:to-purple-500')
+                                    : (isPresentingCustom
+                                        ? 'bg-red hover:bg-red/90'
+                                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500')
                             } text-white px-8 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-lg active:scale-95`}
                         >
                             <PiBroadcast size={16} />
-                            {activeTab === 'presentation' && selectedPresentation
-                                ? (isPresentingSlide && activeDeckId === selectedPresentation.id ? 'Stop Slides' : 'Present Slide Now')
-                                : previewScene
-                                ? (previewScene.scene.sceneType === 'song' ? 'Present Song Now' : 'Present Scene Now')
-                                : 'Present Now'}
+                            {activeTab === 'presentation'
+                                ? (isPresentingSlide ? 'Stop Slides' : 'Present Slide Now')
+                                : activeTab === 'scene'
+                                ? (isPresentingScene ? 'Stop Scene' : (previewScene?.scene?.sceneType === 'song' ? 'Present Song Now' : 'Present Scene Now'))
+                                : (isPresentingCustom ? 'Stop Presenting' : 'Present Now')}
                         </button>
                     </div>
                 </div>
