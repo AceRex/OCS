@@ -388,4 +388,20 @@ contextBridge.exposeInMainWorld("electron", {
       return () => ipcRenderer.removeListener('ndi-status-update', listener);
     },
   },
+  Auth: {
+    getStatus: () => ipcRenderer.invoke('auth:get-status'),
+    openBrowserLogin: () => ipcRenderer.invoke('auth:open-browser-login'),
+    simulateCallback: (url) => ipcRenderer.invoke('auth:simulate-callback', url),
+    logout: () => ipcRenderer.invoke('auth:logout'),
+    onAuthStatus: (callback) => {
+      const listener = (_e, payload) => callback(payload);
+      ipcRenderer.on('auth-status', listener);
+      return () => ipcRenderer.removeListener('auth-status', listener);
+    },
+    onAuthError: (callback) => {
+      const listener = (_e, payload) => callback(payload);
+      ipcRenderer.on('auth-error', listener);
+      return () => ipcRenderer.removeListener('auth-error', listener);
+    },
+  },
 });

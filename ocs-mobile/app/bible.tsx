@@ -22,6 +22,7 @@ import {
   Link as LinkIcon,
   LinkBreak,
   Broadcast,
+  ArrowLeftIcon,
 } from "phosphor-react-native";
 
 export default function BibleScreen() {
@@ -170,12 +171,15 @@ export default function BibleScreen() {
       {/* Header */}
       <View className="p-3 border-b border-white/10 bg-[#1a1a1a]">
         <View className="flex-row justify-between items-center mb-3">
-          {/* <View className="flex-row items-center gap-3">
-                        <TouchableOpacity onPress={() => router.back()} className="p-2 bg-white/5 rounded-full border border-white/10">
-                            <CaretLeft color="white" size={20} />
-                        </TouchableOpacity>
-                        <Text className="text-white text-lg font-bold">Bible</Text>
-                    </View> */}
+          <View className="flex-row items-center gap-3">
+            <TouchableOpacity
+              onPress={() => router.back()}
+              className="p-2 bg-white/5 rounded-full border border-white/10"
+            >
+              <ArrowLeftIcon size={24} color="white" />
+            </TouchableOpacity>
+            <Text className="text-white text-lg font-bold">Bible</Text>
+          </View>
           <TouchableOpacity
             onPress={() => setIsSyncEnabled(!isSyncEnabled)}
             className={`flex-row items-center gap-2 px-3 py-1.5 rounded-full border ${isSyncEnabled ? "bg-blue-500/20 border-blue-500" : "bg-white/5 border-white/10"}`}

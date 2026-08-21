@@ -19,7 +19,7 @@ class NdiEngine extends EventEmitter {
   constructor() {
     super();
     this.config = {
-      enabled: true,
+      enabled: false, // FR-4.42: OFF by default on fresh launch. Must be explicitly enabled in Settings.
       programStreamName: 'OCS - Program Output',
       stageStreamName: 'OCS - Stage Display',
       alphaEnabled: true, // Alpha transparency for Lower Thirds / OBS overlays
@@ -80,11 +80,12 @@ class NdiEngine extends EventEmitter {
   /**
    * Initialize and attach render windows and Socket.IO instance
    */
-  init({ programWindow, stageWindow, io, port = 4000 }) {
+  init({ programWindow, stageWindow, io, port = 4000, enabled = false }) {
     this.programWindow = programWindow;
     this.stageWindow = stageWindow;
     this.io = io;
     this.config.port = port;
+    this.config.enabled = !!enabled;
 
     if (this.config.enabled) {
       this.start();
@@ -317,6 +318,15 @@ class NdiEngine extends EventEmitter {
    * Handle incoming HTTP MJPEG Stream Request
    */
   handleMjpegRequest(req, res, streamType = 'program') {
+    if (!this.config.enabled || !this.isRunning) {
+      res.writeHead(403, {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Access-Control-Allow-Origin': '*',
+      });
+      res.end('NDI & Broadcast Streaming is disabled in OCS Settings (FR-4.42).\nEnable it under Settings -> NDI & Broadcast to stream over LAN.');
+      return;
+    }
+
     if (res.socket) {
       try {
         res.socket.setNoDelay(true);

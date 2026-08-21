@@ -16,8 +16,9 @@ import {
   PiCheckCircle,
   PiRadio,
 } from "react-icons/pi";
+import DisabledContainer from "../components/DisabledContainer";
 
-export default function NdiController() {
+function NdiPanel() {
   const [status, setStatus] = useState({
     enabled: true,
     isRunning: true,
@@ -516,7 +517,7 @@ export default function NdiController() {
                 <li>In ProPresenter, open <strong className="text-white">Screens → Configure Screens</strong>.</li>
                 <li>Add an <strong className="text-white">NDI Output</strong> or <strong className="text-white">Video Input (NDI)</strong>.</li>
                 <li>Select <strong className="text-cyan-400">"{status.programStreamName}"</strong> to feed OCS slides and bible verses into ProPresenter stages.</li>
-              </ol>
+          </ol>
             </div>
           )}
         </div>
@@ -524,3 +525,15 @@ export default function NdiController() {
     </div>
   );
 }
+
+export default function NdiController() {
+  return (
+    <DisabledContainer
+      featureName="NDI & Live Streaming"
+      description="Authenticated workstation access is required to enable NDI output and live video streaming."
+    >
+      <NdiPanel />
+    </DisabledContainer>
+  );
+}
+

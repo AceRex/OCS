@@ -29,6 +29,7 @@ interface SocketState {
     speakToPeer: (payload: { target: string; audioBase64: string; format?: string; durationMs?: number }) => Promise<{ ok: boolean; error?: string }>;
     streamMicChunk: (payload: { volume: number; active: boolean }) => void;
     clearIncomingIntercom: () => void;
+    sendScene: (scene: any) => Promise<{ ok: boolean; error?: string; message?: string; scene?: any }>;
 }
 
 export const useSocketStore = create<SocketState>((set, get) => ({
@@ -233,6 +234,23 @@ export const useSocketStore = create<SocketState>((set, get) => ({
                     resolve({ ok: true, text: response.text, confidence: response.confidence });
                 } else {
                     resolve({ ok: false, error: response?.error || 'Voice transcription failed' });
+                }
+            });
+        });
+    },
+    sendScene: (sceneData: any): Promise<{ ok: boolean; error?: string; message?: string; scene?: any }> => {
+        return new Promise((resolve) => {
+            const { socket, isPaired } = get();
+            if (!socket || !socket.connected || !isPaired) {
+                resolve({ ok: false, error: 'Must be paired with desktop to share scenes' });
+                return;
+            }
+
+            socket.emit('mobile-scene-transfer', { scene: sceneData }, (response: { ok: boolean; error?: string; message?: string; scene?: any }) => {
+                if (response?.ok) {
+                    resolve({ ok: true, message: response.message || 'Scene shared with desktop controller', scene: response.scene });
+                } else {
+                    resolve({ ok: false, error: response?.error || 'Failed to transfer scene' });
                 }
             });
         });

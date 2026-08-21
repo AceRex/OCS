@@ -8,8 +8,9 @@ import {
   PiCheck,
   PiMicrophone,
 } from "react-icons/pi";
+import DisabledContainer from "../components/DisabledContainer";
 
-export default function MobileConnectController() {
+function MobileConnectPanel() {
   const [serverInfo, setServerInfo] = useState({
     ip: "Loading...",
     port: "...",
@@ -329,5 +330,16 @@ export default function MobileConnectController() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function MobileConnectController() {
+  return (
+    <DisabledContainer
+      featureName="Remote & Mobile Pairing"
+      description="Log in to pair mobile devices and enable remote control of slides and timers."
+    >
+      <MobileConnectPanel />
+    </DisabledContainer>
   );
 }

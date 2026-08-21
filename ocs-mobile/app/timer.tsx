@@ -20,6 +20,7 @@ import {
   X,
   Clock,
   CaretLeft,
+  ArrowLeftIcon,
 } from "phosphor-react-native";
 import { useTimerStore, AgendaItem } from "../store/timerStore";
 import { clsx } from "clsx"; // Assuming standard utility or just conditional string
@@ -196,12 +197,17 @@ export default function TimerPage() {
           contentContainerStyle={{ paddingBottom: 40 }}
         >
           {/* Header */}
-          {/* <View className="flex-row items-center px-4 py-3 border-b border-white/10 mb-4">
-                        <TouchableOpacity onPress={() => router.back()} className="mr-4 p-2 bg-white/10 rounded-full">
-                            <CaretLeft color="white" size={20} />
-                        </TouchableOpacity>
-                        <Text className="text-white text-xl font-bold">Timer Controller</Text>
-                    </View> */}
+          <View className="flex-row items-center px-4 py-3 border-b border-white/10 mb-4">
+            <TouchableOpacity
+              onPress={() => router.back()}
+              className="mr-4 p-2 bg-white/10 rounded-full"
+            >
+              <ArrowLeftIcon size={24} color="white" />
+            </TouchableOpacity>
+            <Text className="text-white text-xl font-bold">
+              Timer Controller
+            </Text>
+          </View>
 
           {/* Preview Section */}
           <View

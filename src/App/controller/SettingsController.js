@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from "react";
+import { useAuth } from "../context/AuthContext";
+
 import {
     PiTextT,
     PiPaintBucket,
@@ -19,6 +21,11 @@ import {
     PiBroadcast,
     PiCopy,
     PiCheck,
+    PiWarning,
+    PiShieldWarning,
+    PiShieldCheck,
+    PiSignOut,
+    PiUserCheck,
 } from "react-icons/pi";
 
 const TRANSLATIONS = ['KJV', 'NIV', 'ESV', 'NKJV', 'NLT', 'AMP', 'MSG', 'CSB', 'NASB', 'RSV'];
@@ -78,6 +85,16 @@ export default function SettingsController() {
     const [bumperBusy, setBumperBusy] = useState(false);
     const [bumperError, setBumperError] = useState(null);
 
+    // NDI state (FR-4.42, FR-4.43)
+    const [ndiConfig, setNdiConfig] = useState({ enabled: false, resolution: '1080p', fps: 30 });
+    const [ndiStatus, setNdiStatus] = useState(null);
+    const [showNdiConsentModal, setShowNdiConsentModal] = useState(false);
+    const [copiedUrl, setCopiedUrl] = useState(null);
+
+    // Auth & License state — from shared AuthContext (FR-13.1, FR-13.5, FR-13.6)
+    const { auth: authStatus, logout: authLogout, isAuthenticated } = useAuth();
+    const [authLoading, setAuthLoading] = useState(false);
+
     useEffect(() => {
         const loadSettings = async () => {
             if (window.electron?.Settings?.get) {
@@ -99,9 +116,47 @@ export default function SettingsController() {
                     if (b) setBumpers(b);
                 } catch (_) {}
             }
+            if (window.electron?.Ndi?.getStatus) {
+                try {
+                    const status = await window.electron.Ndi.getStatus();
+                    if (status) {
+                        setNdiStatus(status);
+                        setNdiConfig((prev) => ({
+                            ...prev,
+                            enabled: !!status.enabled,
+                            resolution: status.resolution || '1080p',
+                            fps: status.fps || 30,
+                        }));
+                    }
+                } catch (_) {}
+            }
         };
         loadSettings();
+
+        const unsubNdi = window.electron?.Ndi?.onStatusUpdate?.((status) => {
+            if (status) {
+                setNdiStatus(status);
+                setNdiConfig((prev) => ({ ...prev, enabled: !!status.enabled }));
+            }
+        });
+
+        return () => {
+            unsubNdi?.();
+        };
     }, []);
+
+    const handleLogout = async () => {
+        if (window.confirm("Log out of this workstation?\n\nYou will need active internet connectivity to sign back in.")) {
+            setAuthLoading(true);
+            try {
+                await authLogout();
+            } catch (err) {
+                console.error("Logout failed:", err);
+            } finally {
+                setAuthLoading(false);
+            }
+        }
+    };
 
     const handleUploadBumper = async (type) => {
         setBumperBusy(true);
@@ -183,6 +238,35 @@ export default function SettingsController() {
         }
     };
 
+    const applyNdiState = async (enabled) => {
+        try {
+            const updated = await window.electron?.Ndi?.setConfig?.({ enabled });
+            if (updated) {
+                setNdiStatus(updated);
+                setNdiConfig((prev) => ({ ...prev, enabled: !!updated.enabled }));
+            }
+        } catch (err) {
+            console.error("Failed to update NDI state:", err);
+        }
+    };
+
+    const handleToggleNdi = (wantsEnable) => {
+        if (wantsEnable) {
+            // FR-4.43: Plain-language exposure notice required before enabling
+            setShowNdiConsentModal(true);
+        } else {
+            applyNdiState(false);
+        }
+    };
+
+    const copyToClipboard = (text, key) => {
+        if (navigator.clipboard) {
+            navigator.clipboard.writeText(text);
+            setCopiedUrl(key);
+            setTimeout(() => setCopiedUrl(null), 2000);
+        }
+    };
+
     useEffect(() => {
         const loadMedia = async () => {
             if (window.electron?.Media?.list) {
@@ -226,6 +310,7 @@ export default function SettingsController() {
         { id: 'bumpers', label: 'Intro & Outro', icon: <PiFilmStrip /> },
         { id: 'privacy', label: 'Privacy & AI', icon: <PiMicrophone /> },
         { id: 'ndi', label: 'NDI & Broadcast', icon: <PiBroadcast /> },
+        { id: 'license', label: 'License & Auth', icon: <PiShieldCheck /> },
     ];
 
     return (
@@ -875,49 +960,235 @@ export default function SettingsController() {
                     </div>
                 )}
 
-                {/* ─── NDI & BROADCAST STREAMING TAB ─── */}
+                {/* ─── NDI & BROADCAST STREAMING TAB (FR-4.41–FR-4.44) ─── */}
                 {activeTab === 'ndi' && (
                     <div className="space-y-6">
                         <div className="bg-[#1A1428] border border-[#2E2542] p-6 rounded-3xl">
                             <div className="flex items-center justify-between mb-4">
                                 <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-2xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center">
+                                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${ndiConfig.enabled ? 'bg-cyan-500/20 text-cyan-400' : 'bg-white/10 text-[#8882A4]'}`}>
                                         <PiBroadcast size={22} />
                                     </div>
                                     <div>
-                                        <h3 className="font-bold text-base text-white">NDI & Broadcast Streaming</h3>
+                                        <div className="flex items-center gap-2">
+                                            <h3 className="font-bold text-base text-white">NDI & Broadcast Streaming</h3>
+                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                                ndiConfig.enabled
+                                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                                                    : 'bg-white/10 text-[#8882A4]'
+                                            }`}>
+                                                {ndiConfig.enabled ? '● Active' : '○ Off by Default'}
+                                            </span>
+                                        </div>
                                         <p className="text-xs text-[#8882A4]">Broadcast OCS outputs to OBS Studio, vMix, Zoom, and TriCaster across the local network.</p>
                                     </div>
                                 </div>
+
+                                {/* Master Toggle */}
+                                <button
+                                    type="button"
+                                    onClick={() => handleToggleNdi(!ndiConfig.enabled)}
+                                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                                        ndiConfig.enabled ? 'bg-cyan-500' : 'bg-[#2E2542]'
+                                    }`}
+                                >
+                                    <span
+                                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+                                            ndiConfig.enabled ? 'translate-x-5' : 'translate-x-0'
+                                        }`}
+                                    />
+                                </button>
                             </div>
 
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                                <div className="bg-[#0B0814] p-4 rounded-2xl border border-[#2E2542] space-y-2">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-xs font-bold text-white">Channel 1: Program Output</span>
-                                        <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">1080p • Alpha</span>
-                                    </div>
-                                    <p className="text-xs text-[#8882A4]">Main projector feed, Bible scripture, lyrics & slide decks with transparent background.</p>
-                                    <p className="text-[11px] font-mono text-cyan-400 bg-white/5 p-2 rounded-xl border border-white/5 break-all">
-                                        http://127.0.0.1:4000/overlay/program
+                            {/* Plain-Language Exposure Notice Banner (FR-4.43) */}
+                            <div className="bg-[#0B0814] p-4 rounded-2xl border border-amber-500/30 flex items-start gap-3 my-4">
+                                <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 shrink-0 mt-0.5">
+                                    <PiShieldWarning size={20} />
+                                </div>
+                                <div className="space-y-1">
+                                    <h4 className="text-xs font-bold text-amber-300">LAN Broadcast Security Notice (FR-4.43)</h4>
+                                    <p className="text-xs text-[#A89EC4] leading-relaxed">
+                                        NDI and broadcast streaming is <strong>disabled by default</strong> on launch. When enabled, anyone connected to this local network (LAN / Wi-Fi) will be able to view your display feed without a password via OBS Studio, vMix, or a browser. Only enable this on a trusted, secure production network.
                                     </p>
                                 </div>
+                            </div>
 
-                                <div className="bg-[#0B0814] p-4 rounded-2xl border border-[#2E2542] space-y-2">
-                                    <div className="flex items-center justify-between">
-                                        <span className="text-xs font-bold text-white">Channel 2: Stage Display</span>
-                                        <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-400 text-[10px] font-bold">Confidence Feed</span>
+                            {ndiConfig.enabled ? (
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+                                    <div className="bg-[#0B0814] p-4 rounded-2xl border border-[#2E2542] space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-xs font-bold text-white">Channel 1: Program Output</span>
+                                            <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">1080p • Alpha</span>
+                                        </div>
+                                        <p className="text-xs text-[#8882A4]">Main projector feed, Bible scripture, lyrics & slide decks with transparent background.</p>
+                                        
+                                        <div className="space-y-2">
+                                            <div className="flex items-center justify-between bg-white/5 p-2 rounded-xl border border-white/5">
+                                                <span className="text-[11px] font-mono text-cyan-400 truncate mr-2">
+                                                    {ndiStatus?.urls?.programOverlay || `http://${ndiStatus?.localIp || '127.0.0.1'}:4000/overlay/program`}
+                                                </span>
+                                                <button
+                                                    onClick={() => copyToClipboard(ndiStatus?.urls?.programOverlay || `http://${ndiStatus?.localIp || '127.0.0.1'}:4000/overlay/program`, 'prog-over')}
+                                                    className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold flex items-center gap-1 transition-all"
+                                                >
+                                                    {copiedUrl === 'prog-over' ? <PiCheck className="text-emerald-400" /> : <PiCopy />}
+                                                    <span>{copiedUrl === 'prog-over' ? 'Copied' : 'Copy'}</span>
+                                                </button>
+                                            </div>
+                                        </div>
                                     </div>
-                                    <p className="text-xs text-[#8882A4]">Live stage display with synchronized countdown timer, active passage & speaker notes.</p>
-                                    <p className="text-[11px] font-mono text-purple-400 bg-white/5 p-2 rounded-xl border border-white/5 break-all">
-                                        http://127.0.0.1:4000/overlay/stage
-                                    </p>
+
+                                    <div className="bg-[#0B0814] p-4 rounded-2xl border border-[#2E2542] space-y-3">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-xs font-bold text-white">Channel 2: Stage Display</span>
+                                            <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-400 text-[10px] font-bold">Confidence Feed</span>
+                                        </div>
+                                        <p className="text-xs text-[#8882A4]">Live stage display with synchronized countdown timer, active passage & speaker notes.</p>
+                                        
+                                        <div className="space-y-2">
+                                            <div className="flex items-center justify-between bg-white/5 p-2 rounded-xl border border-white/5">
+                                                <span className="text-[11px] font-mono text-purple-400 truncate mr-2">
+                                                    {ndiStatus?.urls?.stageOverlay || `http://${ndiStatus?.localIp || '127.0.0.1'}:4000/overlay/stage`}
+                                                </span>
+                                                <button
+                                                    onClick={() => copyToClipboard(ndiStatus?.urls?.stageOverlay || `http://${ndiStatus?.localIp || '127.0.0.1'}:4000/overlay/stage`, 'stage-over')}
+                                                    className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold flex items-center gap-1 transition-all"
+                                                >
+                                                    {copiedUrl === 'stage-over' ? <PiCheck className="text-emerald-400" /> : <PiCopy />}
+                                                    <span>{copiedUrl === 'stage-over' ? 'Copied' : 'Copy'}</span>
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
+                            ) : (
+                                <div className="bg-[#0B0814] p-6 rounded-2xl border border-[#2E2542] text-center space-y-2 mt-4">
+                                    <p className="text-xs font-bold text-[#8882A4]">Broadcast server is inactive.</p>
+                                    <p className="text-xs text-[#6B6488]">Turn on the master switch above to start streaming Program and Stage feeds across the network.</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                {/* ─── LICENSE & AUTHENTICATION TAB (FR-13.1–FR-13.8) ─── */}
+                {activeTab === 'license' && (
+                    <div className="space-y-6 max-w-2xl">
+                        <div className="bg-[#1A1428] p-6 rounded-3xl border border-[#2E2542] space-y-6">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-2xl bg-purple-500/20 flex items-center justify-center text-purple-400">
+                                    <PiShieldCheck size={22} />
+                                </div>
+                                <div>
+                                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">Workstation License & Session</h3>
+                                    <p className="text-xs text-[#8882A4]">Organization licensing & authentication status (FR-13.1–FR-13.8)</p>
+                                </div>
+                            </div>
+
+                            {/* Organization & Account Info */}
+                            <div className="grid grid-cols-2 gap-4">
+                                <div className="bg-[#0B0814] p-4 rounded-2xl border border-[#2E2542] space-y-1">
+                                    <span className="text-[10px] uppercase tracking-wider font-bold text-[#8882A4]">Licensed Organization</span>
+                                    <p className="text-sm font-bold text-white">{authStatus?.orgName || 'Grace Community Church'}</p>
+                                </div>
+                                <div className="bg-[#0B0814] p-4 rounded-2xl border border-[#2E2542] space-y-1">
+                                    <span className="text-[10px] uppercase tracking-wider font-bold text-[#8882A4]">Account Email</span>
+                                    <p className="text-sm font-bold text-white truncate">{authStatus?.email || 'admin@church.org'}</p>
+                                </div>
+                            </div>
+
+                            {/* Session Status */}
+                            <div className="bg-[#0B0814] p-4 rounded-2xl border border-[#2E2542] space-y-2">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs font-bold text-white">License State</span>
+                                    {authStatus?.state === 'grace_period' ? (
+                                        <span className="px-2.5 py-1 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[11px] font-black flex items-center gap-1.5">
+                                            <PiWarning size={14} />
+                                            <span>Offline Grace ({authStatus?.hoursRemaining || 72}h left)</span>
+                                        </span>
+                                    ) : authStatus?.authenticated ? (
+                                        <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-[11px] font-black flex items-center gap-1.5">
+                                            <PiCheck size={14} />
+                                            <span>Active & Verified</span>
+                                        </span>
+                                    ) : (
+                                        <span className="px-2.5 py-1 rounded-full bg-red-500/20 border border-red-500/30 text-red-400 text-[11px] font-black">
+                                            Unauthenticated
+                                        </span>
+                                    )}
+                                </div>
+                                <p className="text-xs text-[#8882A4] leading-relaxed">
+                                    {authStatus?.state === 'grace_period'
+                                        ? `Operating offline on cached credentials (FR-13.5). Re-validation will happen silently in the background when connectivity resumes.`
+                                        : `Active license verified. Tokens stored securely in native OS Keychain / Credential store (FR-13.4).`}
+                                </p>
+                            </div>
+
+                            {/* Logout Action (FR-13.6) */}
+                            <div className="pt-2 border-t border-[#2E2542] flex items-center justify-between">
+                                <div>
+                                    <h4 className="text-xs font-bold text-white">Log Out Workstation</h4>
+                                    <p className="text-[11px] text-[#6B6488]">Clears cached credentials and locks workstation until re-authenticated.</p>
+                                </div>
+                                <button
+                                    onClick={handleLogout}
+                                    disabled={authLoading}
+                                    className="px-4 py-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 text-xs font-bold flex items-center gap-2 transition-all"
+                                >
+                                    <PiSignOut size={16} />
+                                    <span>{authLoading ? 'Logging Out...' : 'Log Out'}</span>
+                                </button>
                             </div>
                         </div>
                     </div>
                 )}
             </div>
+
+            {/* ─── NDI Plain-Language Exposure Consent Modal (FR-4.43) ─── */}
+            {showNdiConsentModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150">
+                    <div className="bg-[#1A1428] border border-amber-500/40 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4">
+                        <div className="flex items-center gap-3 text-amber-400">
+                            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 flex items-center justify-center">
+                                <PiWarning size={28} />
+                            </div>
+                            <div>
+                                <h3 className="text-base font-bold text-white">Enable NDI & Network Broadcast?</h3>
+                                <p className="text-xs text-amber-300">Informed Consent Notice (FR-4.43)</p>
+                            </div>
+                        </div>
+
+                        <div className="bg-[#0B0814] p-4 rounded-2xl border border-[#2E2542] text-xs text-[#DDD7EE] leading-relaxed space-y-2">
+                            <p>
+                                Anyone connected to this local network (LAN / Wi-Fi) will be able to view your display feed without a password via OBS Studio, vMix, or a browser.
+                            </p>
+                            <p className="text-[#8882A4]">
+                                Only enable this on a trusted production network, not a public or guest Wi-Fi.
+                            </p>
+                        </div>
+
+                        <div className="flex items-center justify-end gap-3 pt-2">
+                            <button
+                                type="button"
+                                onClick={() => setShowNdiConsentModal(false)}
+                                className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => {
+                                    setShowNdiConsentModal(false);
+                                    applyNdiState(true);
+                                }}
+                                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black text-xs font-black transition-all shadow-lg shadow-amber-500/20"
+                            >
+                                I Understand, Enable Streaming
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

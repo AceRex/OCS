@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useSelector } from "react-redux";
+import { AuthProvider } from "../context/AuthContext";
 import Sidebar from "./Sidebar";
 import TimerController from "./TimerController";
 import BibleController from "./BibleController";
@@ -254,7 +255,9 @@ import { ErrorBoundary } from "../../ErrorBoundary";
 function WrappedApp() {
   return (
     <ErrorBoundary>
-      <App />
+      <AuthProvider>
+        <App />
+      </AuthProvider>
     </ErrorBoundary>
   );
 }

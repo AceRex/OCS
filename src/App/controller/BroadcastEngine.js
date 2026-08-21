@@ -2506,13 +2506,18 @@ export default function BroadcastEngine() {
     const ss = String(Math.floor(elapsed % 60)).padStart(2, "0");
     const relStamp = `${mm}:${ss}`;
 
-    // Arm trigger window when OCS/Media heard (Pass A or B) or when secondary PTT input is active
+    // Distinguish PTT-sourced secondary audio from Continuous-Mode-sourced (role === 'mic')
+    // PTT is a deliberate action (FR-3.36), while Continuous Mode is open-ended ambient audio (FR-3.43)
     const isSecondary = res.source === "secondary";
-    if (TRIGGER_DETECT_RE.test(rawText) || isSecondary) {
+    const isSecondaryPtt = isSecondary && res.role !== "mic";
+    const isContinuousMic = isSecondary && res.role === "mic";
+
+    // Arm trigger window when OCS/Media heard (Pass A or B) or when secondary PTT button is pressed
+    if (TRIGGER_DETECT_RE.test(rawText) || isSecondaryPtt) {
       triggerArmedUntilRef.current = Date.now() + TRIGGER_ARM_MS;
       TRIGGER_DETECT_RE.lastIndex = 0;
     }
-    const triggerArmed = isSecondary || Date.now() < triggerArmedUntilRef.current;
+    const triggerArmed = isSecondaryPtt || Date.now() < triggerArmedUntilRef.current;
     const commandText = stripTriggerWords(rawText) || rawText;
 
     const utteranceId = res.utteranceId ?? null;
@@ -2541,7 +2546,7 @@ export default function BroadcastEngine() {
 
       // Pass A finals while not in trigger window: commands only (Strict)
       // Pass B finals & Secondary PTT: commands + gated scripture
-      // Commands only settle on final (or Pass B) — avoid double next-verse from probe+final
+      // Continuous Mode (role === 'mic'): requires trigger or command match, or full ambient shape gate (FR-3.43)
       const runCommands = role !== "probe";
       const handled =
         runCommands && handleOCSCommandsRef.current
@@ -2555,9 +2560,10 @@ export default function BroadcastEngine() {
         let shape = matchReferenceShape(core);
         if (!shape.complete && !shape.shortContext)
           shape = matchReferenceShape(commandText);
-        // Ambient: COMPLETE shape is enough. Short jumps need context or trigger.
+
+        // Ambient & Continuous Mic Mode (FR-3.43): COMPLETE structural shape is required. Short jumps need context or trigger.
         const shouldTryScripture =
-          isSecondary ||
+          isSecondaryPtt ||
           pass === "B" ||
           triggerArmed ||
           sensitivity === "loose" ||
@@ -2572,8 +2578,8 @@ export default function BroadcastEngine() {
             ambientShapeRef.current.timer = null;
           }
           handleTranscriptionRef.current(commandText, booksRef.current, {
-            pass: isSecondary ? "SEC" : pass,
-            triggerArmed: triggerArmed || pass === "B" || isSecondary,
+            pass: isSecondaryPtt ? "SEC_PTT" : isContinuousMic ? "SEC_MIC" : pass,
+            triggerArmed: triggerArmed || pass === "B" || isSecondaryPtt,
             utteranceId,
             role: role === "probe" ? "probe" : "final",
             confidence: res.confidence ?? null,

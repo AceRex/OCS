@@ -27,6 +27,12 @@ const DEFAULTS = {
   sessionOutroPath: null,
   /** Auto-merge intro/outro bumpers when a session recording completes. ON by default. */
   sessionAutoMergeBumpers: true,
+  /** NDI & Broadcast Streaming (FR-4.42). OFF by default. */
+  ndiStreamEnabled: false,
+  /** Authentication Offline Grace Period in hours (FR-13.5). Default 72 hours. */
+  authGracePeriodHours: 72,
+  /** Auth server login base URL (FR-13.3). Overridable via OCS_AUTH_BASE_URL in dev. */
+  authLoginUrl: process.env.OCS_AUTH_BASE_URL || 'https://auth.churchocs.com',
 };
 
 let cache = null;

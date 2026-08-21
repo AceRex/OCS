@@ -1,7 +1,9 @@
 import React, { useState } from "react";
 import { PiSparkle, PiImage, PiTextT, PiPaintBrush, PiUploadSimple, PiCheckCircle, PiGear } from "react-icons/pi";
+import DisabledContainer from "../components/DisabledContainer";
 
-export default function DesignLabController() {
+
+function DesignLabPanel() {
     const [poster, setPoster] = useState(null);
     const [analysis, setAnalysis] = useState(null);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -235,5 +237,16 @@ export default function DesignLabController() {
                 </div>
             )}
         </div>
+    );
+}
+
+export default function DesignLabController() {
+    return (
+        <DisabledContainer
+            featureName="Design Lab"
+            description="Log in to unlock AI-assisted graphic design, poster analysis, and media generation."
+        >
+            <DesignLabPanel />
+        </DisabledContainer>
     );
 }

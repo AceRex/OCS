@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>OCS — Launching</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-app-region: drag;
+    }
+    body {
+      background: #0B0814;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      color: #FFFFFF;
+      height: 100vh;
+      width: 100vw;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      border: 1px solid rgba(168, 85, 247, 0.25);
+      border-radius: 24px;
+      position: relative;
+    }
+    .glow-orb {
+      position: absolute;
+      width: 250px;
+      height: 250px;
+      background: radial-gradient(circle, rgba(168, 85, 247, 0.35) 0%, rgba(6, 182, 212, 0.15) 60%, transparent 80%);
+      filter: blur(40px);
+      z-index: 0;
+      animation: pulse 3s ease-in-out infinite alternate;
+    }
+    @keyframes pulse {
+      0% { transform: scale(0.9); opacity: 0.6; }
+      100% { transform: scale(1.15); opacity: 0.9; }
+    }
+    .content {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 16px;
+      text-align: center;
+    }
+    .logo-badge {
+      width: 72px;
+      height: 72px;
+      border-radius: 20px;
+      background: linear-gradient(135deg, #7c3aed 0%, #06b6d4 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 34px;
+      font-weight: 900;
+      color: white;
+      letter-spacing: -1px;
+      box-shadow: 0 10px 30px rgba(124, 58, 237, 0.4);
+    }
+    .app-title {
+      font-size: 26px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      background: linear-gradient(to right, #FFFFFF, #E9D5FF);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .app-subtitle {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      color: #94A3B8;
+      margin-top: -8px;
+    }
+    .progress-track {
+      width: 240px;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-top: 12px;
+      position: relative;
+    }
+    .progress-bar {
+      position: absolute;
+      top: 0;
+      left: 0;
+      height: 100%;
+      width: 35%;
+      background: linear-gradient(90deg, #7c3aed, #06b6d4);
+      border-radius: 2px;
+      animation: indeterminate 1.4s infinite cubic-bezier(0.65, 0.815, 0.735, 0.395);
+    }
+    @keyframes indeterminate {
+      0% { left: -35%; width: 35%; }
+      100% { left: 100%; width: 35%; }
+    }
+    .status-text {
+      font-size: 11px;
+      color: #A89EC4;
+      font-weight: 600;
+      height: 16px;
+      transition: all 0.2s ease;
+    }
+    .version-tag {
+      position: absolute;
+      bottom: 16px;
+      font-size: 10px;
+      color: #64748B;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="glow-orb"></div>
+  <div class="content">
+    <div class="logo-badge">O</div>
+    <div>
+      <h1 class="app-title">OCS</h1>
+      <p class="app-subtitle">Organised Church Service</p>
+    </div>
+    <div class="progress-track">
+      <div class="progress-bar"></div>
+    </div>
+    <div class="status-text" id="status-label">Initializing workspace...</div>
+  </div>
+  <div class="version-tag">Version 1.10 • Professional Edition</div>
+
+  <script>
+    const statusLabel = document.getElementById('status-label');
+    const messages = [
+      'Verifying workstation license...',
+      'Checking local Scripture databases...',
+      'Loading AI voice recognition...',
+      'Preparing display canvases...'
+    ];
+    let idx = 0;
+    setInterval(() => {
+      idx = (idx + 1) % messages.length;
+      statusLabel.textContent = messages[idx];
+    }, 450);
+  </script>
+</body>
+</html>

@@ -1,4 +1,7 @@
-const { app, BrowserWindow, Menu, screen, ipcMain, session, dialog, Notification } = require("electron");
+const { app, BrowserWindow, Menu, screen, ipcMain, session, dialog, Notification, shell } = require("electron");
+
+// ── Custom Protocol Scheme for Authentication & Deep Links (FR-13.8, FR-13.3) ───
+app.setAsDefaultProtocolClient('ocs');
 
 // ── Single Instance Lock (Enforce app only loads once) ──────────────────────
 const gotTheLock = app.requestSingleInstanceLock();
@@ -13,14 +16,24 @@ if (process.platform === 'win32') {
   app.setAppUserModelId('com.acerex.ocs');
 }
 
-app.on('second-instance', () => {
-  console.log('[App] Second instance launch attempted. Focusing primary controller.');
+app.on('second-instance', (_event, argv) => {
+  console.log('[App] Second instance launch attempted. Checking for deep link or focusing controller.');
+  const deepLink = argv.find(arg => typeof arg === 'string' && arg.startsWith('ocs://'));
+  if (deepLink) {
+    handleAuthDeepLink(deepLink);
+    return;
+  }
   const windows = BrowserWindow.getAllWindows();
   const controller = windows.find(w => w.getTitle() === 'OCS Controller');
   if (controller && !controller.isDestroyed()) {
     if (controller.isMinimized()) controller.restore();
     controller.focus();
   }
+});
+
+app.on('open-url', (event, rawUrl) => {
+  event.preventDefault();
+  handleAuthDeepLink(rawUrl);
 });
 
 const path = require("path");
@@ -52,6 +65,7 @@ const sleepPrevention = require("./src/main/sleepPrevention");
 const { ReferenceAligner } = require("./src/main/aligner/referenceAligner");
 const { SceneAutoAdvanceManager } = require("./src/main/aligner/sceneAutoAdvance");
 const { ndiEngine } = require("./src/main/ndi/ndiEngine");
+const { authService } = require("./src/main/auth/authService");
 
 const globalAligner = new ReferenceAligner();
 const sceneAutoAdvance = new SceneAutoAdvanceManager({ aligner: globalAligner });
@@ -85,9 +99,93 @@ let pairing = generatePairing();
 let pairingQrDataUrl = null;
 /** @type {SessionArchiveService|null} */
 let sessionArchive = null;
+let splashWindow = null;
+let loginWindow = null;
 let controllerWindow = null;
 let speakerWindow = null;
 let generalWindow = null;
+
+function showSplashWindow() {
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.show();
+    return splashWindow;
+  }
+  splashWindow = new BrowserWindow({
+    width: 480,
+    height: 320,
+    frame: false,
+    transparent: true,
+    center: true,
+    resizable: false,
+    alwaysOnTop: true,
+    backgroundColor: '#00000000',
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+  splashWindow.loadFile('splash.html');
+  return splashWindow;
+}
+
+function showLoginWindow() {
+  if (loginWindow && !loginWindow.isDestroyed()) {
+    loginWindow.show();
+    loginWindow.focus();
+    return loginWindow;
+  }
+  loginWindow = new BrowserWindow({
+    width: 540,
+    height: 640,
+    title: 'OCS — Workstation Authentication',
+    backgroundColor: '#0B0814',
+    resizable: false,
+    center: true,
+    webPreferences: {
+      nodeIntegration: false,
+      contextIsolation: true,
+      preload: path.join(__dirname, 'preload.js'),
+    },
+  });
+  loginWindow.loadFile('login.html');
+  loginWindow.on('closed', () => {
+    loginWindow = null;
+  });
+  return loginWindow;
+}
+
+function handleAuthDeepLink(rawUrl) {
+  console.log('[Auth] Processing deep-link callback:', rawUrl);
+  const result = authService.validateAuthCallback(rawUrl);
+  if (result.ok) {
+    console.log('[Auth] Authentication successful for:', result.session?.email);
+    // Offline-first: controller is always open. Just broadcast the updated state.
+    if (!controllerWindow || controllerWindow.isDestroyed()) {
+      createWindows();
+    } else {
+      if (!controllerWindow.isVisible()) controllerWindow.show();
+      controllerWindow.focus();
+    }
+    broadcastAuthStatus();
+  } else {
+    console.warn('[Auth] Callback validation failed:', result.error);
+    // Broadcast error to the controller UI so DisabledContainer / SidebarAccount can surface it
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send('auth-error', result.error);
+      }
+    }
+  }
+}
+
+function broadcastAuthStatus() {
+  const status = authService.getAuthStatus();
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send('auth-status', status);
+    }
+  }
+}
 
 function detectPython() {
   // Still used by optional ocs_image_engine design tools — not for ASR.
@@ -860,6 +958,14 @@ io.on('connection', (socket) => {
   // Auth attempt via handshake auth (preferred) or explicit pair event
   const handshakeCred = socket.handshake.auth && (socket.handshake.auth.token || socket.handshake.auth.code);
   if (handshakeCred && validateCredential(pairing, handshakeCred)) {
+    // Gate mobile pairing on desktop auth state (FR-13.7)
+    if (!authService.isAuthenticated()) {
+      socket.emit('pair-result', {
+        ok: false,
+        error: 'Desktop Controller must be authenticated to accept mobile pairings (FR-13.7).',
+      });
+      return;
+    }
     markPaired(socket.id);
     device.paired = true;
     device.name = socket.handshake.auth.deviceName || 'Mobile';
@@ -878,6 +984,15 @@ io.on('connection', (socket) => {
   }
 
   socket.on('pair', (payload = {}) => {
+    // Gate mobile pairing on desktop auth state (FR-13.7)
+    if (!authService.isAuthenticated()) {
+      socket.emit('pair-result', {
+        ok: false,
+        error: 'Desktop Controller must be authenticated to accept mobile pairings (FR-13.7).',
+      });
+      return;
+    }
+
     const clientIp = device.ip || socket.handshake.address;
 
     // FR-6.12 — rate-limit 6-digit code attempts per source IP
@@ -1530,12 +1645,14 @@ function createWindows() {
   generalWindow.loadFile("view.html", { search: "mode=general" });
   controllerWindow.loadFile("controller.html");
 
-  // Initialize NDI and Broadcast Video Engine
+  // Initialize NDI and Broadcast Video Engine (FR-4.42: default off)
+  const currentSettings = appSettings.loadSync();
   ndiEngine.init({
     programWindow: generalWindow,
     stageWindow: speakerWindow,
     io,
     port: PORT,
+    enabled: !!currentSettings?.ndiStreamEnabled,
   });
 
   ndiEngine.on('stats', (status) => {
@@ -2133,7 +2250,12 @@ ipcMain.handle('settings-set', async (_e, patch) => {
 
 // ── NDI & Broadcast Streaming Handlers ─────────────────────────────────────────
 ipcMain.handle('ndi:get-status', () => ndiEngine.getStatus());
-ipcMain.handle('ndi:set-config', (_event, config) => {
+ipcMain.handle('ndi:set-config', async (_event, config) => {
+  if (config && config.enabled !== undefined) {
+    try {
+      await appSettings.update({ ndiStreamEnabled: !!config.enabled });
+    } catch (_) {}
+  }
   const updated = ndiEngine.setConfig(config);
   if (config.enabled && !ndiEngine.isRunning) {
     ndiEngine.start();
@@ -2182,17 +2304,32 @@ ipcMain.handle('ai-chat', async (_event, { prompt, system, model }) => {
   }
 });
 
-ipcMain.handle('ai-speak', async (_event, { text, voice }) => {
-  try {
-    return await piperSpeak(__dirname, text, voice);
-  } catch (e) {
-    return { ok: false, error: e.message };
-  }
+// ── Authentication & Licensing Handlers (FR-13.1–FR-13.8) ────────────────────
+ipcMain.handle('auth:get-status', () => authService.getAuthStatus());
+ipcMain.handle('auth:open-browser-login', async () => {
+  const loginInfo = authService.getLoginUrl();
+  await shell.openExternal(loginInfo.url);
+  return { ok: true, state: loginInfo.state, url: loginInfo.url };
+});
+ipcMain.handle('auth:simulate-callback', async (_event, customUrl) => {
+  const pendingState = authService.pendingAuthState?.state || authService.generateAuthState();
+  const mockUrl = customUrl || `ocs://auth-callback?token=demo_token_${Date.now()}&state=${pendingState}&email=pastor@gracecommunity.org&org=Grace%20Community%20Church&tier=enterprise`;
+  handleAuthDeepLink(mockUrl);
+  return { ok: true, url: mockUrl };
+});
+ipcMain.handle('auth:logout', async () => {
+  await authService.logout();
+  // Offline-first: controller stays open. Broadcast logged-out state so
+  // SidebarAccount and DisabledContainer react in-place without a full window swap.
+  broadcastAuthStatus();
+  return { ok: true };
 });
 // ─────────────────────────────────────────────────────────────────────────────
 
-
 app.whenReady().then(async () => {
+  // Show splash window immediately on startup (FR-13.2)
+  showSplashWindow();
+
   // GRANT MICROPHONE ACCESS AUTOMATICALLY
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback) => {
     if (permission === 'media') {
@@ -2208,6 +2345,13 @@ app.whenReady().then(async () => {
 
   appSettings.init(app.getPath('userData'));
   await appSettings.load();
+  const settings = appSettings.loadSync();
+
+  // Initialize AuthService (FR-13.4, FR-13.5) with safety assertions
+  authService.init(app.getPath('userData'), {
+    gracePeriodHours: settings?.authGracePeriodHours || 72,
+    defaultAuthHost: settings?.authLoginUrl,
+  });
 
   // Session archive (FR-5.10+)
   sessionArchive = new SessionArchiveService(app.getPath('userData'));
@@ -2221,7 +2365,6 @@ app.whenReady().then(async () => {
   });
   sessionArchive.on('session-finalized', (meta) => {
     broadcastSessionStatus(sessionArchive.getStatus());
-    // Do not null progress before UI can paint 100% / error — view clears itself
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) win.webContents.send('session-finalized', meta);
     }
@@ -2233,7 +2376,7 @@ app.whenReady().then(async () => {
     console.warn('[SleepPrevention]', sleepProbe.message);
   }
 
-  // Load ASR in-process (whisper default, vosk fallback) — non-blocking for windows
+  // Load ASR in-process (whisper default, vosk fallback)
   asrEngine.initialize().then(() => {
     const s = appSettings.loadSync();
     asrEngine.setLanguagePolicy({
@@ -2244,7 +2387,24 @@ app.whenReady().then(async () => {
     console.error('[Asr] init error:', err.message);
   });
 
+  // Minimum splash display duration for smooth branding transition (FR-13.2)
+  await new Promise((r) => setTimeout(r, 1200));
+
+  // Offline-first launch (FR-13.1 revised): controller always opens directly.
+  // Auth state is surfaced in the UI via SidebarAccount + DisabledContainer;
+  // the app does NOT block on a separate login window.
+  const authCheck = authService.checkSession();
+  console.log('[Auth] Session check on launch:', authCheck.valid ? authCheck.state : authCheck.reason,
+    authCheck.session?.email || '(no cached session)');
+
+  if (splashWindow && !splashWindow.isDestroyed()) {
+    splashWindow.close();
+    splashWindow = null;
+  }
+
   createWindows();
+  // Broadcast current auth status to all newly opened windows
+  setTimeout(() => broadcastAuthStatus(), 500);
 });
 
 app.on("web-contents-created", (_event, contents) => {

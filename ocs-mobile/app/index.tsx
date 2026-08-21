@@ -81,6 +81,14 @@ export default function Dashboard() {
       description: "Sync & Events",
     },
     {
+      id: "scenes",
+      label: "Scene",
+      icon: SquaresFour,
+      gradient: ["#FF512F", "#DD2476"], // Vibrant Coral/Magenta Gradient
+      iconColor: "#ffffff",
+      description: "Create & Share",
+    },
+    {
       id: "bible",
       label: "Bible",
       icon: Book,
