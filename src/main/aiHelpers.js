@@ -52,7 +52,7 @@ async function ollamaStatus() {
   }
 }
 
-async function ollamaChat({ prompt, system, model, timeoutMs = 60000 }) {
+async function ollamaChat({ prompt, system, model, timeoutMs = 25000 }) {
   const status = await ollamaStatus();
   if (!status.running) return { ok: false, error: 'Ollama not running' };
   const modelName = (model && status.models.includes(model)) ? model : (status.model || 'llama3.2');
@@ -60,10 +60,14 @@ async function ollamaChat({ prompt, system, model, timeoutMs = 60000 }) {
   const r = await httpJson('POST', OLLAMA_HOST, OLLAMA_PORT, '/api/chat', {
     model: modelName,
     messages: [
-      { role: 'system', content: system || 'You are a helpful church media assistant for OCS.' },
+      { role: 'system', content: system || 'You are a helpful church media assistant for OCS. Keep responses brief (1-3 sentences).' },
       { role: 'user', content: prompt },
     ],
     stream: false,
+    options: {
+      num_predict: 120, // Keep response fast and bounded
+      temperature: 0.3,
+    },
   }, timeoutMs);
   if (r.status !== 200 || !r.json) {
     return { ok: false, error: (r.json && r.json.error) || 'Chat failed' };

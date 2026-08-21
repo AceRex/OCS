@@ -1291,6 +1291,7 @@ export default function BroadcastEngine() {
   };
 
   // ── Command Executor ─────────────────────────────────────────────────────
+  const executeCommandRef = useRef(null);
   const executeCommand = async (action, rawText = "") => {
     if (action === "next_verse") {
       if (activeDisplayContextRef.current === "presentation") {
@@ -1506,6 +1507,7 @@ export default function BroadcastEngine() {
       }
     }
   };
+  executeCommandRef.current = executeCommand;
 
   const changeTranslation = async (dbVersion, label) => {
     currentBibleVersionRef.current = dbVersion;
@@ -3185,6 +3187,29 @@ export default function BroadcastEngine() {
     };
   }, []);
 
+  // Listen for Stage Master Control actions from authorized mobile admins
+  useEffect(() => {
+    if (window.electron?.Network?.onMobileAction) {
+      const unsub = window.electron.Network.onMobileAction((action) => {
+        if (action?.type === "stage-control" && action.command) {
+          console.log(
+            "[BroadcastEngine] Executing stage-control command from mobile admin:",
+            action.command,
+          );
+          if (executeCommandRef.current) {
+            executeCommandRef.current(action.command, action.payload || "");
+          }
+          setCommandFeedback({
+            label: `Mobile Admin: ${action.command.replace(/_/g, " ").toUpperCase()}`,
+            ok: true,
+          });
+          setTimeout(() => setCommandFeedback(null), 2500);
+        }
+      });
+      return () => unsub?.();
+    }
+  }, []);
+
   // ── Piper TTS ─────────────────────────────────────────────────────────────
   const speakText = async (text) => {
     if (!text || !window.electron?.AI?.speak) return;
@@ -3765,239 +3790,241 @@ export default function BroadcastEngine() {
         </div>
 
         {/* Live Master Control & Stage Status Panel (Increased Height) */}
-        <div className="flex-1 bg-[#12111a]/95 border border-white/10 rounded-2xl flex flex-col overflow-hidden shadow-2xl relative">
-          {/* Header with Live Content Telemetry */}
-          <div className="py-2.5 px-5 flex items-center justify-between border-b border-white/5 bg-white/[0.02] shrink-0">
-            <div className="flex items-center gap-3">
-              <div className="w-7 h-7 rounded-lg bg-emerald-600/20 flex items-center justify-center text-emerald-400 border border-emerald-500/20 shadow-inner">
-                <PiPulse size={16} />
+        <DisabledContainer disabled={true} message="Stage Master Control is a phone-only feature. Use the OCS companion app on an Admin device to control the stage.">
+          <div className="flex-1 bg-[#12111a]/95 border border-white/10 rounded-2xl flex flex-col overflow-hidden shadow-2xl relative">
+            {/* Header with Live Content Telemetry */}
+            <div className="py-2.5 px-5 flex items-center justify-between border-b border-white/5 bg-white/[0.02] shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="w-7 h-7 rounded-lg bg-emerald-600/20 flex items-center justify-center text-emerald-400 border border-emerald-500/20 shadow-inner">
+                  <PiPulse size={16} />
+                </div>
+                <div>
+                  <h2 className="text-xs font-black uppercase tracking-widest text-white">
+                    Stage Master Control
+                  </h2>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="text-[10px] text-white/50 font-mono">
+                      Live Slot:
+                    </span>
+                    <span className="text-[10px] font-bold text-cyan-300 font-mono">
+                      {liveContentState
+                        ? liveContentState.type === "bible"
+                          ? `📖 ${liveContentState.data?.title || "Scripture"}`
+                          : liveContentState.type === "presentation"
+                            ? `📑 Slide ${liveContentState.data?.slideIndex != null ? liveContentState.data.slideIndex + 1 : 1}`
+                            : liveContentState.type === "scene"
+                              ? `🎵 ${liveContentState.data?.title || "Scene Live"}`
+                              : `Live (${liveContentState.type})`
+                        : "⬛ Blackout / Inactive"}
+                    </span>
+                  </div>
+                </div>
               </div>
-              <div>
-                <h2 className="text-xs font-black uppercase tracking-widest text-white">
-                  Stage Master Control
-                </h2>
-                <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-[10px] text-white/50 font-mono">
-                    Live Slot:
-                  </span>
-                  <span className="text-[10px] font-bold text-cyan-300 font-mono">
-                    {liveContentState
-                      ? liveContentState.type === "bible"
-                        ? `📖 ${liveContentState.data?.title || "Scripture"}`
-                        : liveContentState.type === "presentation"
-                          ? `📑 Slide ${liveContentState.data?.slideIndex != null ? liveContentState.data.slideIndex + 1 : 1}`
-                          : liveContentState.type === "scene"
-                            ? `🎵 ${liveContentState.data?.title || "Scene Live"}`
-                            : `Live (${liveContentState.type})`
-                      : "⬛ Blackout / Inactive"}
-                  </span>
+
+              <div className="flex items-center gap-2">
+                <div
+                  className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold border transition-all ${
+                    liveContentState
+                      ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.25)]"
+                      : "bg-white/5 border-white/10 text-white/40"
+                  }`}
+                >
+                  <span
+                    className={`w-2 h-2 rounded-full ${liveContentState ? "bg-emerald-400 animate-pulse" : "bg-white/30"}`}
+                  />
+                  <span>{liveContentState ? "ON AIR" : "STANDBY"}</span>
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-2">
-              <div
-                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold border transition-all ${
-                  liveContentState
-                    ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.25)]"
-                    : "bg-white/5 border-white/10 text-white/40"
-                }`}
-              >
-                <span
-                  className={`w-2 h-2 rounded-full ${liveContentState ? "bg-emerald-400 animate-pulse" : "bg-white/30"}`}
-                />
-                <span>{liveContentState ? "ON AIR" : "STANDBY"}</span>
+            {/* Control Actions & Quick Shortcuts Grid */}
+            <div className="flex-1 p-4 flex flex-col justify-between gap-3 overflow-y-auto no-scrollbar">
+              {/* Primary Live Action Controls */}
+              <div>
+                <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider block mb-2">
+                  Primary Stage Output Controls
+                </span>
+                <div className="grid grid-cols-4 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => executeCommand("black_screen")}
+                    className="flex items-center justify-center gap-2 py-3 px-3 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 text-xs font-bold transition-all shadow-sm active:scale-95"
+                  >
+                    <PiMonitorFill size={16} />
+                    <span>Blackout</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => executeCommand("screen_on")}
+                    className="flex items-center justify-center gap-2 py-3 px-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-xs font-bold transition-all shadow-sm active:scale-95"
+                  >
+                    <PiMonitorPlay size={16} />
+                    <span>Take Live</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => executeCommand("prev_verse")}
+                    className="flex items-center justify-center gap-2 py-3 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white text-xs font-bold transition-all active:scale-95"
+                  >
+                    <span>◀ Previous</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => executeCommand("next_verse")}
+                    className="flex items-center justify-center gap-2 py-3 px-3 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 text-xs font-bold transition-all shadow-sm active:scale-95"
+                  >
+                    <span>Next ▶</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Secondary Navigation Row */}
+              <div>
+                <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider block mb-2">
+                  Step Navigation
+                </span>
+                <div className="grid grid-cols-4 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => executeCommand("first_slide")}
+                    className="flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-bold transition-all active:scale-95"
+                  >
+                    <span>⏮ First Item</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => executeCommand("last_slide")}
+                    className="flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-bold transition-all active:scale-95"
+                  >
+                    <span>⏭ Last Item</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => executeCommand("first_verse")}
+                    className="flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-bold transition-all active:scale-95"
+                  >
+                    <span>📖 First Verse</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => executeCommand("last_verse")}
+                    className="flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-bold transition-all active:scale-95"
+                  >
+                    <span>📖 Last Verse</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Quick Stage Timers */}
+              <div className="pt-2 border-t border-white/5">
+                <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider block mb-2">
+                  Quick Stage Timers
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      dispatch(utilAction.setEventMode(false));
+                      dispatch(utilAction.setTime(300));
+                      dispatch(utilAction.setPaused(false));
+                      dispatch(utilAction.setActiveId(null));
+                      setCommandFeedback({ label: "5m Timer Started", ok: true });
+                      setTimeout(() => setCommandFeedback(null), 2500);
+                    }}
+                    className="flex-1 py-2 px-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-mono font-bold transition-all text-center"
+                  >
+                    ⏱ 5m
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      dispatch(utilAction.setEventMode(false));
+                      dispatch(utilAction.setTime(600));
+                      dispatch(utilAction.setPaused(false));
+                      dispatch(utilAction.setActiveId(null));
+                      setCommandFeedback({
+                        label: "10m Timer Started",
+                        ok: true,
+                      });
+                      setTimeout(() => setCommandFeedback(null), 2500);
+                    }}
+                    className="flex-1 py-2 px-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-mono font-bold transition-all text-center"
+                  >
+                    ⏱ 10m
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      dispatch(utilAction.setEventMode(false));
+                      dispatch(utilAction.setTime(900));
+                      dispatch(utilAction.setPaused(false));
+                      dispatch(utilAction.setActiveId(null));
+                      setCommandFeedback({
+                        label: "15m Timer Started",
+                        ok: true,
+                      });
+                      setTimeout(() => setCommandFeedback(null), 2500);
+                    }}
+                    className="flex-1 py-2 px-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-mono font-bold transition-all text-center"
+                  >
+                    ⏱ 15m
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      dispatch(utilAction.setEventMode(false));
+                      dispatch(utilAction.setTime(1800));
+                      dispatch(utilAction.setPaused(false));
+                      dispatch(utilAction.setActiveId(null));
+                      setCommandFeedback({
+                        label: "30m Timer Started",
+                        ok: true,
+                      });
+                      setTimeout(() => setCommandFeedback(null), 2500);
+                    }}
+                    className="flex-1 py-2 px-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-mono font-bold transition-all text-center"
+                  >
+                    ⏱ 30m
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      dispatch(utilAction.setTime(0));
+                      dispatch(utilAction.setPaused(false));
+                      dispatch(utilAction.setActiveId(null));
+                      setCommandFeedback({ label: "Timer Cleared", ok: true });
+                      setTimeout(() => setCommandFeedback(null), 2500);
+                    }}
+                    className="py-2 px-3.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-xs font-bold transition-all"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+
+              {/* Display Feeds Telemetry Bar */}
+              <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[10px] text-white/40 font-mono">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  1080p FHD Native (1920×1080 @ 60fps)
+                </span>
+                <span className="text-purple-400 font-bold uppercase">
+                  NDI &amp; Stage Feeds Active
+                </span>
               </div>
             </div>
           </div>
-
-          {/* Control Actions & Quick Shortcuts Grid */}
-          <div className="flex-1 p-4 flex flex-col justify-between gap-3 overflow-y-auto no-scrollbar">
-            {/* Primary Live Action Controls */}
-            <div>
-              <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider block mb-2">
-                Primary Stage Output Controls
-              </span>
-              <div className="grid grid-cols-4 gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => executeCommand("black_screen")}
-                  className="flex items-center justify-center gap-2 py-3 px-3 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 text-xs font-bold transition-all shadow-sm active:scale-95"
-                >
-                  <PiMonitorFill size={16} />
-                  <span>Blackout</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => executeCommand("screen_on")}
-                  className="flex items-center justify-center gap-2 py-3 px-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-xs font-bold transition-all shadow-sm active:scale-95"
-                >
-                  <PiMonitorPlay size={16} />
-                  <span>Take Live</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => executeCommand("prev_verse")}
-                  className="flex items-center justify-center gap-2 py-3 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white text-xs font-bold transition-all active:scale-95"
-                >
-                  <span>◀ Previous</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => executeCommand("next_verse")}
-                  className="flex items-center justify-center gap-2 py-3 px-3 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 text-xs font-bold transition-all shadow-sm active:scale-95"
-                >
-                  <span>Next ▶</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Secondary Navigation Row */}
-            <div>
-              <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider block mb-2">
-                Step Navigation
-              </span>
-              <div className="grid grid-cols-4 gap-2.5">
-                <button
-                  type="button"
-                  onClick={() => executeCommand("first_slide")}
-                  className="flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-bold transition-all active:scale-95"
-                >
-                  <span>⏮ First Item</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => executeCommand("last_slide")}
-                  className="flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-bold transition-all active:scale-95"
-                >
-                  <span>⏭ Last Item</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => executeCommand("first_verse")}
-                  className="flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-bold transition-all active:scale-95"
-                >
-                  <span>📖 First Verse</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => executeCommand("last_verse")}
-                  className="flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-bold transition-all active:scale-95"
-                >
-                  <span>📖 Last Verse</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Quick Stage Timers */}
-            <div className="pt-2 border-t border-white/5">
-              <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider block mb-2">
-                Quick Stage Timers
-              </span>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    dispatch(utilAction.setEventMode(false));
-                    dispatch(utilAction.setTime(300));
-                    dispatch(utilAction.setPaused(false));
-                    dispatch(utilAction.setActiveId(null));
-                    setCommandFeedback({ label: "5m Timer Started", ok: true });
-                    setTimeout(() => setCommandFeedback(null), 2500);
-                  }}
-                  className="flex-1 py-2 px-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-mono font-bold transition-all text-center"
-                >
-                  ⏱ 5m
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    dispatch(utilAction.setEventMode(false));
-                    dispatch(utilAction.setTime(600));
-                    dispatch(utilAction.setPaused(false));
-                    dispatch(utilAction.setActiveId(null));
-                    setCommandFeedback({
-                      label: "10m Timer Started",
-                      ok: true,
-                    });
-                    setTimeout(() => setCommandFeedback(null), 2500);
-                  }}
-                  className="flex-1 py-2 px-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-mono font-bold transition-all text-center"
-                >
-                  ⏱ 10m
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    dispatch(utilAction.setEventMode(false));
-                    dispatch(utilAction.setTime(900));
-                    dispatch(utilAction.setPaused(false));
-                    dispatch(utilAction.setActiveId(null));
-                    setCommandFeedback({
-                      label: "15m Timer Started",
-                      ok: true,
-                    });
-                    setTimeout(() => setCommandFeedback(null), 2500);
-                  }}
-                  className="flex-1 py-2 px-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-mono font-bold transition-all text-center"
-                >
-                  ⏱ 15m
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    dispatch(utilAction.setEventMode(false));
-                    dispatch(utilAction.setTime(1800));
-                    dispatch(utilAction.setPaused(false));
-                    dispatch(utilAction.setActiveId(null));
-                    setCommandFeedback({
-                      label: "30m Timer Started",
-                      ok: true,
-                    });
-                    setTimeout(() => setCommandFeedback(null), 2500);
-                  }}
-                  className="flex-1 py-2 px-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-mono font-bold transition-all text-center"
-                >
-                  ⏱ 30m
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    dispatch(utilAction.setTime(0));
-                    dispatch(utilAction.setPaused(false));
-                    dispatch(utilAction.setActiveId(null));
-                    setCommandFeedback({ label: "Timer Cleared", ok: true });
-                    setTimeout(() => setCommandFeedback(null), 2500);
-                  }}
-                  className="py-2 px-3.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-xs font-bold transition-all"
-                >
-                  Clear
-                </button>
-              </div>
-            </div>
-
-            {/* Display Feeds Telemetry Bar */}
-            <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[10px] text-white/40 font-mono">
-              <span className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                1080p FHD Native (1920×1080 @ 60fps)
-              </span>
-              <span className="text-purple-400 font-bold uppercase">
-                NDI &amp; Stage Feeds Active
-              </span>
-            </div>
-          </div>
-        </div>
+        </DisabledContainer>
       </div>
     </div>
   );

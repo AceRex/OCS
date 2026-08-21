@@ -119,7 +119,7 @@ export default function TimerController() {
       );
       return () => removeListener();
     }
-  }, [dispatch]); // Empty dep array for listener? No, dispatch is stable.
+  }, [dispatch]);
 
   useEffect(() => {
     setCountDown(time);
@@ -139,6 +139,11 @@ export default function TimerController() {
           if (prevCountdown <= 1) {
             clearInterval(timer.current);
             setTimeUp(true);
+
+            // ── AUTO-BLACKOUT on time up ──
+            try {
+              window.electron?.Presentation?.setContent(null);
+            } catch (_) {}
 
             const currentIndex = agenda?.findIndex((a) => a._id === activeId);
             const item = currentIndex > -1 ? agenda[currentIndex] : null;
@@ -163,7 +168,7 @@ export default function TimerController() {
                 dispatch(utilAction.setDelayCountdown(nextStartInterval));
                 dispatch(utilAction.setIsDelayRunning(true));
               } else {
-                // Auto-start immediately — explicitly reset local countdown so same-duration items don't trip prevCountdown <= 1
+                // Auto-start immediately
                 setCountDown(nextTime);
                 setTimeUp(false);
                 dispatch(utilAction.setEventMode(false));
@@ -199,8 +204,7 @@ export default function TimerController() {
     return () => clearInterval(timer.current);
   }, [time, isPaused, activeId, agenda, dispatch, nextStartInterval]);
 
-  // Delay countdown ticker — starts when isDelayRunning becomes true.
-  // Uses a ref to avoid stale closure issues and re-creating the interval every tick.
+  // Delay countdown ticker
   useEffect(() => {
     if (delayTimer.current) {
       clearInterval(delayTimer.current);
@@ -209,7 +213,6 @@ export default function TimerController() {
 
     if (!isDelayRunning || !pendingNextItem) return;
 
-    // Seed the ref from Redux (captures the value set at delay start)
     delayCountRef.current = delayCountdown;
 
     delayTimer.current = setInterval(() => {
@@ -222,8 +225,6 @@ export default function TimerController() {
 
         const nextTime = Number(pendingNextItem.time) || 0;
 
-        // Set local countdown DIRECTLY so the new timer's first interval
-        // tick gets the correct prevCountdown instead of the stale 0.
         setCountDown(nextTime);
         setTimeUp(false);
 
@@ -252,7 +253,7 @@ export default function TimerController() {
         delayTimer.current = null;
       }
     };
-  }, [isDelayRunning, pendingNextItem, dispatch]); // NOT delayCountdown — interval lives for its full duration
+  }, [isDelayRunning, pendingNextItem, dispatch]);
 
   useEffect(() => {
     if (countdown <= 10 && countdown > 0) {
@@ -274,7 +275,6 @@ export default function TimerController() {
       title: item.agenda || item.anchor || "Session",
       durationSec: Number(item.time) || 0,
       category: item.agenda || "",
-      // Timer "Anchor" field is the person in charge / speaker name
       speakerName: (item.anchor && String(item.anchor).trim()) || "Speaker",
     });
   };
@@ -314,19 +314,10 @@ export default function TimerController() {
 
   const handleAddTime = (id, currentAmount, amount = 60) => {
     const isActive = activeId === id;
-
-    // Always update the agenda item's stored duration.
-    // If this timer is currently running, base the new duration on the
-    // live countdown (not the stale itemTime) so the list stays in sync
-    // with what's actually on screen. If it's idle, base it on itemTime.
     const baseAmount = isActive ? countdown : currentAmount;
     const newTime = Math.max(0, Number(baseAmount || 0) + amount);
-
     dispatch(utilAction.editAgenda({ _id: id, time: newTime }));
-
     if (isActive) {
-      // Also push the change into the live countdown so the running
-      // timer reflects it immediately.
       dispatch(utilAction.setTime(newTime));
     }
   };
@@ -350,8 +341,6 @@ export default function TimerController() {
     );
 
     if (activeId === id) {
-      // This is the currently running timer — push the edited time
-      // into the live countdown too, not just the stored agenda entry.
       dispatch(utilAction.setTime(Number(editTime) || 0));
     }
 
@@ -392,15 +381,28 @@ export default function TimerController() {
 
       <SetTimePage />
       <div className="w-[70%] bg-primary/50 flex flex-col h-full rounded-2xl p-4 gap-4 overflow-hidden">
+        {/* Timer Display */}
         <div
           className={`shrink-0 ${
-            bgChange ? "bg-red text-light" : "bg-green text-primary"
+            timeUp
+              ? "bg-red text-light"
+              : bgChange
+              ? "bg-red text-light"
+              : "bg-green text-primary"
           } p-8 rounded-lg w-full text-center relative`}
         >
           <p className="capitalize">current timer preview</p>
           <p className={"text-6xl w-[90%] m-auto font-extrabold"}>
             {timeUp && countdown === 0 ? "00:00:00" : formatTime(countdown)}
           </p>
+
+          {/* Time-up blackout notice */}
+          {timeUp && (
+            <p className="text-sm mt-2 font-semibold opacity-80">
+              ⬛ Stage blacked out
+            </p>
+          )}
+
           {time > 0 && (
             <div className="absolute bottom-4 right-4 flex gap-2">
               <button
@@ -418,12 +420,12 @@ export default function TimerController() {
             </div>
           )}
         </div>
-        <div
-          className="w-full bg-primary/70 flex flex-col gap-3 p-4 flex-1 min-h-0 overflow-y-auto rounded-2xl"
-        >
+
+        {/* Session List */}
+        <div className="w-full bg-primary/70 flex flex-col gap-3 p-4 flex-1 min-h-0 overflow-y-auto rounded-2xl">
           {agenda?.length === 0 ? (
             <div className="font-normal flex flex-col h-full items-center justify-center gap-2 p-2 text-center rounded-md text-ash/60">
-              <PiEmpty size={40} />{" "}
+              <PiEmpty size={40} />
               <p className="text-xl">Session not added yet</p>
             </div>
           ) : (
@@ -483,7 +485,6 @@ export default function TimerController() {
                             placeholder="Anchor"
                           />
                           <Input
-                            // value={editTime ? editTime / 60 : ""}
                             onChange={(e) =>
                               setEditTime((e.target.valueAsNumber || 0) * 60)
                             }

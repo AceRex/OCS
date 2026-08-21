@@ -23,6 +23,7 @@ export default function RootLayout() {
         <Stack.Screen name="assets" />
         <Stack.Screen name="scenes" />
         <Stack.Screen name="intercom" />
+        <Stack.Screen name="stage-control" />
         <Stack.Screen name="modal" options={{ presentation: "modal", title: "Modal" }} />
       </Stack>
       <StatusBar style="auto" />

@@ -184,7 +184,10 @@ function handleAuthDeepLink(rawUrl) {
   const result = authService.validateAuthCallback(rawUrl);
   if (result.ok) {
     console.log("[Auth] Authentication successful for:", result.session?.email);
-    // Offline-first: controller is always open. Just broadcast the updated state.
+    if (loginWindow && !loginWindow.isDestroyed()) {
+      loginWindow.close();
+      loginWindow = null;
+    }
     if (!controllerWindow || controllerWindow.isDestroyed()) {
       createWindows();
     } else {
@@ -194,7 +197,7 @@ function handleAuthDeepLink(rawUrl) {
     broadcastAuthStatus();
   } else {
     console.warn("[Auth] Callback validation failed:", result.error);
-    // Broadcast error to the controller UI so DisabledContainer / SidebarAccount can surface it
+    // Broadcast error to login window and controller UI
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
         win.webContents.send("auth-error", result.error);
@@ -1155,12 +1158,23 @@ let pendingAssetTransfers = new Map();
 let latestOverlayContent = null;
 let latestOverlayStyle = null;
 let latestOverlayTimer = null;
+const adminDeviceIds = new Set();
+const adminDeviceNames = new Set();
 
 function broadcastDevicesUpdated() {
-  const pairedDevices = connectedDevices.filter((d) => d.paired);
+  const devicesList = connectedDevices.map((d) => ({
+    id: d.id,
+    ip: d.ip,
+    name: d.name,
+    paired: !!d.paired,
+    status: d.paired ? "connected" : "pending",
+    isAdmin: adminDeviceIds.has(d.id) || adminDeviceNames.has(d.name) || !!d.isAdmin,
+    isVoiceActive: !!d.isVoiceActive,
+    connectedAt: d.connectedAt,
+  }));
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) {
-      win.webContents.send("mobile-devices-updated", pairedDevices);
+      win.webContents.send("mobile-devices-updated", devicesList);
     }
   }
 }
@@ -1219,13 +1233,16 @@ io.on("connection", (socket) => {
     }
     markPaired(socket.id);
     device.paired = true;
+    device.status = "connected";
     device.name = socket.handshake.auth.deviceName || "Mobile";
-    console.log("[Remote] paired via handshake:", socket.id);
-    socket.emit("pair-result", { ok: true, deviceName: device.name });
+    device.isAdmin = adminDeviceIds.has(device.id) || adminDeviceNames.has(device.name);
+    console.log("[Remote] paired via handshake:", socket.id, "isAdmin:", device.isAdmin);
+    socket.emit("pair-result", { ok: true, deviceName: device.name, isAdmin: device.isAdmin });
     notifyController("mobile-connected", device);
     broadcastDevicesUpdated();
   } else {
-    // Unpaired — connected but cannot control. Surface in debug/UI as pending.
+    // Unpaired — connected but pending pairing.
+    device.status = "pending";
     notifyController("mobile-unpaired-attempt", {
       id: socket.id,
       ip: device.ip,
@@ -1234,6 +1251,7 @@ io.on("connection", (socket) => {
     socket.emit("pair-required", {
       message: "Send pair event with token or 6-digit code",
     });
+    broadcastDevicesUpdated();
   }
 
   socket.on("pair", (payload = {}) => {
@@ -1283,8 +1301,10 @@ io.on("connection", (socket) => {
     _pairingRateLimiter.recordSuccess(clientIp); // FR-6.12: reset counter on success
     markPaired(socket.id);
     device.paired = true;
+    device.status = "connected";
     device.name = payload.deviceName || device.name || "Mobile";
-    socket.emit("pair-result", { ok: true, deviceName: device.name });
+    device.isAdmin = adminDeviceIds.has(device.id) || adminDeviceNames.has(device.name);
+    socket.emit("pair-result", { ok: true, deviceName: device.name, isAdmin: device.isAdmin });
     notifyController("mobile-connected", device);
     broadcastDevicesUpdated();
   });
@@ -1303,10 +1323,26 @@ io.on("connection", (socket) => {
     broadcastDevicesUpdated();
   });
 
-  // Task 3: Secondary Voice Input (FR-3.35 - FR-3.40)
+  // Task 3: Secondary Voice Input (FR-3.35 - FR-3.40) (Admin Only for Controller & Mic)
   socket.on("mobile-audio", async (payload = {}, ack = () => {}) => {
     if (!isPaired(socket.id)) {
       ack({ ok: false, error: "Pairing required before sending voice audio" });
+      return;
+    }
+
+    const isDeviceAdmin =
+      adminDeviceIds.has(device.id) ||
+      adminDeviceNames.has(device.name) ||
+      !!device.isAdmin;
+    if (!isDeviceAdmin) {
+      console.warn(
+        `[Remote Voice] Blocked non-admin device ${device.name} (${socket.id}) from controller/mic mode`,
+      );
+      ack({
+        ok: false,
+        error:
+          "Unauthorized: Controller Voice and Wireless Mic modes are strictly for Admin devices.",
+      });
       return;
     }
 
@@ -1610,7 +1646,7 @@ io.on("connection", (socket) => {
   });
 
   // Handle commands from mobile — gated by pairing (NFR-26)
-  socket.on("mobile-action", async (action) => {
+  socket.on("mobile-action", async (action, ack = () => {}) => {
     if (!isPaired(socket.id)) {
       console.warn(
         "[Remote] blocked unpaired mobile-action from",
@@ -1627,10 +1663,53 @@ io.on("connection", (socket) => {
       socket.emit("pair-required", {
         message: "Pairing required before control commands",
       });
+      if (typeof ack === "function") ack({ ok: false, error: "Pairing required" });
       return;
     }
 
     console.log("Action received from mobile:", action);
+
+    // Stage Master Control — authorized for mobile admins only
+    if (action.type === "stage-control") {
+      const isDeviceAdmin =
+        adminDeviceIds.has(device.id) ||
+        adminDeviceNames.has(device.name) ||
+        !!device.isAdmin;
+      if (!isDeviceAdmin) {
+        console.warn(
+          `[Remote] Unauthorized stage-control action attempted by non-admin ${device.name} (${socket.id})`,
+        );
+        socket.emit("mobile-action-result", {
+          ok: false,
+          error:
+            "Unauthorized: Admin privileges required for Stage Master Control",
+        });
+        if (typeof ack === "function") {
+          ack({
+            ok: false,
+            error:
+              "Unauthorized: Admin privileges required for Stage Master Control",
+          });
+        }
+        return;
+      }
+
+      console.log(
+        `[Remote Stage Control] Admin ${device.name} executed:`,
+        action.command,
+      );
+      BrowserWindow.getAllWindows().forEach((w) => {
+        if (!w.isDestroyed()) {
+          w.webContents.send("mobile-action", action);
+        }
+      });
+      if (typeof ack === "function") ack({ ok: true, command: action.command });
+      socket.emit("mobile-action-result", {
+        ok: true,
+        command: action.command,
+      });
+      return;
+    }
 
     if (action.type === "bible-get-books") {
       console.log("Fetching books for mobile...");
@@ -1734,7 +1813,16 @@ ipcMain.handle("get-server-info", async () => {
   return {
     ip: serverIp,
     port: PORT,
-    devices: connectedDevices.filter((d) => d.paired),
+    devices: connectedDevices.map((d) => ({
+      id: d.id,
+      ip: d.ip,
+      name: d.name,
+      paired: !!d.paired,
+      status: d.paired ? "connected" : "pending",
+      isAdmin: adminDeviceIds.has(d.id) || adminDeviceNames.has(d.name) || !!d.isAdmin,
+      isVoiceActive: !!d.isVoiceActive,
+      connectedAt: d.connectedAt,
+    })),
     pairingCode: pairing.code,
     pairingQrDataUrl,
   };
@@ -1748,8 +1836,53 @@ ipcMain.handle("pairing-rotate", async () => {
     port: PORT,
     pairingCode: pairing.code,
     pairingQrDataUrl,
-    devices: connectedDevices.filter((d) => d.paired),
+    devices: connectedDevices.map((d) => ({
+      id: d.id,
+      ip: d.ip,
+      name: d.name,
+      paired: !!d.paired,
+      status: d.paired ? "connected" : "pending",
+      isAdmin: adminDeviceIds.has(d.id) || adminDeviceNames.has(d.name) || !!d.isAdmin,
+      isVoiceActive: !!d.isVoiceActive,
+      connectedAt: d.connectedAt,
+    })),
   };
+});
+
+ipcMain.handle("mobile-device-set-admin", async (_event, { deviceId, isAdmin }) => {
+  const dev = connectedDevices.find((d) => d.id === deviceId);
+  if (dev) {
+    dev.isAdmin = !!isAdmin;
+    if (isAdmin) {
+      adminDeviceIds.add(dev.id);
+      if (dev.name) adminDeviceNames.add(dev.name);
+    } else {
+      adminDeviceIds.delete(dev.id);
+      if (dev.name) adminDeviceNames.delete(dev.name);
+    }
+    const sock = io.sockets.sockets.get(deviceId);
+    if (sock) sock.emit("device-role-updated", { isAdmin: dev.isAdmin });
+    broadcastDevicesUpdated();
+    return { ok: true, isAdmin: dev.isAdmin };
+  }
+  return { ok: false, error: "Device not found" };
+});
+
+ipcMain.handle("mobile-device-remove", async (_event, deviceId) => {
+  const devIndex = connectedDevices.findIndex((d) => d.id === deviceId);
+  if (devIndex !== -1) {
+    const dev = connectedDevices[devIndex];
+    adminDeviceIds.delete(deviceId);
+    if (dev.name) adminDeviceNames.delete(dev.name);
+    connectedDevices.splice(devIndex, 1);
+  }
+  const sock = io.sockets.sockets.get(deviceId);
+  if (sock) {
+    sock.emit("pair-required", { message: "Device pairing has been removed by the controller operator" });
+    sock.disconnect(true);
+  }
+  broadcastDevicesUpdated();
+  return { ok: true };
 });
 
 ipcMain.handle("mobile-device-rename", async (_event, { deviceId, name }) => {
@@ -2756,6 +2889,25 @@ ipcMain.handle("settings-reset-defaults", async () => {
   }
   return reset;
 });
+ipcMain.handle("settings:get-login-item", () => {
+  try {
+    return app.getLoginItemSettings().openAtLogin;
+  } catch (_) {
+    return false;
+  }
+});
+ipcMain.handle("settings:set-login-item", async (_event, enabled) => {
+  try {
+    app.setLoginItemSettings({
+      openAtLogin: !!enabled,
+      openAsHidden: false,
+    });
+    await appSettings.save({ startAtLogin: !!enabled });
+    return { ok: true, openAtLogin: !!enabled };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
 
 // ── NDI & Broadcast Streaming Handlers ─────────────────────────────────────────
 ipcMain.handle("ndi:get-status", () => ndiEngine.getStatus());
@@ -2834,8 +2986,19 @@ ipcMain.handle("auth:simulate-callback", async (_event, customUrl) => {
 });
 ipcMain.handle("auth:logout", async () => {
   await authService.logout();
-  // Offline-first: controller stays open. Broadcast logged-out state so
-  // SidebarAccount and DisabledContainer react in-place without a full window swap.
+  if (controllerWindow && !controllerWindow.isDestroyed()) {
+    controllerWindow.close();
+    controllerWindow = null;
+  }
+  if (speakerWindow && !speakerWindow.isDestroyed()) {
+    speakerWindow.close();
+    speakerWindow = null;
+  }
+  if (generalWindow && !generalWindow.isDestroyed()) {
+    generalWindow.close();
+    generalWindow = null;
+  }
+  showLoginWindow();
   broadcastAuthStatus();
   return { ok: true };
 });
@@ -2911,9 +3074,6 @@ app.whenReady().then(async () => {
   // Minimum splash display duration for smooth branding transition (FR-13.2)
   await new Promise((r) => setTimeout(r, 1200));
 
-  // Offline-first launch (FR-13.1 revised): controller always opens directly.
-  // Auth state is surfaced in the UI via SidebarAccount + DisabledContainer;
-  // the app does NOT block on a separate login window.
   const authCheck = authService.checkSession();
   console.log(
     "[Auth] Session check on launch:",
@@ -2926,9 +3086,12 @@ app.whenReady().then(async () => {
     splashWindow = null;
   }
 
-  createWindows();
-  // Broadcast current auth status to all newly opened windows
-  setTimeout(() => broadcastAuthStatus(), 500);
+  if (authCheck.valid) {
+    createWindows();
+    setTimeout(() => broadcastAuthStatus(), 500);
+  } else {
+    showLoginWindow();
+  }
 });
 
 app.on("web-contents-created", (_event, contents) => {

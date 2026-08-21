@@ -14,11 +14,16 @@ interface SocketState {
     socket: Socket | null;
     isConnected: boolean;
     isPaired: boolean;
+    isAdmin: boolean;
     serverIp: string;
+    lastHost: string;
+    lastCode: string;
+    lastPort: number;
     deviceName: string;
     connectionError: string | null;
     setDeviceName: (name: string) => void;
     connect: (ip: string, pairingCode?: string, customPort?: number) => void;
+    reconnectLastSession: () => void;
     disconnect: () => void;
     sendAsset: (asset: AssetPayload) => Promise<{ ok: boolean; error?: string; message?: string; role?: string }>;
     setVoiceActive: (active: boolean) => void;
@@ -30,13 +35,18 @@ interface SocketState {
     streamMicChunk: (payload: { volume: number; active: boolean }) => void;
     clearIncomingIntercom: () => void;
     sendScene: (scene: any) => Promise<{ ok: boolean; error?: string; message?: string; scene?: any }>;
+    sendStageControl: (command: string, payload?: any) => Promise<{ ok: boolean; error?: string }>;
 }
 
 export const useSocketStore = create<SocketState>((set, get) => ({
     socket: null,
     isConnected: false,
     isPaired: false,
+    isAdmin: false,
     serverIp: '',
+    lastHost: '',
+    lastCode: '',
+    lastPort: 4000,
     deviceName: 'Mobile Companion',
     connectionError: null,
     peers: [],
@@ -137,18 +147,36 @@ export const useSocketStore = create<SocketState>((set, get) => ({
             socket.emit('pair', { code, token: code, deviceName: get().deviceName || 'Mobile Companion' });
         });
 
-        socket.on('pair-result', (result: { ok: boolean; error?: string; deviceName?: string }) => {
+        socket.on('pair-result', (result: { ok: boolean; error?: string; deviceName?: string; isAdmin?: boolean }) => {
             if (result?.ok) {
-                set({ isPaired: true, connectionError: null });
+                set({
+                    isPaired: true,
+                    connectionError: null,
+                    lastHost: host,
+                    lastCode: code,
+                    lastPort: targetPort,
+                    serverIp: host,
+                });
                 if (result.deviceName) {
                     set({ deviceName: result.deviceName });
+                }
+                if (result.isAdmin != null) {
+                    set({ isAdmin: !!result.isAdmin });
                 }
                 get().fetchPeers();
             } else {
                 set({
                     isPaired: false,
+                    isAdmin: false,
                     connectionError: result?.error || 'Invalid pairing code',
                 });
+            }
+        });
+
+        socket.on('device-role-updated', (payload: { isAdmin?: boolean }) => {
+            console.log('[Remote] Role updated from desktop:', payload);
+            if (payload?.isAdmin != null) {
+                set({ isAdmin: !!payload.isAdmin });
             }
         });
 
@@ -183,6 +211,13 @@ export const useSocketStore = create<SocketState>((set, get) => ({
         });
 
         set({ socket, serverIp: ip });
+    },
+    reconnectLastSession: () => {
+        const { lastHost, lastCode, lastPort, connect } = get();
+        if (lastHost && lastCode) {
+            console.log(`[Remote Socket] Reconnecting to ${lastHost}:${lastPort || 4000}...`);
+            connect(lastHost, lastCode, lastPort || 4000);
+        }
     },
     disconnect: () => {
         const { socket } = get();
@@ -254,5 +289,30 @@ export const useSocketStore = create<SocketState>((set, get) => ({
                 }
             });
         });
-    }
+    },
+    sendStageControl: (command: string, payload?: any): Promise<{ ok: boolean; error?: string }> => {
+        return new Promise((resolve) => {
+            const { socket, isPaired, isAdmin } = get();
+            if (!socket || !socket.connected || !isPaired) {
+                resolve({ ok: false, error: 'Must be connected and paired with desktop' });
+                return;
+            }
+            if (!isAdmin) {
+                resolve({ ok: false, error: 'Admin access required for Stage Master Control' });
+                return;
+            }
+
+            socket.emit('mobile-action', {
+                type: 'stage-control',
+                command,
+                payload,
+            }, (response: { ok: boolean; error?: string }) => {
+                if (response?.ok) {
+                    resolve({ ok: true });
+                } else {
+                    resolve({ ok: false, error: response?.error || 'Command execution failed' });
+                }
+            });
+        });
+    },
 }));

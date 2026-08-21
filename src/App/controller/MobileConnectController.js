@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
   PiDeviceMobile,
   PiWarning,
@@ -7,6 +7,12 @@ import {
   PiPencilSimple,
   PiCheck,
   PiMicrophone,
+  PiDotsThreeVertical,
+  PiShieldCheck,
+  PiShield,
+  PiPower,
+  PiTrash,
+  PiUserMinus,
 } from "react-icons/pi";
 import DisabledContainer from "../components/DisabledContainer";
 
@@ -22,6 +28,8 @@ function MobileConnectPanel() {
   const [rejectedAttempts, setRejectedAttempts] = useState(0);
   const [editingDeviceId, setEditingDeviceId] = useState(null);
   const [editNameText, setEditNameText] = useState("");
+  const [activeMenuDeviceId, setActiveMenuDeviceId] = useState(null);
+  const menuRef = useRef(null);
 
   const applyInfo = (info) => {
     setServerInfo({
@@ -64,6 +72,43 @@ function MobileConnectPanel() {
     }
     setEditingDeviceId(null);
   };
+
+  const toggleAdmin = async (device) => {
+    setActiveMenuDeviceId(null);
+    if (window.electron?.Network?.setDeviceAdmin) {
+      const nextAdminState = !device.isAdmin;
+      await window.electron.Network.setDeviceAdmin(device.id, nextAdminState);
+      setConnectedDevices((prev) =>
+        prev.map((d) => (d.id === device.id ? { ...d, isAdmin: nextAdminState } : d)),
+      );
+    }
+  };
+
+  const handleDisconnect = (deviceId) => {
+    setActiveMenuDeviceId(null);
+    if (window.electron?.Network?.disconnectDevice) {
+      window.electron.Network.disconnectDevice(deviceId);
+    }
+  };
+
+  const handleRemoveUser = async (deviceId) => {
+    setActiveMenuDeviceId(null);
+    if (window.electron?.Network?.removeDevice) {
+      await window.electron.Network.removeDevice(deviceId);
+      setConnectedDevices((prev) => prev.filter((d) => d.id !== deviceId));
+    }
+  };
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (menuRef.current && !menuRef.current.contains(e.target)) {
+        setActiveMenuDeviceId(null);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
 
   useEffect(() => {
     refreshInfo();
@@ -216,96 +261,185 @@ function MobileConnectPanel() {
             {connectedDevices.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-48 text-white/30 gap-2">
                 <PiDeviceMobile size={48} />
-                <p>No paired devices</p>
+                <p>No connected devices</p>
               </div>
             ) : (
-              <div className="space-y-3">
-                {connectedDevices.map((device, idx) => (
-                  <div
-                    key={device.id || idx}
-                    className="flex items-center justify-between p-4 bg-white/5 rounded-xl border border-white/5 hover:border-white/10 transition-colors"
-                  >
-                    <div className="flex items-center gap-3 flex-1 min-w-0 mr-3">
-                      <div
-                        className={`w-10 h-10 rounded-full text-white flex items-center justify-center flex-shrink-0 ${
-                          device.isVoiceActive
-                            ? "bg-amber-500/20 text-amber-400 border border-amber-500/40 animate-pulse"
-                            : "bg-green-500/20 text-green-400"
-                        }`}
-                      >
-                        {device.isVoiceActive ? (
-                          <PiMicrophone size={20} />
-                        ) : (
-                          <PiDeviceMobile size={20} />
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        {editingDeviceId === device.id ? (
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              value={editNameText}
-                              onChange={(e) => setEditNameText(e.target.value)}
-                              onKeyDown={(e) =>
-                                e.key === "Enter" && saveRename(device.id)
-                              }
-                              autoFocus
-                              className="bg-black/50 border border-blue-500/50 text-white px-2 py-0.5 rounded text-sm font-bold w-40"
-                            />
-                            <button
-                              onClick={() => saveRename(device.id)}
-                              className="p-1 bg-blue-600 hover:bg-blue-500 text-white rounded"
-                              title="Save Name"
-                            >
-                              <PiCheck size={14} />
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-2 group">
-                            <span
-                              className="font-bold text-white text-sm truncate"
-                              title={device.name}
-                            >
-                              {device.name || `Device ${idx + 1}`}
-                            </span>
-                            <button
-                              onClick={() => startRename(device)}
-                              className="opacity-0 group-hover:opacity-100 text-white/40 hover:text-white p-0.5 transition-opacity"
-                              title="Rename Device"
-                            >
-                              <PiPencilSimple size={14} />
-                            </button>
-                          </div>
-                        )}
-                        <div className="text-xs text-white/40 font-mono truncate">
-                          {device.ip || device.id}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      {device.isVoiceActive && (
-                        <div className="flex items-center gap-1.5 text-xs text-white bg-amber-500/10 px-2 py-1 rounded-[4px] border border-amber-500/20 animate-pulse">
-                          <div className="w-1.5 h-1.5 bg-amber-400 rounded-full"></div>
-                          Mic Live
-                        </div>
-                      )}
-                      {window.electron?.Network?.disconnectDevice && (
-                        <button
-                          onClick={() =>
-                            window.electron.Network.disconnectDevice(device.id)
-                          }
-                          className="text-xs text-red hover:text-red-300 px-2 py-1 rounded-[4px] border border-red-500/20 hover:bg-red-500/10 transition-colors"
+              <div className="space-y-3" ref={menuRef}>
+                {connectedDevices.map((device, idx) => {
+                  const isPending = device.status === "pending" || !device.paired;
+                  const isMenuOpen = activeMenuDeviceId === device.id;
+
+                  return (
+                    <div
+                      key={device.id || idx}
+                      className={`flex items-center justify-between p-4 rounded-xl border transition-all relative ${
+                        isPending
+                          ? "bg-amber-500/5 border-amber-500/20 hover:border-amber-500/40"
+                          : "bg-white/5 border-white/5 hover:border-white/10"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 flex-1 min-w-0 mr-3">
+                        <div
+                          className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
+                            device.isVoiceActive
+                              ? "bg-amber-500/20 text-amber-400 border border-amber-500/40 animate-pulse"
+                              : isPending
+                                ? "bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                                : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                          }`}
                         >
-                          Disconnect
-                        </button>
-                      )}
-                      {/* paired status */}
-                      <div className="w-4 h-4 border border-green bg-green/20 rounded-full flex items-center justify-center">
-                        <div className="w-1.5 h-1.5 bg-green rounded-full animate-pulse"></div>
+                          {device.isVoiceActive ? (
+                            <PiMicrophone size={20} />
+                          ) : (
+                            <PiDeviceMobile size={20} />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          {editingDeviceId === device.id ? (
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={editNameText}
+                                onChange={(e) => setEditNameText(e.target.value)}
+                                onKeyDown={(e) =>
+                                  e.key === "Enter" && saveRename(device.id)
+                                }
+                                autoFocus
+                                className="bg-black/50 border border-blue-500/50 text-white px-2 py-0.5 rounded text-sm font-bold w-40"
+                              />
+                              <button
+                                onClick={() => saveRename(device.id)}
+                                className="p-1 bg-blue-600 hover:bg-blue-500 text-white rounded"
+                                title="Save Name"
+                              >
+                                <PiCheck size={14} />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 group">
+                              <span
+                                className="font-bold text-white text-sm truncate"
+                                title={device.name}
+                              >
+                                {device.name || `Device ${idx + 1}`}
+                              </span>
+                              {device.isAdmin && (
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-purple-500/20 border border-purple-500/40 text-purple-300 shadow-sm">
+                                  Admin
+                                </span>
+                              )}
+                              <button
+                                onClick={() => startRename(device)}
+                                className="opacity-0 group-hover:opacity-100 text-white/40 hover:text-white p-0.5 transition-opacity"
+                                title="Rename Device"
+                              >
+                                <PiPencilSimple size={14} />
+                              </button>
+                            </div>
+                          )}
+                          <div className="flex items-center gap-2 text-xs text-white/40 font-mono truncate mt-0.5">
+                            <span>{device.ip || device.id}</span>
+                            <span>•</span>
+                            <span className={isPending ? "text-amber-400/90 font-sans font-semibold" : "text-emerald-400/90 font-sans font-semibold"}>
+                              {isPending ? "Pending Connection" : "Paired & Active"}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-3 flex-shrink-0">
+                        {device.isVoiceActive && (
+                          <div className="flex items-center gap-1.5 text-xs text-white bg-amber-500/10 px-2 py-1 rounded-[4px] border border-amber-500/20 animate-pulse">
+                            <div className="w-1.5 h-1.5 bg-amber-400 rounded-full"></div>
+                            Mic Live
+                          </div>
+                        )}
+
+                        {/* Status Indicator Beacon: Yellow if pending, Green if paired/online */}
+                        <div
+                          className={`w-3.5 h-3.5 rounded-full flex items-center justify-center border ${
+                            isPending
+                              ? "border-amber-400 bg-amber-500/20"
+                              : "border-emerald-400 bg-emerald-500/20"
+                          }`}
+                          title={isPending ? "Pending Connection (Unpaired)" : "Online (Paired)"}
+                        >
+                          <div
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              isPending
+                                ? "bg-amber-400 animate-pulse"
+                                : "bg-emerald-400"
+                            }`}
+                          />
+                        </div>
+
+                        {/* 3-Dots Action Dropdown Menu */}
+                        <div className="relative">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setActiveMenuDeviceId(isMenuOpen ? null : device.id)
+                            }
+                            className={`p-2 rounded-lg border transition-all ${
+                              isMenuOpen
+                                ? "bg-white/20 border-white/30 text-white shadow-lg"
+                                : "bg-white/5 hover:bg-white/15 border-white/10 text-white/70 hover:text-white"
+                            }`}
+                            title="Device Actions"
+                          >
+                            <PiDotsThreeVertical size={16} />
+                          </button>
+
+                          {/* Floating Dropdown */}
+                          {isMenuOpen && (
+                            <div className="absolute right-0 top-10 w-48 bg-[#181622] border border-white/15 rounded-xl shadow-2xl z-50 py-1.5 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150">
+                              {/* Set as Admin / Remove Admin */}
+                              <button
+                                type="button"
+                                onClick={() => toggleAdmin(device)}
+                                className="w-full px-3.5 py-2 text-left text-xs font-semibold flex items-center gap-2.5 hover:bg-white/10 text-white transition-colors"
+                              >
+                                {device.isAdmin ? (
+                                  <>
+                                    <PiShield size={15} className="text-amber-400" />
+                                    <span>Demote to Member</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <PiShieldCheck size={15} className="text-purple-400" />
+                                    <span>Set as Admin</span>
+                                  </>
+                                )}
+                              </button>
+
+                              {/* Disconnect */}
+                              <button
+                                type="button"
+                                onClick={() => handleDisconnect(device.id)}
+                                className="w-full px-3.5 py-2 text-left text-xs font-semibold flex items-center gap-2.5 hover:bg-white/10 text-amber-300 transition-colors"
+                              >
+                                <PiPower size={15} className="text-amber-400" />
+                                <span>Disconnect</span>
+                              </button>
+
+                              <div className="my-1 border-t border-white/10" />
+
+                              {/* Remove this user */}
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveUser(device.id)}
+                                className="w-full px-3.5 py-2 text-left text-xs font-semibold flex items-center gap-2.5 hover:bg-red-500/20 text-red-400 transition-colors"
+                              >
+                                <PiTrash size={15} className="text-red-400" />
+                                <span>Remove this user</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

@@ -417,14 +417,45 @@ export default function MiniPreview({ mode }) {
         </div>
     );
 
-    const renderIdleScreen = () => (
-        <div className="w-full h-full flex items-center justify-center bg-[#282828]">
-            <div className="flex flex-col items-center animate-pulse scale-75">
-                <h1 className="text-5xl font-black text-white tracking-tighter leading-none opacity-20">OCS</h1>
-                <p className="text-white/30 text-xs font-bold tracking-[0.5em] uppercase mt-2">Service is Starting</p>
+    const renderIdleScreen = () => {
+        const bgImg = presentationStyle.backgroundImage;
+        const bgVid = presentationStyle.backgroundVideo;
+        const bgColor = presentationStyle.backgroundColor || '#0B0814';
+
+        if (bgImg) {
+            return (
+                <div className="w-full h-full relative overflow-hidden bg-black flex items-center justify-center">
+                    <img
+                        src={bgImg}
+                        className="w-full h-full object-cover absolute inset-0"
+                        alt="bg"
+                    />
+                </div>
+            );
+        }
+        if (bgVid) {
+            return (
+                <div className="w-full h-full relative overflow-hidden bg-black flex items-center justify-center">
+                    <video
+                        src={bgVid}
+                        autoPlay
+                        loop
+                        muted
+                        playsInline
+                        className="w-full h-full object-cover absolute inset-0"
+                    />
+                </div>
+            );
+        }
+        return (
+            <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: bgColor }}>
+                <div className="flex flex-col items-center animate-pulse scale-75">
+                    <h1 className="text-5xl font-black text-white tracking-tighter leading-none opacity-20">OCS</h1>
+                    <p className="text-white/30 text-xs font-bold tracking-[0.5em] uppercase mt-2">Service is Starting</p>
+                </div>
             </div>
-        </div>
-    );
+        );
+    };
 
     const renderTimeUp = () => (
         <div className="w-full h-full flex items-center justify-center bg-red-600 animate-pulse">

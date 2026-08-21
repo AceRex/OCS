@@ -270,6 +270,8 @@ contextBridge.exposeInMainWorld("electron", {
     getServerInfo: () => ipcRenderer.invoke('get-server-info'),
     rotatePairing: () => ipcRenderer.invoke('pairing-rotate'),
     disconnectDevice: (deviceId) => ipcRenderer.send('mobile-disconnect-device', deviceId),
+    removeDevice: (deviceId) => ipcRenderer.invoke('mobile-device-remove', deviceId),
+    setDeviceAdmin: (deviceId, isAdmin) => ipcRenderer.invoke('mobile-device-set-admin', { deviceId, isAdmin }),
     onMobileConnected: (callback) => {
       const listener = (event, val) => callback(val);
       ipcRenderer.on('mobile-connected', listener);
@@ -396,6 +398,8 @@ contextBridge.exposeInMainWorld("electron", {
     get: () => ipcRenderer.invoke('settings-get'),
     set: (patch) => ipcRenderer.invoke('settings-set', patch),
     resetDefaults: () => ipcRenderer.invoke('settings-reset-defaults'),
+    getLoginItem: () => ipcRenderer.invoke('settings:get-login-item'),
+    setLoginItem: (enabled) => ipcRenderer.invoke('settings:set-login-item', enabled),
     onUpdated: (callback) => {
       const listener = (_e, payload) => callback(payload);
       ipcRenderer.on('settings-updated', listener);

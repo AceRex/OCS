@@ -170,52 +170,77 @@ export default function DisplayCanvas({
           }
         }
 
-        const activeVersion = (version || translation || data?.versionKey || "KJV").toUpperCase();
+        const activeVersion = (version || translation || data?.versionKey || canvasState?.translation || "KJV").toUpperCase();
+        const activeServiceLabel = data?.bibleServiceLabel || data?.serviceLabel || canvasState?.serviceLabel || canvasState?.bibleServiceLabel || "";
         const activeIdx =
           typeof readAlong?.activeIndex === "number" ? readAlong.activeIndex : -1;
 
+        const refPosition = canvasState?.bibleRefPosition || data?.bibleRefPosition || "top-center";
+        const bodyPosition = canvasState?.bibleBodyPosition || data?.bibleBodyPosition || "center";
+        const showOrbs = canvasState?.bibleShowOrbs !== false && data?.bibleShowOrbs !== false;
+
+        const refPositionMap = {
+          'top-center': 'top-[3.5vw] left-1/2 -translate-x-1/2 justify-center',
+          'top-left': 'top-[3.5vw] left-[4vw] justify-start',
+          'top-right': 'top-[3.5vw] right-[4vw] justify-end',
+          'bottom-center': 'bottom-[3.5vw] left-1/2 -translate-x-1/2 justify-center',
+          'bottom-left': 'bottom-[3.5vw] left-[4vw] justify-start',
+          'bottom-right': 'bottom-[3.5vw] right-[4vw] justify-end',
+        };
+
+        const bodyAlignMap = {
+          'center': 'items-center justify-center text-center mx-auto my-auto',
+          'bottom-left': 'items-start justify-end text-left mr-auto mt-auto mb-[6vw] pl-[4vw]',
+          'bottom-right': 'items-end justify-end text-right ml-auto mt-auto mb-[6vw] pr-[4vw]',
+        };
+
+        const refPosClass = refPositionMap[refPosition] || refPositionMap['top-center'];
+        const bodyAlign = bodyAlignMap[bodyPosition] || bodyAlignMap['center'];
+        const bodyTextAlign = bodyPosition === 'bottom-left' ? 'text-left' : bodyPosition === 'bottom-right' ? 'text-right' : 'text-center';
+
         return (
           <div
-            className="w-full h-full relative z-10 flex flex-col justify-between items-center p-[4%] pointer-events-none select-none overflow-hidden bg-[#07060e]"
+            className="w-full h-full relative z-10 flex flex-col items-center justify-center p-[4%] pointer-events-none select-none overflow-hidden bg-[#07060e]"
             style={{ containerType: "size" }}
           >
             {/* Ambient Background Glows */}
-            <div className="absolute -top-[20%] -left-[10%] w-[50%] h-[55%] rounded-full bg-purple-600/20 blur-[90px] pointer-events-none" />
-            <div className="absolute -bottom-[20%] -right-[10%] w-[50%] h-[55%] rounded-full bg-teal-500/20 blur-[90px] pointer-events-none" />
+            {showOrbs && (
+              <>
+                <div className="absolute -top-[20%] -left-[10%] w-[50%] h-[55%] rounded-full bg-purple-600/20 blur-[90px] pointer-events-none" />
+                <div className="absolute -bottom-[20%] -right-[10%] w-[50%] h-[55%] rounded-full bg-teal-500/20 blur-[90px] pointer-events-none" />
+              </>
+            )}
 
-            {/* Top Spacer */}
-            <div className="h-2" />
+            {/* Header Reference Line */}
+            {bookLabel && (
+              <div className={`absolute z-20 flex items-center gap-3 ${refPosClass} text-[clamp(11px,1.3cqw,1.4vw)] font-extrabold tracking-[0.25em] uppercase whitespace-nowrap`}>
+                <span className="text-[#38bdf8] drop-shadow-[0_0_12px_rgba(56,189,248,0.4)]">
+                  {bookLabel}
+                </span>
+                {chapterStr && (
+                  <>
+                    <span className="text-indigo-400/60 font-black">•</span>
+                    <span className="text-[#a78bfa]">
+                      CHAPTER {chapterStr}
+                    </span>
+                  </>
+                )}
+                {verseStr && (
+                  <>
+                    <span className="text-indigo-400/60 font-black">•</span>
+                    <span className="text-[#a78bfa]">
+                      VERSE{verseStr.includes("-") || verseStr.includes(",") ? "S" : ""} {verseStr}
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
 
             {/* Main Centered Content */}
-            <div className="flex flex-col items-center justify-center text-center my-auto w-full max-w-[88%] z-20 gap-6">
-              {/* Header Reference Line: JOHN  •  CHAPTER 3  •  VERSE 16 */}
-              {bookLabel && (
-                <div className="flex items-center justify-center gap-3 text-[clamp(11px,1.3cqw,1.4vw)] font-extrabold tracking-[0.25em] uppercase whitespace-nowrap">
-                  <span className="text-[#38bdf8] drop-shadow-[0_0_12px_rgba(56,189,248,0.4)]">
-                    {bookLabel}
-                  </span>
-                  {chapterStr && (
-                    <>
-                      <span className="text-indigo-400/60 font-black">•</span>
-                      <span className="text-[#a78bfa]">
-                        CHAPTER {chapterStr}
-                      </span>
-                    </>
-                  )}
-                  {verseStr && (
-                    <>
-                      <span className="text-indigo-400/60 font-black">•</span>
-                      <span className="text-[#a78bfa]">
-                        VERSE{verseStr.includes("-") || verseStr.includes(",") ? "S" : ""} {verseStr}
-                      </span>
-                    </>
-                  )}
-                </div>
-              )}
-
+            <div className={`flex flex-col ${bodyAlign} w-full max-w-[88%] z-20 gap-6`}>
               {/* Scripture Body Text wrapped in quotes */}
               <div
-                className="leading-snug font-extrabold text-center drop-shadow-[0_4px_16px_rgba(0,0,0,0.9)] text-white w-full tracking-tight"
+                className={`leading-snug font-extrabold ${bodyTextAlign} drop-shadow-[0_4px_16px_rgba(0,0,0,0.9)] text-white w-full tracking-tight mx-auto`}
                 style={{ fontSize }}
               >
                 "{useReadAlong
@@ -242,10 +267,18 @@ export default function DisplayCanvas({
               </div>
             </div>
 
-            {/* Footer Translation Label: KJV */}
-            <div className="z-20 mb-1 text-[clamp(9px,0.9cqw,1vw)] font-mono font-bold tracking-[0.3em] text-white/35 uppercase">
-              {activeVersion}
-            </div>
+            {/* Footer Translation & Service Label */}
+            {!refPosition?.startsWith('bottom') && (
+              <div className="absolute bottom-[2vw] left-1/2 -translate-x-1/2 z-20 flex items-center justify-center gap-2 text-[clamp(9px,0.9cqw,1vw)] font-mono font-bold tracking-[0.2em] text-white/35 uppercase">
+                <span>{activeVersion}</span>
+                {activeServiceLabel && (
+                  <>
+                    <span className="text-white/20">•</span>
+                    <span className="text-white/30">{activeServiceLabel}</span>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         );
       }

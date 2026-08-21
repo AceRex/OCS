@@ -470,6 +470,10 @@ function App({ mode: propMode }) {
             bg.type = 'color';
             bg.color = value.backgroundColor;
           }
+          if (value.backgroundImage === null && value.backgroundVideo === null) {
+            bg.type = 'color';
+            bg.url = null;
+          }
           if (value.backgroundX != null) bg.panX = value.backgroundX - 50;
           if (value.backgroundY != null) bg.panY = value.backgroundY - 50;
           return {
@@ -495,6 +499,12 @@ function App({ mode: propMode }) {
                 bg.type = 'color';
                 bg.color = initialStyle.backgroundColor;
               }
+              if (initialStyle.backgroundImage === null && initialStyle.backgroundVideo === null) {
+                bg.type = 'color';
+                bg.url = null;
+              }
+              if (initialStyle.backgroundX != null) bg.panX = initialStyle.backgroundX - 50;
+              if (initialStyle.backgroundY != null) bg.panY = initialStyle.backgroundY - 50;
               return { ...prev, background: bg };
             });
           }
@@ -655,9 +665,28 @@ function App({ mode: propMode }) {
   }, [countdown]);
 
   const renderPresentation = () => {
+    const effectiveCanvasState = {
+      ...canvasState,
+      background: {
+        ...canvasState.background,
+        type: presentationStyle.backgroundVideo
+          ? 'video'
+          : (presentationStyle.backgroundImage ? 'image' : (canvasState.background?.type || 'color')),
+        url: presentationStyle.backgroundVideo || presentationStyle.backgroundImage || canvasState.background?.url || null,
+        color: presentationStyle.backgroundColor || canvasState.background?.color || '#000000',
+      },
+      serviceLabel: presentationStyle.bibleServiceLabel || '',
+      bibleServiceLabel: presentationStyle.bibleServiceLabel || '',
+      translation: presentationStyle.bibleTranslation || 'KJV',
+      bibleRefPosition: presentationStyle.bibleRefPosition || 'top-center',
+      bibleBodyPosition: presentationStyle.bibleBodyPosition || 'center',
+      bibleShowOrbs: presentationStyle.bibleShowOrbs !== false,
+      textColor: presentationStyle.textColor || '#FFFFFF',
+      fontFamily: presentationStyle.fontFamily || 'Outfit',
+    };
     return (
       <DisplayCanvas
-        canvasState={canvasState}
+        canvasState={effectiveCanvasState}
         mode={viewMode || 'general'}
       />
     );
@@ -703,11 +732,31 @@ function App({ mode: propMode }) {
   );
 
   const renderIdleScreen = () => (
-    <div className="w-full h-full flex items-center justify-center bg-primary">
-      <div className="flex flex-col items-center animate-pulse">
-        <h1 className="text-[15vw] font-black text-light tracking-tighter leading-none opacity-20">OCS</h1>
-        <p className="text-light/30 text-2xl font-medium tracking-[1em] uppercase mt-4">Service is Starting</p>
-      </div>
+    <div
+      className="w-full h-full flex items-center justify-center relative overflow-hidden"
+      style={{ backgroundColor: isAlphaMode ? 'transparent' : (presentationStyle.backgroundColor || '#000000') }}
+    >
+      {presentationStyle.backgroundImage ? (
+        <img
+          src={presentationStyle.backgroundImage}
+          className="absolute inset-0 w-full h-full object-cover"
+          alt="bg"
+        />
+      ) : presentationStyle.backgroundVideo ? (
+        <video
+          src={presentationStyle.backgroundVideo}
+          autoPlay
+          loop
+          muted
+          playsInline
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+      ) : (
+        <div className="flex flex-col items-center animate-pulse">
+          <h1 className="text-[15vw] font-black text-light tracking-tighter leading-none opacity-20">OCS</h1>
+          <p className="text-light/30 text-2xl font-medium tracking-[1em] uppercase mt-4">Service is Starting</p>
+        </div>
+      )}
     </div>
   );
 
@@ -717,8 +766,12 @@ function App({ mode: propMode }) {
     </div>
   );
 
+  const hasBackgroundMedia = Boolean(
+    (canvasState.background && canvasState.background.url != null) ||
+    presentationStyle.backgroundImage ||
+    presentationStyle.backgroundVideo
+  );
   const hasContentSlot = canvasState.contentSlot && canvasState.contentSlot.type !== 'none' && canvasState.contentSlot.data != null;
-  const hasBackgroundMedia = canvasState.background && canvasState.background.url != null;
   const hasPinnedLayers = Array.isArray(canvasState.pinnedLayers) && canvasState.pinnedLayers.length > 0;
   const hasLegacyContent = presentationContent && ['bible', 'custom', 'custom_layers', 'scene', 'presentation', 'slide_index'].includes(presentationContent.type) && presentationContent.data;
 
@@ -741,14 +794,7 @@ function App({ mode: propMode }) {
         <div className={`w-full ${showSplitTimer ? 'h-[100vh] flex-1' : 'h-screen flex flex-col items-center justify-center flex-1'} transition-all duration-500`}>
           {isPresenting ? renderPresentation() : (
             !showSplitTimer && (
-              countdown === null ? (
-                <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: isAlphaMode ? 'transparent' : '#282828' }}>
-                  <div className="flex flex-col items-center animate-pulse">
-                    <h1 className="text-[15vw] font-black text-light tracking-tighter leading-none opacity-20" style={{ color: '#F6F3F1' }}>OCS</h1>
-                    <p className="text-light/30 text-2xl font-medium tracking-[1em] uppercase mt-4" style={{ color: '#F6F3F1' }}>Service is Starting</p>
-                  </div>
-                </div>
-              ) : (
+              countdown === null ? renderIdleScreen() : (
                 // If countdown is 0 (Time Up) AND we are in Event Mode, show Idle Screen instead of "TIME UP"
                 countdown === 0 ? (isEventMode ? renderIdleScreen() : renderTimeUp()) : (
                   isEventMode ? renderEvent() : (

@@ -34,6 +34,9 @@ export default function ConnectScreen() {
     isConnected,
     isPaired,
     serverIp,
+    lastHost,
+    lastCode,
+    reconnectLastSession,
     disconnect,
     connectionError,
   } = useSocketStore();
@@ -189,6 +192,31 @@ export default function ConnectScreen() {
               <Text style={styles.subtitle}>
                 Scan the QR code on your desktop screen or enter the IP and 6-digit code.
               </Text>
+
+              {/* Quick Reconnect Option */}
+              {!ready && lastHost ? (
+                <TouchableOpacity
+                  onPress={() => reconnectLastSession()}
+                  activeOpacity={0.8}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: "rgba(168, 85, 247, 0.15)",
+                    borderWidth: 1.5,
+                    borderColor: "#C084FC",
+                    paddingVertical: 14,
+                    borderRadius: 16,
+                    marginBottom: 12,
+                    gap: 8,
+                  }}
+                >
+                  <Lightning size={20} color="#C084FC" weight="fill" />
+                  <Text style={{ color: "#FFFFFF", fontWeight: "800", fontSize: 14 }}>
+                    1-Tap Reconnect to {lastHost}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
 
               {/* Scan QR Code Button */}
               <TouchableOpacity

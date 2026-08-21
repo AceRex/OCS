@@ -28,6 +28,7 @@ import {
     PiSignOut,
     PiCpu,
     PiMonitor,
+    PiPower,
     PiX,
 } from "react-icons/pi";
 import { useAuth } from "../context/AuthContext";
@@ -142,6 +143,8 @@ export default function SettingsController() {
     // Reset confirmation modal
     const [showResetModal, setShowResetModal] = useState(false);
 
+    const [startAtLogin, setStartAtLogin] = useState(false);
+
     // Auth context for account info
     const authContext = useAuth ? useAuth() : null;
 
@@ -165,6 +168,13 @@ export default function SettingsController() {
                 } catch (e) {
                     console.error("Failed to load settings:", e);
                 }
+            }
+
+            if (window.electron?.Settings?.getLoginItem) {
+                try {
+                    const isBoot = await window.electron.Settings.getLoginItem();
+                    setStartAtLogin(!!isBoot);
+                } catch (_) {}
             }
 
             if (window.electron?.Presentation?.getStyle) {
@@ -378,6 +388,19 @@ export default function SettingsController() {
             await window.electron.Settings.set({ languageGateEnabled: !!on });
         }
         triggerSaveFeedback();
+    };
+
+    const toggleStartAtLogin = async () => {
+        const next = !startAtLogin;
+        setStartAtLogin(next);
+        if (window.electron?.Settings?.setLoginItem) {
+            try {
+                await window.electron.Settings.setLoginItem(next);
+                triggerSaveFeedback();
+            } catch (e) {
+                console.error("Failed to update start at login:", e);
+            }
+        }
     };
 
     const handleResetToDefaults = async () => {
@@ -1296,6 +1319,30 @@ export default function SettingsController() {
                                     </button>
                                 ))}
                             </div>
+                        </div>
+
+                        {/* OCS Service at System Startup */}
+                        <div className="bg-[#1A1428] border border-[#2E2542] p-6 rounded-3xl space-y-4">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <PiPower className="text-[#38BDF8]" size={20} />
+                                    <h3 className="text-sm font-black uppercase tracking-widest text-[#F5F2FA]">OCS Service Startup</h3>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={toggleStartAtLogin}
+                                    className={`w-12 h-6 rounded-full transition-colors relative flex items-center px-0.5 ${
+                                        startAtLogin ? 'bg-[#38BDF8]' : 'bg-[#2E2542]'
+                                    }`}
+                                >
+                                    <div className={`w-5 h-5 rounded-full bg-white transition-transform ${
+                                        startAtLogin ? 'translate-x-6' : 'translate-x-0'
+                                    }`} />
+                                </button>
+                            </div>
+                            <p className="text-xs text-[#8882A4] leading-relaxed">
+                                Automatically launches the OCS Presentation, Remote, and ASR service on workstation boot / login, ensuring projection screens and companion remotes are ready for service without manual start.
+                            </p>
                         </div>
 
                         {/* Workstation License Details */}

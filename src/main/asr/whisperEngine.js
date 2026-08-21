@@ -507,16 +507,19 @@ class WhisperEngine extends EventEmitter {
   }
 
   _maybeRollingProbe() {
+    // If an inference is already in flight, drop intermediate probe to prevent queue lag
+    if (this._inferInFlight || this._busy) return;
     if (!this._rollingBuf.length || this._rollingBuf.length < SAMPLE_RATE * 2 * 0.4) return;
     const buf = Buffer.from(this._rollingBuf);
     const uttId = this._activeUttId;
 
-    this._inferQueue = this._inferQueue
-      .then(async () => {
+    this._inferInFlight = true;
+    this._runTranscribe(buf)
+      .then((res) => {
+        this._inferInFlight = false;
         if (!this._inSpeech || this._activeUttId !== uttId) return;
-        const { text: raw, language, filtered } = await this._runTranscribe(buf);
-        const text = normalizeTranscript(raw);
-        if (filtered || !text || text === this._lastProbeText) return;
+        const text = normalizeTranscript(res.text);
+        if (res.filtered || !text || text === this._lastProbeText) return;
         this._lastProbeText = text;
 
         const confidence = confidenceFromResult(null, text);
@@ -528,10 +531,11 @@ class WhisperEngine extends EventEmitter {
           pass: 'W',
           utteranceId: uttId,
           role: 'probe',
-          language: language || this._lastDetectedLang,
+          language: res.language || this._lastDetectedLang,
         });
       })
       .catch((err) => {
+        this._inferInFlight = false;
         console.warn('[Whisper] probe error:', err.message || err);
       });
   }
@@ -551,27 +555,33 @@ class WhisperEngine extends EventEmitter {
 
     this._inferQueue = this._inferQueue
       .then(async () => {
-        const { text: raw, language, filtered } = await this._runTranscribe(fullBuf);
-        const text = normalizeTranscript(raw);
-        if (filtered || !text) return;
+        this._inferInFlight = true;
+        try {
+          const { text: raw, language, filtered } = await this._runTranscribe(fullBuf);
+          const text = normalizeTranscript(raw);
+          if (filtered || !text) return;
 
-        const confidence = confidenceFromResult(null, text);
-        const threshold = this._isSongMode ? 0.20 : this.confidenceThreshold;
+          const confidence = confidenceFromResult(null, text);
+          const threshold = this._isSongMode ? 0.20 : this.confidenceThreshold;
 
-        this.emit('transcript', {
-          text,
-          isFinal: true,
-          confidence,
-          source: 'primary',
-          pass: 'W',
-          utteranceId: uttId,
-          role: 'final',
-          language: language || this._lastDetectedLang,
-          ignored: confidence < threshold,
-          reason: confidence < threshold ? 'low_confidence' : undefined,
-        });
+          this.emit('transcript', {
+            text,
+            isFinal: true,
+            confidence,
+            source: 'primary',
+            pass: 'W',
+            utteranceId: uttId,
+            role: 'final',
+            language: language || this._lastDetectedLang,
+            ignored: confidence < threshold,
+            reason: confidence < threshold ? 'low_confidence' : undefined,
+          });
+        } finally {
+          this._inferInFlight = false;
+        }
       })
       .catch((err) => {
+        this._inferInFlight = false;
         console.warn('[Whisper] finalize error:', err.message || err);
       });
   }
@@ -585,8 +595,9 @@ class WhisperEngine extends EventEmitter {
     const englishOnly = !!this.modelInfo.englishOnly;
     let detected = null;
 
-    // Detect pass on multilingual tiny/base when gate is on (per-chunk, not per-session)
-    if (this._langPolicy.enabled && this._detectModel) {
+    // Detect pass on multilingual tiny/base only when gate is on AND not an English-only target
+    const isSingleEnglishTarget = this._langPolicy.languages && this._langPolicy.languages.length === 1 && this._langPolicy.languages[0] === 'en';
+    if (this._langPolicy.enabled && this._detectModel && !englishOnly && !isSingleEnglishTarget) {
       try {
         const det = await this._whisper.transcribe({
           model: this._detectModel.path,

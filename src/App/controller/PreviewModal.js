@@ -13,7 +13,9 @@ export default function PreviewModal({ isOpen, onClose, mode }) {
         textColor: '#FFFFFF',
         fontFamily: 'serif',
         backgroundImage: null,
-        backgroundVideo: null
+        backgroundVideo: null,
+        bibleTranslation: 'KJV',
+        bibleServiceLabel: ''
     });
 
     const formatTime = (timeToFormat) => {
@@ -70,6 +72,14 @@ export default function PreviewModal({ isOpen, onClose, mode }) {
             setPresentationStyle(prev => ({ ...prev, ...value }));
         });
 
+        if (electron.Presentation.getStyle) {
+            electron.Presentation.getStyle().then((initialStyle) => {
+                if (initialStyle && Object.keys(initialStyle).length > 0) {
+                    setPresentationStyle(prev => ({ ...prev, ...initialStyle }));
+                }
+            }).catch(() => {});
+        }
+
         return () => {
             electron.Timer.removeSetTimerListener();
             if (typeof unsubContent === 'function') unsubContent();
@@ -88,7 +98,7 @@ export default function PreviewModal({ isOpen, onClose, mode }) {
     // Render Helpers (Scaled down logic from View.js)
     const renderBibleContent = () => {
         if (!presentationContent || !presentationContent.data) return null;
-        const { title, body, readAlong } = presentationContent.data;
+        const { title, body, readAlong, version, translation, bibleServiceLabel: dataServiceLabel, serviceLabel } = presentationContent.data;
         const safeBody = body || "";
         const length = safeBody.length;
         const useReadAlong = !!readAlong?.enabled
@@ -103,7 +113,39 @@ export default function PreviewModal({ isOpen, onClose, mode }) {
         else if (length > 150) fontSize = 'text-[18px]';
         else if (length > 80) fontSize = 'text-[20px]';
 
-        const { backgroundColor, textColor, fontFamily, backgroundImage, backgroundVideo } = presentationStyle;
+        const {
+            backgroundColor,
+            textColor,
+            fontFamily,
+            backgroundImage,
+            backgroundVideo,
+            bibleRefPosition = 'top-center',
+            bibleBodyPosition = 'center',
+            bibleTranslation = 'KJV',
+            bibleServiceLabel = ''
+        } = presentationStyle;
+
+        const activeVersion = (version || translation || bibleTranslation || 'KJV').toUpperCase();
+        const activeLabel = dataServiceLabel || serviceLabel || bibleServiceLabel || '';
+
+        const refPositionMap = {
+            'top-center': 'top-4 left-1/2 -translate-x-1/2 justify-center',
+            'top-left': 'top-4 left-6 justify-start',
+            'top-right': 'top-4 right-6 justify-end',
+            'bottom-center': 'bottom-6 left-1/2 -translate-x-1/2 justify-center',
+            'bottom-left': 'bottom-6 left-6 justify-start',
+            'bottom-right': 'bottom-6 right-6 justify-end',
+        };
+
+        const bodyAlignMap = {
+            'center': 'items-center justify-center text-center mx-auto my-auto',
+            'bottom-left': 'items-start justify-end text-left mr-auto mt-auto mb-6 pl-6',
+            'bottom-right': 'items-end justify-end text-right ml-auto mt-auto mb-6 pr-6',
+        };
+
+        const refPosClass = refPositionMap[bibleRefPosition] || refPositionMap['top-center'];
+        const bodyAlign = bodyAlignMap[bibleBodyPosition] || bodyAlignMap['center'];
+        const bodyTextAlign = bibleBodyPosition === 'bottom-left' ? 'text-left' : bibleBodyPosition === 'bottom-right' ? 'text-right' : 'text-center';
 
         const styleObj = {
             backgroundColor: (!backgroundImage && !backgroundVideo) ? backgroundColor : 'transparent',
@@ -113,7 +155,7 @@ export default function PreviewModal({ isOpen, onClose, mode }) {
         };
 
         return (
-            <section className="w-full h-full flex flex-col items-center justify-center p-8 text-center relative overflow-hidden" style={styleObj}>
+            <section className="w-full h-full flex flex-col items-center justify-between p-6 text-center relative overflow-hidden" style={styleObj}>
                 {backgroundVideo ? (
                     <video className="absolute inset-0 w-full h-full object-cover z-0" autoPlay loop muted playsInline>
                         <source src={backgroundVideo} />
@@ -124,8 +166,14 @@ export default function PreviewModal({ isOpen, onClose, mode }) {
 
                 {(backgroundVideo || backgroundImage) && <div className="absolute inset-0 w-full h-full bg-black/40 z-1" />}
 
-                <div className="flex-1 flex flex-col items-center justify-center gap-4 z-10 relative w-full">
-                    <p className={`${fontSize} font-bold leading-tight max-w-[95%] drop-shadow-lg`}>
+                {title && (
+                    <div className={`absolute z-10 flex items-center gap-2 ${refPosClass} text-sm font-bold opacity-90 uppercase tracking-widest drop-shadow-md text-[#38bdf8]`}>
+                        {title}
+                    </div>
+                )}
+
+                <div className={`flex flex-col ${bodyAlign} gap-4 z-10 relative w-full`}>
+                    <p className={`${fontSize} font-bold leading-tight ${bodyTextAlign} max-w-[95%] drop-shadow-lg mx-auto`}>
                         {useReadAlong ? (
                             readAlong.tokens.map((tok, i) => {
                                 const isActive = i === activeIdx;
@@ -153,7 +201,19 @@ export default function PreviewModal({ isOpen, onClose, mode }) {
                         )}
                     </p>
                 </div>
-                {title && <div className="mb-4 text-sm font-medium opacity-80 uppercase tracking-widest z-10 relative drop-shadow-md">{title}</div>}
+
+                {/* Footer Translation & Service Label */}
+                {!bibleRefPosition?.startsWith('bottom') && (
+                    <div className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10 flex items-center justify-center gap-2 text-[10px] font-mono font-bold tracking-[0.2em] text-white/40 uppercase">
+                        <span>{activeVersion}</span>
+                        {activeLabel && (
+                            <>
+                                <span className="text-white/20">•</span>
+                                <span className="text-white/30">{activeLabel}</span>
+                            </>
+                        )}
+                    </div>
+                )}
             </section>
         );
     };
@@ -171,14 +231,45 @@ export default function PreviewModal({ isOpen, onClose, mode }) {
         </div>
     );
 
-    const renderIdleScreen = () => (
-        <div className="w-full h-full flex items-center justify-center bg-primary">
-            <div className="flex flex-col items-center animate-pulse scale-50">
-                <h1 className="text-6xl font-black text-light tracking-tighter leading-none opacity-20">OCS</h1>
-                <p className="text-light/30 text-lg font-medium tracking-[1em] uppercase mt-2">Service is Starting</p>
+    const renderIdleScreen = () => {
+        const bgImg = presentationStyle.backgroundImage;
+        const bgVid = presentationStyle.backgroundVideo;
+        const bgColor = presentationStyle.backgroundColor || '#0B0814';
+
+        if (bgImg) {
+            return (
+                <div className="w-full h-full relative overflow-hidden bg-black flex items-center justify-center">
+                    <img
+                        src={bgImg}
+                        className="w-full h-full object-cover absolute inset-0"
+                        alt="bg"
+                    />
+                </div>
+            );
+        }
+        if (bgVid) {
+            return (
+                <div className="w-full h-full relative overflow-hidden bg-black flex items-center justify-center">
+                    <video
+                        src={bgVid}
+                        autoPlay
+                        loop
+                        muted
+                        playsInline
+                        className="w-full h-full object-cover absolute inset-0"
+                    />
+                </div>
+            );
+        }
+        return (
+            <div className="w-full h-full flex items-center justify-center bg-primary" style={{ backgroundColor: bgColor }}>
+                <div className="flex flex-col items-center animate-pulse scale-50">
+                    <h1 className="text-6xl font-black text-light tracking-tighter leading-none opacity-20">OCS</h1>
+                    <p className="text-light/30 text-lg font-medium tracking-[1em] uppercase mt-2">Service is Starting</p>
+                </div>
             </div>
-        </div>
-    );
+        );
+    };
 
     const renderTimeUp = () => (
         <div className="w-full h-full flex items-center justify-center bg-red animate-pulse">
