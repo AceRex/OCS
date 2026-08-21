@@ -9,11 +9,21 @@ export default function MiniPreview({ mode }) {
     const [theme, setTheme] = useState("default");
     const [presentationContent, setPresentationContent] = useState(null);
     const [presentationStyle, setPresentationStyle] = useState({
-        backgroundColor: '#000000',
-        textColor: '#FFFFFF',
-        fontFamily: 'serif',
+        backgroundColor: '#0B0814',
+        textColor: '#F5F2FA',
+        accentColor: '#A788FA',
+        fontFamily: 'Outfit',
+        fontSize: '5rem',
+        textAlign: 'center',
+        textShadow: true,
         backgroundImage: null,
-        backgroundVideo: null
+        backgroundVideo: null,
+        // Bible-specific display settings
+        bibleRefPosition: 'top-center',
+        bibleBodyPosition: 'center',
+        bibleTranslation: 'KJV',
+        bibleServiceLabel: '',
+        bibleShowOrbs: true,
     });
 
     const formatTime = (timeToFormat) => {
@@ -88,6 +98,13 @@ export default function MiniPreview({ mode }) {
                 }
                 setPresentationStyle(prev => ({ ...prev, ...value }));
             });
+            if (window.electron.Presentation.getStyle) {
+                window.electron.Presentation.getStyle().then((initialStyle) => {
+                    if (initialStyle && Object.keys(initialStyle).length > 0) {
+                        setPresentationStyle(prev => ({ ...prev, ...initialStyle }));
+                    }
+                }).catch(() => {});
+            }
         }
 
         return () => {
@@ -142,7 +159,7 @@ export default function MiniPreview({ mode }) {
         const textColor = style.color || "#FFFFFF";
 
         return (
-            <div className="w-full h-full relative overflow-hidden flex flex-col justify-center items-center p-4 transition-colors" style={{ backgroundColor: bgColor }}>
+            <div className="w-full h-full relative overflow-hidden flex flex-col justify-center items-center px-8 py-6 transition-colors" style={{ backgroundColor: bgColor }}>
                 {style.backgroundImage && (
                     <div
                         className="absolute inset-0 z-0 bg-cover pointer-events-none"
@@ -279,8 +296,8 @@ export default function MiniPreview({ mode }) {
 
         const bodyAlignMap = {
             'center': 'items-center justify-center text-center',
-            'bottom-left': 'items-end justify-end text-left pb-16 pl-8',
-            'bottom-right': 'items-end justify-end text-right pb-16 pr-8',
+            'bottom-left': 'items-end justify-start text-left pb-8 pl-8',
+            'bottom-right': 'items-end justify-end text-right pb-8 pr-8',
         };
 
         const refPosClass = refPositionMap[bibleRefPosition] || refPositionMap['top-center'];
@@ -325,8 +342,10 @@ export default function MiniPreview({ mode }) {
                     style={{
                         overflow: 'hidden',
                         boxSizing: 'border-box',
-                        paddingLeft: useReadAlong ? 0 : 32,
-                        paddingRight: useReadAlong ? 0 : 32,
+                        paddingLeft: 24,
+                        paddingRight: 24,
+                        paddingTop: 28,
+                        paddingBottom: 24,
                     }}
                 >
                     <p
@@ -335,12 +354,12 @@ export default function MiniPreview({ mode }) {
                             fontFamily: '"Outfit", "Space Grotesk", sans-serif',
                             fontWeight: useReadAlong ? 600 : 800,
                             color: textColor,
-                            lineHeight: 1.15,
-                            maxWidth: useReadAlong ? '100%' : '95%',
-                            width: useReadAlong ? '100%' : undefined,
+                            lineHeight: 1.25,
+                            maxWidth: '88%',
+                            width: '100%',
                             boxSizing: 'border-box',
-                            padding: 0,
-                            margin: 0,
+                            padding: '0 4px',
+                            margin: '0 auto',
                             textShadow: '0 2px 10px rgba(0,0,0,0.5)',
                             overflowWrap: 'anywhere',
                             wordBreak: 'break-word',

@@ -366,7 +366,13 @@ export default function BibleController() {
   }, []);
 
   // Presentation Logic
-  const presentVerses = (indices, currentVerses = verses) => {
+  const presentVerses = (
+    indices,
+    currentVerses = verses,
+    overrideBookIndex = null,
+    overrideChapterIndex = null,
+    overrideVersion = null,
+  ) => {
     if (indices.size === 0) {
       setIsLive(false);
       electron.Presentation.setContent(null);
@@ -380,11 +386,21 @@ export default function BibleController() {
       .map((i) => currentVerses[i] || "")
       .join(" ");
 
-    const scopeBook = books[selectedBookIndex];
+    const actualBookIdx =
+      overrideBookIndex != null && overrideBookIndex >= 0
+        ? overrideBookIndex
+        : selectedBookIndex >= 0
+          ? selectedBookIndex
+          : 0;
+    const scopeBook = books[actualBookIdx];
     const bookName = scopeBook ? scopeBook.name : "";
-    const chapterNum = selectedChapterIndex + 1;
+    const chapterNum =
+      overrideChapterIndex != null && overrideChapterIndex >= 0
+        ? overrideChapterIndex + 1
+        : selectedChapterIndex + 1;
+    const verCode = overrideVersion || selectedVersion;
 
-    let verseRef = `${bookName} ${chapterNum}:`;
+    let verseRef = `${bookName} ${chapterNum}:`.trimStart();
     if (sortedIndices.length === 1) {
       verseRef += sortedIndices[0] + 1;
     } else {
@@ -405,7 +421,7 @@ export default function BibleController() {
       data: {
         title: verseRef,
         body: verseText,
-        version: selectedVersion,
+        version: verCode,
       },
     });
 

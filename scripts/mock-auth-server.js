@@ -47,8 +47,8 @@ const server = http.createServer((req, res) => {
           <p>Choose an authentication scenario to redirect back to the Desktop App:</p>
           <div class="state-pill"><strong>CSRF State:</strong> ${state || 'MISSING'}</div>
 
-          <a class="btn btn-primary" href="${redirectUri}?token=mock_jwt_standard_${Date.now()}&state=${state}&email=lead_pastor@gracecommunity.org&org=Grace%20Community%20Church&tier=standard">
-            ✓ Log in as Standard Church (Grace Community)
+          <a class="btn btn-primary" href="${redirectUri}?token=mock_jwt_standard_${Date.now()}&state=${state}&email=admin@churchocs.com&org=OCS%20Community%20Church&tier=standard">
+            ✓ Log in as Standard Church (OCS Community)
           </a>
 
           <a class="btn btn-pro" href="${redirectUri}?token=mock_jwt_enterprise_${Date.now()}&state=${state}&email=admin@faithcathedral.org&org=Faith%20Cathedral&tier=enterprise">

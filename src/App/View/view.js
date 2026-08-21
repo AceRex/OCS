@@ -478,6 +478,28 @@ function App({ mode: propMode }) {
           };
         });
       });
+
+      if (window.electron.Presentation.getStyle) {
+        window.electron.Presentation.getStyle().then((initialStyle) => {
+          if (initialStyle && Object.keys(initialStyle).length > 0) {
+            setPresentationStyle(prev => ({ ...prev, ...initialStyle }));
+            setCanvasState(prev => {
+              const bg = { ...prev.background };
+              if (initialStyle.backgroundImage) {
+                bg.type = 'image';
+                bg.url = initialStyle.backgroundImage;
+              } else if (initialStyle.backgroundVideo) {
+                bg.type = 'video';
+                bg.url = initialStyle.backgroundVideo;
+              } else if (initialStyle.backgroundColor) {
+                bg.type = 'color';
+                bg.color = initialStyle.backgroundColor;
+              }
+              return { ...prev, background: bg };
+            });
+          }
+        }).catch(() => {});
+      }
     }
 
     if (window.electron && window.electron.Canvas && window.electron.Canvas.onCanvasSync) {

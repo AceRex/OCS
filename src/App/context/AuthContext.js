@@ -100,6 +100,17 @@ export function AuthProvider({ children }) {
     setError(null);
   }, []);
 
+  const simulateLogin = useCallback(async (customUrl) => {
+    setError(null);
+    try {
+      if (window.electron?.Auth?.simulateCallback) {
+        await window.electron.Auth.simulateCallback(customUrl);
+      }
+    } catch (err) {
+      setError(err.message || 'Simulated login failed.');
+    }
+  }, []);
+
   const value = {
     auth,
     loading,
@@ -107,6 +118,7 @@ export function AuthProvider({ children }) {
     waitingForBrowser,
     login,
     logout,
+    simulateLogin,
     cancelLogin,
     isAuthenticated: auth.authenticated === true,
     isGracePeriod: auth.state === 'grace_period',
@@ -127,6 +139,7 @@ export function useAuth() {
       waitingForBrowser: false,
       login: () => {},
       logout: () => {},
+      simulateLogin: () => {},
       cancelLogin: () => {},
       isAuthenticated: false,
       isGracePeriod: false,

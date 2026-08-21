@@ -1,6 +1,4 @@
-import React, { useState, useEffect } from "react";
-import { useAuth } from "../context/AuthContext";
-
+import React, { useState, useEffect, useRef } from "react";
 import {
     PiTextT,
     PiPaintBucket,
@@ -18,17 +16,23 @@ import {
     PiPlayCircle,
     PiFilmStrip,
     PiClock,
-    PiBroadcast,
-    PiCopy,
-    PiCheck,
     PiWarning,
-    PiShieldWarning,
+    PiArrowCounterClockwise,
     PiShieldCheck,
+    PiTextAlignLeft,
+    PiTextAlignCenter,
+    PiTextAlignRight,
+    PiSparkle,
+    PiCheck,
+    PiLockKey,
     PiSignOut,
-    PiUserCheck,
+    PiCpu,
+    PiMonitor,
+    PiX,
 } from "react-icons/pi";
+import { useAuth } from "../context/AuthContext";
 
-const TRANSLATIONS = ['KJV', 'NIV', 'ESV', 'NKJV', 'NLT', 'AMP', 'MSG', 'CSB', 'NASB', 'RSV'];
+const TRANSLATIONS = ['KJV', 'NIV', 'ESV', 'NKJV', 'NLT', 'AMP', 'MSG', 'CSB', 'NASB', 'RSV', 'ASV'];
 
 const REF_POSITIONS = [
     { value: 'top-center',    label: 'Top Center' },
@@ -45,6 +49,43 @@ const BODY_POSITIONS = [
     { value: 'bottom-right', label: 'Bottom Right' },
 ];
 
+const FONT_OPTIONS = [
+    { id: 'Outfit', label: 'Outfit (Modern Sans)' },
+    { id: 'Space Grotesk', label: 'Space Grotesk' },
+    { id: 'Inter', label: 'Inter Clean' },
+    { id: 'JetBrains Mono', label: 'JetBrains Mono' },
+    { id: 'Georgia', label: 'Georgia Serif' },
+    { id: 'Arial', label: 'Arial Classic' },
+    { id: 'Courier New', label: 'Courier Mono' },
+    { id: 'Times New Roman', label: 'Times Serif' },
+];
+
+const COLOR_PRESETS = [
+    '#0B0814', '#000000', '#0F172A', '#1E1B4B', '#142018', '#2A1116', '#1F1A24', '#0D1117'
+];
+
+const TEXT_COLOR_PRESETS = [
+    '#F5F2FA', '#FFFFFF', '#67E8F9', '#A788FA', '#FDE047', '#86EFAC', '#FCA5A5', '#E2E8F0'
+];
+
+const SAMPLE_VERSES = [
+    {
+        book: "JOHN",
+        ref: "CHAPTER 3 · VERSE 16",
+        text: "For God so loved the world that he gave his one and only Son, that whoever believes in him shall not perish but have eternal life."
+    },
+    {
+        book: "PSALM",
+        ref: "CHAPTER 23 · VERSE 1",
+        text: "The Lord is my shepherd; I shall not want. He makes me lie down in green pastures."
+    },
+    {
+        book: "GENESIS",
+        ref: "CHAPTER 1 · VERSE 1",
+        text: "In the beginning God created the heavens and the earth."
+    }
+];
+
 function formatBumperBytes(n) {
     if (!n || n < 1024) return `${n || 0} B`;
     if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
@@ -54,13 +95,17 @@ function formatBumperBytes(n) {
 export default function SettingsController() {
     const [activeTab, setActiveTab] = useState('appearance');
 
+    // Display Styles state with live two-way sync
     const [styles, setStyles] = useState({
         bgType: "color",
         backgroundColor: "#0B0814",
         textColor: "#F5F2FA",
+        accentColor: "#A788FA",
         fontFamily: "Outfit",
         fontSize: "5rem",
         textAlign: "center",
+        textShadow: true,
+        overlayOpacity: 100,
         backgroundImage: null,
         backgroundVideo: null,
         // Bible settings
@@ -71,6 +116,7 @@ export default function SettingsController() {
         bibleShowOrbs: true,
     });
 
+    // App Preferences state
     const [mediaFiles, setMediaFiles] = useState([]);
     const [sleepMode, setSleepMode] = useState('always');
     const [sleepProbeOk, setSleepProbeOk] = useState(true);
@@ -79,199 +125,108 @@ export default function SettingsController() {
     const [scriptureReadAlong, setScriptureReadAlong] = useState(true);
     const [transcriptionLanguage, setTranscriptionLanguage] = useState('en');
     const [languageGateEnabled, setLanguageGateEnabled] = useState(true);
+    const [asrStatus, setAsrStatus] = useState(null);
 
     // Bumpers state (Intro / Outro)
     const [bumpers, setBumpers] = useState({ intro: null, outro: null, autoMerge: true });
     const [bumperBusy, setBumperBusy] = useState(false);
     const [bumperError, setBumperError] = useState(null);
 
-    // NDI state (FR-4.42, FR-4.43)
-    const [ndiConfig, setNdiConfig] = useState({ enabled: false, resolution: '1080p', fps: 30 });
-    const [ndiStatus, setNdiStatus] = useState(null);
-    const [showNdiConsentModal, setShowNdiConsentModal] = useState(false);
-    const [copiedUrl, setCopiedUrl] = useState(null);
+    // Live Sync feedback
+    const [syncFeedback, setSyncFeedback] = useState('synced'); // 'synced' | 'saving' | 'saved'
+    const syncTimerRef = useRef(null);
 
-    // Auth & License state — from shared AuthContext (FR-13.1, FR-13.5, FR-13.6)
-    const { auth: authStatus, logout: authLogout, isAuthenticated } = useAuth();
-    const [authLoading, setAuthLoading] = useState(false);
+    // Sample verse index for preview swatch
+    const [previewVerseIdx, setPreviewVerseIdx] = useState(0);
 
+    // Reset confirmation modal
+    const [showResetModal, setShowResetModal] = useState(false);
+
+    // Auth context for account info
+    const authContext = useAuth ? useAuth() : null;
+
+    // Load initial settings and styles
     useEffect(() => {
-        const loadSettings = async () => {
+        const loadAll = async () => {
             if (window.electron?.Settings?.get) {
-                const s = await window.electron.Settings.get();
-                if (s?.sleepPrevention) setSleepMode(s.sleepPrevention);
-                setLiveTranscriptCorrection(!!s?.liveTranscriptCorrection);
-                setSessionTranscriptCleanup(!!s?.sessionTranscriptCleanup);
-                setScriptureReadAlong(s?.scriptureReadAlong !== false);
-                setTranscriptionLanguage(s?.transcriptionLanguage || 'en');
-                setLanguageGateEnabled(s?.languageGateEnabled !== false);
+                try {
+                    const s = await window.electron.Settings.get();
+                    if (s) {
+                        if (s.sleepPrevention) setSleepMode(s.sleepPrevention);
+                        setLiveTranscriptCorrection(!!s.liveTranscriptCorrection);
+                        setSessionTranscriptCleanup(!!s.sessionTranscriptCleanup);
+                        setScriptureReadAlong(s.scriptureReadAlong !== false);
+                        setTranscriptionLanguage(s.transcriptionLanguage || 'en');
+                        setLanguageGateEnabled(s.languageGateEnabled !== false);
+                        if (s.styles) {
+                            setStyles(prev => ({ ...prev, ...s.styles }));
+                        }
+                    }
+                } catch (e) {
+                    console.error("Failed to load settings:", e);
+                }
             }
+
+            if (window.electron?.Presentation?.getStyle) {
+                try {
+                    const activeStyle = await window.electron.Presentation.getStyle();
+                    if (activeStyle && Object.keys(activeStyle).length > 0) {
+                        setStyles(prev => ({ ...prev, ...activeStyle }));
+                    }
+                } catch (_) {}
+            }
+
             if (window.electron?.Sleep?.probe) {
-                const p = await window.electron.Sleep.probe();
-                setSleepProbeOk(!!p?.ok);
+                try {
+                    const p = await window.electron.Sleep.probe();
+                    setSleepProbeOk(!!p?.ok);
+                } catch (_) {}
             }
+
             if (window.electron?.Bumper?.get) {
                 try {
                     const b = await window.electron.Bumper.get();
                     if (b) setBumpers(b);
                 } catch (_) {}
             }
-            if (window.electron?.Ndi?.getStatus) {
+
+            if (window.electron?.Asr?.getStatus) {
                 try {
-                    const status = await window.electron.Ndi.getStatus();
-                    if (status) {
-                        setNdiStatus(status);
-                        setNdiConfig((prev) => ({
-                            ...prev,
-                            enabled: !!status.enabled,
-                            resolution: status.resolution || '1080p',
-                            fps: status.fps || 30,
-                        }));
-                    }
+                    const asr = await window.electron.Asr.getStatus();
+                    if (asr) setAsrStatus(asr);
                 } catch (_) {}
             }
         };
-        loadSettings();
 
-        const unsubNdi = window.electron?.Ndi?.onStatusUpdate?.((status) => {
-            if (status) {
-                setNdiStatus(status);
-                setNdiConfig((prev) => ({ ...prev, enabled: !!status.enabled }));
+        loadAll();
+
+        // ─── Real-time Subscriptions ───
+        const unsubStyle = window.electron?.Presentation?.onSetStyle?.((newStyle) => {
+            if (newStyle && typeof newStyle === 'object') {
+                setStyles(prev => ({ ...prev, ...newStyle }));
             }
         });
 
-        return () => {
-            unsubNdi?.();
-        };
-    }, []);
-
-    const handleLogout = async () => {
-        if (window.confirm("Log out of this workstation?\n\nYou will need active internet connectivity to sign back in.")) {
-            setAuthLoading(true);
-            try {
-                await authLogout();
-            } catch (err) {
-                console.error("Logout failed:", err);
-            } finally {
-                setAuthLoading(false);
-            }
-        }
-    };
-
-    const handleUploadBumper = async (type) => {
-        setBumperBusy(true);
-        setBumperError(null);
-        try {
-            const res = await window.electron?.Bumper?.upload?.(type);
-            if (res) {
-                setBumpers((prev) => ({ ...prev, [type]: res }));
-            }
-        } catch (e) {
-            setBumperError(e.message || `Failed to upload ${type} clip`);
-        } finally {
-            setBumperBusy(false);
-        }
-    };
-
-    const handleRemoveBumper = async (type) => {
-        setBumperBusy(true);
-        setBumperError(null);
-        try {
-            await window.electron?.Bumper?.remove?.(type);
-            setBumpers((prev) => ({ ...prev, [type]: null }));
-        } catch (e) {
-            setBumperError(e.message || `Failed to remove ${type} clip`);
-        } finally {
-            setBumperBusy(false);
-        }
-    };
-
-    const handleToggleAutoMerge = async (enabled) => {
-        setBumpers((prev) => ({ ...prev, autoMerge: enabled }));
-        if (window.electron?.Bumper?.setAutoMerge) {
-            await window.electron.Bumper.setAutoMerge(enabled);
-        }
-    };
-
-    const setSleepPreventionMode = async (mode) => {
-        setSleepMode(mode);
-        if (window.electron?.Sleep?.setMode) {
-            await window.electron.Sleep.setMode(mode);
-        }
-        if (window.electron?.Settings?.set) {
-            await window.electron.Settings.set({ sleepPrevention: mode });
-        }
-    };
-
-    const setLiveCorrection = async (on) => {
-        setLiveTranscriptCorrection(on);
-        if (window.electron?.Settings?.set) {
-            await window.electron.Settings.set({ liveTranscriptCorrection: !!on });
-        }
-    };
-
-    const setSessionCleanup = async (on) => {
-        setSessionTranscriptCleanup(on);
-        if (window.electron?.Settings?.set) {
-            await window.electron.Settings.set({ sessionTranscriptCleanup: !!on });
-        }
-    };
-
-    const setReadAlong = async (on) => {
-        setScriptureReadAlong(on);
-        if (window.electron?.Settings?.set) {
-            await window.electron.Settings.set({ scriptureReadAlong: !!on });
-        }
-    };
-
-    const setTranscriptionLang = async (code) => {
-        setTranscriptionLanguage(code);
-        if (window.electron?.Settings?.set) {
-            await window.electron.Settings.set({ transcriptionLanguage: code });
-        }
-    };
-
-    const setLanguageGate = async (on) => {
-        setLanguageGateEnabled(on);
-        if (window.electron?.Settings?.set) {
-            await window.electron.Settings.set({ languageGateEnabled: !!on });
-        }
-    };
-
-    const applyNdiState = async (enabled) => {
-        try {
-            const updated = await window.electron?.Ndi?.setConfig?.({ enabled });
+        const unsubSettings = window.electron?.Settings?.onUpdated?.((updated) => {
             if (updated) {
-                setNdiStatus(updated);
-                setNdiConfig((prev) => ({ ...prev, enabled: !!updated.enabled }));
+                if (updated.sleepPrevention) setSleepMode(updated.sleepPrevention);
+                setLiveTranscriptCorrection(!!updated.liveTranscriptCorrection);
+                setSessionTranscriptCleanup(!!updated.sessionTranscriptCleanup);
+                setScriptureReadAlong(updated.scriptureReadAlong !== false);
+                setTranscriptionLanguage(updated.transcriptionLanguage || 'en');
+                setLanguageGateEnabled(updated.languageGateEnabled !== false);
+                if (updated.styles) {
+                    setStyles(prev => ({ ...prev, ...updated.styles }));
+                }
             }
-        } catch (err) {
-            console.error("Failed to update NDI state:", err);
-        }
-    };
+        });
 
-    const handleToggleNdi = (wantsEnable) => {
-        if (wantsEnable) {
-            // FR-4.43: Plain-language exposure notice required before enabling
-            setShowNdiConsentModal(true);
-        } else {
-            applyNdiState(false);
-        }
-    };
-
-    const copyToClipboard = (text, key) => {
-        if (navigator.clipboard) {
-            navigator.clipboard.writeText(text);
-            setCopiedUrl(key);
-            setTimeout(() => setCopiedUrl(null), 2000);
-        }
-    };
-
-    useEffect(() => {
         const loadMedia = async () => {
             if (window.electron?.Media?.list) {
-                const files = await window.electron.Media.list();
-                if (Array.isArray(files)) setMediaFiles(files);
+                try {
+                    const files = await window.electron.Media.list();
+                    if (Array.isArray(files)) setMediaFiles(files);
+                } catch (_) {}
             }
         };
         loadMedia();
@@ -289,54 +244,232 @@ export default function SettingsController() {
             }
         });
 
+        const unsubAsr = window.electron?.Asr?.onStatus?.((st) => {
+            if (st) setAsrStatus(st);
+        });
+
         return () => {
+            unsubStyle?.();
+            unsubSettings?.();
             unsubMedia?.();
             unsubBumpers?.();
+            unsubAsr?.();
         };
     }, []);
+
+    const triggerSaveFeedback = () => {
+        setSyncFeedback('saved');
+        if (syncTimerRef.current) clearTimeout(syncTimerRef.current);
+        syncTimerRef.current = setTimeout(() => {
+            setSyncFeedback('synced');
+        }, 2200);
+    };
 
     const updateStyle = (key, value) => {
         const newStyles = { ...styles, [key]: value };
         setStyles(newStyles);
         if (window.electron?.Presentation?.setStyle) {
-            window.electron.Presentation.setStyle(newStyles);
+            window.electron.Presentation.setStyle({ [key]: value });
+        }
+        // Persist to disk so styles survive restart
+        if (window.electron?.Settings?.set) {
+            window.electron.Settings.set({ styles: newStyles }).catch(() => {});
+        }
+        triggerSaveFeedback();
+    };
+
+    const updateStyles = (patch) => {
+        const newStyles = { ...styles, ...patch };
+        setStyles(newStyles);
+        if (window.electron?.Presentation?.setStyle) {
+            window.electron.Presentation.setStyle(patch);
+        }
+        // Persist to disk so styles survive restart
+        if (window.electron?.Settings?.set) {
+            window.electron.Settings.set({ styles: newStyles }).catch(() => {});
+        }
+        triggerSaveFeedback();
+    };
+
+    const handleUploadBumper = async (type) => {
+        setBumperBusy(true);
+        setBumperError(null);
+        try {
+            const res = await window.electron?.Bumper?.upload?.(type);
+            if (res) {
+                setBumpers((prev) => ({ ...prev, [type]: res }));
+                triggerSaveFeedback();
+            }
+        } catch (e) {
+            setBumperError(e.message || `Failed to upload ${type} clip`);
+        } finally {
+            setBumperBusy(false);
+        }
+    };
+
+    const handleRemoveBumper = async (type) => {
+        setBumperBusy(true);
+        setBumperError(null);
+        try {
+            await window.electron?.Bumper?.remove?.(type);
+            setBumpers((prev) => ({ ...prev, [type]: null }));
+            triggerSaveFeedback();
+        } catch (e) {
+            setBumperError(e.message || `Failed to remove ${type} clip`);
+        } finally {
+            setBumperBusy(false);
+        }
+    };
+
+    const handleToggleAutoMerge = async (enabled) => {
+        setBumpers((prev) => ({ ...prev, autoMerge: enabled }));
+        if (window.electron?.Bumper?.setAutoMerge) {
+            await window.electron.Bumper.setAutoMerge(enabled);
+            triggerSaveFeedback();
+        }
+    };
+
+    const setSleepPreventionMode = async (mode) => {
+        setSleepMode(mode);
+        if (window.electron?.Sleep?.setMode) {
+            await window.electron.Sleep.setMode(mode);
+        }
+        if (window.electron?.Settings?.set) {
+            await window.electron.Settings.set({ sleepPrevention: mode });
+        }
+        triggerSaveFeedback();
+    };
+
+    const setLiveCorrection = async (on) => {
+        setLiveTranscriptCorrection(on);
+        if (window.electron?.Settings?.set) {
+            await window.electron.Settings.set({ liveTranscriptCorrection: !!on });
+        }
+        triggerSaveFeedback();
+    };
+
+    const setSessionCleanup = async (on) => {
+        setSessionTranscriptCleanup(on);
+        if (window.electron?.Settings?.set) {
+            await window.electron.Settings.set({ sessionTranscriptCleanup: !!on });
+        }
+        triggerSaveFeedback();
+    };
+
+    const setReadAlong = async (on) => {
+        setScriptureReadAlong(on);
+        if (window.electron?.Settings?.set) {
+            await window.electron.Settings.set({ scriptureReadAlong: !!on });
+        }
+        triggerSaveFeedback();
+    };
+
+    const setTranscriptionLang = async (code) => {
+        setTranscriptionLanguage(code);
+        if (window.electron?.Settings?.set) {
+            await window.electron.Settings.set({ transcriptionLanguage: code });
+        }
+        triggerSaveFeedback();
+    };
+
+    const setLanguageGate = async (on) => {
+        setLanguageGateEnabled(on);
+        if (window.electron?.Settings?.set) {
+            await window.electron.Settings.set({ languageGateEnabled: !!on });
+        }
+        triggerSaveFeedback();
+    };
+
+    const handleResetToDefaults = async () => {
+        setShowResetModal(false);
+        if (window.electron?.Settings?.resetDefaults) {
+            try {
+                const def = await window.electron.Settings.resetDefaults();
+                if (def) {
+                    if (def.styles) setStyles(def.styles);
+                    if (def.sleepPrevention) setSleepMode(def.sleepPrevention);
+                    setLiveTranscriptCorrection(!!def.liveTranscriptCorrection);
+                    setSessionTranscriptCleanup(!!def.sessionTranscriptCleanup);
+                    setScriptureReadAlong(def.scriptureReadAlong !== false);
+                    setTranscriptionLanguage(def.transcriptionLanguage || 'en');
+                    setLanguageGateEnabled(def.languageGateEnabled !== false);
+                    triggerSaveFeedback();
+                }
+            } catch (e) {
+                console.error("Failed to reset defaults:", e);
+            }
         }
     };
 
     const tabs = [
-        { id: 'appearance', label: 'Appearance', icon: <PiPalette /> },
-        { id: 'scripture', label: 'Scripture', icon: <PiBook /> },
-        { id: 'media', label: 'Media', icon: <PiPaintBucket /> },
-        { id: 'bumpers', label: 'Intro & Outro', icon: <PiFilmStrip /> },
-        { id: 'privacy', label: 'Privacy & AI', icon: <PiMicrophone /> },
-        { id: 'ndi', label: 'NDI & Broadcast', icon: <PiBroadcast /> },
-        { id: 'license', label: 'License & Auth', icon: <PiShieldCheck /> },
+        { id: 'appearance', label: 'Appearance', icon: <PiPalette size={16} /> },
+        { id: 'scripture', label: 'Scripture AI', icon: <PiBook size={16} /> },
+        { id: 'media', label: 'Media & Assets', icon: <PiPaintBucket size={16} /> },
+        { id: 'bumpers', label: 'Bumpers', icon: <PiFilmStrip size={16} /> },
+        { id: 'voice', label: 'Voice & AI', icon: <PiMicrophone size={16} /> },
+        { id: 'system', label: 'System & License', icon: <PiShieldCheck size={16} /> },
     ];
+
+    const currentVerse = SAMPLE_VERSES[previewVerseIdx];
 
     return (
         <div className="flex flex-col gap-0 text-white h-full overflow-hidden font-outfit bg-[#0B0814]"
              style={{ fontFamily: "'Outfit', 'Space Grotesk', sans-serif" }}>
-            {/* Header */}
-            <div className="px-8 pt-8 pb-6 border-b border-[#2E2542]">
-                <div className="flex items-center gap-3 mb-6">
-                    <div className="w-10 h-10 rounded-2xl bg-violet/20 flex items-center justify-center text-[#A788FA]">
-                        <PiGear size={22} />
+            
+            {/* ─── Header & Sync Status Bar ─── */}
+            <div className="px-8 pt-6 pb-5 border-b border-[#2E2542] bg-[#0E0A1A]/80 backdrop-blur-md">
+                <div className="flex items-center justify-between mb-5">
+                    <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#7C3AED]/30 to-[#06B6D4]/30 border border-[#A788FA]/30 flex items-center justify-center text-[#A788FA] shadow-lg shadow-purple-900/20">
+                            <PiGear size={22} className="animate-spin-slow" />
+                        </div>
+                        <div>
+                            <h2 className="text-lg font-black uppercase tracking-widest text-[#F5F2FA]">Settings & Synchronization</h2>
+                            <p className="text-[10px] text-[#8882A4] font-bold uppercase tracking-widest">OCS Global Workstation Configuration</p>
+                        </div>
                     </div>
-                    <div>
-                        <h2 className="text-lg font-black uppercase tracking-widest text-[#F5F2FA]">Settings</h2>
-                        <p className="text-[10px] text-[#8882A4] font-bold uppercase tracking-widest">OCS Broadcast Configuration</p>
+
+                    {/* Live Sync Badge & Reset Action */}
+                    <div className="flex items-center gap-3">
+                        <div className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-bold transition-all duration-300 ${
+                            syncFeedback === 'saved'
+                                ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300'
+                                : 'bg-[#1A1428] border border-[#2E2542] text-[#8882A4]'
+                        }`}>
+                            {syncFeedback === 'saved' ? (
+                                <>
+                                    <PiCheckCircle size={14} className="text-emerald-400 animate-bounce" />
+                                    <span>Saved & Synced</span>
+                                </>
+                            ) : (
+                                <>
+                                    <div className="w-2 h-2 rounded-full bg-emerald-400/80 animate-pulse" />
+                                    <span className="text-[11px]">Synced to Disk</span>
+                                </>
+                            )}
+                        </div>
+
+                        <button
+                            onClick={() => setShowResetModal(true)}
+                            title="Reset all settings to defaults"
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-red-500/10 border border-white/10 hover:border-red-500/25 text-[#8882A4] hover:text-red-300 text-xs font-bold transition-colors"
+                        >
+                            <PiArrowCounterClockwise size={13} />
+                            <span>Reset Defaults</span>
+                        </button>
                     </div>
                 </div>
-                {/* Tab Bar */}
-                <div className="flex gap-2">
+
+                {/* Tab Navigation */}
+                <div className="flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
                     {tabs.map(tab => (
                         <button
                             key={tab.id}
                             onClick={() => setActiveTab(tab.id)}
-                            className={`flex items-center gap-2 px-5 py-2.5 rounded-full text-[11px] font-black uppercase tracking-widest transition-all ${
+                            className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${
                                 activeTab === tab.id
-                                    ? 'bg-[#A788FA] text-[#0B0814]'
-                                    : 'bg-[#1A1428] text-[#8882A4] hover:text-white hover:bg-[#231A36]'
+                                    ? 'bg-gradient-to-r from-[#A788FA] to-[#818cf8] text-[#0B0814] shadow-md shadow-purple-500/20'
+                                    : 'bg-[#1A1428] text-[#8882A4] hover:text-white hover:bg-[#231A36] border border-[#2E2542]'
                             }`}
                         >
                             {tab.icon} {tab.label}
@@ -345,108 +478,287 @@ export default function SettingsController() {
                 </div>
             </div>
 
+            {/* ─── Main Content Scroll Area ─── */}
             <div className="flex-1 overflow-y-auto p-8 space-y-6 no-scrollbar">
 
-                {/* ─── APPEARANCE TAB ─── */}
+                {/* ══════════════════════════════════════════════════════════════
+                    1. APPEARANCE TAB
+                ══════════════════════════════════════════════════════════════ */}
                 {activeTab === 'appearance' && (
-                    <>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div className="bg-[#1A1428] border border-[#2E2542] p-5 rounded-3xl flex flex-col gap-3">
-                                <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest flex items-center gap-2">
-                                    <PiPaintBucket /> Background Color
-                                </label>
-                                <div className="flex items-center gap-3">
-                                    <input
-                                        type="color"
-                                        value={styles.backgroundColor}
-                                        onChange={(e) => updateStyle("backgroundColor", e.target.value)}
-                                        className="w-10 h-10 rounded-xl cursor-pointer bg-transparent border-none"
-                                    />
-                                    <span className="text-xs font-mono text-[#8882A4]">{styles.backgroundColor}</span>
+                    <div className="space-y-6 max-w-4xl">
+                        {/* Live Swatch Preview */}
+                        <div className="bg-[#1A1428] border border-[#2E2542] p-6 rounded-3xl space-y-4">
+                            <div className="flex items-center justify-between">
+                                <div>
+                                    <h3 className="text-xs font-black text-[#8882A4] uppercase tracking-widest flex items-center gap-2">
+                                        <PiMonitor size={16} /> Live Display Swatch Preview
+                                    </h3>
+                                    <p className="text-[11px] text-[#8882A4]">Real-time visual reflection on Speaker & General screens</p>
                                 </div>
+                                <span className="px-2.5 py-1 rounded-lg bg-white/5 border border-white/10 font-mono text-[10px] text-[#A788FA]">
+                                    {styles.fontFamily} · {styles.backgroundColor}
+                                </span>
                             </div>
 
-                            <div className="bg-[#1A1428] border border-[#2E2542] p-5 rounded-3xl flex flex-col gap-3">
-                                <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest flex items-center gap-2">
-                                    <PiTextT /> Text Color
-                                </label>
-                                <div className="flex items-center gap-3">
-                                    <input
-                                        type="color"
-                                        value={styles.textColor}
-                                        onChange={(e) => updateStyle("textColor", e.target.value)}
-                                        className="w-10 h-10 rounded-xl cursor-pointer bg-transparent border-none"
-                                    />
-                                    <span className="text-xs font-mono text-[#8882A4]">{styles.textColor}</span>
+                            <div
+                                className="w-full rounded-2xl overflow-hidden border border-[#2E2542] relative flex items-center justify-center p-8 transition-all"
+                                style={{
+                                    aspectRatio: '16/7',
+                                    backgroundColor: styles.backgroundColor,
+                                    backgroundImage: styles.backgroundImage ? `url(${styles.backgroundImage})` : undefined,
+                                    backgroundSize: 'cover',
+                                    backgroundPosition: 'center',
+                                }}
+                            >
+                                {styles.backgroundVideo && (
+                                    <video src={styles.backgroundVideo} autoPlay loop muted className="absolute inset-0 w-full h-full object-cover opacity-60" />
+                                )}
+                                <div className="relative z-10 text-center space-y-2 max-w-xl">
+                                    <div
+                                        className="text-2xl md:text-3xl font-extrabold transition-all"
+                                        style={{
+                                            fontFamily: styles.fontFamily,
+                                            color: styles.textColor,
+                                            textShadow: styles.textShadow ? '0 4px 20px rgba(0,0,0,0.8)' : 'none',
+                                            textAlign: styles.textAlign || 'center',
+                                        }}
+                                    >
+                                        "Let There Be Light"
+                                    </div>
+                                    <p className="text-xs font-mono uppercase tracking-widest" style={{ color: styles.accentColor || '#A788FA' }}>
+                                        ORGANIZED CHURCH SERVICE · LIVE BROADCAST
+                                    </p>
                                 </div>
                             </div>
                         </div>
 
-                        <div className="bg-[#1A1428] border border-[#2E2542] p-5 rounded-3xl flex flex-col gap-3">
-                            <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest">Display Font</label>
-                            <div className="grid grid-cols-3 gap-2">
-                                {['Outfit', 'Space Grotesk', 'Georgia', 'Arial', 'Courier New', 'Times New Roman'].map(font => (
+                        {/* Colors Section */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {/* Background Color */}
+                            <div className="bg-[#1A1428] border border-[#2E2542] p-5 rounded-3xl space-y-4">
+                                <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest flex items-center gap-2">
+                                    <PiPaintBucket /> Stage Background Color
+                                </label>
+                                <div className="flex items-center gap-3">
+                                    <input
+                                        type="color"
+                                        value={styles.backgroundColor || '#0B0814'}
+                                        onChange={(e) => updateStyle("backgroundColor", e.target.value)}
+                                        className="w-12 h-12 rounded-2xl cursor-pointer bg-transparent border border-white/10"
+                                    />
+                                    <input
+                                        type="text"
+                                        value={styles.backgroundColor || '#0B0814'}
+                                        onChange={(e) => updateStyle("backgroundColor", e.target.value)}
+                                        className="bg-[#0B0814] border border-[#2E2542] rounded-xl px-3 py-2 text-xs font-mono text-white w-28 uppercase focus:border-[#A788FA] outline-none"
+                                    />
+                                </div>
+                                <div className="flex flex-wrap gap-1.5 pt-1">
+                                    {COLOR_PRESETS.map((color) => (
+                                        <button
+                                            key={color}
+                                            onClick={() => updateStyle("backgroundColor", color)}
+                                            style={{ backgroundColor: color }}
+                                            className={`w-6 h-6 rounded-lg border transition-transform ${
+                                                styles.backgroundColor === color ? 'border-[#A788FA] scale-110 shadow-md' : 'border-white/15 hover:scale-105'
+                                            }`}
+                                            title={color}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Text & Accent Color */}
+                            <div className="bg-[#1A1428] border border-[#2E2542] p-5 rounded-3xl space-y-4">
+                                <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest flex items-center gap-2">
+                                    <PiTextT /> Primary Text & Accent Colors
+                                </label>
+                                <div className="grid grid-cols-2 gap-3">
+                                    <div>
+                                        <span className="text-[10px] text-[#8882A4] font-bold block mb-1">Text Color</span>
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="color"
+                                                value={styles.textColor || '#F5F2FA'}
+                                                onChange={(e) => updateStyle("textColor", e.target.value)}
+                                                className="w-8 h-8 rounded-xl cursor-pointer bg-transparent border border-white/10"
+                                            />
+                                            <input
+                                                type="text"
+                                                value={styles.textColor || '#F5F2FA'}
+                                                onChange={(e) => updateStyle("textColor", e.target.value)}
+                                                className="bg-[#0B0814] border border-[#2E2542] rounded-lg px-2 py-1 text-xs font-mono text-white w-20 uppercase focus:border-[#A788FA] outline-none"
+                                            />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <span className="text-[10px] text-[#8882A4] font-bold block mb-1">Accent Glow</span>
+                                        <div className="flex items-center gap-2">
+                                            <input
+                                                type="color"
+                                                value={styles.accentColor || '#A788FA'}
+                                                onChange={(e) => updateStyle("accentColor", e.target.value)}
+                                                className="w-8 h-8 rounded-xl cursor-pointer bg-transparent border border-white/10"
+                                            />
+                                            <input
+                                                type="text"
+                                                value={styles.accentColor || '#A788FA'}
+                                                onChange={(e) => updateStyle("accentColor", e.target.value)}
+                                                className="bg-[#0B0814] border border-[#2E2542] rounded-lg px-2 py-1 text-xs font-mono text-white w-20 uppercase focus:border-[#A788FA] outline-none"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                                <div className="flex flex-wrap gap-1.5 pt-1">
+                                    {TEXT_COLOR_PRESETS.map((color) => (
+                                        <button
+                                            key={color}
+                                            onClick={() => updateStyle("textColor", color)}
+                                            style={{ backgroundColor: color }}
+                                            className={`w-6 h-6 rounded-lg border transition-transform ${
+                                                styles.textColor === color ? 'border-[#A788FA] scale-110 shadow-md' : 'border-white/15 hover:scale-105'
+                                            }`}
+                                            title={color}
+                                        />
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Typography & Layout */}
+                        <div className="bg-[#1A1428] border border-[#2E2542] p-5 rounded-3xl space-y-4">
+                            <div className="flex items-center justify-between">
+                                <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest">
+                                    Display Typography & Alignment
+                                </label>
+                                <div className="flex items-center gap-2">
                                     <button
-                                        key={font}
-                                        onClick={() => updateStyle('fontFamily', font)}
-                                        className={`px-4 py-2.5 rounded-2xl text-xs font-bold border transition-all ${
-                                            styles.fontFamily === font
-                                                ? 'bg-[#A788FA]/20 border-[#A788FA] text-[#A788FA]'
+                                        onClick={() => updateStyle("textAlign", "left")}
+                                        className={`p-2 rounded-xl border ${styles.textAlign === 'left' ? 'bg-[#A788FA]/20 border-[#A788FA] text-[#A788FA]' : 'border-[#2E2542] text-[#8882A4]'}`}
+                                        title="Align Left"
+                                    ><PiTextAlignLeft size={16} /></button>
+                                    <button
+                                        onClick={() => updateStyle("textAlign", "center")}
+                                        className={`p-2 rounded-xl border ${styles.textAlign === 'center' ? 'bg-[#A788FA]/20 border-[#A788FA] text-[#A788FA]' : 'border-[#2E2542] text-[#8882A4]'}`}
+                                        title="Align Center"
+                                    ><PiTextAlignCenter size={16} /></button>
+                                    <button
+                                        onClick={() => updateStyle("textAlign", "right")}
+                                        className={`p-2 rounded-xl border ${styles.textAlign === 'right' ? 'bg-[#A788FA]/20 border-[#A788FA] text-[#A788FA]' : 'border-[#2E2542] text-[#8882A4]'}`}
+                                        title="Align Right"
+                                    ><PiTextAlignRight size={16} /></button>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                                {FONT_OPTIONS.map((f) => (
+                                    <button
+                                        key={f.id}
+                                        onClick={() => updateStyle('fontFamily', f.id)}
+                                        className={`px-4 py-3 rounded-2xl text-xs font-bold border transition-all text-left ${
+                                            styles.fontFamily === f.id
+                                                ? 'bg-[#A788FA]/20 border-[#A788FA] text-[#A788FA] shadow-md'
                                                 : 'bg-transparent border-[#2E2542] text-[#8882A4] hover:border-white/20 hover:text-white'
                                         }`}
-                                        style={{ fontFamily: font }}
                                     >
-                                        {font}
+                                        <span style={{ fontFamily: f.id }} className="block text-sm font-black mb-0.5">Aa Bb Cc</span>
+                                        <span className="text-[10px] text-[#8882A4] block truncate">{f.label}</span>
                                     </button>
                                 ))}
                             </div>
+
+                            <div className="border-t border-[#2E2542] pt-4 flex items-center justify-between">
+                                <div>
+                                    <span className="text-xs font-bold text-[#F5F2FA] block">Subtle Text Shadow</span>
+                                    <span className="text-[10px] text-[#8882A4]">Enhances legibility over live video backgrounds</span>
+                                </div>
+                                <button
+                                    onClick={() => updateStyle('textShadow', !styles.textShadow)}
+                                    className={`relative w-12 h-6 rounded-full transition-colors ${styles.textShadow ? 'bg-[#A788FA]' : 'bg-[#2E2542]'}`}
+                                >
+                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${styles.textShadow ? 'left-7' : 'left-1'}`} />
+                                </button>
+                            </div>
                         </div>
-                    </>
+                    </div>
                 )}
 
-                {/* ─── SCRIPTURE TAB ─── */}
+                {/* ══════════════════════════════════════════════════════════════
+                    2. SCRIPTURE TAB
+                ══════════════════════════════════════════════════════════════ */}
                 {activeTab === 'scripture' && (
-                    <>
-                        {/* Preview Swatch */}
-                        <div className="w-full rounded-3xl overflow-hidden border border-[#2E2542]" style={{ aspectRatio: '16/9', position: 'relative', backgroundColor: '#0B0814' }}>
-                            {/* Orbs preview */}
+                    <div className="space-y-6 max-w-4xl">
+                        {/* Interactive Preview Canvas */}
+                        <div className="w-full rounded-3xl overflow-hidden border border-[#2E2542] bg-[#0B0814] relative shadow-2xl" style={{ aspectRatio: '16/9' }}>
+                            {/* Orb Lighting Glow */}
                             {styles.bibleShowOrbs && (
                                 <>
-                                    <div style={{ position:'absolute', top:'-15%', left:'-15%', width:'55%', height:'55%', borderRadius:'50%', background:'radial-gradient(circle, rgba(167,136,250,0.55) 0%, rgba(167,136,250,0.12) 55%, transparent 70%)', filter:'blur(2px)' }} />
-                                    <div style={{ position:'absolute', bottom:'-15%', right:'-15%', width:'50%', height:'50%', borderRadius:'50%', background:'radial-gradient(circle, rgba(103,232,249,0.45) 0%, rgba(103,232,249,0.10) 55%, transparent 70%)', filter:'blur(2px)' }} />
+                                    <div style={{ position:'absolute', top:'-15%', left:'-15%', width:'55%', height:'55%', borderRadius:'50%', background:'radial-gradient(circle, rgba(167,136,250,0.45) 0%, rgba(167,136,250,0.1) 55%, transparent 70%)', filter:'blur(4px)' }} />
+                                    <div style={{ position:'absolute', bottom:'-15%', right:'-15%', width:'50%', height:'50%', borderRadius:'50%', background:'radial-gradient(circle, rgba(103,232,249,0.35) 0%, rgba(103,232,249,0.08) 55%, transparent 70%)', filter:'blur(4px)' }} />
                                 </>
                             )}
-                            <div className="absolute inset-0 flex items-center justify-center">
-                                <div style={{ textAlign:'center', padding:'5%' }}>
-                                    <p style={{ fontFamily:'"JetBrains Mono", monospace', fontSize:'1.2vw', color:'#67E8F9', letterSpacing:'0.2em', textTransform:'uppercase', marginBottom:'4%' }}>
-                                        JOHN · <span style={{ color:'#A788FA' }}>CHAPTER 3 · VERSE 16</span>
-                                    </p>
-                                    <p style={{ fontFamily:'"Outfit", sans-serif', fontSize:'2.2vw', fontWeight:800, color:'#F5F2FA', lineHeight:1.15 }}>
-                                        "For God so loved the world that he gave his one and only Son"
-                                    </p>
-                                </div>
-                            </div>
-                            <div className="absolute bottom-3 left-1/2 -translate-x-1/2">
-                                <span style={{ fontFamily:'"Outfit", sans-serif', fontSize:'0.9vw', color:'rgba(245,242,250,0.4)', letterSpacing:'0.15em', textTransform:'uppercase' }}>
-                                    {styles.bibleTranslation}{styles.bibleServiceLabel ? ` · ${styles.bibleServiceLabel}` : ''}
+
+                            {/* Reference Pill Position */}
+                            <div className={`absolute p-6 inset-x-0 ${styles.bibleRefPosition?.includes('bottom') ? 'bottom-0' : 'top-0'} flex ${
+                                styles.bibleRefPosition?.includes('left') ? 'justify-start' : styles.bibleRefPosition?.includes('right') ? 'justify-end' : 'justify-center'
+                            }`}>
+                                <span className="px-4 py-1.5 rounded-full bg-[#1A1428]/80 border border-[#2E2542] backdrop-blur-md font-mono text-[11px] font-bold uppercase tracking-widest text-[#67E8F9] shadow-lg">
+                                    {currentVerse.book} · <span className="text-[#A788FA]">{currentVerse.ref}</span>
                                 </span>
                             </div>
+
+                            {/* Body Text Position */}
+                            <div className={`absolute inset-0 flex p-12 ${
+                                styles.bibleBodyPosition === 'bottom-left' ? 'items-end justify-start text-left' :
+                                styles.bibleBodyPosition === 'bottom-right' ? 'items-end justify-end text-right' :
+                                'items-center justify-center text-center'
+                            }`}>
+                                <p
+                                    style={{
+                                        fontFamily: styles.fontFamily || 'Outfit',
+                                        fontSize: '2.1vw',
+                                        fontWeight: 800,
+                                        color: styles.textColor || '#F5F2FA',
+                                        lineHeight: 1.25,
+                                        maxWidth: '85%',
+                                        textShadow: styles.textShadow ? '0 4px 24px rgba(0,0,0,0.9)' : 'none',
+                                    }}
+                                >
+                                    "{currentVerse.text}"
+                                </p>
+                            </div>
+
+                            {/* Translation & Service Label */}
+                            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-2">
+                                <span className="font-mono text-[10px] text-white/40 uppercase tracking-widest bg-black/40 px-3 py-1 rounded-full border border-white/5">
+                                    {styles.bibleTranslation || 'KJV'}{styles.bibleServiceLabel ? ` · ${styles.bibleServiceLabel}` : ''}
+                                </span>
+                            </div>
+
+                            {/* Switch sample verse button */}
+                            <button
+                                onClick={() => setPreviewVerseIdx((prev) => (prev + 1) % SAMPLE_VERSES.length)}
+                                className="absolute top-4 right-4 text-[10px] font-bold uppercase tracking-wider bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-xl backdrop-blur-sm border border-white/10 transition-colors"
+                            >
+                                Next Sample
+                            </button>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
-                            {/* Translation */}
-                            <div className="bg-[#1A1428] border border-[#2E2542] p-5 rounded-3xl flex flex-col gap-3">
+                        {/* Translation & Service Label Configuration */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {/* Translation Selector */}
+                            <div className="bg-[#1A1428] border border-[#2E2542] p-5 rounded-3xl space-y-3">
                                 <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest flex items-center gap-2">
-                                    <PiTranslate /> Translation
+                                    <PiTranslate /> Default Scripture Translation
                                 </label>
-                                <div className="flex flex-wrap gap-2">
+                                <div className="flex flex-wrap gap-1.5">
                                     {TRANSLATIONS.map(t => (
                                         <button
                                             key={t}
                                             onClick={() => updateStyle('bibleTranslation', t)}
                                             className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${
                                                 styles.bibleTranslation === t
-                                                    ? 'bg-[#67E8F9]/20 border-[#67E8F9] text-[#67E8F9]'
+                                                    ? 'bg-[#67E8F9]/20 border-[#67E8F9] text-[#67E8F9] shadow-sm'
                                                     : 'bg-transparent border-[#2E2542] text-[#8882A4] hover:border-white/20 hover:text-white'
                                             }`}
                                         >
@@ -457,32 +769,36 @@ export default function SettingsController() {
                             </div>
 
                             {/* Service Label */}
-                            <div className="bg-[#1A1428] border border-[#2E2542] p-5 rounded-3xl flex flex-col gap-3">
-                                <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest">Service Label</label>
+                            <div className="bg-[#1A1428] border border-[#2E2542] p-5 rounded-3xl space-y-3">
+                                <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest">
+                                    Church Service Label
+                                </label>
                                 <input
                                     type="text"
-                                    value={styles.bibleServiceLabel}
+                                    value={styles.bibleServiceLabel || ''}
                                     onChange={(e) => updateStyle('bibleServiceLabel', e.target.value)}
-                                    placeholder="e.g. Sunday Service"
-                                    className="bg-[#0B0814] border border-[#2E2542] rounded-2xl px-4 py-3 text-sm text-white placeholder-[#2E2542] outline-none focus:border-[#A788FA] transition-colors"
+                                    placeholder="e.g. Sunday Worship Celebration"
+                                    className="w-full bg-[#0B0814] border border-[#2E2542] rounded-2xl px-4 py-3 text-sm text-white placeholder-[#4C4362] outline-none focus:border-[#A788FA] transition-colors"
                                 />
+                                <p className="text-[10px] text-[#8882A4]">Appears on bottom watermark and stage reference headers.</p>
                             </div>
                         </div>
 
-                        <div className="grid grid-cols-2 gap-4">
+                        {/* Reference & Body Layout */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             {/* Reference Position */}
-                            <div className="bg-[#1A1428] border border-[#2E2542] p-5 rounded-3xl flex flex-col gap-3">
+                            <div className="bg-[#1A1428] border border-[#2E2542] p-5 rounded-3xl space-y-3">
                                 <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest flex items-center gap-2">
-                                    <PiArrowsOut /> Book & Verse Position
+                                    <PiArrowsOut /> Reference Badge Position
                                 </label>
                                 <div className="grid grid-cols-2 gap-2">
                                     {REF_POSITIONS.map(pos => (
                                         <button
                                             key={pos.value}
                                             onClick={() => updateStyle('bibleRefPosition', pos.value)}
-                                            className={`px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all ${
+                                            className={`px-3 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all text-center ${
                                                 styles.bibleRefPosition === pos.value
-                                                    ? 'bg-[#A788FA]/20 border-[#A788FA] text-[#A788FA]'
+                                                    ? 'bg-[#A788FA]/20 border-[#A788FA] text-[#A788FA] shadow-sm'
                                                     : 'bg-transparent border-[#2E2542] text-[#8882A4] hover:border-white/20 hover:text-white'
                                             }`}
                                         >
@@ -492,27 +808,32 @@ export default function SettingsController() {
                                 </div>
                             </div>
 
-                            {/* Body Position */}
-                            <div className="bg-[#1A1428] border border-[#2E2542] p-5 rounded-3xl flex flex-col gap-3">
-                                <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest">Scripture Body Position</label>
-                                <div className="flex flex-col gap-2">
+                            {/* Body Alignment & Read-Along */}
+                            <div className="bg-[#1A1428] border border-[#2E2542] p-5 rounded-3xl space-y-3">
+                                <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest">
+                                    Scripture Body Placement
+                                </label>
+                                <div className="flex gap-2">
                                     {BODY_POSITIONS.map(pos => (
                                         <button
                                             key={pos.value}
                                             onClick={() => updateStyle('bibleBodyPosition', pos.value)}
-                                            className={`px-4 py-3 rounded-2xl text-[11px] font-black uppercase tracking-widest border text-left transition-all ${
+                                            className={`flex-1 px-3 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider border text-center transition-all ${
                                                 styles.bibleBodyPosition === pos.value
                                                     ? 'bg-[#A788FA]/20 border-[#A788FA] text-[#A788FA]'
                                                     : 'bg-transparent border-[#2E2542] text-[#8882A4] hover:border-white/20 hover:text-white'
                                             }`}
                                         >
-                                            {pos.label}
+                                            {pos.label.replace(' (Default)', '')}
                                         </button>
                                     ))}
                                 </div>
 
-                                <div className="mt-2 pt-4 border-t border-[#2E2542] flex items-center justify-between">
-                                    <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest">Show Orb Effects</label>
+                                <div className="mt-2 pt-3 border-t border-[#2E2542] flex items-center justify-between">
+                                    <div>
+                                        <span className="text-xs font-bold text-[#F5F2FA] block">Ambient Lighting Orbs</span>
+                                        <span className="text-[10px] text-[#8882A4]">Cyan & Purple atmospheric glow</span>
+                                    </div>
                                     <button
                                         onClick={() => updateStyle('bibleShowOrbs', !styles.bibleShowOrbs)}
                                         className={`relative w-12 h-6 rounded-full transition-colors ${styles.bibleShowOrbs ? 'bg-[#A788FA]' : 'bg-[#2E2542]'}`}
@@ -520,10 +841,11 @@ export default function SettingsController() {
                                         <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${styles.bibleShowOrbs ? 'left-7' : 'left-1'}`} />
                                     </button>
                                 </div>
-                                <div className="mt-2 pt-4 border-t border-[#2E2542] flex items-center justify-between gap-3">
+
+                                <div className="mt-2 pt-3 border-t border-[#2E2542] flex items-center justify-between">
                                     <div>
-                                        <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest block">Scripture read-along (Speaker)</label>
-                                        <span className="text-[10px] text-[#8882A4]">Word-pop teleprompt on Speaker View & Mini Preview. General View stays clean.</span>
+                                        <span className="text-xs font-bold text-[#F5F2FA] block">Scripture Read-Along (Speaker)</span>
+                                        <span className="text-[10px] text-[#8882A4]">Teleprompt word-pop on Speaker View only</span>
                                     </div>
                                     <button
                                         onClick={() => setReadAlong(!scriptureReadAlong)}
@@ -534,82 +856,123 @@ export default function SettingsController() {
                                 </div>
                             </div>
                         </div>
-                    </>
+                    </div>
                 )}
 
-                {/* ─── MEDIA TAB ─── */}
+                {/* ══════════════════════════════════════════════════════════════
+                    3. MEDIA & ASSETS TAB
+                ══════════════════════════════════════════════════════════════ */}
                 {activeTab === 'media' && (
-                    <div className="bg-[#1A1428] border border-[#2E2542] p-5 rounded-3xl flex flex-col gap-4">
+                    <div className="bg-[#1A1428] border border-[#2E2542] p-6 rounded-3xl space-y-6 max-w-4xl">
                         <div className="flex items-center justify-between">
-                            <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest">Media Library</label>
+                            <div>
+                                <h3 className="text-sm font-black uppercase tracking-widest text-[#F5F2FA]">Local Media Library</h3>
+                                <p className="text-[10px] text-[#8882A4] font-bold uppercase tracking-widest mt-0.5">Motion backgrounds, loops & static graphics</p>
+                            </div>
                             <button
                                 onClick={async () => {
                                     if (!window.electron?.Media?.import) return;
                                     const newFile = await window.electron.Media.import();
-                                    if (newFile) setMediaFiles(prev => [...prev, newFile]);
+                                    if (newFile) {
+                                        setMediaFiles(prev => [...prev, newFile]);
+                                        triggerSaveFeedback();
+                                    }
                                 }}
-                                className="text-[10px] bg-[#A788FA] text-[#0B0814] px-4 py-1.5 rounded-full font-black uppercase hover:bg-[#67E8F9] transition-colors"
+                                className="flex items-center gap-2 text-xs bg-gradient-to-r from-[#A788FA] to-[#67E8F9] text-[#0B0814] px-5 py-2.5 rounded-full font-black uppercase hover:opacity-95 shadow-md shadow-purple-500/20 transition-all"
                             >
-                                + Import
+                                <PiUploadSimple size={16} /> + Import Media
                             </button>
                         </div>
 
-                        <div className="grid grid-cols-4 gap-2 max-h-48 overflow-y-auto pr-1">
+                        {/* Media Grid */}
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 max-h-64 overflow-y-auto pr-1">
                             {mediaFiles.map((url, i) => {
                                 const isVideo = url.toLowerCase().endsWith('.mp4') || url.toLowerCase().endsWith('.webm');
+                                const isSelected = styles.backgroundImage === url || styles.backgroundVideo === url;
                                 return (
-                                    <div key={i} className="relative group aspect-video rounded-2xl overflow-hidden border border-[#2E2542] hover:border-[#A788FA] transition-all">
+                                    <div
+                                        key={i}
+                                        className={`relative group aspect-video rounded-2xl overflow-hidden border transition-all ${
+                                            isSelected ? 'border-[#A788FA] ring-2 ring-[#A788FA]/50 shadow-lg' : 'border-[#2E2542] hover:border-white/30'
+                                        }`}
+                                    >
                                         <button
                                             onClick={() => {
-                                                const newStyles = { ...styles, backgroundImage: isVideo ? null : url, backgroundVideo: isVideo ? url : null };
-                                                setStyles(newStyles);
-                                                if (window.electron?.Presentation?.setStyle) window.electron.Presentation.setStyle(newStyles);
+                                                updateStyles({
+                                                    backgroundImage: isVideo ? null : url,
+                                                    backgroundVideo: isVideo ? url : null,
+                                                });
                                             }}
-                                            className="w-full h-full"
+                                            className="w-full h-full block"
                                         >
-                                            {isVideo ? <video src={url} className="w-full h-full object-cover" /> : <img src={url} className="w-full h-full object-cover" alt="local" />}
+                                            {isVideo ? (
+                                                <video src={url} className="w-full h-full object-cover" />
+                                            ) : (
+                                                <img src={url} className="w-full h-full object-cover" alt="local" />
+                                            )}
                                         </button>
+                                        <div className="absolute bottom-1 left-1 bg-black/70 px-1.5 py-0.5 rounded text-[9px] font-mono text-white/80 uppercase">
+                                            {isVideo ? 'Video' : 'Image'}
+                                        </div>
                                         <button
                                             onClick={async (e) => {
                                                 e.stopPropagation();
                                                 if (window.electron?.Media?.delete) {
                                                     const ok = await window.electron.Media.delete(url);
-                                                    if (ok) setMediaFiles(prev => prev.filter(f => f !== url));
+                                                    if (ok) {
+                                                        setMediaFiles(prev => prev.filter(f => f !== url));
+                                                        if (isSelected) updateStyles({ backgroundImage: null, backgroundVideo: null });
+                                                    }
                                                 }
                                             }}
-                                            className="absolute top-1 right-1 bg-red-600 text-white w-4 h-4 flex items-center justify-center rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10 text-[10px] font-black"
-                                        >×</button>
+                                            className="absolute top-1.5 right-1.5 bg-red-600 text-white w-5 h-5 flex items-center justify-center rounded-full opacity-0 group-hover:opacity-100 transition-opacity z-10 text-xs font-black shadow-md"
+                                            title="Delete Media"
+                                        >
+                                            ×
+                                        </button>
                                     </div>
                                 );
                             })}
                             {mediaFiles.length === 0 && (
-                                <div className="col-span-4 text-center py-8 text-[#8882A4] text-xs font-bold uppercase tracking-widest opacity-40">
-                                    No media imported yet
+                                <div className="col-span-4 text-center py-10 text-[#8882A4] text-xs font-bold uppercase tracking-widest border border-dashed border-[#2E2542] rounded-2xl">
+                                    No custom media imported yet. Click "+ Import Media" above.
                                 </div>
                             )}
                         </div>
 
-                        <div className="border-t border-[#2E2542] pt-4">
-                            <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest mb-3 block">Sample Backgrounds</label>
-                            <div className="grid grid-cols-4 gap-2">
+                        {/* Sample Backgrounds Preset */}
+                        <div className="border-t border-[#2E2542] pt-5">
+                            <div className="flex items-center justify-between mb-3">
+                                <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest">
+                                    Curated Sample Presets
+                                </label>
+                                {(styles.backgroundImage || styles.backgroundVideo) && (
+                                    <button
+                                        onClick={() => updateStyles({ backgroundImage: null, backgroundVideo: null })}
+                                        className="text-[10px] text-red-400 hover:underline font-bold uppercase"
+                                    >
+                                        Clear Active Background
+                                    </button>
+                                )}
+                            </div>
+
+                            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                                 {[
-                                    "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?q=80&w=500&auto=format&fit=crop",
-                                    "https://images.unsplash.com/photo-1472214103451-9374bd1c798e?q=80&w=500&auto=format&fit=crop",
-                                    "https://images.unsplash.com/photo-1519681393798-38e43269d496?q=80&w=500&auto=format&fit=crop",
-                                    "https://images.unsplash.com/photo-1438232992991-995b7058bbb3?q=80&w=500&auto=format&fit=crop"
-                                ].map((url, i) => (
+                                    { title: "Neon Aurora", url: "https://images.unsplash.com/photo-1550684848-fac1c5b4e853?q=80&w=500&auto=format&fit=crop" },
+                                    { title: "Sunset Glow", url: "https://images.unsplash.com/photo-1472214103451-9374bd1c798e?q=80&w=500&auto=format&fit=crop" },
+                                    { title: "Deep Space", url: "https://images.unsplash.com/photo-1519681393798-38e43269d496?q=80&w=500&auto=format&fit=crop" },
+                                    { title: "Holy Cross", url: "https://images.unsplash.com/photo-1438232992991-995b7058bbb3?q=80&w=500&auto=format&fit=crop" }
+                                ].map((item, i) => (
                                     <button
                                         key={i}
-                                        onClick={() => {
-                                            const newStyles = { ...styles, backgroundImage: url, backgroundVideo: null };
-                                            setStyles(newStyles);
-                                            if (window.electron?.Presentation?.setStyle) window.electron.Presentation.setStyle(newStyles);
-                                        }}
-                                        className="aspect-video w-full rounded-2xl overflow-hidden border border-[#2E2542] hover:border-[#A788FA] transition-all relative group"
+                                        onClick={() => updateStyles({ backgroundImage: item.url, backgroundVideo: null })}
+                                        className="aspect-video w-full rounded-2xl overflow-hidden border border-[#2E2542] hover:border-[#A788FA] transition-all relative group shadow-md"
                                     >
-                                        <img src={url} className="w-full h-full object-cover" alt="sample" />
+                                        <img src={item.url} className="w-full h-full object-cover" alt={item.title} />
                                         <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                            <span className="text-[10px] text-white font-black uppercase">Use</span>
+                                            <span className="text-[10px] text-white font-black uppercase tracking-wider bg-black/60 px-3 py-1 rounded-full border border-white/20">
+                                                Apply {item.title}
+                                            </span>
                                         </div>
                                     </button>
                                 ))}
@@ -618,154 +981,17 @@ export default function SettingsController() {
                     </div>
                 )}
 
-                {/* ─── PRIVACY / SESSION ARCHIVE ─── */}
-                {activeTab === 'privacy' && (
-                    <div className="bg-[#1A1428] border border-[#2E2542] p-6 rounded-3xl flex flex-col gap-4 max-w-2xl">
-                        <div>
-                            <h3 className="text-sm font-black uppercase tracking-widest text-[#F5F2FA]">Session archive</h3>
-                            <p className="text-[10px] text-[#8882A4] font-bold uppercase tracking-widest mt-1">Local recording notice</p>
-                        </div>
-                        <p className="text-sm text-[#C8C2DC] leading-relaxed">
-                            When you start a service timer, OCS may record microphone audio and the live transcript
-                            into a local Session Folder for church archive (sermon review, podcasts, notes).
-                            Audio and transcripts stay on this computer under the app’s data folder — they are not
-                            uploaded or shared over the network.
-                        </p>
-                        <p className="text-xs text-[#8882A4] leading-relaxed">
-                            A REC indicator appears on the Controller (and optionally Speaker View) while a session
-                            is archiving. Pause keeps recording by default. Manage folders from the Sessions sidebar.
-                            Free disk space under ~2 GB may block or warn before a new archive starts.
-                        </p>
-                        <div className="rounded-2xl bg-emerald-500/10 border border-emerald-500/20 px-4 py-3 text-xs text-emerald-200/90">
-                            Privacy: NFR-25 — primary mic audio is processed on-device only.
-                        </div>
-
-                        <div className="border-t border-[#2E2542] pt-5 mt-2">
-                            <div className="flex items-center gap-2 mb-3">
-                                <PiMoon className="text-[#A788FA]" size={18} />
-                                <h3 className="text-sm font-black uppercase tracking-widest text-[#F5F2FA]">Sleep prevention</h3>
-                            </div>
-                            <p className="text-xs text-[#8882A4] leading-relaxed mb-4">
-                                Keeps displays and projectors awake while OCS is protecting your service.
-                                Default is Always (recommended for live AV).
-                            </p>
-                            {!sleepProbeOk && (
-                                <div className="rounded-xl bg-amber-500/10 border border-amber-500/25 px-3 py-2 text-xs text-amber-200 mb-4">
-                                    Display sleep prevention could not be verified. Screens may still sleep mid-service.
-                                </div>
-                            )}
-                            <div className="grid grid-cols-2 gap-2">
-                                {[
-                                    { id: 'always', label: 'Always' },
-                                    { id: 'live', label: 'Only while live' },
-                                ].map((opt) => (
-                                    <button
-                                        key={opt.id}
-                                        type="button"
-                                        onClick={() => setSleepPreventionMode(opt.id)}
-                                        className={`px-4 py-3 rounded-2xl text-xs font-bold border transition-all ${
-                                            sleepMode === opt.id
-                                                ? 'bg-[#A788FA]/20 border-[#A788FA] text-[#A788FA]'
-                                                : 'bg-transparent border-[#2E2542] text-[#8882A4] hover:border-white/20 hover:text-white'
-                                        }`}
-                                    >
-                                        {opt.label}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-
-                        <div className="border-t border-[#2E2542] pt-5 mt-2">
-                            <h3 className="text-sm font-black uppercase tracking-widest text-[#F5F2FA] mb-1">Transcription language</h3>
-                            <p className="text-xs text-[#8882A4] leading-relaxed mb-4">
-                                OCS transcribes only the selected language. When an interpreter speaks another language
-                                on the same mic, those chunks are skipped (whisper language detection per VAD segment).
-                                Requires a multilingual whisper model (`ggml-tiny.bin`) for reliable detection; English-only
-                                models use a limited heuristic fallback.
-                            </p>
-                            <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest block mb-2">
-                                Target language
-                            </label>
-                            <select
-                                value={transcriptionLanguage}
-                                onChange={(e) => setTranscriptionLang(e.target.value)}
-                                className="w-full bg-[#0B0814] border border-[#2E2542] rounded-2xl px-4 py-3 text-sm text-white outline-none focus:border-[#A788FA] mb-4"
-                            >
-                                {[
-                                    { id: 'en', label: 'English' },
-                                    { id: 'yo', label: 'Yoruba' },
-                                    { id: 'fr', label: 'French' },
-                                    { id: 'es', label: 'Spanish' },
-                                    { id: 'pt', label: 'Portuguese' },
-                                    { id: 'sw', label: 'Swahili' },
-                                    { id: 'ha', label: 'Hausa' },
-                                    { id: 'ig', label: 'Igbo' },
-                                    { id: 'de', label: 'German' },
-                                    { id: 'zh', label: 'Chinese' },
-                                    { id: 'ar', label: 'Arabic' },
-                                ].map((opt) => (
-                                    <option key={opt.id} value={opt.id}>{opt.label}</option>
-                                ))}
-                            </select>
-                            <label className="flex items-start gap-3 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    className="mt-1 accent-[#A788FA]"
-                                    checked={languageGateEnabled}
-                                    onChange={(e) => setLanguageGate(e.target.checked)}
-                                />
-                                <span>
-                                    <span className="text-sm text-[#F5F2FA] font-semibold block">Filter non-target languages</span>
-                                    <span className="text-[11px] text-[#8882A4]">
-                                        Skip interpreter / other-language chunks. Applies to primary mic and secondary PTT.
-                                    </span>
-                                </span>
-                            </label>
-                        </div>
-
-                        <div className="border-t border-[#2E2542] pt-5 mt-2">
-                            <h3 className="text-sm font-black uppercase tracking-widest text-[#F5F2FA] mb-1">Transcript correction</h3>
-                            <p className="text-xs text-[#8882A4] leading-relaxed mb-4">
-                                Two separate features. Both default off. Session cleanup keeps a raw transcript file;
-                                AI cleanup is skipped if Ollama is unavailable.
-                            </p>
-                            <label className="flex items-start gap-3 mb-3 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    className="mt-1 accent-[#A788FA]"
-                                    checked={liveTranscriptCorrection}
-                                    onChange={(e) => setLiveCorrection(e.target.checked)}
-                                />
-                                <span>
-                                    <span className="text-sm text-[#F5F2FA] font-semibold block">Correct Live Transcript (dictionary)</span>
-                                    <span className="text-[11px] text-[#8882A4]">Fast display-only cleanup of Bible/church words. Does not change matching or archives.</span>
-                                </span>
-                            </label>
-                            <label className="flex items-start gap-3 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    className="mt-1 accent-[#A788FA]"
-                                    checked={sessionTranscriptCleanup}
-                                    onChange={(e) => setSessionCleanup(e.target.checked)}
-                                />
-                                <span>
-                                    <span className="text-sm text-[#F5F2FA] font-semibold block">Clean session PDF transcript (local AI)</span>
-                                    <span className="text-[11px] text-[#8882A4]">Post-timer Ollama pass with validation. Raw transcript always preserved.</span>
-                                </span>
-                            </label>
-                        </div>
-                    </div>
-                )}
-
-                {/* ─── INTRO & OUTRO BUMPERS TAB ─── */}
+                {/* ══════════════════════════════════════════════════════════════
+                    4. BUMPERS (INTRO & OUTRO) TAB
+                ══════════════════════════════════════════════════════════════ */}
                 {activeTab === 'bumpers' && (
-                    <div className="space-y-6">
+                    <div className="space-y-6 max-w-4xl">
                         {/* Auto-Merge Master Switch */}
-                        <div className="bg-[#1A1428] border border-[#2E2542] p-6 rounded-3xl">
+                        <div className="bg-[#1A1428] border border-[#2E2542] p-6 rounded-3xl shadow-lg">
                             <div className="flex items-start justify-between gap-4">
                                 <div>
                                     <div className="flex items-center gap-2 mb-1">
-                                        <div className="w-2.5 h-2.5 rounded-full bg-[#10B981] animate-pulse" />
+                                        <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
                                         <h3 className="text-sm font-black uppercase tracking-widest text-[#F5F2FA]">
                                             Auto-Merge Recording Bumpers
                                         </h3>
@@ -795,37 +1021,29 @@ export default function SettingsController() {
                             </div>
                         )}
 
-                        {/* Two Bumpers Columns: Intro & Outro */}
+                        {/* Bumpers Cards */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                             {/* INTRO BUMPER */}
                             <div className="bg-[#1A1428] border border-[#2E2542] rounded-3xl p-6 flex flex-col justify-between space-y-4">
                                 <div>
                                     <div className="flex items-center justify-between mb-3">
-                                        <div className="flex items-center gap-2">
-                                            <span className="px-3 py-1 rounded-full bg-[#A788FA]/20 text-[#A788FA] text-[10px] font-black uppercase tracking-wider">
-                                                Intro (Beginning)
+                                        <span className="px-3 py-1 rounded-full bg-[#A788FA]/20 text-[#A788FA] text-[10px] font-black uppercase tracking-wider">
+                                            Intro (Beginning)
+                                        </span>
+                                        {bumpers.intro && (
+                                            <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-semibold">
+                                                <PiCheckCircle size={14} /> Active
                                             </span>
-                                            {bumpers.intro && (
-                                                <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-semibold">
-                                                    <PiCheckCircle size={14} /> Active
-                                                </span>
-                                            )}
-                                        </div>
+                                        )}
                                     </div>
                                     <h4 className="text-base font-bold text-white mb-1">Session Intro Clip</h4>
-                                    <p className="text-xs text-[#8882A4] mb-4">
-                                        Plays first before sermon or presentation recording begins.
-                                    </p>
+                                    <p className="text-xs text-[#8882A4] mb-4">Plays before sermon or presentation recording begins.</p>
 
                                     {bumpers.intro ? (
                                         <div className="space-y-3">
-                                            <div className="w-full bg-[#0B0814] rounded-2xl overflow-hidden border border-[#2E2542] aspect-video flex items-center justify-center relative group">
+                                            <div className="w-full bg-[#0B0814] rounded-2xl overflow-hidden border border-[#2E2542] aspect-video flex items-center justify-center">
                                                 {bumpers.intro.hasVideo ? (
-                                                    <video
-                                                        src={bumpers.intro.url}
-                                                        controls
-                                                        className="w-full h-full object-contain"
-                                                    />
+                                                    <video src={bumpers.intro.url} controls className="w-full h-full object-contain" />
                                                 ) : (
                                                     <div className="p-6 flex flex-col items-center justify-center text-center gap-2 w-full">
                                                         <PiVideo size={36} className="text-[#A788FA]" />
@@ -833,25 +1051,18 @@ export default function SettingsController() {
                                                     </div>
                                                 )}
                                             </div>
-
-                                            <div className="flex items-center justify-between text-xs bg-[#0B0814]/70 p-3 rounded-2xl border border-[#2E2542]/60">
-                                                <div className="truncate pr-2">
-                                                    <span className="font-mono text-[#F5F2FA] block truncate">{bumpers.intro.name}</span>
-                                                    <span className="text-[10px] text-[#8882A4]">
-                                                        {formatBumperBytes(bumpers.intro.sizeBytes)} • {Math.round(bumpers.intro.durationSec || 0)}s duration
-                                                    </span>
-                                                </div>
+                                            <div className="flex items-center justify-between text-xs bg-[#0B0814]/70 p-3 rounded-2xl border border-[#2E2542]/60 font-mono">
+                                                <span className="text-[#F5F2FA] truncate max-w-[160px]">{bumpers.intro.name}</span>
+                                                <span className="text-[10px] text-[#8882A4]">
+                                                    {formatBumperBytes(bumpers.intro.sizeBytes)} • {Math.round(bumpers.intro.durationSec || 0)}s
+                                                </span>
                                             </div>
                                         </div>
                                     ) : (
-                                        <div className="border-2 border-dashed border-[#2E2542] rounded-2xl p-8 flex flex-col items-center justify-center text-center space-y-3 bg-[#0B0814]/40">
-                                            <div className="w-12 h-12 rounded-full bg-[#2E2542]/50 flex items-center justify-center text-[#8882A4]">
-                                                <PiFilmStrip size={24} />
-                                            </div>
-                                            <div>
-                                                <p className="text-xs font-semibold text-[#F5F2FA]">No Intro Uploaded</p>
-                                                <p className="text-[11px] text-[#8882A4]">Select an MP4, MOV, WebM, or audio file</p>
-                                            </div>
+                                        <div className="border-2 border-dashed border-[#2E2542] rounded-2xl p-8 flex flex-col items-center justify-center text-center space-y-2 bg-[#0B0814]/40">
+                                            <PiFilmStrip size={28} className="text-[#8882A4]" />
+                                            <p className="text-xs font-semibold text-[#F5F2FA]">No Intro Uploaded</p>
+                                            <p className="text-[11px] text-[#8882A4]">Select MP4, MOV, WebM, or audio</p>
                                         </div>
                                     )}
                                 </div>
@@ -860,7 +1071,7 @@ export default function SettingsController() {
                                     <button
                                         disabled={bumperBusy}
                                         onClick={() => handleUploadBumper('intro')}
-                                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-[#A788FA] text-[#0B0814] text-xs font-black uppercase tracking-wider hover:bg-[#B89CFF] transition-all disabled:opacity-50"
+                                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-[#A788FA] text-[#0B0814] text-xs font-black uppercase tracking-wider hover:opacity-90 transition-all disabled:opacity-50"
                                     >
                                         <PiUploadSimple size={16} /> {bumpers.intro ? 'Replace Intro' : 'Upload Intro'}
                                     </button>
@@ -881,31 +1092,23 @@ export default function SettingsController() {
                             <div className="bg-[#1A1428] border border-[#2E2542] rounded-3xl p-6 flex flex-col justify-between space-y-4">
                                 <div>
                                     <div className="flex items-center justify-between mb-3">
-                                        <div className="flex items-center gap-2">
-                                            <span className="px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-400 text-[10px] font-black uppercase tracking-wider">
-                                                Outro (End)
+                                        <span className="px-3 py-1 rounded-full bg-indigo-500/20 text-indigo-400 text-[10px] font-black uppercase tracking-wider">
+                                            Outro (Ending)
+                                        </span>
+                                        {bumpers.outro && (
+                                            <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-semibold">
+                                                <PiCheckCircle size={14} /> Active
                                             </span>
-                                            {bumpers.outro && (
-                                                <span className="flex items-center gap-1 text-[10px] text-emerald-400 font-semibold">
-                                                    <PiCheckCircle size={14} /> Active
-                                                </span>
-                                            )}
-                                        </div>
+                                        )}
                                     </div>
                                     <h4 className="text-base font-bold text-white mb-1">Session Outro Clip</h4>
-                                    <p className="text-xs text-[#8882A4] mb-4">
-                                        Appended automatically to the end of the recording session.
-                                    </p>
+                                    <p className="text-xs text-[#8882A4] mb-4">Appended automatically when session finalize runs.</p>
 
                                     {bumpers.outro ? (
                                         <div className="space-y-3">
-                                            <div className="w-full bg-[#0B0814] rounded-2xl overflow-hidden border border-[#2E2542] aspect-video flex items-center justify-center relative group">
+                                            <div className="w-full bg-[#0B0814] rounded-2xl overflow-hidden border border-[#2E2542] aspect-video flex items-center justify-center">
                                                 {bumpers.outro.hasVideo ? (
-                                                    <video
-                                                        src={bumpers.outro.url}
-                                                        controls
-                                                        className="w-full h-full object-contain"
-                                                    />
+                                                    <video src={bumpers.outro.url} controls className="w-full h-full object-contain" />
                                                 ) : (
                                                     <div className="p-6 flex flex-col items-center justify-center text-center gap-2 w-full">
                                                         <PiVideo size={36} className="text-indigo-400" />
@@ -913,25 +1116,18 @@ export default function SettingsController() {
                                                     </div>
                                                 )}
                                             </div>
-
-                                            <div className="flex items-center justify-between text-xs bg-[#0B0814]/70 p-3 rounded-2xl border border-[#2E2542]/60">
-                                                <div className="truncate pr-2">
-                                                    <span className="font-mono text-[#F5F2FA] block truncate">{bumpers.outro.name}</span>
-                                                    <span className="text-[10px] text-[#8882A4]">
-                                                        {formatBumperBytes(bumpers.outro.sizeBytes)} • {Math.round(bumpers.outro.durationSec || 0)}s duration
-                                                    </span>
-                                                </div>
+                                            <div className="flex items-center justify-between text-xs bg-[#0B0814]/70 p-3 rounded-2xl border border-[#2E2542]/60 font-mono">
+                                                <span className="text-[#F5F2FA] truncate max-w-[160px]">{bumpers.outro.name}</span>
+                                                <span className="text-[10px] text-[#8882A4]">
+                                                    {formatBumperBytes(bumpers.outro.sizeBytes)} • {Math.round(bumpers.outro.durationSec || 0)}s
+                                                </span>
                                             </div>
                                         </div>
                                     ) : (
-                                        <div className="border-2 border-dashed border-[#2E2542] rounded-2xl p-8 flex flex-col items-center justify-center text-center space-y-3 bg-[#0B0814]/40">
-                                            <div className="w-12 h-12 rounded-full bg-[#2E2542]/50 flex items-center justify-center text-[#8882A4]">
-                                                <PiFilmStrip size={24} />
-                                            </div>
-                                            <div>
-                                                <p className="text-xs font-semibold text-[#F5F2FA]">No Outro Uploaded</p>
-                                                <p className="text-[11px] text-[#8882A4]">Select an MP4, MOV, WebM, or audio file</p>
-                                            </div>
+                                        <div className="border-2 border-dashed border-[#2E2542] rounded-2xl p-8 flex flex-col items-center justify-center text-center space-y-2 bg-[#0B0814]/40">
+                                            <PiFilmStrip size={28} className="text-[#8882A4]" />
+                                            <p className="text-xs font-semibold text-[#F5F2FA]">No Outro Uploaded</p>
+                                            <p className="text-[11px] text-[#8882A4]">Select MP4, MOV, WebM, or audio</p>
                                         </div>
                                     )}
                                 </div>
@@ -940,7 +1136,7 @@ export default function SettingsController() {
                                     <button
                                         disabled={bumperBusy}
                                         onClick={() => handleUploadBumper('outro')}
-                                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-[#A788FA] text-[#0B0814] text-xs font-black uppercase tracking-wider hover:bg-[#B89CFF] transition-all disabled:opacity-50"
+                                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-[#A788FA] text-[#0B0814] text-xs font-black uppercase tracking-wider hover:opacity-90 transition-all disabled:opacity-50"
                                     >
                                         <PiUploadSimple size={16} /> {bumpers.outro ? 'Replace Outro' : 'Upload Outro'}
                                     </button>
@@ -960,230 +1156,233 @@ export default function SettingsController() {
                     </div>
                 )}
 
-                {/* ─── NDI & BROADCAST STREAMING TAB (FR-4.41–FR-4.44) ─── */}
-                {activeTab === 'ndi' && (
-                    <div className="space-y-6">
-                        <div className="bg-[#1A1428] border border-[#2E2542] p-6 rounded-3xl">
-                            <div className="flex items-center justify-between mb-4">
-                                <div className="flex items-center gap-3">
-                                    <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${ndiConfig.enabled ? 'bg-cyan-500/20 text-cyan-400' : 'bg-white/10 text-[#8882A4]'}`}>
-                                        <PiBroadcast size={22} />
-                                    </div>
-                                    <div>
-                                        <div className="flex items-center gap-2">
-                                            <h3 className="font-bold text-base text-white">NDI & Broadcast Streaming</h3>
-                                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                                                ndiConfig.enabled
-                                                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                                    : 'bg-white/10 text-[#8882A4]'
-                                            }`}>
-                                                {ndiConfig.enabled ? '● Active' : '○ Off by Default'}
-                                            </span>
-                                        </div>
-                                        <p className="text-xs text-[#8882A4]">Broadcast OCS outputs to OBS Studio, vMix, Zoom, and TriCaster across the local network.</p>
-                                    </div>
+                {/* ══════════════════════════════════════════════════════════════
+                    5. VOICE, ASR & AI TAB
+                ══════════════════════════════════════════════════════════════ */}
+                {activeTab === 'voice' && (
+                    <div className="bg-[#1A1428] border border-[#2E2542] p-6 rounded-3xl space-y-6 max-w-4xl">
+                        {/* ASR Engine Status Badge */}
+                        <div className="flex items-center justify-between p-4 rounded-2xl bg-[#0B0814] border border-[#2E2542]">
+                            <div className="flex items-center gap-3">
+                                <div className="w-9 h-9 rounded-xl bg-purple-500/20 flex items-center justify-center text-[#A788FA]">
+                                    <PiCpu size={20} />
                                 </div>
-
-                                {/* Master Toggle */}
-                                <button
-                                    type="button"
-                                    onClick={() => handleToggleNdi(!ndiConfig.enabled)}
-                                    className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                                        ndiConfig.enabled ? 'bg-cyan-500' : 'bg-[#2E2542]'
-                                    }`}
-                                >
-                                    <span
-                                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
-                                            ndiConfig.enabled ? 'translate-x-5' : 'translate-x-0'
-                                        }`}
-                                    />
-                                </button>
-                            </div>
-
-                            {/* Plain-Language Exposure Notice Banner (FR-4.43) */}
-                            <div className="bg-[#0B0814] p-4 rounded-2xl border border-amber-500/30 flex items-start gap-3 my-4">
-                                <div className="p-2 rounded-xl bg-amber-500/10 text-amber-400 shrink-0 mt-0.5">
-                                    <PiShieldWarning size={20} />
-                                </div>
-                                <div className="space-y-1">
-                                    <h4 className="text-xs font-bold text-amber-300">LAN Broadcast Security Notice (FR-4.43)</h4>
-                                    <p className="text-xs text-[#A89EC4] leading-relaxed">
-                                        NDI and broadcast streaming is <strong>disabled by default</strong> on launch. When enabled, anyone connected to this local network (LAN / Wi-Fi) will be able to view your display feed without a password via OBS Studio, vMix, or a browser. Only enable this on a trusted, secure production network.
+                                <div>
+                                    <h4 className="text-xs font-bold text-[#F5F2FA]">Active Speech Recognition Engine</h4>
+                                    <p className="text-[10px] text-[#8882A4]">
+                                        {asrStatus?.engine ? `Engine: ${asrStatus.engine}` : 'Native whisper.cpp with Vosk fallback'}
                                     </p>
                                 </div>
                             </div>
+                            <span className="px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-mono font-bold">
+                                {asrStatus?.running ? 'RUNNING' : 'ONLINE'}
+                            </span>
+                        </div>
 
-                            {ndiConfig.enabled ? (
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-                                    <div className="bg-[#0B0814] p-4 rounded-2xl border border-[#2E2542] space-y-3">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-xs font-bold text-white">Channel 1: Program Output</span>
-                                            <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 text-[10px] font-bold">1080p • Alpha</span>
-                                        </div>
-                                        <p className="text-xs text-[#8882A4]">Main projector feed, Bible scripture, lyrics & slide decks with transparent background.</p>
-                                        
-                                        <div className="space-y-2">
-                                            <div className="flex items-center justify-between bg-white/5 p-2 rounded-xl border border-white/5">
-                                                <span className="text-[11px] font-mono text-cyan-400 truncate mr-2">
-                                                    {ndiStatus?.urls?.programOverlay || `http://${ndiStatus?.localIp || '127.0.0.1'}:4000/overlay/program`}
-                                                </span>
-                                                <button
-                                                    onClick={() => copyToClipboard(ndiStatus?.urls?.programOverlay || `http://${ndiStatus?.localIp || '127.0.0.1'}:4000/overlay/program`, 'prog-over')}
-                                                    className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold flex items-center gap-1 transition-all"
-                                                >
-                                                    {copiedUrl === 'prog-over' ? <PiCheck className="text-emerald-400" /> : <PiCopy />}
-                                                    <span>{copiedUrl === 'prog-over' ? 'Copied' : 'Copy'}</span>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
+                        {/* Transcription Language */}
+                        <div className="space-y-3">
+                            <h3 className="text-sm font-black uppercase tracking-widest text-[#F5F2FA]">Target Transcription Language</h3>
+                            <p className="text-xs text-[#8882A4] leading-relaxed">
+                                OCS transcribes only the selected language. When an interpreter speaks another language
+                                on the same microphone, those chunks are automatically filtered out (whisper language detection per VAD segment).
+                            </p>
+                            <select
+                                value={transcriptionLanguage}
+                                onChange={(e) => setTranscriptionLang(e.target.value)}
+                                className="w-full bg-[#0B0814] border border-[#2E2542] rounded-2xl px-4 py-3 text-sm text-white outline-none focus:border-[#A788FA]"
+                            >
+                                {[
+                                    { id: 'en', label: 'English (Default)' },
+                                    { id: 'yo', label: 'Yoruba (Nigeria)' },
+                                    { id: 'fr', label: 'French' },
+                                    { id: 'es', label: 'Spanish' },
+                                    { id: 'pt', label: 'Portuguese' },
+                                    { id: 'sw', label: 'Swahili' },
+                                    { id: 'ha', label: 'Hausa' },
+                                    { id: 'ig', label: 'Igbo' },
+                                    { id: 'de', label: 'German' },
+                                    { id: 'zh', label: 'Chinese (Mandarin)' },
+                                    { id: 'ar', label: 'Arabic' },
+                                ].map((opt) => (
+                                    <option key={opt.id} value={opt.id}>{opt.label}</option>
+                                ))}
+                            </select>
 
-                                    <div className="bg-[#0B0814] p-4 rounded-2xl border border-[#2E2542] space-y-3">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-xs font-bold text-white">Channel 2: Stage Display</span>
-                                            <span className="px-2 py-0.5 rounded bg-purple-500/20 text-purple-400 text-[10px] font-bold">Confidence Feed</span>
-                                        </div>
-                                        <p className="text-xs text-[#8882A4]">Live stage display with synchronized countdown timer, active passage & speaker notes.</p>
-                                        
-                                        <div className="space-y-2">
-                                            <div className="flex items-center justify-between bg-white/5 p-2 rounded-xl border border-white/5">
-                                                <span className="text-[11px] font-mono text-purple-400 truncate mr-2">
-                                                    {ndiStatus?.urls?.stageOverlay || `http://${ndiStatus?.localIp || '127.0.0.1'}:4000/overlay/stage`}
-                                                </span>
-                                                <button
-                                                    onClick={() => copyToClipboard(ndiStatus?.urls?.stageOverlay || `http://${ndiStatus?.localIp || '127.0.0.1'}:4000/overlay/stage`, 'stage-over')}
-                                                    className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-white text-[10px] font-bold flex items-center gap-1 transition-all"
-                                                >
-                                                    {copiedUrl === 'stage-over' ? <PiCheck className="text-emerald-400" /> : <PiCopy />}
-                                                    <span>{copiedUrl === 'stage-over' ? 'Copied' : 'Copy'}</span>
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
+                            <label className="flex items-start gap-3 cursor-pointer pt-2">
+                                <input
+                                    type="checkbox"
+                                    className="mt-1 accent-[#A788FA] w-4 h-4 rounded"
+                                    checked={languageGateEnabled}
+                                    onChange={(e) => setLanguageGate(e.target.checked)}
+                                />
+                                <span>
+                                    <span className="text-sm text-[#F5F2FA] font-semibold block">Filter non-target languages</span>
+                                    <span className="text-[11px] text-[#8882A4]">
+                                        Skip interpreter / other-language audio segments. Applies to primary mic and secondary push-to-talk.
+                                    </span>
+                                </span>
+                            </label>
+                        </div>
+
+                        {/* Transcript Correction Features */}
+                        <div className="border-t border-[#2E2542] pt-5 space-y-4">
+                            <h3 className="text-sm font-black uppercase tracking-widest text-[#F5F2FA]">Transcript AI & Cleanup</h3>
+                            
+                            <label className="flex items-start gap-3 cursor-pointer p-4 rounded-2xl bg-[#0B0814] border border-[#2E2542] hover:border-white/20 transition-colors">
+                                <input
+                                    type="checkbox"
+                                    className="mt-1 accent-[#A788FA] w-4 h-4 rounded"
+                                    checked={liveTranscriptCorrection}
+                                    onChange={(e) => setLiveCorrection(e.target.checked)}
+                                />
+                                <div className="space-y-0.5">
+                                    <span className="text-sm text-[#F5F2FA] font-semibold block">Tier 1: Correct Live Transcript (Dictionary)</span>
+                                    <span className="text-xs text-[#8882A4] block">Fast display-only cleanup of biblical names, places, and church vocabulary in real-time.</span>
                                 </div>
-                            ) : (
-                                <div className="bg-[#0B0814] p-6 rounded-2xl border border-[#2E2542] text-center space-y-2 mt-4">
-                                    <p className="text-xs font-bold text-[#8882A4]">Broadcast server is inactive.</p>
-                                    <p className="text-xs text-[#6B6488]">Turn on the master switch above to start streaming Program and Stage feeds across the network.</p>
+                            </label>
+
+                            <label className="flex items-start gap-3 cursor-pointer p-4 rounded-2xl bg-[#0B0814] border border-[#2E2542] hover:border-white/20 transition-colors">
+                                <input
+                                    type="checkbox"
+                                    className="mt-1 accent-[#A788FA] w-4 h-4 rounded"
+                                    checked={sessionTranscriptCleanup}
+                                    onChange={(e) => setSessionCleanup(e.target.checked)}
+                                />
+                                <div className="space-y-0.5">
+                                    <span className="text-sm text-[#F5F2FA] font-semibold block">Tier 2: Clean Session PDF Transcript (Local Ollama AI)</span>
+                                    <span className="text-xs text-[#8882A4] block">Post-timer Ollama LLM pass before PDF compilation. The raw transcript is always preserved.</span>
                                 </div>
-                            )}
+                            </label>
                         </div>
                     </div>
                 )}
 
-                {/* ─── LICENSE & AUTHENTICATION TAB (FR-13.1–FR-13.8) ─── */}
-                {activeTab === 'license' && (
-                    <div className="space-y-6 max-w-2xl">
-                        <div className="bg-[#1A1428] p-6 rounded-3xl border border-[#2E2542] space-y-6">
-                            <div className="flex items-center gap-3">
-                                <div className="w-10 h-10 rounded-2xl bg-purple-500/20 flex items-center justify-center text-purple-400">
-                                    <PiShieldCheck size={22} />
-                                </div>
-                                <div>
-                                    <h3 className="text-sm font-bold text-white uppercase tracking-wider">Workstation License & Session</h3>
-                                    <p className="text-xs text-[#8882A4]">Organization licensing & authentication status (FR-13.1–FR-13.8)</p>
-                                </div>
+                {/* ══════════════════════════════════════════════════════════════
+                    6. SYSTEM & LICENSE TAB
+                ══════════════════════════════════════════════════════════════ */}
+                {activeTab === 'system' && (
+                    <div className="space-y-6 max-w-4xl">
+                        {/* Display Sleep Prevention */}
+                        <div className="bg-[#1A1428] border border-[#2E2542] p-6 rounded-3xl space-y-4">
+                            <div className="flex items-center gap-2">
+                                <PiMoon className="text-[#A788FA]" size={20} />
+                                <h3 className="text-sm font-black uppercase tracking-widest text-[#F5F2FA]">Display Sleep Prevention</h3>
                             </div>
-
-                            {/* Organization & Account Info */}
-                            <div className="grid grid-cols-2 gap-4">
-                                <div className="bg-[#0B0814] p-4 rounded-2xl border border-[#2E2542] space-y-1">
-                                    <span className="text-[10px] uppercase tracking-wider font-bold text-[#8882A4]">Licensed Organization</span>
-                                    <p className="text-sm font-bold text-white">{authStatus?.orgName || 'Grace Community Church'}</p>
+                            <p className="text-xs text-[#8882A4] leading-relaxed">
+                                Keeps monitors, beamers, and projectors awake while OCS is active.
+                                "Always" prevents macOS/Windows screensavers and sleep timers completely.
+                            </p>
+                            {!sleepProbeOk && (
+                                <div className="rounded-2xl bg-amber-500/10 border border-amber-500/25 p-3 text-xs text-amber-200 flex items-center gap-2">
+                                    <PiWarning size={16} /> Display sleep prevention could not be verified by hardware probe.
                                 </div>
-                                <div className="bg-[#0B0814] p-4 rounded-2xl border border-[#2E2542] space-y-1">
-                                    <span className="text-[10px] uppercase tracking-wider font-bold text-[#8882A4]">Account Email</span>
-                                    <p className="text-sm font-bold text-white truncate">{authStatus?.email || 'admin@church.org'}</p>
-                                </div>
+                            )}
+                            <div className="grid grid-cols-2 gap-3">
+                                {[
+                                    { id: 'always', label: 'Always Awake (Recommended)' },
+                                    { id: 'live', label: 'Only While Live Timer Running' },
+                                ].map((opt) => (
+                                    <button
+                                        key={opt.id}
+                                        type="button"
+                                        onClick={() => setSleepPreventionMode(opt.id)}
+                                        className={`px-4 py-3 rounded-2xl text-xs font-bold border transition-all text-center ${
+                                            sleepMode === opt.id
+                                                ? 'bg-[#A788FA]/20 border-[#A788FA] text-[#A788FA] shadow-md'
+                                                : 'bg-transparent border-[#2E2542] text-[#8882A4] hover:border-white/20 hover:text-white'
+                                        }`}
+                                    >
+                                        {opt.label}
+                                    </button>
+                                ))}
                             </div>
+                        </div>
 
-                            {/* Session Status */}
-                            <div className="bg-[#0B0814] p-4 rounded-2xl border border-[#2E2542] space-y-2">
+                        {/* Workstation License Details */}
+                        {authContext && (
+                            <div className="bg-[#1A1428] border border-[#2E2542] p-6 rounded-3xl space-y-4">
                                 <div className="flex items-center justify-between">
-                                    <span className="text-xs font-bold text-white">License State</span>
-                                    {authStatus?.state === 'grace_period' ? (
-                                        <span className="px-2.5 py-1 rounded-full bg-amber-500/20 border border-amber-500/30 text-amber-300 text-[11px] font-black flex items-center gap-1.5">
-                                            <PiWarning size={14} />
-                                            <span>Offline Grace ({authStatus?.hoursRemaining || 72}h left)</span>
-                                        </span>
-                                    ) : authStatus?.authenticated ? (
-                                        <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-[11px] font-black flex items-center gap-1.5">
-                                            <PiCheck size={14} />
-                                            <span>Active & Verified</span>
-                                        </span>
-                                    ) : (
-                                        <span className="px-2.5 py-1 rounded-full bg-red-500/20 border border-red-500/30 text-red-400 text-[11px] font-black">
-                                            Unauthenticated
-                                        </span>
-                                    )}
+                                    <div className="flex items-center gap-2">
+                                        <PiShieldCheck className="text-[#67E8F9]" size={20} />
+                                        <h3 className="text-sm font-black uppercase tracking-widest text-[#F5F2FA]">Workstation License</h3>
+                                    </div>
+                                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
+                                        authContext.isAuthenticated
+                                            ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300'
+                                            : 'bg-amber-500/15 border border-amber-500/30 text-amber-300'
+                                    }`}>
+                                        {authContext.isAuthenticated ? (authContext.isGracePeriod ? 'Offline Grace' : 'Active License') : 'Unregistered'}
+                                    </span>
                                 </div>
-                                <p className="text-xs text-[#8882A4] leading-relaxed">
-                                    {authStatus?.state === 'grace_period'
-                                        ? `Operating offline on cached credentials (FR-13.5). Re-validation will happen silently in the background when connectivity resumes.`
-                                        : `Active license verified. Tokens stored securely in native OS Keychain / Credential store (FR-13.4).`}
-                                </p>
-                            </div>
 
-                            {/* Logout Action (FR-13.6) */}
-                            <div className="pt-2 border-t border-[#2E2542] flex items-center justify-between">
-                                <div>
-                                    <h4 className="text-xs font-bold text-white">Log Out Workstation</h4>
-                                    <p className="text-[11px] text-[#6B6488]">Clears cached credentials and locks workstation until re-authenticated.</p>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-4 rounded-2xl bg-[#0B0814] border border-[#2E2542] text-xs">
+                                    <div>
+                                        <span className="text-[#8882A4] block text-[10px] font-bold uppercase">Church Organization</span>
+                                        <span className="text-white font-bold">{authContext.auth?.orgName || 'OCS Community Church'}</span>
+                                    </div>
+                                    <div>
+                                        <span className="text-[#8882A4] block text-[10px] font-bold uppercase">Account Email</span>
+                                        <span className="text-white font-mono">{authContext.auth?.email || 'local-workstation@churchocs.com'}</span>
+                                    </div>
+                                    <div>
+                                        <span className="text-[#8882A4] block text-[10px] font-bold uppercase">License Tier</span>
+                                        <span className="text-[#A788FA] font-black uppercase">{authContext.auth?.licenseTier || 'Pro Workstation'}</span>
+                                    </div>
+                                    <div>
+                                        <span className="text-[#8882A4] block text-[10px] font-bold uppercase">Offline Resilience</span>
+                                        <span className="text-emerald-400 font-bold">
+                                            {authContext.auth?.hoursRemaining != null ? `${authContext.auth.hoursRemaining}h remaining` : '72h Max Grace Period'}
+                                        </span>
+                                    </div>
                                 </div>
-                                <button
-                                    onClick={handleLogout}
-                                    disabled={authLoading}
-                                    className="px-4 py-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 text-xs font-bold flex items-center gap-2 transition-all"
-                                >
-                                    <PiSignOut size={16} />
-                                    <span>{authLoading ? 'Logging Out...' : 'Log Out'}</span>
-                                </button>
                             </div>
+                        )}
+
+                        {/* Factory Reset */}
+                        <div className="bg-[#1A1428] border border-red-500/20 p-6 rounded-3xl space-y-3">
+                            <h3 className="text-sm font-black uppercase tracking-widest text-red-300">Factory Reset Configuration</h3>
+                            <p className="text-xs text-[#8882A4]">
+                                Restores all display styles, scripture alignments, bumper paths, and audio preferences to their default states.
+                            </p>
+                            <button
+                                onClick={() => setShowResetModal(true)}
+                                className="px-5 py-2.5 rounded-2xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-300 text-xs font-bold transition-colors"
+                            >
+                                Reset All Settings to Factory Defaults
+                            </button>
                         </div>
                     </div>
                 )}
             </div>
 
-            {/* ─── NDI Plain-Language Exposure Consent Modal (FR-4.43) ─── */}
-            {showNdiConsentModal && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-150">
-                    <div className="bg-[#1A1428] border border-amber-500/40 rounded-3xl p-6 max-w-lg w-full shadow-2xl space-y-4">
-                        <div className="flex items-center gap-3 text-amber-400">
-                            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 flex items-center justify-center">
-                                <PiWarning size={28} />
+            {/* ─── Reset Confirmation Modal ─── */}
+            {showResetModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                    <div className="bg-[#161028] border border-[#2E2542] rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl">
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-amber-400">
+                                <PiWarning size={22} />
+                                <h3 className="text-base font-black text-white">Confirm Factory Reset</h3>
                             </div>
-                            <div>
-                                <h3 className="text-base font-bold text-white">Enable NDI & Network Broadcast?</h3>
-                                <p className="text-xs text-amber-300">Informed Consent Notice (FR-4.43)</p>
-                            </div>
+                            <button onClick={() => setShowResetModal(false)} className="text-[#8882A4] hover:text-white">
+                                <PiX size={20} />
+                            </button>
                         </div>
-
-                        <div className="bg-[#0B0814] p-4 rounded-2xl border border-[#2E2542] text-xs text-[#DDD7EE] leading-relaxed space-y-2">
-                            <p>
-                                Anyone connected to this local network (LAN / Wi-Fi) will be able to view your display feed without a password via OBS Studio, vMix, or a browser.
-                            </p>
-                            <p className="text-[#8882A4]">
-                                Only enable this on a trusted production network, not a public or guest Wi-Fi.
-                            </p>
-                        </div>
-
-                        <div className="flex items-center justify-end gap-3 pt-2">
+                        <p className="text-xs text-[#C8C2DC] leading-relaxed">
+                            Are you sure you want to reset all display styles and application preferences? This will restore background colors, typography, and ASR settings to factory defaults.
+                        </p>
+                        <div className="flex gap-3 pt-2">
                             <button
-                                type="button"
-                                onClick={() => setShowNdiConsentModal(false)}
-                                className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all"
+                                onClick={() => setShowResetModal(false)}
+                                className="flex-1 px-4 py-2.5 rounded-2xl bg-white/10 text-white text-xs font-bold hover:bg-white/15 transition-colors"
                             >
                                 Cancel
                             </button>
                             <button
-                                type="button"
-                                onClick={() => {
-                                    setShowNdiConsentModal(false);
-                                    applyNdiState(true);
-                                }}
-                                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black text-xs font-black transition-all shadow-lg shadow-amber-500/20"
+                                onClick={handleResetToDefaults}
+                                className="flex-1 px-4 py-2.5 rounded-2xl bg-red-600 hover:bg-red-500 text-white text-xs font-black uppercase tracking-wider transition-colors shadow-lg shadow-red-600/30"
                             >
-                                I Understand, Enable Streaming
+                                Reset Now
                             </button>
                         </div>
                     </div>

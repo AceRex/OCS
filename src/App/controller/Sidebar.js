@@ -36,6 +36,7 @@ function SidebarAccount({ isCollapsed }) {
     error,
     login,
     logout,
+    simulateLogin,
     cancelLogin,
   } = useAuth();
 
@@ -75,18 +76,30 @@ function SidebarAccount({ isCollapsed }) {
               isCollapsed ? "justify-center" : "gap-2.5"
             }`}
           >
-            <PiSpinner size={18} className="text-purple-400 animate-spin flex-shrink-0" />
+            <PiSpinner
+              size={18}
+              className="text-purple-400 animate-spin flex-shrink-0"
+            />
             {!isCollapsed && (
               <div className="flex flex-col overflow-hidden flex-1">
                 <span className="text-[11px] font-bold text-purple-300">
                   Waiting for browser...
                 </span>
-                <button
-                  onClick={cancelLogin}
-                  className="text-[10px] text-white/30 hover:text-white/60 text-left transition-colors"
-                >
-                  Cancel
-                </button>
+                <div className="flex items-center gap-2 mt-1">
+                  <button
+                    onClick={() => simulateLogin()}
+                    className="text-[10px] text-purple-300 hover:text-purple-200 underline font-medium"
+                  >
+                    Simulate
+                  </button>
+                  <span className="text-[10px] text-white/20">•</span>
+                  <button
+                    onClick={cancelLogin}
+                    className="text-[10px] text-white/30 hover:text-white/60 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                </div>
               </div>
             )}
           </div>
@@ -125,7 +138,10 @@ function SidebarAccount({ isCollapsed }) {
               </div>
             )}
             {!isCollapsed && (
-              <PiArrowSquareOut size={14} className="text-purple-400 flex-shrink-0" />
+              <PiArrowSquareOut
+                size={14}
+                className="text-purple-400 flex-shrink-0"
+              />
             )}
           </button>
         )}
@@ -158,10 +174,10 @@ function SidebarAccount({ isCollapsed }) {
         {!isCollapsed && (
           <div className="flex flex-col overflow-hidden flex-1 text-left">
             <span className="text-xs font-bold text-white truncate">
-              {auth.orgName || "Church Organization"}
+              {auth.orgName || "OCS Community Church"}
             </span>
             <span className="text-[10px] text-white/40 truncate">
-              {auth.email || "operator@church.org"}
+              {auth.email || "admin@churchocs.com"}
             </span>
           </div>
         )}
@@ -169,7 +185,10 @@ function SidebarAccount({ isCollapsed }) {
         {/* State badge (collapsed: icon only, expanded: pill) */}
         {isCollapsed ? (
           isGracePeriod ? (
-            <PiWarning size={10} className="text-amber-400 absolute bottom-0 right-0" />
+            <PiWarning
+              size={10}
+              className="text-amber-400 absolute bottom-0 right-0"
+            />
           ) : (
             <PiCheckCircle
               size={10}
@@ -178,7 +197,9 @@ function SidebarAccount({ isCollapsed }) {
           )
         ) : isGracePeriod ? (
           <span className="text-[9px] font-black text-amber-300 bg-amber-500/15 border border-amber-500/20 rounded-full px-1.5 py-0.5 flex-shrink-0">
-            {auth.hoursRemaining != null ? `${auth.hoursRemaining}h` : "Offline"}
+            {auth.hoursRemaining != null
+              ? `${auth.hoursRemaining}h`
+              : "Offline"}
           </span>
         ) : (
           <span className="text-[9px] font-black text-emerald-300 bg-emerald-500/15 border border-emerald-500/20 rounded-full px-1.5 py-0.5 flex-shrink-0 whitespace-nowrap">
@@ -196,8 +217,10 @@ function SidebarAccount({ isCollapsed }) {
           {isGracePeriod && (
             <div className="px-3 py-2 mb-1 rounded-xl bg-amber-500/10 border border-amber-500/20">
               <p className="text-[10px] text-amber-300 font-semibold leading-relaxed">
-                Operating offline on cached session — re-validates silently when connectivity resumes.
-                {auth.hoursRemaining != null && ` ${auth.hoursRemaining}h remaining.`}
+                Operating offline on cached session — re-validates silently when
+                connectivity resumes.
+                {auth.hoursRemaining != null &&
+                  ` ${auth.hoursRemaining}h remaining.`}
               </p>
             </div>
           )}
@@ -239,7 +262,7 @@ export default function Sidebar({ activeTab, onTabChange }) {
   const [isCollapsed, setIsCollapsed] = useState(true);
 
   const tabs = [
-    { id: "dashboard", label: "Dashboard", icon: PiHouse, isBlock: false },
+    { id: "dashboard", label: "Broadcast", icon: PiHouse, isBlock: false },
     { id: "timer", label: "Timer Sync", icon: PiClock, isBlock: false },
     { id: "sessions", label: "Sessions", icon: PiFolder, isBlock: false },
     { id: "bible", label: "Bible AI", icon: PiBook, isBlock: false },
@@ -262,8 +285,8 @@ export default function Sidebar({ activeTab, onTabChange }) {
   return (
     <aside
       className={`${
-        isCollapsed ? "w-20" : "w-64"
-      } h-[96vh] m-[2vh] ml-4 bg-[#121212]/90 backdrop-blur-xl border border-white/10 rounded-3xl flex flex-col items-center py-6 transition-all duration-300 ease-in-out relative shadow-2xl z-50`}
+        isCollapsed ? "w-20" : "w-60"
+      } h-full bg-[#12111a]/95 backdrop-blur-2xl border border-white/10 rounded-2xl flex flex-col items-center py-5 transition-all duration-300 ease-in-out relative shadow-2xl z-50 shrink-0`}
     >
       {/* Collapse Toggle */}
       <button

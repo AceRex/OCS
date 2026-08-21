@@ -1,6 +1,24 @@
-const { ipcRenderer, contextBridge } = require("electron");
+const { ipcRenderer, contextBridge, clipboard } = require("electron");
 
 contextBridge.exposeInMainWorld("electron", {
+  Clipboard: {
+    writeText: (text) => {
+      try {
+        if (text != null) clipboard.writeText(String(text));
+        return true;
+      } catch (e) {
+        console.error('Clipboard write error:', e);
+        return false;
+      }
+    },
+    readText: () => {
+      try {
+        return clipboard.readText();
+      } catch (e) {
+        return '';
+      }
+    },
+  },
   Timer: {
     setTimer(value) {
       ipcRenderer.send("activate_set_timer", value);
@@ -151,6 +169,7 @@ contextBridge.exposeInMainWorld("electron", {
       ipcRenderer.removeAllListeners("set-content");
     },
     setStyle: (style) => ipcRenderer.send("activate_set_style", style),
+    getStyle: () => ipcRenderer.invoke("presentation-get-style"),
     onSetStyle: (callback) => {
       const listener = (_event, response) => callback(response);
       ipcRenderer.on("set-style", listener);
@@ -376,6 +395,12 @@ contextBridge.exposeInMainWorld("electron", {
   Settings: {
     get: () => ipcRenderer.invoke('settings-get'),
     set: (patch) => ipcRenderer.invoke('settings-set', patch),
+    resetDefaults: () => ipcRenderer.invoke('settings-reset-defaults'),
+    onUpdated: (callback) => {
+      const listener = (_e, payload) => callback(payload);
+      ipcRenderer.on('settings-updated', listener);
+      return () => ipcRenderer.removeListener('settings-updated', listener);
+    },
   },
   Ndi: {
     getStatus: () => ipcRenderer.invoke('ndi:get-status'),

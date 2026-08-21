@@ -44,8 +44,8 @@ ocs://auth-callback?token={SESSION_TOKEN}&state={CSRF_STATE}&email={USER_EMAIL}&
 |---|---|---|---|---|
 | `token` | `string` | **Yes** | Signed session JWT / API bearer token. | `eyJhbGciOi...` |
 | `state` | `string` | **Yes** | Exact CSRF state passed in Step 1. | `d4e5f6...` |
-| `email` | `string` | **Yes** | Operator / Church Admin Email. | `lead_pastor@gracecommunity.org` |
-| `org` / `orgName` | `string` | **Yes** | Licensed Church / Ministry Organization Name. | `Grace Community Church` |
+| `email` | `string` | **Yes** | Operator / Church Admin Email. | `admin@churchocs.com` |
+| `org` / `orgName` | `string` | **Yes** | Licensed Church / Ministry Organization Name. | `OCS Community Church` |
 | `tier` | `string` | Optional | Subscription tier (`standard`, `pro`, `enterprise`). | `enterprise` |
 
 ---

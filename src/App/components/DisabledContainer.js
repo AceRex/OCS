@@ -104,17 +104,26 @@ export default function DisabledContainer({
               </button>
             </>
           ) : (
-            <button
-              onClick={login}
-              className="flex items-center justify-center gap-2.5 w-full py-3.5 rounded-2xl font-bold text-sm text-white transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0"
-              style={{
-                background: 'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)',
-                boxShadow: '0 6px 20px rgba(124, 58, 237, 0.35)',
-              }}
-            >
-              <PiArrowSquareOut size={16} />
-              {actionText}
-            </button>
+            <>
+              <button
+                onClick={login}
+                className="flex items-center justify-center gap-2.5 w-full py-3.5 rounded-2xl font-bold text-sm text-white transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0"
+                style={{
+                  background: 'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)',
+                  boxShadow: '0 6px 20px rgba(124, 58, 237, 0.35)',
+                }}
+              >
+                <PiArrowSquareOut size={16} />
+                {actionText}
+              </button>
+              <button
+                onClick={() => simulateLogin()}
+                className="w-full py-2 rounded-xl text-xs font-semibold text-white/50 hover:text-white/80 hover:bg-white/5 transition-colors"
+                title="Instant activation without remote auth server"
+              >
+                ⚡ Quick Demo / Dev Activate
+              </button>
+            </>
           )}
         </div>
 

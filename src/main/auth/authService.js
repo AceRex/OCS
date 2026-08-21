@@ -113,8 +113,8 @@ class AuthService extends EventEmitter {
     if (!this.sessionFilePath) throw new Error('AuthService not initialized');
     const payload = {
       token: sessionData.token,
-      email: sessionData.email || 'operator@church.org',
-      orgName: sessionData.orgName || 'Local Church Organization',
+      email: sessionData.email || 'operator@churchocs.com',
+      orgName: sessionData.orgName || 'OCS Community Church',
       licenseTier: sessionData.licenseTier || 'standard',
       lastValidatedAt: Date.now(),
       savedAt: Date.now(),
@@ -131,8 +131,8 @@ class AuthService extends EventEmitter {
     if (!this.sessionFilePath) throw new Error('AuthService not initialized');
     const payload = {
       token: sessionData.token,
-      email: sessionData.email || 'operator@church.org',
-      orgName: sessionData.orgName || 'Local Church Organization',
+      email: sessionData.email || 'operator@churchocs.com',
+      orgName: sessionData.orgName || 'OCS Community Church',
       licenseTier: sessionData.licenseTier || 'standard',
       lastValidatedAt: Date.now(),
       savedAt: Date.now(),
@@ -298,8 +298,8 @@ class AuthService extends EventEmitter {
       // Save encrypted session
       const session = this.saveSessionSync({
         token: parsed.token,
-        email: parsed.email || 'admin@church.org',
-        orgName: parsed.org || 'Local Church',
+        email: parsed.email || 'admin@churchocs.com',
+        orgName: parsed.org || 'OCS Community Church',
         licenseTier: parsed.tier || 'standard',
       });
 

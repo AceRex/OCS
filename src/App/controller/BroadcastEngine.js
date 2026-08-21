@@ -15,6 +15,7 @@ import {
   PiWaveform,
   PiQuotesFill,
   PiCalendarBlankFill,
+  PiMonitorPlay,
 } from "react-icons/pi";
 import {
   smartBibleMatch,
@@ -101,20 +102,12 @@ const OCS_COMMANDS = [
     action: "last_verse",
   },
   {
-    patterns: [
-      /\bset\s+timer\b/i,
-      /\bstart\s+timer\b/i,
-      /\btimer\s+for\b/i,
-    ],
+    patterns: [/\bset\s+timer\b/i, /\bstart\s+timer\b/i, /\btimer\s+for\b/i],
     label: "Set Timer",
     action: "set_timer",
   },
   {
-    patterns: [
-      /\bstop\s+timer\b/i,
-      /\bcancel\s+timer\b/i,
-      /\bend\s+timer\b/i,
-    ],
+    patterns: [/\bstop\s+timer\b/i, /\bcancel\s+timer\b/i, /\bend\s+timer\b/i],
     label: "Stop Timer",
     action: "stop_timer",
   },
@@ -175,10 +168,7 @@ const OCS_COMMANDS = [
     action: "first_slide",
   },
   {
-    patterns: [
-      /\blast\s+slide\b/i,
-      /\bend\s+of\s+presentation\b/i,
-    ],
+    patterns: [/\blast\s+slide\b/i, /\bend\s+of\s+presentation\b/i],
     label: "Last Slide",
     action: "last_slide",
   },
@@ -199,11 +189,43 @@ function parseSlideNumber(str) {
   if (!isNaN(direct) && direct > 0) return direct;
 
   const WORD_NUMS = {
-    one: 1, first: 1, two: 2, second: 2, three: 3, third: 3, four: 4, fourth: 4, five: 5, fifth: 5,
-    six: 6, sixth: 6, seven: 7, seventh: 7, eight: 8, eighth: 8, nine: 9, ninth: 9, ten: 10, tenth: 10,
-    eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17,
-    eighteen: 18, nineteen: 19, twenty: 20, thirty: 30, forty: 40, fifty: 50, sixty: 60, seventy: 70,
-    eighty: 80, ninety: 90
+    one: 1,
+    first: 1,
+    two: 2,
+    second: 2,
+    three: 3,
+    third: 3,
+    four: 4,
+    fourth: 4,
+    five: 5,
+    fifth: 5,
+    six: 6,
+    sixth: 6,
+    seven: 7,
+    seventh: 7,
+    eight: 8,
+    eighth: 8,
+    nine: 9,
+    ninth: 9,
+    ten: 10,
+    tenth: 10,
+    eleven: 11,
+    twelve: 12,
+    thirteen: 13,
+    fourteen: 14,
+    fifteen: 15,
+    sixteen: 16,
+    seventeen: 17,
+    eighteen: 18,
+    nineteen: 19,
+    twenty: 20,
+    thirty: 30,
+    forty: 40,
+    fifty: 50,
+    sixty: 60,
+    seventy: 70,
+    eighty: 80,
+    ninety: 90,
   };
 
   if (WORD_NUMS[s]) return WORD_NUMS[s];
@@ -215,37 +237,121 @@ function parseSlideNumber(str) {
 }
 
 const TRANSLATION_DEFINITIONS = [
-  { keys: ['niv', 'n i v', 'new international version', 'new international', 'an eye vee'], dbVersion: 'net', label: 'NIV' },
-  { keys: ['amp', 'a m p', 'amplified bible', 'amplified version', 'amplified', 'amped'], dbVersion: 'amp', label: 'AMP' },
-  { keys: ['kjv', 'k j v', 'king james version', 'king james'], dbVersion: 'kjv', label: 'KJV' },
-  { keys: ['nkjv', 'n k j v', 'new king james version', 'new king james'], dbVersion: 'kjvpce', label: 'NKJV' },
-  { keys: ['esv', 'e s v', 'english standard version', 'english standard'], dbVersion: 'asv', label: 'ESV' },
-  { keys: ['nlt', 'n l t', 'new living translation', 'new living'], dbVersion: 'bbe', label: 'NLT' },
-  { keys: ['asv', 'a s v', 'american standard version', 'american standard'], dbVersion: 'asv', label: 'ASV' },
-  { keys: ['net', 'n e t', 'new english translation', 'net bible'], dbVersion: 'net', label: 'NET' },
-  { keys: ['bbe', 'b b e', 'basic english', 'bible in basic english'], dbVersion: 'bbe', label: 'BBE' },
-  { keys: ['web', 'world english bible', 'world english'], dbVersion: 'web', label: 'WEB' },
-  { keys: ['msg', 'the message', 'message version', 'message bible', 'message'], dbVersion: 'web', label: 'MSG' },
-  { keys: ['csb', 'christian standard bible', 'christian standard'], dbVersion: 'net', label: 'CSB' },
-  { keys: ['nasb', 'new american standard bible', 'new american standard'], dbVersion: 'asv', label: 'NASB' },
-  { keys: ['rsv', 'revised standard version', 'revised standard'], dbVersion: 'asv', label: 'RSV' },
-  { keys: ['geneva', 'geneva bible'], dbVersion: 'geneva', label: 'Geneva' },
-  { keys: ['tyndale', 'tyndale bible'], dbVersion: 'tyndale', label: 'Tyndale' },
-  { keys: ['coverdale', 'coverdale bible'], dbVersion: 'coverdale', label: 'Coverdale' },
-  { keys: ['bishops', 'bishops bible'], dbVersion: 'bishops', label: 'Bishops' },
+  {
+    keys: [
+      "niv",
+      "n i v",
+      "new international version",
+      "new international",
+      "an eye vee",
+    ],
+    dbVersion: "net",
+    label: "NIV",
+  },
+  {
+    keys: [
+      "amp",
+      "a m p",
+      "amplified bible",
+      "amplified version",
+      "amplified",
+      "amped",
+    ],
+    dbVersion: "amp",
+    label: "AMP",
+  },
+  {
+    keys: ["kjv", "k j v", "king james version", "king james"],
+    dbVersion: "kjv",
+    label: "KJV",
+  },
+  {
+    keys: ["nkjv", "n k j v", "new king james version", "new king james"],
+    dbVersion: "kjvpce",
+    label: "NKJV",
+  },
+  {
+    keys: ["esv", "e s v", "english standard version", "english standard"],
+    dbVersion: "asv",
+    label: "ESV",
+  },
+  {
+    keys: ["nlt", "n l t", "new living translation", "new living"],
+    dbVersion: "bbe",
+    label: "NLT",
+  },
+  {
+    keys: ["asv", "a s v", "american standard version", "american standard"],
+    dbVersion: "asv",
+    label: "ASV",
+  },
+  {
+    keys: ["net", "n e t", "new english translation", "net bible"],
+    dbVersion: "net",
+    label: "NET",
+  },
+  {
+    keys: ["bbe", "b b e", "basic english", "bible in basic english"],
+    dbVersion: "bbe",
+    label: "BBE",
+  },
+  {
+    keys: ["web", "world english bible", "world english"],
+    dbVersion: "web",
+    label: "WEB",
+  },
+  {
+    keys: ["msg", "the message", "message version", "message bible", "message"],
+    dbVersion: "web",
+    label: "MSG",
+  },
+  {
+    keys: ["csb", "christian standard bible", "christian standard"],
+    dbVersion: "net",
+    label: "CSB",
+  },
+  {
+    keys: ["nasb", "new american standard bible", "new american standard"],
+    dbVersion: "asv",
+    label: "NASB",
+  },
+  {
+    keys: ["rsv", "revised standard version", "revised standard"],
+    dbVersion: "asv",
+    label: "RSV",
+  },
+  { keys: ["geneva", "geneva bible"], dbVersion: "geneva", label: "Geneva" },
+  {
+    keys: ["tyndale", "tyndale bible"],
+    dbVersion: "tyndale",
+    label: "Tyndale",
+  },
+  {
+    keys: ["coverdale", "coverdale bible"],
+    dbVersion: "coverdale",
+    label: "Coverdale",
+  },
+  {
+    keys: ["bishops", "bishops bible"],
+    dbVersion: "bishops",
+    label: "Bishops",
+  },
 ];
 
 function findTranslationByToken(tokenStr) {
   if (!tokenStr) return null;
   const clean = tokenStr
     .toLowerCase()
-    .replace(/\b(?:the|version|translation|bible|please|now|it|this|that|in|to)\b/gi, ' ')
-    .replace(/\s+/g, ' ')
+    .replace(
+      /\b(?:the|version|translation|bible|please|now|it|this|that|in|to)\b/gi,
+      " ",
+    )
+    .replace(/\s+/g, " ")
     .trim();
 
   for (const def of TRANSLATION_DEFINITIONS) {
     for (const k of def.keys) {
-      if (clean === k || clean.startsWith(k + ' ') || clean.endsWith(' ' + k)) {
+      if (clean === k || clean.startsWith(k + " ") || clean.endsWith(" " + k)) {
         return def;
       }
     }
@@ -255,50 +361,69 @@ function findTranslationByToken(tokenStr) {
 
 function checkTranslationCommand(rawText) {
   if (!rawText) return null;
-  const lower = rawText.toLowerCase().replace(/[.,!?]/g, ' ').replace(/\s+/g, ' ').trim();
+  const lower = rawText
+    .toLowerCase()
+    .replace(/[.,!?]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 
   // Guard: if it looks like a full chapter/verse reference (e.g. "John 3:16 in NIV"), let the scripture resolver handle it
-  if (hasReferenceShape(lower) && /\b(?:verse|chapter|\d+:\d+|\d+\s+\d+)\b/i.test(lower)) {
+  if (
+    hasReferenceShape(lower) &&
+    /\b(?:verse|chapter|\d+:\d+|\d+\s+\d+)\b/i.test(lower)
+  ) {
     return null;
   }
 
   // 1. "change translation to [x]", "change bible translation to [x]", "switch translation to [x]", "set translation to [x]"
-  const changeMatch = lower.match(/\b(?:change|switch|set|put)\s+(?:the\s+)?(?:bible\s+)?(?:translation|version)\s+(?:to|in)\s+(.+)/i);
+  const changeMatch = lower.match(
+    /\b(?:change|switch|set|put)\s+(?:the\s+)?(?:bible\s+)?(?:translation|version)\s+(?:to|in)\s+(.+)/i,
+  );
   if (changeMatch) {
     const res = findTranslationByToken(changeMatch[1]);
     if (res) return res;
   }
 
   // 2. "can I have [x]", "can I have it in [x]", "can we have [x]", "can you show [x]"
-  const canHaveMatch = lower.match(/\b(?:can\s+(?:i|we|you)\s+(?:have|get|see|show|put|display)\s+(?:it\s+in\s+|this\s+in\s+|in\s+)?)\s*(.+)/i);
+  const canHaveMatch = lower.match(
+    /\b(?:can\s+(?:i|we|you)\s+(?:have|get|see|show|put|display)\s+(?:it\s+in\s+|this\s+in\s+|in\s+)?)\s*(.+)/i,
+  );
   if (canHaveMatch) {
     const res = findTranslationByToken(canHaveMatch[1]);
     if (res) return res;
   }
 
   // 3. "show in [x]", "show it in [x]", "display in [x]", "read in [x]", "view in [x]"
-  const showInMatch = lower.match(/\b(?:show|display|view|read|open|put)\s+(?:this\s+|it\s+)?in\s+(.+)/i);
+  const showInMatch = lower.match(
+    /\b(?:show|display|view|read|open|put)\s+(?:this\s+|it\s+)?in\s+(.+)/i,
+  );
   if (showInMatch) {
     const res = findTranslationByToken(showInMatch[1]);
     if (res) return res;
   }
 
   // 4. "switch to [x]", "change to [x]"
-  const switchToMatch = lower.match(/\b(?:switch|change)\s+to\s+([a-z0-9\s]+?)(?:\s+translation|\s+version|\s+bible)?$/i);
+  const switchToMatch = lower.match(
+    /\b(?:switch|change)\s+to\s+([a-z0-9\s]+?)(?:\s+translation|\s+version|\s+bible)?$/i,
+  );
   if (switchToMatch) {
     const res = findTranslationByToken(switchToMatch[1]);
     if (res) return res;
   }
 
   // 5. "give me [x]", "give me it in [x]"
-  const giveMeMatch = lower.match(/\b(?:give\s+me\s+(?:it\s+in\s+|in\s+)?)\s*(.+)/i);
+  const giveMeMatch = lower.match(
+    /\b(?:give\s+me\s+(?:it\s+in\s+|in\s+)?)\s*(.+)/i,
+  );
   if (giveMeMatch) {
     const res = findTranslationByToken(giveMeMatch[1]);
     if (res) return res;
   }
 
   // 6. Bare translation switch: "translation [x]" or "version [x]"
-  const bareTransMatch = lower.match(/\b(?:translation|version)\s+([a-z0-9\s]+)$/i);
+  const bareTransMatch = lower.match(
+    /\b(?:translation|version)\s+([a-z0-9\s]+)$/i,
+  );
   if (bareTransMatch) {
     const res = findTranslationByToken(bareTransMatch[1]);
     if (res) return res;
@@ -348,11 +473,15 @@ function stripTriggerWords(text) {
 
 function isShortContextJump(text) {
   if (!text) return false;
-  let t = wordNumbersToDigits(String(text || "").toLowerCase())
-    .replace(/[,.;:]/g, " ");
+  let t = wordNumbersToDigits(String(text || "").toLowerCase()).replace(
+    /[,.;:]/g,
+    " ",
+  );
   t = repairReferenceConnectors(t).replace(/\s+/g, " ").trim();
   return (
-    /^(?:(?:go to|jump to|skip to|turn to|move to|show|read|open|back to)\s+)?(?:chapter|verse|verses|vs|v|was|worse|voice|vers|virs|vas|vass)\s+\d+$/i.test(t) ||
+    /^(?:(?:go to|jump to|skip to|turn to|move to|show|read|open|back to)\s+)?(?:chapter|verse|verses|vs|v|was|worse|voice|vers|virs|vas|vass)\s+\d+$/i.test(
+      t,
+    ) ||
     /^(?:go to|jump to|skip to|turn to|move to|back to)\s+\d+$/i.test(t) ||
     /^(?:good\s+to\s+us|go\s+to\s+us)\s+\d+$/i.test(t) ||
     /^(?:verse|vass|vas)\s+\d+$/i.test(t)
@@ -416,6 +545,8 @@ export default function BroadcastEngine() {
   const currentBibleVersionRef = useRef("kjv");
   const [commandFeedback, setCommandFeedback] = useState(null); // { label, ok }
   const highlightCacheRef = useRef({}); // { [verseTitle]: string[] } highlighted words
+  /** Chapter cache to avoid redundant IPC round-trips: "version:bookId:chapter" → verses[] */
+  const chapterCacheRef = useRef({});
 
   // FR-3.26 / FR-3.68 — Active ASR engine name + calibration state for debug bar
   const [asrEngine, setAsrEngine] = useState(null); // 'whisper' | 'vosk' | null
@@ -437,6 +568,8 @@ export default function BroadcastEngine() {
     state: "idle",
     mode: "always",
   });
+  /** Real-time synced presentation/display content for Stage Master Control */
+  const [liveContentState, setLiveContentState] = useState(null);
 
   // Bible Reference State
   const [books, setBooks] = useState([]);
@@ -499,12 +632,16 @@ export default function BroadcastEngine() {
   // Load Bible books on mount so voice scripture resolution works immediately
   useEffect(() => {
     if (window.electron?.Bible?.getBooks) {
-      window.electron.Bible.getBooks().then((res) => {
-        if (Array.isArray(res) && res.length > 0) {
-          setBooks(res);
-          booksRef.current = res;
-        }
-      }).catch((err) => console.error("[Voice] Failed to load initial bible books:", err));
+      window.electron.Bible.getBooks()
+        .then((res) => {
+          if (Array.isArray(res) && res.length > 0) {
+            setBooks(res);
+            booksRef.current = res;
+          }
+        })
+        .catch((err) =>
+          console.error("[Voice] Failed to load initial bible books:", err),
+        );
     }
   }, []);
 
@@ -547,6 +684,7 @@ export default function BroadcastEngine() {
   useEffect(() => {
     if (window.electron?.Presentation?.onSetContent) {
       const unsub = window.electron.Presentation.onSetContent((content) => {
+        setLiveContentState(content);
         if (!content) {
           activeDisplayContextRef.current = "none";
         } else {
@@ -925,11 +1063,17 @@ export default function BroadcastEngine() {
     const bookId = Number.isInteger(booksRef.current[bookIndex]?.id)
       ? booksRef.current[bookIndex].id
       : bookIndex;
-    const vers = await window.electron.Bible.getChapter(
-      currentBibleVersionRef.current,
-      bookId,
-      chapter,
-    );
+    // Use chapter cache to avoid redundant IPC calls (major performance win)
+    const cacheKey = `${currentBibleVersionRef.current}:${bookId}:${chapter}`;
+    let vers = chapterCacheRef.current[cacheKey];
+    if (!vers) {
+      vers = await window.electron.Bible.getChapter(
+        currentBibleVersionRef.current,
+        bookId,
+        chapter,
+      );
+      if (vers && vers.length > 0) chapterCacheRef.current[cacheKey] = vers;
+    }
     const bookName = booksRef.current[bookIndex]?.name || "";
     const start = Math.max(1, startVerse | 0);
     const end = Math.max(start, endVerse | 0 || start);
@@ -1030,11 +1174,18 @@ export default function BroadcastEngine() {
         const bookId = Number.isInteger(booksRef.current[passage.bookIndex]?.id)
           ? booksRef.current[passage.bookIndex].id
           : passage.bookIndex;
-        passage.verseTexts = await window.electron.Bible.getChapter(
-          currentBibleVersionRef.current,
-          bookId,
-          passage.chapter,
-        );
+        const cacheKey = `${currentBibleVersionRef.current}:${bookId}:${passage.chapter}`;
+        let cached = chapterCacheRef.current[cacheKey];
+        if (!cached) {
+          cached = await window.electron.Bible.getChapter(
+            currentBibleVersionRef.current,
+            bookId,
+            passage.chapter,
+          );
+          if (cached && cached.length > 0)
+            chapterCacheRef.current[cacheKey] = cached;
+        }
+        passage.verseTexts = cached;
       } catch (err) {
         console.error("[Voice] fetch chapter failed for range advance:", err);
       }
@@ -1121,7 +1272,10 @@ export default function BroadcastEngine() {
     if (Date.now() < (passage.advanceLockUntil || 0)) return;
 
     const res = scriptureAlignerRef.current.feed(text);
-    const next = res && typeof res.wordIndex === "number" ? res.wordIndex : passage.activeIndex;
+    const next =
+      res && typeof res.wordIndex === "number"
+        ? res.wordIndex
+        : passage.activeIndex;
     if (next !== passage.activeIndex && next >= 0) {
       pushReadAlongUpdate(next);
     }
@@ -1260,66 +1414,93 @@ export default function BroadcastEngine() {
     // without creating a prop-drilling dependency from BroadcastEngine into PresentationController.
     if (action === "start_scene") {
       // Extract scene name from rawText, e.g. "OCS start scene Amazing Grace" → "Amazing Grace"
-      const nameMatch = rawText.match(/(?:start|open|show|play)\s+scene\s+(.+)/i);
+      const nameMatch = rawText.match(
+        /(?:start|open|show|play)\s+scene\s+(.+)/i,
+      );
       const sceneName = nameMatch ? nameMatch[1].trim() : null;
-      window.dispatchEvent(new CustomEvent("ocs-scene-command", {
-        detail: { command: "start_scene", sceneName },
-      }));
-      setCommandFeedback({ label: sceneName ? `Scene: ${sceneName}` : "Start Scene", ok: true });
+      window.dispatchEvent(
+        new CustomEvent("ocs-scene-command", {
+          detail: { command: "start_scene", sceneName },
+        }),
+      );
+      setCommandFeedback({
+        label: sceneName ? `Scene: ${sceneName}` : "Start Scene",
+        ok: true,
+      });
       setTimeout(() => setCommandFeedback(null), 3000);
     }
     if (action === "next_page") {
-      window.dispatchEvent(new CustomEvent("ocs-scene-command", {
-        detail: { command: "next_page" },
-      }));
+      window.dispatchEvent(
+        new CustomEvent("ocs-scene-command", {
+          detail: { command: "next_page" },
+        }),
+      );
       setCommandFeedback({ label: "Next Page →", ok: true });
       setTimeout(() => setCommandFeedback(null), 2500);
     }
     if (action === "prev_page") {
-      window.dispatchEvent(new CustomEvent("ocs-scene-command", {
-        detail: { command: "prev_page" },
-      }));
+      window.dispatchEvent(
+        new CustomEvent("ocs-scene-command", {
+          detail: { command: "prev_page" },
+        }),
+      );
       setCommandFeedback({ label: "← Prev Page", ok: true });
       setTimeout(() => setCommandFeedback(null), 2500);
     }
     // FR-4.8 / FR-4.9 Presentation Voice Commands
     if (action === "next_slide") {
-      window.dispatchEvent(new CustomEvent("ocs-presentation-command", {
-        detail: { command: "next_slide" },
-      }));
+      window.dispatchEvent(
+        new CustomEvent("ocs-presentation-command", {
+          detail: { command: "next_slide" },
+        }),
+      );
       setCommandFeedback({ label: "Next Slide →", ok: true });
       setTimeout(() => setCommandFeedback(null), 2500);
     }
     if (action === "prev_slide") {
-      window.dispatchEvent(new CustomEvent("ocs-presentation-command", {
-        detail: { command: "prev_slide" },
-      }));
+      window.dispatchEvent(
+        new CustomEvent("ocs-presentation-command", {
+          detail: { command: "prev_slide" },
+        }),
+      );
       setCommandFeedback({ label: "← Prev Slide", ok: true });
       setTimeout(() => setCommandFeedback(null), 2500);
     }
     if (action === "first_slide") {
-      window.dispatchEvent(new CustomEvent("ocs-presentation-command", {
-        detail: { command: "first_slide" },
-      }));
+      window.dispatchEvent(
+        new CustomEvent("ocs-presentation-command", {
+          detail: { command: "first_slide" },
+        }),
+      );
       setCommandFeedback({ label: "First Slide", ok: true });
       setTimeout(() => setCommandFeedback(null), 2500);
     }
     if (action === "last_slide") {
-      window.dispatchEvent(new CustomEvent("ocs-presentation-command", {
-        detail: { command: "last_slide" },
-      }));
+      window.dispatchEvent(
+        new CustomEvent("ocs-presentation-command", {
+          detail: { command: "last_slide" },
+        }),
+      );
       setCommandFeedback({ label: "Last Slide", ok: true });
       setTimeout(() => setCommandFeedback(null), 2500);
     }
     if (action === "jump_to_slide") {
-      const match = rawText.match(/(?:go\s+to|jump\s+to|show|open)\s+slide\s+([a-zA-Z0-9\-]+)/i)
-        || rawText.match(/slide\s+(?:number\s+)?([a-zA-Z0-9\-]+)/i);
+      const match =
+        rawText.match(
+          /(?:go\s+to|jump\s+to|show|open)\s+slide\s+([a-zA-Z0-9\-]+)/i,
+        ) || rawText.match(/slide\s+(?:number\s+)?([a-zA-Z0-9\-]+)/i);
       const token = match ? match[1] : null;
       const slideNumber = parseSlideNumber(token);
       if (slideNumber) {
-        window.dispatchEvent(new CustomEvent("ocs-presentation-command", {
-          detail: { command: "jump_to_slide", slideNumber, slideIndex: slideNumber - 1 },
-        }));
+        window.dispatchEvent(
+          new CustomEvent("ocs-presentation-command", {
+            detail: {
+              command: "jump_to_slide",
+              slideNumber,
+              slideIndex: slideNumber - 1,
+            },
+          }),
+        );
         setCommandFeedback({ label: `Slide ${slideNumber}`, ok: true });
         setTimeout(() => setCommandFeedback(null), 2500);
       }
@@ -1328,6 +1509,8 @@ export default function BroadcastEngine() {
 
   const changeTranslation = async (dbVersion, label) => {
     currentBibleVersionRef.current = dbVersion;
+    // Clear chapter cache so stale data from prior version is not served
+    chapterCacheRef.current = {};
 
     // 1. Update the presentation styles in Electron View windows (General and Speaker)
     if (window.electron?.Presentation?.setStyle) {
@@ -1778,7 +1961,9 @@ export default function BroadcastEngine() {
       if (trans) {
         currentBibleVersionRef.current = trans.dbVersion;
         if (window.electron?.Presentation?.setStyle) {
-          window.electron.Presentation.setStyle({ bibleTranslation: trans.label });
+          window.electron.Presentation.setStyle({
+            bibleTranslation: trans.label,
+          });
         }
         window.dispatchEvent(
           new CustomEvent("voice-translation-sync", {
@@ -2139,9 +2324,15 @@ export default function BroadcastEngine() {
       // Romans mishearings (e.g. Vosk "rumus", "rumas")
       [/\b(rumus|rumas|romus|rumos|roomas)\b/gi, "Romans"],
       // 1 Kings mishearings (e.g. Vosk "foske", "foski", "foskins", "foskis", "faskins", "faskings")
-      [/\b(foske|foski|foskey|fuski|foskins?|foskis|foskes|fuskins?|faskins?|faskings?|faskens?)\b/gi, "1 Kings"],
+      [
+        /\b(foske|foski|foskey|fuski|foskins?|foskis|foskes|fuskins?|faskins?|faskings?|faskens?)\b/gi,
+        "1 Kings",
+      ],
       // "18" / "eighteen" mishearings (e.g. Vosk "it's a team", "empty" / "ite" after book)
-      [/\b(?:it's\s+a\s+team|its\s+a\s+team|is\s+a\s+team|eight\s+team)\b/gi, "18"],
+      [
+        /\b(?:it's\s+a\s+team|its\s+a\s+team|is\s+a\s+team|eight\s+team)\b/gi,
+        "18",
+      ],
       [/\b(1\s+Kings|First\s+Kings)\s+(?:empty|ite|aite|aight)\b/gi, "$1 18"],
       // "verse" / "four" mishearings: "six first war" / "one of us one" / "one vast one"
       [
@@ -2517,7 +2708,8 @@ export default function BroadcastEngine() {
       triggerArmedUntilRef.current = Date.now() + TRIGGER_ARM_MS;
       TRIGGER_DETECT_RE.lastIndex = 0;
     }
-    const triggerArmed = isSecondaryPtt || Date.now() < triggerArmedUntilRef.current;
+    const triggerArmed =
+      isSecondaryPtt || Date.now() < triggerArmedUntilRef.current;
     const commandText = stripTriggerWords(rawText) || rawText;
 
     const utteranceId = res.utteranceId ?? null;
@@ -2530,18 +2722,25 @@ export default function BroadcastEngine() {
 
     if (res.isFinal) {
       // Dedup only within ~800ms so rapid double-emits/cross-source echoes are ignored, but retries work
-      const dedupeKey = isSecondary ? `sec:${commandText}` : `${pass}:${role}:${commandText}`;
+      const dedupeKey = isSecondary
+        ? `sec:${commandText}`
+        : `${pass}:${role}:${commandText}`;
       const nowFinal = Date.now();
       if (
         nowFinal - lastFinalTextRef.current.time < 800 &&
-        (dedupeKey === lastFinalTextRef.current.key || lastFinalTextRef.current.command === commandText)
+        (dedupeKey === lastFinalTextRef.current.key ||
+          lastFinalTextRef.current.command === commandText)
       ) {
         lastPartialTextRef.current = "";
         setInterimText("");
         setIsSpeakingNow(false);
         return;
       }
-      lastFinalTextRef.current = { key: dedupeKey, command: commandText, time: nowFinal };
+      lastFinalTextRef.current = {
+        key: dedupeKey,
+        command: commandText,
+        time: nowFinal,
+      };
       lastPartialTextRef.current = "";
 
       // Pass A finals while not in trigger window: commands only (Strict)
@@ -2578,7 +2777,11 @@ export default function BroadcastEngine() {
             ambientShapeRef.current.timer = null;
           }
           handleTranscriptionRef.current(commandText, booksRef.current, {
-            pass: isSecondaryPtt ? "SEC_PTT" : isContinuousMic ? "SEC_MIC" : pass,
+            pass: isSecondaryPtt
+              ? "SEC_PTT"
+              : isContinuousMic
+                ? "SEC_MIC"
+                : pass,
             triggerArmed: triggerArmed || pass === "B" || isSecondaryPtt,
             utteranceId,
             role: role === "probe" ? "probe" : "final",
@@ -2594,8 +2797,12 @@ export default function BroadcastEngine() {
           ? correctLiveTranscript(commandText)
           : commandText;
         const prefix = isSecondary
-          ? (res.role === "mic" ? `[Wireless Mic - ${res.deviceName || "Mobile"}] ` : "[Remote PTT] ")
-          : pass === "B" ? "[B] " : "";
+          ? res.role === "mic"
+            ? `[Wireless Mic - ${res.deviceName || "Mobile"}] `
+            : "[Remote PTT] "
+          : pass === "B"
+            ? "[B] "
+            : "";
         const tag = `${prefix}${displayBody}`;
         if (
           newLines.length > 0 &&
@@ -2890,7 +3097,8 @@ export default function BroadcastEngine() {
         tryStartArchiveRecorder(stream);
       }
 
-      const activeEngine = started?.asrEngine || started?.engineName || asrEngine;
+      const activeEngine =
+        started?.asrEngine || started?.engineName || asrEngine;
       setIsTranscribing(true);
       setIsSpeakingNow(false);
       console.log("[ASR] mic capture started", {
@@ -2947,7 +3155,9 @@ export default function BroadcastEngine() {
   useEffect(() => {
     const handleMicActivate = async (e) => {
       if (e?.detail?.navMode === "manual") {
-        console.log("[BroadcastEngine] Skipping mic activation for manual scene/song");
+        console.log(
+          "[BroadcastEngine] Skipping mic activation for manual scene/song",
+        );
         return;
       }
       if (!isTranscribingRef.current) {
@@ -3160,9 +3370,9 @@ export default function BroadcastEngine() {
   };
 
   return (
-    <div className="grid grid-cols-[350px_1fr] w-full h-full gap-5 p-5 bg-[#0a0a0a] text-white overflow-hidden">
-      {/* Left Column: Sidebar Controls */}
-      <div className="flex flex-col gap-5 overflow-hidden h-full">
+    <div className="grid grid-cols-[25%_1fr] w-full h-full gap-4 p-4 bg-[#0a0a0a] text-white overflow-hidden">
+      {/* Left Column: Sidebar Controls (30% Width) */}
+      <div className="flex flex-col gap-4 overflow-hidden h-full">
         {/* Transcriptions Panel */}
         <div className="flex-1 bg-[#121212] border border-white/5 rounded-[12px] flex flex-col overflow-hidden shadow-2xl relative">
           {/* Header — mic glow button */}
@@ -3282,7 +3492,7 @@ export default function BroadcastEngine() {
           </div>
 
           {/* Transcript rows — timestamp + text */}
-          <div className="flex-1 overflow-y-auto no-scrollbar">
+          <div className="flex-1 overflow-y-auto no-scrollbar px-2 py-1">
             {transcriptLines && transcriptLines.length > 0 ? (
               <table className="w-full">
                 <tbody>
@@ -3293,7 +3503,7 @@ export default function BroadcastEngine() {
                         !line.isFinal ? "opacity-50" : "hover:bg-white/[0.02]"
                       } animate-in fade-in duration-200`}
                     >
-                      <td className="pl-4 pr-3 py-2.5 align-top w-[44px] shrink-0">
+                      <td className="pl-3 pr-2.5 py-2.5 align-top w-[48px] shrink-0">
                         <span
                           className="text-[10px] font-black tabular-nums"
                           style={{ color: "#6366f1" }}
@@ -3301,9 +3511,9 @@ export default function BroadcastEngine() {
                           {line.stamp}
                         </span>
                       </td>
-                      <td className="pr-4 py-2.5 align-top">
+                      <td className="pr-3 pl-1 py-2.5 align-top">
                         <p
-                          className={`text-[12px] leading-relaxed ${
+                          className={`text-[12px] leading-relaxed break-words ${
                             line.isFinal
                               ? "text-white/85 font-medium"
                               : "text-white/40 italic animate-pulse"
@@ -3449,8 +3659,11 @@ export default function BroadcastEngine() {
                 </div> */}
 
         {/* Active Schedule Panel */}
-        <div className="h-[25%] bg-[#121212] border border-white/5 rounded-[20px] flex flex-col overflow-hidden shadow-2xl">
-          <div className="py-[8px] px-[12px] border-b border-white/5 bg-white/[0.02] flex items-center gap-3">
+        <div
+          className="shrink-0 bg-[#121212] border border-white/5 rounded-[16px] flex flex-col overflow-hidden shadow-2xl"
+          style={{ maxHeight: "30%" }}
+        >
+          <div className="py-[8px] px-[12px] border-b border-white/5 bg-white/[0.02] flex items-center gap-3 shrink-0">
             <div className="w-[30px] h-[30px] flex items-center justify-center bg-white/5 rounded-[10px] text-white/30">
               <PiCalendarBlankFill size={20} />
             </div>
@@ -3458,35 +3671,35 @@ export default function BroadcastEngine() {
               Active Schedule
             </h3>
           </div>
-          <div className="flex-1 overflow-y-auto p-4 space-y-2 no-scrollbar">
+          <div className="flex-1 overflow-y-auto p-3 space-y-1 no-scrollbar">
             {agenda.length > 0 ? (
               agenda.map((item) => {
                 const isActive = activeId === item._id;
                 return (
                   <div
                     key={item._id}
-                    className={`group flex items-center gap-4 px-5 py-4 rounded-[12px] transition-all border ${
+                    className={`group flex items-center gap-3 px-4 py-3 rounded-[10px] transition-all border ${
                       isActive
                         ? "bg-white/10 border-white/10 shadow-xl"
                         : "bg-transparent border-transparent hover:bg-white/[0.02]"
                     }`}
                   >
                     <PiCheckCircle
-                      size={22}
+                      size={18}
                       className={
                         isActive
-                          ? "text-white"
-                          : "text-white/10 group-hover:text-white/20"
+                          ? "text-white shrink-0"
+                          : "text-white/10 group-hover:text-white/20 shrink-0"
                       }
                     />
                     <div className="flex-1 flex flex-col overflow-hidden">
                       <span
-                        className={`text-sm font-black truncate ${isActive ? "text-white" : "text-white/40"}`}
+                        className={`text-xs font-black truncate ${isActive ? "text-white" : "text-white/40"}`}
                       >
                         {item.agenda}
                       </span>
                       {isActive && (
-                        <span className="text-[10px] font-black text-white/20 tracking-widest uppercase mt-0.5">
+                        <span className="text-[9px] font-black text-white/20 tracking-widest uppercase mt-0.5">
                           {formatTime(item.time)} remaining
                         </span>
                       )}
@@ -3495,8 +3708,8 @@ export default function BroadcastEngine() {
                 );
               })
             ) : (
-              <div className="h-full flex flex-col items-center justify-center opacity-5">
-                <PiClockFill size={40} />
+              <div className="h-full flex flex-col items-center justify-center opacity-5 py-4">
+                <PiClockFill size={32} />
                 <p className="text-[10px] font-black uppercase tracking-widest mt-2">
                   Empty Agenda
                 </p>
@@ -3507,33 +3720,43 @@ export default function BroadcastEngine() {
       </div>
 
       {/* Right Column: Main Previews and Controls */}
-      <div className="flex flex-col gap-5 overflow-hidden h-full">
-        {/* Previews Grid: 1x2 */}
-        <div className="grid grid-cols-2 gap-5 h-[45%] max-h-[350px] shrink-0">
-          {/* General Display */}
-          <div className="flex flex-col gap-3 h-full rounded-[20px] overflow-hidden">
-            <div className="flex items-center gap-3 px-6 h-8">
-              <div className="w-2 h-2 rounded-[20px] bg-purple-500 shadow-[0_0_10px_rgba(168,85,247,0.5)]" />
-              <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/30">
-                General Display
+      <div className="flex flex-col gap-3.5 overflow-hidden h-full">
+        {/* Moderate 16:9 1080p Broadcast Previews Grid: 1x2 */}
+        <div className="h-[46%] min-h-[220px] max-h-[285px] shrink-0 grid grid-cols-2 gap-3.5">
+          {/* General Display (PGM) */}
+          <div className="flex flex-col gap-1.5 h-full rounded-xl overflow-hidden">
+            <div className="flex items-center justify-between px-3 h-6">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.8)]" />
+                <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/70">
+                  General Display
+                </span>
+              </div>
+              <span className="text-[9px] font-mono font-bold text-purple-300 bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded-md">
+                1080p60 · PGM
               </span>
             </div>
-            <div className="flex-1  bg-black border border-white/10 rounded-[20px] overflow-hidden relative shadow-2xl group ring-1 ring-white/5">
+            <div className="flex-1 bg-black border border-white/15 rounded-xl overflow-hidden relative shadow-2xl ring-1 ring-white/10">
               <div className="absolute inset-0">
                 <MiniPreview mode="general" />
               </div>
             </div>
           </div>
 
-          {/* Speaker Confidence */}
-          <div className="flex flex-col gap-3 h-full">
-            <div className="flex items-center gap-3 px-6 h-8">
-              <div className="w-2 h-2 rounded-[20px] bg-blue-500 shadow-[0_0_10px_rgba(59,130,246,0.5)]" />
-              <span className="text-[10px] font-semibold uppercase tracking-[0.2em] text-white/30">
-                Speaker Confidence
+          {/* Speaker View (Confidence) */}
+          <div className="flex flex-col gap-1.5 h-full rounded-xl overflow-hidden">
+            <div className="flex items-center justify-between px-3 h-6">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
+                <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/70">
+                  Speaker View
+                </span>
+              </div>
+              <span className="text-[9px] font-mono font-bold text-cyan-300 bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded-md">
+                1080p60 · STAGE
               </span>
             </div>
-            <div className="flex-1 bg-black border border-white/10 rounded-[20px] overflow-hidden relative shadow-2xl group ring-1 ring-white/5">
+            <div className="flex-1 bg-black border border-white/15 rounded-xl overflow-hidden relative shadow-2xl ring-1 ring-white/10">
               <div className="absolute inset-0">
                 <MiniPreview mode="speaker" />
               </div>
@@ -3541,26 +3764,239 @@ export default function BroadcastEngine() {
           </div>
         </div>
 
-        {/* Control Center / Scene Editor */}
-        <div className="flex-1 bg-[#121212] border border-white/5 rounded-[20px] flex flex-col overflow-hidden relative">
-          <DisabledContainer disabled>
-            <div className="py-[12px] px-[24px] flex items-center justify-between border-b border-white/5 bg-white/[0.02]">
-              <div className="flex items-center gap-5">
-                <div className="w-[30px] h-[30px] rounded-[8px] bg-blue-600/20 flex items-center justify-center text-blue-500 shadow-inner">
-                  <PiMonitorFill size={20} />
-                </div>
-                <div className="flex flex-col">
-                  <h2 className="text-[12px] font-black uppercase tracking-widest text-white">
-                    Agenda presenter
-                  </h2>
-                </div>
+        {/* Live Master Control & Stage Status Panel (Increased Height) */}
+        <div className="flex-1 bg-[#12111a]/95 border border-white/10 rounded-2xl flex flex-col overflow-hidden shadow-2xl relative">
+          {/* Header with Live Content Telemetry */}
+          <div className="py-2.5 px-5 flex items-center justify-between border-b border-white/5 bg-white/[0.02] shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="w-7 h-7 rounded-lg bg-emerald-600/20 flex items-center justify-center text-emerald-400 border border-emerald-500/20 shadow-inner">
+                <PiPulse size={16} />
               </div>
-              <div className="flex items-center gap-4">
-                <Button variant="secondary">Load Scene</Button>
-                <Button variant="primary">Take Live</Button>
+              <div>
+                <h2 className="text-xs font-black uppercase tracking-widest text-white">
+                  Stage Master Control
+                </h2>
+                <div className="flex items-center gap-2 mt-0.5">
+                  <span className="text-[10px] text-white/50 font-mono">
+                    Live Slot:
+                  </span>
+                  <span className="text-[10px] font-bold text-cyan-300 font-mono">
+                    {liveContentState
+                      ? liveContentState.type === "bible"
+                        ? `📖 ${liveContentState.data?.title || "Scripture"}`
+                        : liveContentState.type === "presentation"
+                          ? `📑 Slide ${liveContentState.data?.slideIndex != null ? liveContentState.data.slideIndex + 1 : 1}`
+                          : liveContentState.type === "scene"
+                            ? `🎵 ${liveContentState.data?.title || "Scene Live"}`
+                            : `Live (${liveContentState.type})`
+                      : "⬛ Blackout / Inactive"}
+                  </span>
+                </div>
               </div>
             </div>
-          </DisabledContainer>
+
+            <div className="flex items-center gap-2">
+              <div
+                className={`flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold border transition-all ${
+                  liveContentState
+                    ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.25)]"
+                    : "bg-white/5 border-white/10 text-white/40"
+                }`}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full ${liveContentState ? "bg-emerald-400 animate-pulse" : "bg-white/30"}`}
+                />
+                <span>{liveContentState ? "ON AIR" : "STANDBY"}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Control Actions & Quick Shortcuts Grid */}
+          <div className="flex-1 p-4 flex flex-col justify-between gap-3 overflow-y-auto no-scrollbar">
+            {/* Primary Live Action Controls */}
+            <div>
+              <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider block mb-2">
+                Primary Stage Output Controls
+              </span>
+              <div className="grid grid-cols-4 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => executeCommand("black_screen")}
+                  className="flex items-center justify-center gap-2 py-3 px-3 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 text-xs font-bold transition-all shadow-sm active:scale-95"
+                >
+                  <PiMonitorFill size={16} />
+                  <span>Blackout</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => executeCommand("screen_on")}
+                  className="flex items-center justify-center gap-2 py-3 px-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-xs font-bold transition-all shadow-sm active:scale-95"
+                >
+                  <PiMonitorPlay size={16} />
+                  <span>Take Live</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => executeCommand("prev_verse")}
+                  className="flex items-center justify-center gap-2 py-3 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white text-xs font-bold transition-all active:scale-95"
+                >
+                  <span>◀ Previous</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => executeCommand("next_verse")}
+                  className="flex items-center justify-center gap-2 py-3 px-3 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 text-xs font-bold transition-all shadow-sm active:scale-95"
+                >
+                  <span>Next ▶</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Secondary Navigation Row */}
+            <div>
+              <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider block mb-2">
+                Step Navigation
+              </span>
+              <div className="grid grid-cols-4 gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => executeCommand("first_slide")}
+                  className="flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-bold transition-all active:scale-95"
+                >
+                  <span>⏮ First Item</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => executeCommand("last_slide")}
+                  className="flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-bold transition-all active:scale-95"
+                >
+                  <span>⏭ Last Item</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => executeCommand("first_verse")}
+                  className="flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-bold transition-all active:scale-95"
+                >
+                  <span>📖 First Verse</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => executeCommand("last_verse")}
+                  className="flex items-center justify-center gap-2 py-2 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-bold transition-all active:scale-95"
+                >
+                  <span>📖 Last Verse</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick Stage Timers */}
+            <div className="pt-2 border-t border-white/5">
+              <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider block mb-2">
+                Quick Stage Timers
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    dispatch(utilAction.setEventMode(false));
+                    dispatch(utilAction.setTime(300));
+                    dispatch(utilAction.setPaused(false));
+                    dispatch(utilAction.setActiveId(null));
+                    setCommandFeedback({ label: "5m Timer Started", ok: true });
+                    setTimeout(() => setCommandFeedback(null), 2500);
+                  }}
+                  className="flex-1 py-2 px-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-mono font-bold transition-all text-center"
+                >
+                  ⏱ 5m
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    dispatch(utilAction.setEventMode(false));
+                    dispatch(utilAction.setTime(600));
+                    dispatch(utilAction.setPaused(false));
+                    dispatch(utilAction.setActiveId(null));
+                    setCommandFeedback({
+                      label: "10m Timer Started",
+                      ok: true,
+                    });
+                    setTimeout(() => setCommandFeedback(null), 2500);
+                  }}
+                  className="flex-1 py-2 px-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-mono font-bold transition-all text-center"
+                >
+                  ⏱ 10m
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    dispatch(utilAction.setEventMode(false));
+                    dispatch(utilAction.setTime(900));
+                    dispatch(utilAction.setPaused(false));
+                    dispatch(utilAction.setActiveId(null));
+                    setCommandFeedback({
+                      label: "15m Timer Started",
+                      ok: true,
+                    });
+                    setTimeout(() => setCommandFeedback(null), 2500);
+                  }}
+                  className="flex-1 py-2 px-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-mono font-bold transition-all text-center"
+                >
+                  ⏱ 15m
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    dispatch(utilAction.setEventMode(false));
+                    dispatch(utilAction.setTime(1800));
+                    dispatch(utilAction.setPaused(false));
+                    dispatch(utilAction.setActiveId(null));
+                    setCommandFeedback({
+                      label: "30m Timer Started",
+                      ok: true,
+                    });
+                    setTimeout(() => setCommandFeedback(null), 2500);
+                  }}
+                  className="flex-1 py-2 px-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-mono font-bold transition-all text-center"
+                >
+                  ⏱ 30m
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    dispatch(utilAction.setTime(0));
+                    dispatch(utilAction.setPaused(false));
+                    dispatch(utilAction.setActiveId(null));
+                    setCommandFeedback({ label: "Timer Cleared", ok: true });
+                    setTimeout(() => setCommandFeedback(null), 2500);
+                  }}
+                  className="py-2 px-3.5 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-xs font-bold transition-all"
+                >
+                  Clear
+                </button>
+              </div>
+            </div>
+
+            {/* Display Feeds Telemetry Bar */}
+            <div className="pt-2 border-t border-white/5 flex items-center justify-between text-[10px] text-white/40 font-mono">
+              <span className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                1080p FHD Native (1920×1080 @ 60fps)
+              </span>
+              <span className="text-purple-400 font-bold uppercase">
+                NDI &amp; Stage Feeds Active
+              </span>
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -152,8 +152,8 @@ function App() {
   }, []);
 
   return (
-    <section className="w-[100vw] h-[100vh] flex flex-row bg-black overflow-hidden selection:bg-blue-500/30">
-      {/* Background Grid Pattern */}
+    <section className="w-screen h-screen flex flex-row bg-[#08080c] p-3 gap-3 overflow-hidden text-white selection:bg-purple-500/30 font-outfit">
+      {/* Background Ambient Radial Pattern */}
       <div
         className="fixed inset-0 pointer-events-none opacity-[0.03] z-0"
         style={{
@@ -168,15 +168,15 @@ function App() {
 
       <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
 
-      <main className="flex-1 h-full flex flex-col overflow-hidden relative z-10">
-        <div className="flex-1 overflow-hidden relative">
+      <main className="flex-1 h-full bg-[#100e18]/40 border border-white/10 rounded-2xl overflow-hidden relative z-10 flex flex-col shadow-2xl">
+        <div className="flex-1 overflow-hidden relative w-full h-full">
           <div
-            className={`absolute inset-0 ${activeTab === "dashboard" ? "block" : "hidden"}`}
+            className={`w-full h-full ${activeTab === "dashboard" ? "block" : "hidden"}`}
           >
             <BroadcastEngine />
           </div>
           <div
-            className={`absolute inset-0 p-4 ${activeTab !== "dashboard" ? "block" : "hidden"}`}
+            className={`w-full h-full p-4 overflow-hidden ${activeTab !== "dashboard" ? "block" : "hidden"}`}
           >
             <div
               className={`w-full h-full ${activeTab === "timer" ? "block" : "hidden"}`}

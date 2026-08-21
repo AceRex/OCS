@@ -5,6 +5,26 @@ const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
 
+const DEFAULT_STYLES = {
+  bgType: 'color',
+  backgroundColor: '#0B0814',
+  textColor: '#F5F2FA',
+  accentColor: '#A788FA',
+  fontFamily: 'Outfit',
+  fontSize: '5rem',
+  textAlign: 'center',
+  textShadow: true,
+  overlayOpacity: 100,
+  backgroundImage: null,
+  backgroundVideo: null,
+  // Bible settings
+  bibleRefPosition: 'top-center',
+  bibleBodyPosition: 'center',
+  bibleTranslation: 'KJV',
+  bibleServiceLabel: '',
+  bibleShowOrbs: true,
+};
+
 const DEFAULTS = {
   /** 'always' | 'live' — FR-13.3 */
   sleepPrevention: 'always',
@@ -33,6 +53,8 @@ const DEFAULTS = {
   authGracePeriodHours: 72,
   /** Auth server login base URL (FR-13.3). Overridable via OCS_AUTH_BASE_URL in dev. */
   authLoginUrl: process.env.OCS_AUTH_BASE_URL || 'https://auth.churchocs.com',
+  /** Display overlay & Scripture styling configuration */
+  styles: { ...DEFAULT_STYLES },
 };
 
 let cache = null;
@@ -42,34 +64,60 @@ function init(userDataPath) {
   settingsPath = path.join(userDataPath, 'settings.json');
 }
 
+function mergeSettings(target, source) {
+  const merged = { ...target, ...source };
+  if (source && source.styles) {
+    merged.styles = { ...(target.styles || DEFAULT_STYLES), ...source.styles };
+  } else if (!merged.styles) {
+    merged.styles = { ...DEFAULT_STYLES };
+  }
+  return merged;
+}
+
 async function load() {
   if (!settingsPath) throw new Error('appSettings not initialized');
   if (cache) return cache;
   try {
     const raw = await fsp.readFile(settingsPath, 'utf8');
-    cache = { ...DEFAULTS, ...JSON.parse(raw) };
+    const parsed = JSON.parse(raw);
+    cache = mergeSettings(DEFAULTS, parsed);
   } catch (_) {
-    cache = { ...DEFAULTS };
+    cache = mergeSettings(DEFAULTS, {});
   }
   return cache;
 }
 
 function loadSync() {
-  if (!settingsPath) return { ...DEFAULTS };
+  if (!settingsPath) return mergeSettings(DEFAULTS, {});
   if (cache) return cache;
   try {
-    cache = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(settingsPath, 'utf8')) };
+    const parsed = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+    cache = mergeSettings(DEFAULTS, parsed);
   } catch (_) {
-    cache = { ...DEFAULTS };
+    cache = mergeSettings(DEFAULTS, {});
   }
   return cache;
 }
 
 async function save(patch) {
   const cur = await load();
-  cache = { ...cur, ...patch };
-  await fsp.mkdir(path.dirname(settingsPath), { recursive: true });
-  await fsp.writeFile(settingsPath, JSON.stringify(cache, null, 2));
+  cache = mergeSettings(cur, patch || {});
+  if (settingsPath) {
+    await fsp.mkdir(path.dirname(settingsPath), { recursive: true });
+    await fsp.writeFile(settingsPath, JSON.stringify(cache, null, 2));
+  }
+  return cache;
+}
+
+async function resetDefaults() {
+  cache = {
+    ...DEFAULTS,
+    styles: { ...DEFAULT_STYLES },
+  };
+  if (settingsPath) {
+    await fsp.mkdir(path.dirname(settingsPath), { recursive: true });
+    await fsp.writeFile(settingsPath, JSON.stringify(cache, null, 2));
+  }
   return cache;
 }
 
@@ -77,4 +125,5 @@ function get(key) {
   return loadSync()[key];
 }
 
-module.exports = { init, load, loadSync, save, get, DEFAULTS };
+module.exports = { init, load, loadSync, save, resetDefaults, get, DEFAULTS, DEFAULT_STYLES };
+

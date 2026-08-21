@@ -110,11 +110,38 @@ function NdiPanel() {
     }
   };
 
-  const copyToClipboard = (text, key) => {
-    if (navigator.clipboard) {
-      navigator.clipboard.writeText(text);
+  const programOverlayUrl = status.urls?.programOverlay || `http://${status.localIp || "127.0.0.1"}:${status.port || 4000}/overlay/program`;
+  const programMjpegUrl = status.urls?.programMjpeg || `http://${status.localIp || "127.0.0.1"}:${status.port || 4000}/stream/program.mjpg`;
+  const stageOverlayUrl = status.urls?.stageOverlay || `http://${status.localIp || "127.0.0.1"}:${status.port || 4000}/overlay/stage`;
+  const stageMjpegUrl = status.urls?.stageMjpeg || `http://${status.localIp || "127.0.0.1"}:${status.port || 4000}/stream/stage.mjpg`;
+
+  const copyToClipboard = async (text, key) => {
+    const val = text || (
+      key === 'obs-program' ? programOverlayUrl :
+      key === 'mjpeg-program' ? programMjpegUrl :
+      key === 'obs-stage' ? stageOverlayUrl :
+      key === 'mjpeg-stage' ? stageMjpegUrl : ''
+    );
+    if (!val) return;
+    try {
+      if (window.electron?.Clipboard?.writeText) {
+        window.electron.Clipboard.writeText(val);
+      } else if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(val);
+      } else {
+        const textarea = document.createElement("textarea");
+        textarea.value = val;
+        textarea.style.position = "fixed";
+        textarea.style.opacity = "0";
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        document.body.removeChild(textarea);
+      }
       setCopiedKey(key);
       setTimeout(() => setCopiedKey(null), 2000);
+    } catch (err) {
+      console.warn("Failed to copy to clipboard:", err);
     }
   };
 
@@ -248,10 +275,10 @@ function NdiPanel() {
                       Alpha Transparent
                     </span>
                   </div>
-                  <p className="text-xs font-mono text-[#8882A4] truncate">{status.urls?.programOverlay}</p>
+                  <p className="text-xs font-mono text-[#8882A4] truncate">{programOverlayUrl}</p>
                 </div>
                 <button
-                  onClick={() => copyToClipboard(status.urls?.programOverlay, "obs-program")}
+                  onClick={() => copyToClipboard(programOverlayUrl, "obs-program")}
                   className="px-3 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
                 >
                   {copiedKey === "obs-program" ? <PiCheck size={14} /> : <PiCopy size={14} />}
@@ -265,10 +292,10 @@ function NdiPanel() {
                   <span className="text-[10px] font-black uppercase tracking-wider text-[#A788FA] mb-1 block">
                     Direct Video Stream (vMix / VLC / Media Source)
                   </span>
-                  <p className="text-xs font-mono text-[#8882A4] truncate">{status.urls?.programMjpeg}</p>
+                  <p className="text-xs font-mono text-[#8882A4] truncate">{programMjpegUrl}</p>
                 </div>
                 <button
-                  onClick={() => copyToClipboard(status.urls?.programMjpeg, "mjpeg-program")}
+                  onClick={() => copyToClipboard(programMjpegUrl, "mjpeg-program")}
                   className="px-3 py-2 bg-violet/20 hover:bg-violet/30 text-[#A788FA] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
                 >
                   {copiedKey === "mjpeg-program" ? <PiCheck size={14} /> : <PiCopy size={14} />}
@@ -352,10 +379,10 @@ function NdiPanel() {
                   <span className="text-[10px] font-black uppercase tracking-wider text-purple-400 mb-1 block">
                     Stage Confidence Monitor Web View
                   </span>
-                  <p className="text-xs font-mono text-[#8882A4] truncate">{status.urls?.stageOverlay}</p>
+                  <p className="text-xs font-mono text-[#8882A4] truncate">{stageOverlayUrl}</p>
                 </div>
                 <button
-                  onClick={() => copyToClipboard(status.urls?.stageOverlay, "obs-stage")}
+                  onClick={() => copyToClipboard(stageOverlayUrl, "obs-stage")}
                   className="px-3 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
                 >
                   {copiedKey === "obs-stage" ? <PiCheck size={14} /> : <PiCopy size={14} />}
@@ -369,10 +396,10 @@ function NdiPanel() {
                   <span className="text-[10px] font-black uppercase tracking-wider text-[#A788FA] mb-1 block">
                     Stage Live Video Stream
                   </span>
-                  <p className="text-xs font-mono text-[#8882A4] truncate">{status.urls?.stageMjpeg}</p>
+                  <p className="text-xs font-mono text-[#8882A4] truncate">{stageMjpegUrl}</p>
                 </div>
                 <button
-                  onClick={() => copyToClipboard(status.urls?.stageMjpeg, "mjpeg-stage")}
+                  onClick={() => copyToClipboard(stageMjpegUrl, "mjpeg-stage")}
                   className="px-3 py-2 bg-violet/20 hover:bg-violet/30 text-[#A788FA] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
                 >
                   {copiedKey === "mjpeg-stage" ? <PiCheck size={14} /> : <PiCopy size={14} />}
