@@ -1108,6 +1108,9 @@ const io = new Server(server, {
     origin: "*",
     methods: ["GET", "POST"],
   },
+  maxHttpBufferSize: 1e8, // 100MB buffer for large media & video transfers
+  pingTimeout: 60000,
+  pingInterval: 25000,
 });
 
 // ------ BIBLE DATABASE HANDLERS ------
@@ -1121,6 +1124,10 @@ const PORT = 4000;
 let serverIp = ip.address(); // Get initial IP
 let connectedDevices = [];
 
+// 100MB Body Parsers for heavy media & video transfers
+serverApp.use(express.json({ limit: "100mb" }));
+serverApp.use(express.urlencoded({ limit: "100mb", extended: true }));
+
 // Read-only endpoints — unpaired devices may probe the server but cannot control it
 serverApp.get("/pair-info", (_req, res) => {
   res.json({
@@ -1129,6 +1136,153 @@ serverApp.get("/pair-info", (_req, res) => {
     pairingRequired: true,
     // Never expose the live token/code over an unauthenticated HTTP GET
   });
+});
+
+// Direct HTTP Upload Endpoint for heavy video/media transfers
+serverApp.post("/api/upload-asset", async (req, res) => {
+  try {
+    const { name, type, size, mimeType, dataBase64, deviceName, pairingCode } = req.body || {};
+
+    if (!name || !dataBase64) {
+      return res.status(400).json({ ok: false, error: "Invalid asset payload" });
+    }
+
+    const transferId = `xfer-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const clientIp = req.ip || req.socket.remoteAddress;
+
+    let responded = false;
+    pendingAssetTransfers.set(transferId, {
+      transferId,
+      device: { id: "http-upload", name: deviceName || "Mobile Companion", ip: clientIp },
+      payload: { name, type, size, mimeType, dataBase64 },
+      ack: (result) => {
+        if (!responded) {
+          responded = true;
+          res.json(result);
+        }
+      },
+      createdAt: Date.now(),
+    });
+
+    console.log(
+      `[Remote Asset HTTP] Incoming transfer ${transferId} from ${deviceName || "Mobile"}: ${name} (${type}, ${size} bytes)`
+    );
+
+    // Surface accept/reject prompt to desktop
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send("mobile-asset-request", {
+          transferId,
+          deviceId: "http-upload",
+          deviceName: deviceName || "Mobile Companion",
+          deviceIp: clientIp,
+          fileName: name,
+          fileType: type || "media",
+          fileSize: size || 0,
+          mimeType: mimeType || "",
+          previewDataUrl:
+            type === "image" || type === "video"
+              ? dataBase64.startsWith("data:")
+                ? dataBase64
+                : `data:${mimeType || (type === "video" ? "video/mp4" : "image/jpeg")};base64,${dataBase64}`
+              : null,
+        });
+      }
+    }
+
+    // Trigger OS Desktop Push Notification
+    if (Notification.isSupported()) {
+      try {
+        const notif = new Notification({
+          title: `OCS — Incoming Asset Request`,
+          body: `${deviceName || "Mobile"} wants to share "${name}". Click to review & accept.`,
+          silent: false,
+        });
+        notif.show();
+      } catch (_) {}
+    }
+  } catch (err) {
+    console.error("[Remote Asset HTTP Error]", err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// Direct Raw Binary Stream Upload Endpoint (compatible with Expo uploadAsync)
+serverApp.post("/api/upload-asset-raw", (req, res) => {
+  try {
+    const filename = decodeURIComponent(req.headers["x-filename"] || `asset_${Date.now()}`);
+    const fileType = req.headers["x-filetype"] || "media";
+    const deviceName = decodeURIComponent(req.headers["x-devicename"] || "Mobile Companion");
+    const clientIp = req.ip || req.socket.remoteAddress;
+    const transferId = `xfer-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+
+    const chunks = [];
+    req.on("data", (chunk) => chunks.push(chunk));
+    req.on("end", () => {
+      const buf = Buffer.concat(chunks);
+      const dataBase64 = buf.toString("base64");
+
+      let responded = false;
+      pendingAssetTransfers.set(transferId, {
+        transferId,
+        device: { id: "http-upload", name: deviceName, ip: clientIp },
+        payload: {
+          name: filename,
+          type: fileType,
+          size: buf.length,
+          mimeType: req.headers["content-type"] || "application/octet-stream",
+          dataBase64,
+        },
+        ack: (result) => {
+          if (!responded) {
+            responded = true;
+            res.json(result);
+          }
+        },
+        createdAt: Date.now(),
+      });
+
+      console.log(
+        `[Remote Asset RAW HTTP] Incoming transfer ${transferId} from ${deviceName}: ${filename} (${fileType}, ${buf.length} bytes)`
+      );
+
+      // Surface accept/reject prompt to desktop
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) {
+          win.webContents.send("mobile-asset-request", {
+            transferId,
+            deviceId: "http-upload",
+            deviceName,
+            deviceIp: clientIp,
+            fileName: filename,
+            fileType,
+            fileSize: buf.length,
+            mimeType: req.headers["content-type"] || "",
+            previewDataUrl: null,
+          });
+        }
+      }
+
+      if (Notification.isSupported()) {
+        try {
+          const notif = new Notification({
+            title: `OCS — Incoming Asset Request`,
+            body: `${deviceName} wants to share "${filename}". Click to review & accept.`,
+            silent: false,
+          });
+          notif.show();
+        } catch (_) {}
+      }
+    });
+
+    req.on("error", (err) => {
+      console.error("[Remote Asset RAW Stream Error]", err);
+      res.status(500).json({ ok: false, error: err.message });
+    });
+  } catch (err) {
+    console.error("[Remote Asset RAW Error]", err);
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 // Serve static directory for OBS Browser Sources & overlay views
@@ -1602,10 +1756,10 @@ io.on("connection", (socket) => {
           fileSize: size || 0,
           mimeType: mimeType || "",
           previewDataUrl:
-            type === "image"
+            type === "image" || type === "video"
               ? dataBase64.startsWith("data:")
                 ? dataBase64
-                : `data:${mimeType || "image/jpeg"};base64,${dataBase64}`
+                : `data:${mimeType || (type === "video" ? "video/mp4" : "image/jpeg")};base64,${dataBase64}`
               : null,
         });
       }
@@ -1947,7 +2101,7 @@ ipcMain.handle(
 
       let resultPayload = { filename, fileUrl: pathToFileURL(destPath).href };
 
-      // Task 4.1: Audio routing into bumper system
+      // Task 4.1: Audio routing into bumper system & media library
       if (isAudio) {
         const appSettings = require("./src/main/appSettings");
         if (targetRole === "intro") {
@@ -1966,6 +2120,19 @@ ipcMain.handle(
             win.webContents.send("session-bumpers-updated", {
               intro: appSettings.get("sessionIntroPath"),
               outro: appSettings.get("sessionOutroPath"),
+            });
+          }
+        }
+
+        // Always broadcast to Media column on desktop so audio tracks appear in media list
+        const fileUrl = pathToFileURL(destPath).href;
+        for (const win of BrowserWindow.getAllWindows()) {
+          if (!win.isDestroyed()) {
+            win.webContents.send("media-imported", fileUrl);
+            win.webContents.send("media-list-updated", {
+              url: fileUrl,
+              filename,
+              type: "audio",
             });
           }
         }

@@ -1,15 +1,11 @@
 import React, { useEffect, useState } from "react";
 import {
-  PiFile,
-  PiFileImage,
-  PiFileVideo,
-  PiFileAudio,
-  PiPresentation,
   PiCheck,
   PiX,
   PiDeviceMobile,
   PiSparkle
 } from "react-icons/pi";
+import FileTypeBadge from "./FileTypeBadge";
 
 export default function IncomingAssetModal() {
   const [request, setRequest] = useState(null);
@@ -18,8 +14,9 @@ export default function IncomingAssetModal() {
   const [processing, setProcessing] = useState(false);
 
   useEffect(() => {
-    if (!window.electron?.Network?.onAssetRequest) return;
-    const unsub = window.electron.Network.onAssetRequest((req) => {
+    const onAssetRequest = window.electron?.Remote?.onAssetRequest || window.electron?.Network?.onAssetRequest;
+    if (!onAssetRequest) return;
+    const unsub = onAssetRequest((req) => {
       setRequest(req);
       setProcessing(false);
       // Default selections by type
@@ -34,8 +31,9 @@ export default function IncomingAssetModal() {
   const handleRespond = async (accepted) => {
     setProcessing(true);
     try {
-      if (window.electron?.Network?.respondAsset) {
-        await window.electron.Network.respondAsset({
+      const respond = window.electron?.Remote?.respondAsset || window.electron?.Network?.respondAsset;
+      if (respond) {
+        await respond({
           transferId: request.transferId,
           accepted,
           targetRole: request.fileType === "audio" ? audioRole : undefined,
@@ -61,14 +59,6 @@ export default function IncomingAssetModal() {
     const sizes = ["B", "KB", "MB", "GB"];
     const i = Math.floor(Math.log(bytes) / Math.log(k));
     return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
-  };
-
-  const getIcon = () => {
-    if (isImage) return <PiFileImage size={28} className="text-blue-400" />;
-    if (isVideo) return <PiFileVideo size={28} className="text-purple-400" />;
-    if (isAudio) return <PiFileAudio size={28} className="text-amber-400" />;
-    if (isPptx) return <PiPresentation size={28} className="text-orange-400" />;
-    return <PiFile size={28} className="text-white/60" />;
   };
 
   return (
@@ -98,18 +88,20 @@ export default function IncomingAssetModal() {
 
         {/* Content Body */}
         <div className="p-6 flex flex-col gap-5">
-          {/* File Card */}
+          {/* File Card with Figma FileTypeBadge Preview */}
           <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center gap-4">
-            {request.previewDataUrl ? (
+            {isImage && request.previewDataUrl ? (
               <img
                 src={request.previewDataUrl}
                 alt="Asset preview"
                 className="w-16 h-16 rounded-xl object-cover border border-white/15 bg-black/40"
               />
             ) : (
-              <div className="w-16 h-16 rounded-xl bg-white/10 border border-white/10 flex items-center justify-center">
-                {getIcon()}
-              </div>
+              <FileTypeBadge
+                filename={request.fileName}
+                type={request.fileType}
+                size="md"
+              />
             )}
             <div className="flex-1 min-w-0">
               <div className="text-white font-semibold text-sm truncate" title={request.fileName}>
@@ -207,8 +199,8 @@ export default function IncomingAssetModal() {
           <button
             type="button"
             onClick={() => handleRespond(false)}
-            disabled={processing}
-            className="px-5 py-2.5 rounded-xl border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-300 font-semibold text-xs transition-colors flex items-center gap-1.5"
+            disabled={processing || request.uploading}
+            className="px-5 py-2.5 rounded-xl border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-300 font-semibold text-xs transition-colors flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <PiX size={16} />
             Decline
@@ -216,11 +208,19 @@ export default function IncomingAssetModal() {
           <button
             type="button"
             onClick={() => handleRespond(true)}
-            disabled={processing}
-            className="px-6 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg shadow-blue-600/30 transition-all flex items-center gap-1.5"
+            disabled={processing || request.uploading}
+            className={`px-6 py-2.5 rounded-xl font-bold text-xs shadow-lg transition-all flex items-center gap-1.5 ${
+              processing || request.uploading
+                ? "bg-blue-600/40 text-white/50 cursor-not-allowed"
+                : "bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/30 cursor-pointer"
+            }`}
           >
             <PiCheck size={16} />
-            {processing ? "Processing…" : "Accept & Save"}
+            {processing
+              ? "Processing…"
+              : request.uploading
+                ? "Uploading to Controller…"
+                : "Accept & Save"}
           </button>
         </div>
       </div>

@@ -1,13 +1,15 @@
 
 import { create } from 'zustand';
 import { io, Socket } from 'socket.io-client';
+import * as FileSystem from 'expo-file-system/legacy';
 
 interface AssetPayload {
     name: string;
     type: 'image' | 'video' | 'audio' | 'presentation' | 'media';
     size: number;
     mimeType?: string;
-    dataBase64: string;
+    uri?: string;
+    dataBase64?: string;
 }
 
 interface SocketState {
@@ -102,23 +104,40 @@ export const useSocketStore = create<SocketState>((set, get) => ({
     },
     connect: (ip: string, pairingCode?: string, customPort?: number) => {
         const current = get().socket;
-        if (current) current.disconnect();
+        if (current) {
+            try { current.disconnect(); } catch (_) {}
+        }
 
-        const code = (pairingCode || '').trim();
+        const code = (pairingCode || get().lastCode || '').trim();
+        let rawHost = (ip || get().lastHost || get().serverIp || '').trim();
+
+        if (!rawHost) {
+            set({ connectionError: 'Enter the IP address of the desktop workstation' });
+            return;
+        }
+
         if (!code) {
             set({ connectionError: 'Enter the 6-digit pairing code from the desktop Remote panel' });
             return;
         }
 
-        set({ connectionError: null, isPaired: false });
-
-        let host = ip.trim().replace(/^https?:\/\//, '');
-        let targetPort = customPort || 4000;
+        let host = rawHost.replace(/^https?:\/\//, '');
+        let targetPort = customPort || get().lastPort || 4000;
         if (host.includes(':')) {
             const [h, p] = host.split(':');
             host = h;
             targetPort = parseInt(p, 10) || targetPort;
         }
+
+        // Persist session target immediately so reconnect button has it
+        set({
+            connectionError: null,
+            isPaired: false,
+            lastHost: host,
+            lastCode: code,
+            lastPort: targetPort,
+            serverIp: host,
+        });
 
         const currentDeviceName = get().deviceName || 'Mobile Companion';
 
@@ -213,10 +232,14 @@ export const useSocketStore = create<SocketState>((set, get) => ({
         set({ socket, serverIp: ip });
     },
     reconnectLastSession: () => {
-        const { lastHost, lastCode, lastPort, connect } = get();
-        if (lastHost && lastCode) {
-            console.log(`[Remote Socket] Reconnecting to ${lastHost}:${lastPort || 4000}...`);
-            connect(lastHost, lastCode, lastPort || 4000);
+        const { lastHost, lastCode, lastPort, serverIp, connect } = get();
+        const targetHost = lastHost || serverIp;
+        if (targetHost && lastCode) {
+            console.log(`[Remote Socket] Reconnecting to ${targetHost}:${lastPort || 4000}...`);
+            connect(targetHost, lastCode, lastPort || 4000);
+        } else if (targetHost) {
+            console.log(`[Remote Socket] Reconnecting with fallback host ${targetHost}...`);
+            connect(targetHost, '', lastPort || 4000);
         }
     },
     disconnect: () => {
@@ -226,21 +249,83 @@ export const useSocketStore = create<SocketState>((set, get) => ({
         }
         set({ socket: null, isConnected: false, isPaired: false, connectionError: null });
     },
-    sendAsset: (asset: AssetPayload): Promise<{ ok: boolean; error?: string; message?: string; role?: string }> => {
+    sendAsset: async (asset: AssetPayload): Promise<{ ok: boolean; error?: string; message?: string; role?: string }> => {
+        const { socket, isPaired, serverIp, lastHost, lastPort, lastCode, deviceName } = get();
+        if (!isPaired) {
+            return { ok: false, error: 'Must be connected and paired with desktop to send assets' };
+        }
+
+        const MAX_BYTES = 50 * 1024 * 1024;
+        if (asset.size > MAX_BYTES) {
+            return { ok: false, error: 'File exceeds 50MB limit' };
+        }
+
+        const host = lastHost || serverIp || 'localhost';
+        const port = lastPort || 4000;
+
+        // 1. Native Direct Stream Upload via FileSystem.uploadAsync (Handles all content:// & file:// URIs without JS base64 memory overhead)
+        if (asset.uri) {
+            try {
+                console.log(`[sendAsset] Streaming upload via uploadAsync: ${asset.name} (${asset.uri})`);
+                const uploadRes = await FileSystem.uploadAsync(`http://${host}:${port}/api/upload-asset-raw`, asset.uri, {
+                    httpMethod: 'POST',
+                    uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+                    headers: {
+                        'x-filename': encodeURIComponent(asset.name),
+                        'x-filetype': asset.type,
+                        'x-devicename': encodeURIComponent(deviceName || 'Mobile Companion'),
+                        'content-type': asset.mimeType || 'application/octet-stream',
+                    },
+                });
+
+                if (uploadRes.status >= 200 && uploadRes.status < 300) {
+                    const data = JSON.parse(uploadRes.body);
+                    if (data?.ok) {
+                        return { ok: true, message: data.message || 'Asset accepted by desktop operator', role: data.role };
+                    }
+                    if (data?.error) {
+                        return { ok: false, error: data.error };
+                    }
+                }
+            } catch (streamErr) {
+                console.warn('[sendAsset] Native streaming upload failed, falling back to JSON upload:', streamErr);
+            }
+        }
+
+        // 2. Direct HTTP upload route with JSON payload
+        if (asset.dataBase64) {
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 120000); // 2min timeout
+                const response = await fetch(`http://${host}:${port}/api/upload-asset`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        ...asset,
+                        deviceName: deviceName || 'Mobile Companion',
+                        pairingCode: lastCode,
+                    }),
+                    signal: controller.signal,
+                });
+                clearTimeout(timeoutId);
+                const data = await response.json();
+                if (data?.ok) {
+                    return { ok: true, message: data.message || 'Asset accepted by desktop operator', role: data.role };
+                }
+                if (data?.error) {
+                    return { ok: false, error: data.error };
+                }
+            } catch (httpErr) {
+                console.warn('[sendAsset] HTTP JSON upload failed, falling back to WebSocket:', httpErr);
+            }
+        }
+
+        // 3. WebSocket Fallback
+        if (!socket || !socket.connected) {
+            return { ok: false, error: 'Desktop disconnected' };
+        }
+
         return new Promise((resolve) => {
-            const { socket, isPaired } = get();
-            if (!socket || !socket.connected || !isPaired) {
-                resolve({ ok: false, error: 'Must be connected and paired with desktop to send assets' });
-                return;
-            }
-
-            // Size limit: 50MB
-            const MAX_BYTES = 50 * 1024 * 1024;
-            if (asset.size > MAX_BYTES) {
-                resolve({ ok: false, error: 'File exceeds 50MB limit' });
-                return;
-            }
-
             socket.emit('mobile-asset-transfer', asset, (response: { ok: boolean; error?: string; message?: string; role?: string }) => {
                 if (response?.ok) {
                     resolve({ ok: true, message: response.message || 'Asset accepted by desktop operator', role: response.role });

@@ -396,13 +396,6 @@ export default function TimerController() {
             {timeUp && countdown === 0 ? "00:00:00" : formatTime(countdown)}
           </p>
 
-          {/* Time-up blackout notice */}
-          {timeUp && (
-            <p className="text-sm mt-2 font-semibold opacity-80">
-              ⬛ Stage blacked out
-            </p>
-          )}
-
           {time > 0 && (
             <div className="absolute bottom-4 right-4 flex gap-2">
               <button

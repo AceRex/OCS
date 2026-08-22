@@ -13,11 +13,19 @@ import {
 import SceneModal from "./SceneModal";
 import { PresentationImportProgressModal, PresentationFontAdvisoryModal } from "./PresentationImportModal";
 import { renderAnimatedLyrics } from "./LyricAnimationEngine";
+import FileTypeBadge from "./FileTypeBadge";
+import mp3FallbackIcon from "../../../assets/text_line_mp3.png";
 
 const isVideoFile = (url) => {
     if (!url || typeof url !== 'string') return false;
     const clean = url.split('?')[0].split('#')[0].toLowerCase();
     return clean.endsWith('.mp4') || clean.endsWith('.webm') || clean.endsWith('.mov') || clean.endsWith('.m4v') || clean.endsWith('.ogg') || clean.endsWith('.mkv');
+};
+
+const isAudioFile = (url) => {
+    if (!url || typeof url !== 'string') return false;
+    const clean = url.split('?')[0].split('#')[0].toLowerCase();
+    return clean.endsWith('.mp3') || clean.endsWith('.wav') || clean.endsWith('.m4a') || clean.endsWith('.aac') || clean.endsWith('.ogg') || clean.endsWith('.flac') || clean.endsWith('.wma') || clean.endsWith('.opus') || clean.endsWith('.aiff') || clean.endsWith('.m4p') || clean.endsWith('.bumper');
 };
 
 const formatTimecode = (seconds) => {
@@ -2257,7 +2265,9 @@ export default function PresentationController() {
                                 <div className="grid grid-cols-3 gap-2">
                                     {mediaFiles.map((fileUrl, index) => {
                                         const isVideo = isVideoFile(fileUrl);
+                                        const isAudio = isAudioFile(fileUrl);
                                         const isSelected = selectedAssetUrls.includes(fileUrl);
+                                        const fileName = decodeURIComponent((fileUrl || '').split('/').pop() || 'Audio');
                                         return (
                                             <div
                                                 key={`${fileUrl}-${index}`}
@@ -2268,9 +2278,9 @@ export default function PresentationController() {
                                                     e.dataTransfer.effectAllowed = 'copy';
                                                 }}
                                                 onClick={(e) => handleToggleSelectAsset(fileUrl, e)}
-                                                onDoubleClick={() => addLayer(isVideo ? 'video' : 'image', fileUrl)}
+                                                onDoubleClick={() => addLayer(isVideo ? 'video' : isAudio ? 'audio' : 'image', fileUrl)}
                                                 onContextMenu={(e) => handleAssetContextMenu(e, fileUrl)}
-                                                className={`aspect-square w-full h-[90px] bg-[#1a1a1e] rounded-xl relative overflow-hidden border transition-all cursor-pointer group ${
+                                                className={`aspect-square w-full h-[90px] bg-[#141418] rounded-xl relative overflow-hidden border transition-all cursor-pointer group ${
                                                     isSelected
                                                         ? 'border-blue-500 ring-2 ring-blue-500/40 shadow-lg'
                                                         : 'border-white/10 hover:border-white/30 hover:scale-[1.02]'
@@ -2297,7 +2307,18 @@ export default function PresentationController() {
                                                 )}
 
                                                 {/* Media Content */}
-                                                {isVideo ? (
+                                                {isAudio ? (
+                                                    <div className="absolute inset-0 w-full h-full flex flex-col items-center justify-center p-2 bg-[#141418] hover:bg-[#191920] transition-colors">
+                                                        <img
+                                                            src={mp3FallbackIcon}
+                                                            alt="MP3"
+                                                            className="w-10 h-10 object-contain drop-shadow-md mb-1"
+                                                        />
+                                                        <span className="text-[9px] text-white/80 font-medium truncate max-w-full px-1 text-center font-mono">
+                                                            {decodeURIComponent((fileUrl || '').split('/').pop() || 'Audio')}
+                                                        </span>
+                                                    </div>
+                                                ) : isVideo ? (
                                                     <video
                                                         src={fileUrl}
                                                         className="absolute inset-0 w-full h-full object-cover opacity-75 group-hover:opacity-100 transition-opacity pointer-events-none"
@@ -2306,14 +2327,18 @@ export default function PresentationController() {
                                                         preload="metadata"
                                                     />
                                                 ) : (
-                                                    <img
-                                                        src={fileUrl}
-                                                        className="absolute inset-0 w-full h-full object-cover opacity-75 group-hover:opacity-100 transition-opacity pointer-events-none"
-                                                        alt="asset"
-                                                        onError={(e) => {
-                                                            e.currentTarget.style.display = 'none';
-                                                        }}
-                                                    />
+                                                    <div className="absolute inset-0 w-full h-full flex items-center justify-center bg-[#141418]">
+                                                        <img
+                                                            src={fileUrl}
+                                                            className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity pointer-events-none"
+                                                            alt="asset"
+                                                            onError={(e) => {
+                                                                e.currentTarget.onerror = null;
+                                                                e.currentTarget.src = mp3FallbackIcon;
+                                                                e.currentTarget.className = "w-10 h-10 object-contain drop-shadow-md pointer-events-none";
+                                                            }}
+                                                        />
+                                                    </div>
                                                 )}
                                             </div>
                                         );

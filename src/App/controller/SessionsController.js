@@ -20,6 +20,10 @@ import {
   PiClock,
 } from 'react-icons/pi';
 import SessionFolderCard, { formatBytes, formatDate } from './SessionFolderCard';
+import FileTypeBadge from './FileTypeBadge';
+import pdfPngIcon from '../../../assets/text_line_pdf.png';
+import mp3PngIcon from '../../../assets/text_line_mp3.png';
+import mp4PngIcon from '../../../assets/text_line_mp4.png';
 
 export default function SessionsController() {
   const [sessions, setSessions] = useState([]);
@@ -329,33 +333,21 @@ export default function SessionsController() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-3 pt-2 pb-6">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-4 pt-2 pb-6">
               {sessions.map((s, index) => (
-                <div key={s.id} className="relative">
-                  <SessionFolderCard
-                    title={s.title}
-                    speakerName={s.speakerName}
-                    index={index}
-                    sizeBytes={s.sizeBytes}
-                    createdAt={s.createdAt}
-                    status={s.status}
-                    selected={selectedIds.has(s.id)}
-                    onToggleSelect={(e) => toggleSelectOne(s.id, e)}
-                    onOpen={() => openDetail(s.id)}
-                    onMenu={() => setMenuId(menuId === s.id ? null : s.id)}
-                  />
-                  {menuId === s.id && (
-                    <div className="absolute right-2 top-12 z-30 min-w-[160px] rounded-2xl bg-[#1a1a1a] border border-white/10 shadow-2xl py-2 text-xs">
-                      <button
-                        type="button"
-                        className="w-full text-left px-3 py-2 hover:bg-white/5 text-red-300 flex items-center gap-2"
-                        onClick={() => remove(s.id)}
-                      >
-                        <PiTrash size={14} /> Delete
-                      </button>
-                    </div>
-                  )}
-                </div>
+                <SessionFolderCard
+                  key={s.id}
+                  title={s.title}
+                  speakerName={s.speakerName}
+                  index={index}
+                  sizeBytes={s.sizeBytes}
+                  createdAt={s.createdAt}
+                  status={s.status}
+                  selected={selectedIds.has(s.id)}
+                  onToggleSelect={(e) => toggleSelectOne(s.id, e)}
+                  onOpen={() => openDetail(s.id)}
+                  onDelete={() => remove(s.id)}
+                />
               ))}
             </div>
           )}
@@ -369,9 +361,7 @@ export default function SessionsController() {
             {/* Modal Top Bar */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/[0.02]">
               <div className="flex items-center gap-2.5">
-                <div className="w-7 h-7 rounded-xl bg-violet-600/20 border border-violet-500/30 flex items-center justify-center text-violet-300">
-                  <PiFilePdf size={16} />
-                </div>
+                <img src={pdfPngIcon} alt="PDF" className="w-7 h-7 object-contain drop-shadow-sm shrink-0" />
                 <div>
                   <h2 className="text-sm font-bold text-white tracking-tight leading-none">
                     {detail.title || 'Session Archive'}
@@ -420,7 +410,7 @@ export default function SessionsController() {
                     }`}
                   >
                     <PiFolder size={15} />
-                    Folder Preview ({detail.folderFiles?.length || 0})
+                    Folder Preview ({(detail.folderFiles || []).filter(f => f.name !== 'meta.json' && !f.name.startsWith('transcript.raw') && !f.name.startsWith('.')).length})
                   </button>
 
                   <button
@@ -516,52 +506,59 @@ export default function SessionsController() {
                       </button>
                     </div>
 
-                    {detail.folderFiles && detail.folderFiles.length > 0 ? (
-                      <div className="space-y-1.5 pt-1">
-                        {detail.folderFiles.map((file) => {
-                          const isPdf = file.name.endsWith('.pdf');
-                          const isVideo = file.name.endsWith('.mp4') || file.name.endsWith('.webm');
-                          const isAudio = file.name.endsWith('.mp3') || file.name.endsWith('.wav');
-                          const isText = file.name.endsWith('.txt') || file.name.endsWith('.json') || file.name.endsWith('.jsonl');
+                    {(() => {
+                      const visibleFiles = (detail.folderFiles || []).filter(
+                        (f) => f.name !== 'meta.json' && !f.name.startsWith('transcript.raw') && !f.name.startsWith('.')
+                      );
 
-                          return (
-                            <div
-                              key={file.name}
-                              className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 transition-colors"
-                            >
-                              <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                                  isPdf ? 'bg-red-500/20 text-red-300' :
-                                  isVideo ? 'bg-blue-500/20 text-blue-300' :
-                                  isAudio ? 'bg-purple-500/20 text-purple-300' :
-                                  isText ? 'bg-emerald-500/20 text-emerald-300' : 'bg-white/10 text-white/60'
-                                }`}>
-                                  {isPdf ? <PiFilePdf size={16} /> :
-                                   isVideo ? <PiVideo size={16} /> :
-                                   isAudio ? <PiMusicNote size={16} /> :
-                                   isText ? <PiFileText size={16} /> : <PiFolder size={16} />}
-                                </div>
-                                <div className="min-w-0">
-                                  <p className="text-xs font-semibold text-white/90 truncate">{file.name}</p>
-                                  <p className="text-[10px] text-white/40">{file.sizeLabel || formatBytes(file.sizeBytes)}</p>
-                                </div>
-                              </div>
-                              <button
-                                type="button"
-                                onClick={() => openFileInFolder(file.name)}
-                                className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/15 text-[10px] font-bold text-white/80 shrink-0 flex items-center gap-1"
+                      if (visibleFiles.length === 0) {
+                        return (
+                          <div className="p-8 text-center text-xs text-white/30 rounded-2xl border border-dashed border-white/10">
+                            No folder file listings available.
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <div className="space-y-1.5 pt-1">
+                          {visibleFiles.map((file) => {
+                            const isPdf = file.name.toLowerCase().endsWith('.pdf');
+                            const isAudio = /\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(file.name);
+                            const isVideo = /\.(mp4|webm|mov|mkv|avi|m4v)$/i.test(file.name);
+
+                            return (
+                              <div
+                                key={file.name}
+                                className="flex items-center justify-between p-2.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/5 transition-colors"
                               >
-                                <PiArrowSquareOut size={12} /> Open
-                              </button>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    ) : (
-                      <div className="p-8 text-center text-xs text-white/30 rounded-2xl border border-dashed border-white/10">
-                        No folder file listings available.
-                      </div>
-                    )}
+                                <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                                  {isPdf ? (
+                                    <img src={pdfPngIcon} alt="PDF" className="w-6 h-6 object-contain shrink-0 drop-shadow-sm" />
+                                  ) : isAudio ? (
+                                    <img src={mp3PngIcon} alt="MP3" className="w-6 h-6 object-contain shrink-0 drop-shadow-sm" />
+                                  ) : isVideo ? (
+                                    <img src={mp4PngIcon} alt="MP4" className="w-6 h-6 object-contain shrink-0 drop-shadow-sm" />
+                                  ) : (
+                                    <FileTypeBadge filename={file.name} size="xs" />
+                                  )}
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-semibold text-white/90 truncate">{file.name}</p>
+                                    <p className="text-[10px] text-white/40">{file.sizeLabel || formatBytes(file.sizeBytes)}</p>
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => openFileInFolder(file.name)}
+                                  className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/15 text-[10px] font-bold text-white/80 shrink-0 flex items-center gap-1"
+                                >
+                                  <PiArrowSquareOut size={12} /> Open
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
 

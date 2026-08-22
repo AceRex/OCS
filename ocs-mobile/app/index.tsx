@@ -166,125 +166,144 @@ export default function Dashboard() {
           <TouchableOpacity
             onPress={() => setMenuModalVisible(true)}
             activeOpacity={0.8}
-            className={`px-3 py-1.5 rounded-full flex-row items-center gap-1.5 border ${
+            className={`flex-row items-center gap-1.5 px-3 py-1.5 rounded-full border ${
               isPaired
-                ? "bg-emerald-500/10 border-emerald-500/30"
-                : isConnected
-                  ? "bg-amber-500/10 border-amber-500/30"
-                  : "bg-white/5 border-white/10"
+                ? "bg-emerald-500/20 border-emerald-400/40"
+                : "bg-white/10 border-white/20"
             }`}
           >
             <View
               className={`w-2 h-2 rounded-full ${
                 isPaired
                   ? "bg-emerald-400"
-                  : isConnected
-                    ? "bg-amber-400"
-                    : "bg-white/30"
+                  : "bg-white/40"
               }`}
             />
             <Text
-              className={`text-[11px] font-bold ${
+              className={`text-[11px] font-extrabold tracking-wide ${
                 isPaired
-                  ? "text-emerald-400"
-                  : isConnected
-                    ? "text-amber-400"
-                    : "text-white/40"
+                  ? "text-emerald-300"
+                  : "text-white/70"
               }`}
             >
-              {isPaired ? "Paired" : isConnected ? "Connecting" : "Offline"}
+              {isPaired ? "Paired" : "Offline"}
             </Text>
-            <CaretDown size={11} color="rgba(255,255,255,0.4)" weight="bold" />
+            <CaretDown
+              size={11}
+              color={isPaired ? "#6EE7B7" : "rgba(255,255,255,0.7)"}
+              weight="bold"
+            />
           </TouchableOpacity>
         </View>
 
-        {/* Connection Menu Modal */}
+        {/* Connection Menu Modal — Full Page */}
         <Modal
           visible={menuModalVisible}
-          transparent
-          animationType="fade"
+          animationType="slide"
+          presentationStyle="fullScreen"
+          statusBarTranslucent
+          transparent={false}
           onRequestClose={() => setMenuModalVisible(false)}
         >
-          <TouchableOpacity
-            activeOpacity={1}
-            onPress={() => setMenuModalVisible(false)}
-            className="flex-1 bg-black/80 justify-center items-center p-6"
-          >
-            <View
-              onStartShouldSetResponder={() => true}
-              className="w-full bg-[#1e1e24] border border-white/15 rounded-2xl p-5 shadow-2xl space-y-4"
-            >
-              <View className="flex-row items-center justify-between border-b border-white/10 pb-3">
-                <View>
-                  <Text className="text-white font-bold text-base">Workstation Connection</Text>
-                  <Text className="text-white/50 text-xs mt-0.5">
-                    {serverIp ? `Target IP: ${serverIp}` : "No workstation active"}
+          <SafeAreaView style={{ flex: 1, backgroundColor: "#121212" }}>
+            <View style={{ flex: 1, padding: 20, justifyContent: "space-between" }}>
+              <View style={{ flex: 1 }}>
+                {/* Header */}
+                <View className="border-b border-white/10 pb-4 mb-6">
+                  <Text className="text-white font-black text-2xl">Workstation Connection</Text>
+                  <Text className="text-white/60 text-xs mt-1 font-medium">
+                    {isPaired ? "Connected to Host" : "Offline"}
                   </Text>
                 </View>
-                <TouchableOpacity onPress={() => setMenuModalVisible(false)}>
-                  <X size={18} color="rgba(255,255,255,0.5)" />
-                </TouchableOpacity>
-              </View>
 
-              {/* 1-Tap Reconnect Option (if previously connected) */}
-              {!isPaired && lastHost ? (
-                <TouchableOpacity
-                  onPress={handleQuickReconnect}
-                  className="py-3 px-4 rounded-xl bg-purple-600/20 border border-purple-500/50 flex-row items-center justify-between"
-                >
-                  <View className="flex-row items-center gap-3">
-                    <Lightning size={20} color="#C084FC" weight="fill" />
+                {/* Options List */}
+                <View style={{ gap: 14 }}>
+                  {/* When DISCONNECTED: Show 1-Tap Reconnect Option (if previously connected) */}
+                  {!isPaired && lastHost ? (
+                    <TouchableOpacity
+                      onPress={handleQuickReconnect}
+                      className="py-4 px-4 rounded-2xl bg-purple-600/20 border border-purple-500/50 flex-row items-center justify-between"
+                    >
+                      <View className="flex-row items-center gap-3">
+                        <Lightning size={22} color="#C084FC" weight="fill" />
+                        <View>
+                          <Text className="text-purple-300 font-bold text-sm">
+                            Reconnect to {lastHost}
+                          </Text>
+                          <Text className="text-white/40 text-[11px] mt-0.5">
+                            Saved Code: {lastCode || "******"}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text className="text-purple-400 font-extrabold text-xs">RECONNECT</Text>
+                    </TouchableOpacity>
+                  ) : null}
+
+                  {/* When DISCONNECTED: Show Scan QR / Manual Connect */}
+                  {!isPaired && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        setMenuModalVisible(false);
+                        router.push("/connect");
+                      }}
+                      className="py-4 px-4 rounded-2xl bg-white/5 border border-white/10 flex-row items-center gap-3"
+                    >
+                      <QrCode size={22} color="#38BDF8" weight="bold" />
+                      <View>
+                        <Text className="text-white font-bold text-sm">
+                          Scan QR / Manual Connect
+                        </Text>
+                        <Text className="text-white/40 text-[11px] mt-0.5">
+                          Pair with a new desktop workstation
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
+
+                  {/* Change Device Name (Available both connected and disconnected) */}
+                  <TouchableOpacity
+                    onPress={handleOpenRename}
+                    className="py-4 px-4 rounded-2xl bg-white/5 border border-white/10 flex-row items-center gap-3"
+                  >
+                    <PencilSimple size={22} color="#A78BFA" weight="bold" />
                     <View>
-                      <Text className="text-purple-300 font-bold text-sm">
-                        Reconnect to {lastHost}
-                      </Text>
-                      <Text className="text-white/40 text-[10px]">
-                        Saved Code: {lastCode || "******"}
+                      <Text className="text-white font-bold text-sm">Change Device Name</Text>
+                      <Text className="text-white/40 text-[11px] mt-0.5">
+                        Current: {deviceName || "Mobile Companion"}
                       </Text>
                     </View>
-                  </View>
-                  <Text className="text-purple-400 font-extrabold text-xs">RECONNECT</Text>
-                </TouchableOpacity>
-              ) : null}
+                  </TouchableOpacity>
 
-              {/* Connect / Scan New QR */}
+                  {/* When CONNECTED: Show Disconnect Option */}
+                  {isPaired && (
+                    <TouchableOpacity
+                      onPress={() => {
+                        disconnect();
+                        setMenuModalVisible(false);
+                      }}
+                      className="py-4 px-4 rounded-2xl bg-red-500/10 border border-red-500/30 flex-row items-center gap-3"
+                    >
+                      <XCircle size={22} color="#F87171" weight="bold" />
+                      <View>
+                        <Text className="text-red-400 font-bold text-sm">Disconnect</Text>
+                        <Text className="text-red-400/60 text-[11px] mt-0.5">
+                          End current remote controller session
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
+              {/* Close Bottom Button */}
               <TouchableOpacity
-                onPress={() => {
-                  setMenuModalVisible(false);
-                  router.push("/connect");
-                }}
-                className="py-3 px-4 rounded-xl bg-white/5 border border-white/10 flex-row items-center gap-3"
+                onPress={() => setMenuModalVisible(false)}
+                className="w-full py-4 rounded-2xl bg-white/10 items-center justify-center mb-2"
               >
-                <QrCode size={20} color="#38BDF8" weight="bold" />
-                <Text className="text-white font-semibold text-sm">
-                  {isPaired ? "Scan New Station QR" : "Scan QR / Manual Connect"}
-                </Text>
+                <Text className="text-white font-bold text-base">Close</Text>
               </TouchableOpacity>
-
-              {/* Rename Device */}
-              <TouchableOpacity
-                onPress={handleOpenRename}
-                className="py-3 px-4 rounded-xl bg-white/5 border border-white/10 flex-row items-center gap-3"
-              >
-                <PencilSimple size={20} color="#A78BFA" weight="bold" />
-                <Text className="text-white font-semibold text-sm">Change Device Name</Text>
-              </TouchableOpacity>
-
-              {/* Disconnect Option */}
-              {isPaired && (
-                <TouchableOpacity
-                  onPress={() => {
-                    disconnect();
-                    setMenuModalVisible(false);
-                  }}
-                  className="py-3 px-4 rounded-xl bg-red-500/10 border border-red-500/30 flex-row items-center gap-3"
-                >
-                  <XCircle size={20} color="#F87171" weight="bold" />
-                  <Text className="text-red-400 font-semibold text-sm">Disconnect Station</Text>
-                </TouchableOpacity>
-              )}
             </View>
-          </TouchableOpacity>
+          </SafeAreaView>
         </Modal>
 
         {/* Rename Modal */}
