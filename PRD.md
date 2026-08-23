@@ -3,9 +3,21 @@
 ## Product Requirements Document (PRD)
 
 **Author:** Are Oluwasegun Johnson
-**Version:** 1.10
+**Version:** 1.11
 **Last Updated:** August 2026
 **Status:** Active Development
+
+---
+
+## Changelog from v1.10 → v1.11 (Free/Guest Mode, Subscription Tiers & Permissions)
+
+Two directly-authorized product decisions retroactively formalized here, per the standing rule that a formal FR reversal requires a PRD update, not just a note in an audit report.
+
+**FR-13.1 revised (Free/Guest Mode replaces Hard Login Gate):** The app no longer blocks all use until login. It opens directly to the main Controller in a Free/Guest mode; login is available but optional, accessed via the sidebar. See revised FR-13.1 below.
+
+**New Section 4.11 (Subscription Tiers, Permissions & Commercial Model):** A tier/pricing/permissions system was built without a prior spec. This section formalizes what was actually built, based on the implementation audit — **some details below (full permission list, per-tier seat counts beyond the Trial tier, exact entitlement mapping) are marked as needing confirmation from the actual codebase**, since this document is being written from an audit summary, not the source of truth itself. Treat those specific items as provisional until verified directly against `ocs-backend`'s actual models.
+
+**Note on terminology:** This revision distinguishes two previously-adjacent concepts that share the word "grace" but are not the same thing — FR-13.5's **Offline Session Cache Grace Period** (72 hours, a technical tolerance for connectivity gaps) and the new FR-13.9's **Subscription Trial Period** (2 months, a business/billing concept). Future audits should not conflate these.
 
 ---
 
@@ -545,7 +557,7 @@ Allows OCS's Program (General View) and Stage (Speaker View) outputs to be disco
 
 The only mandatory network dependency in OCS's architecture. Every other feature in this document degrades gracefully offline by design; this section is the deliberate exception, and its risk mitigations (FR-13.5, FR-13.6) exist specifically because it's an exception, not because the offline-first principle (NFR-9, NFR-25) was abandoned.
 
-**FR-13.1 (New) — Hard Login Gate:** The Desktop Controller SHALL NOT be usable — no Bible display, no Presentation, no Scene, no Session — until authentication succeeds. This is an intentional product decision (organization/church-level licensing), not a bug against the app's otherwise offline-first design.
+**FR-13.1 (Revised in v1.11) — Free/Guest Mode:** The Desktop Controller SHALL be usable without authentication — Bible display, Presentation, Scene, and Session all function in an unauthenticated "Free/Guest" mode. Login is optional, accessed via a "Log In via Browser" action in the sidebar (not a blocking gate on startup). What login unlocks — additional entitlements, seat management, paid-tier features — is defined in Section 4.11. This supersedes the v1.10 requirement that the app be entirely unusable without authentication; that requirement is retired, not merely unenforced.
 
 **FR-13.2 (New) — Splash Screen (Both Platforms):** On launch, both Desktop and Mobile SHALL show a branded splash screen while: (a) checking for a valid cached session (FR-13.5), (b) initializing local resources that don't depend on auth (Bible SQLite, ASR model presence check). The splash screen transitions to either the main app (valid session found) or the Login screen (no valid session) — never to a blank/frozen state while this resolves.
 
@@ -565,6 +577,60 @@ The only mandatory network dependency in OCS's architecture. Every other feature
 **FR-13.7 (New) — Mobile Companion Unaffected:** Mobile Companion does NOT get its own login. It continues to pair to the Desktop Controller exactly as specified in FR-6.1–FR-6.13, unchanged. Desktop's authenticated/licensed state gates whether pairing is available at all (an unauthenticated Desktop should not accept mobile pairing), but mobile itself has no separate credential to manage.
 
 **FR-13.8 (New) — Deep-Link Registration Both Platforms:** Desktop (Electron) SHALL register a custom protocol handler (e.g. `ocs://`) via the OS at install time. If a mobile-side login is ever added in a future revision, the equivalent Expo mechanism is `expo-auth-session`'s standard redirect handling rather than a hand-rolled deep-link listener — noted here for forward compatibility, not required by this revision since FR-13.7 means mobile has no login to redirect back to yet.
+
+**FR-13.8a (Resolved in this revision) — Canonical Callback URL Scheme:** The desktop app accepts exactly one callback URL format: **`ocs://auth/callback`** (slash, not hyphen). This was chosen because standard RFC 3986 URI parsers treat this as a proper hierarchical URI (`scheme: ocs`, `host: auth`, `path: /callback`), whereas the legacy hyphenated form (`ocs://auth-callback`) parses as a non-standard host with an empty path, causing inconsistent behavior across different URL parsers. `authService.js`'s `validateAuthCallback()` now strictly rejects any non-canonical format, including the legacy one. `AUTH_CONTRACT.md`, the web frontend's redirect construction, and the desktop test suite have all been updated to match.
+
+---
+
+## 4.11 Subscription Tiers, Permissions & Commercial Model (New in v1.11)
+
+Documented directly from `ocs-backend` source (`User.js`, `PlanPermission.js`, `permissions.js`, `auth.js`) as of this revision — no longer provisional.
+
+**FR-13.9 (New) — Subscription Trial Period:** A newly-registered account receives a **Trial** tier valid for **2 months (60 days)** from registration (`trialEndsAt`) — a business/billing concept, distinct from FR-13.5's 72-hour Offline Session Cache Grace Period (a technical connectivity tolerance). These two "grace" concepts must not be conflated in implementation or documentation.
+
+**FR-13.10 (New) — Tier Structure and Quotas:** Six tiers exist, defined in `User.js`'s `PLAN_QUOTAS`:
+
+| Tier     | Price                  | Billing       | Desktop Seats              | Mobile Seats               | Notes                                                                                                            |
+| -------- | ---------------------- | ------------- | -------------------------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| Trial    | Free                   | 2 months      | 1                          | 3                          | Defaults to Mini-equivalent feature set; 60-day validity from `trialEndsAt`                                      |
+| Free     | Free                   | Continuous    | 1                          | 1                          | Automatic downgrade destination on any expiry (FR-13.11); restricted to `timer.basic` and `broadcast.basic` only |
+| Mini     | $2                     | 6 months      | 1                          | 3                          |                                                                                                                  |
+| Standard | $3                     | 6 months      | 1                          | 5                          | Marked "Most Popular" in pricing UI                                                                              |
+| Large    | $5                     | 6 months      | 2                          | 5                          |                                                                                                                  |
+| Premium  | Custom ("Let's chat!") | Annual/custom | 99 (effectively unlimited) | 99 (effectively unlimited) | Includes `premium.full_access`, an unconstrained bypass unlocking all current and future permissions             |
+
+**FR-13.11 (New) — Trial/Subscription Expiration Behavior:** When the Trial period (FR-13.9) or a paid tier's billing period elapses without renewal, the account's effective tier becomes **Free** (a downgrade, not a block) — the user is not locked out, consistent with FR-13.1's Free/Guest Mode principle.
+
+**FR-13.12 (New) — Permission Taxonomy:** 20 permissions across 5 categories (`timer`, `broadcast`, `presentation`, `documents`, `worship`, `system`), each mapped to the tiers that include it:
+
+| Key                   | Name                                | Category     | Tiers                                 |
+| --------------------- | ----------------------------------- | ------------ | ------------------------------------- |
+| `timer.basic`         | Basic Countdown & Service Timer     | timer        | all tiers                             |
+| `broadcast.basic`     | Live Broadcast Output               | broadcast    | all tiers                             |
+| `timer.start_time`    | Scheduled Start Timer               | timer        | large, premium                        |
+| `timer.interval`      | Interval & Multi-Segment Timers     | timer        | standard, large, premium              |
+| `timer.change_view`   | Custom Timer View & Skins           | timer        | standard, large, premium              |
+| `presentation.intro`  | Service Intro Video Bumpers         | presentation | large, premium                        |
+| `presentation.outro`  | Service Outro & Benediction Wraps   | presentation | large, premium                        |
+| `presentation.basic`  | General Presentation Engine         | presentation | trial, mini, standard, large, premium |
+| `pdf.view`            | PDF Viewer & Sermon Notes           | documents    | trial, mini, standard, large, premium |
+| `pdf.edit`            | PDF In-App Editor & Annotator       | documents    | standard, large, premium              |
+| `slides.use`          | Custom Slide Designer               | presentation | standard, large, premium              |
+| `scene.basic`         | Standard Scene Management           | presentation | trial, mini, standard, large, premium |
+| `scene.animations`    | Dynamic Scene Animations            | presentation | large, premium                        |
+| `scene.transitions`   | Cinematic Transitions               | presentation | large, premium                        |
+| `song.basic`          | Hymn & Song Lyrics Projection       | worship      | trial, mini, standard, large, premium |
+| `song.chorus_flow`    | Interactive Chorus Flow Loop        | worship      | large, premium                        |
+| `song.repeat`         | Custom Song Section Repeat          | worship      | large, premium                        |
+| `sing_along`          | Karaoke-Style Sing Along Guide      | worship      | large, premium                        |
+| `read_along`          | Scripture Teleprompter & Read Along | worship      | large, premium                        |
+| `premium.full_access` | Enterprise Unrestricted Full Access | system       | premium only                          |
+
+Editable at runtime by `super_admin` via a dedicated admin console (FR-13.14).
+
+**FR-13.13 (New) — Customer Type Classification:** Signup collects a customer type — `church` (default), `streamer`, or `podcast` — stored on the user record. Confirmed: this field has **zero functional branching anywhere in app core logic** (Desktop Controller, ASR, Presentation, Permissions, Mobile). Its only current effect is at signup, where `streamer`/`podcast` types map a provided `channelLink`/`podcastLink` to `churchName` if no name was otherwise given. It is registration metadata only, not a feature-gating mechanism, as of this revision.
+
+**FR-13.14 (New) — Admin Tier & Permission Management, Restricted to Super Admin:** `PUT /auth/users/:id/tier`, `PUT /permissions/user/:id/tier`, and `PUT /permissions/toggle` allow overriding a user's tier or toggling tier-wide permissions. **These endpoints control real paid entitlements and SHALL be restricted to the `super_admin` role specifically** — a regular `admin` role must not be able to grant tier upgrades or alter permission definitions. _(Security note: an audit of the initial implementation found these three endpoints with no authentication or authorization enforcement at all — any unauthenticated request could modify any user's tier. This was flagged as a critical finding and corrected; this FR documents the intended, corrected access boundary, not the initial defective state.)_
 
 ---
 

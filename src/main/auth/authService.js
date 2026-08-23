@@ -260,32 +260,29 @@ class AuthService extends EventEmitter {
 
   validateAuthCallback(rawUrl) {
     try {
-      let parsed;
-      if (rawUrl.startsWith('ocs://')) {
-        // Parse custom scheme ocs://auth-callback?token=...&state=...
-        const queryPart = rawUrl.includes('?') ? rawUrl.split('?')[1] : '';
-        const params = new URLSearchParams(queryPart);
-        parsed = {
-          token: params.get('token'),
-          state: params.get('state'),
-          email: params.get('email'),
-          org: params.get('org') || params.get('orgName'),
-          tier: params.get('tier') || params.get('plan') || 'trial',
-          daysRemaining: params.get('days_left') || params.get('days') || params.get('daysRemaining') || 60,
-          features: params.get('features'),
-        };
-      } else {
-        const u = new URL(rawUrl);
-        parsed = {
-          token: u.searchParams.get('token'),
-          state: u.searchParams.get('state'),
-          email: u.searchParams.get('email'),
-          org: u.searchParams.get('org') || u.searchParams.get('orgName'),
-          tier: u.searchParams.get('tier') || u.searchParams.get('plan') || 'trial',
-          daysRemaining: u.searchParams.get('days_left') || u.searchParams.get('days') || u.searchParams.get('daysRemaining') || 60,
-          features: u.searchParams.get('features'),
+      if (!rawUrl || typeof rawUrl !== "string") {
+        return { ok: false, error: "Invalid callback: Missing callback URL" };
+      }
+
+      // Canonical Scheme: strictly ocs://auth/callback (FR-13.8a)
+      if (!rawUrl.startsWith("ocs://auth/callback")) {
+        return {
+          ok: false,
+          error: 'Invalid callback scheme format: Must strictly match canonical URI "ocs://auth/callback"',
         };
       }
+
+      const queryPart = rawUrl.includes("?") ? rawUrl.split("?")[1] : "";
+      const params = new URLSearchParams(queryPart);
+      const parsed = {
+        token: params.get("token"),
+        state: params.get("state"),
+        email: params.get("email"),
+        org: params.get("org") || params.get("orgName"),
+        tier: params.get("tier") || params.get("plan") || "trial",
+        daysRemaining: params.get("days_left") || params.get("days") || params.get("daysRemaining") || 60,
+        features: params.get("features"),
+      };
 
       if (!parsed.token) {
         return { ok: false, error: 'Invalid callback: Missing authentication token' };

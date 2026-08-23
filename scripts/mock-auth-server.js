@@ -17,7 +17,7 @@ const server = http.createServer((req, res) => {
 
   if (parsed.pathname === '/login') {
     const state = parsed.query.state || '';
-    const redirectUri = parsed.query.redirect_uri || 'ocs://auth-callback';
+    const redirectUri = parsed.query.redirect_uri || 'ocs://auth/callback';
 
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(`

@@ -32,7 +32,7 @@ async function runTests() {
 
   try {
     const auth = new AuthService();
-    auth.init(tmpDir, { gracePeriodHours: 72, defaultAuthHost: 'https://auth.churchocs.com' });
+    auth.init(tmpDir, { gracePeriodHours: 72, defaultAuthHost: 'https://waveiosoftware.netlify.app' });
 
     // ── 1. Fresh Install / Hard Login Gate (FR-13.1) ──────────────────────────
     console.log('--- 1. Fresh Install & Login Gate (FR-13.1) ---');
@@ -48,14 +48,14 @@ async function runTests() {
     console.log('\n--- 2. Web-Redirect Flow & CSRF Validation (FR-13.3) ---');
     const loginInfo = auth.getLoginUrl();
     ok(typeof loginInfo.url === 'string', 'T2.1: Generated browser login URL');
-    ok(loginInfo.url.startsWith('https://auth.churchocs.com/login'), 'T2.2: Login URL targets hosted auth endpoint');
+    ok(loginInfo.url.includes('https://waveiosoftware.netlify.app'), 'T2.2: Login URL targets hosted auth endpoint');
     ok(loginInfo.url.includes(`state=${loginInfo.state}`), 'T2.3: Login URL contains cryptographic state query param');
-    ok(loginInfo.url.includes('redirect_uri=ocs%3A%2F%2Fauth-callback'), 'T2.4: Redirect URI is encoded ocs://auth-callback');
+    ok(loginInfo.url.includes('redirect_uri=ocs%3A%2F%2Fauth%2Fcallback'), 'T2.4: Redirect URI is encoded ocs://auth/callback');
     ok(auth.pendingAuthState.state === loginInfo.state, 'T2.5: Pending auth state saved in memory');
 
     // Mismatched state rejection (CSRF Attack Prevention)
     console.log('\n--- 2b. CSRF Protection Gate ---');
-    const forgedCallback = `ocs://auth-callback?token=malicious_token&state=FORGED_STATE_VALUE&email=attacker@evil.com`;
+    const forgedCallback = `ocs://auth/callback?token=malicious_token&state=FORGED_STATE_VALUE&email=attacker@evil.com`;
     const csrfResult = auth.validateAuthCallback(forgedCallback);
     ok(csrfResult.ok === false, 'T2.6: Forged CSRF state callback is rejected');
     ok(csrfResult.error.includes('CSRF State Mismatch'), 'T2.7: Error message explicitly flags CSRF State Mismatch');
@@ -63,7 +63,7 @@ async function runTests() {
 
     // Valid callback acceptance
     console.log('\n--- 2c. Valid Auth Deep-Link Acceptance ---');
-    const validCallback = `ocs://auth-callback?token=jwt_valid_sample_token_xyz123&state=${loginInfo.state}&email=lead_pastor@gracecommunity.org&org=Grace%20Community%20Church&tier=enterprise`;
+    const validCallback = `ocs://auth/callback?token=jwt_valid_sample_token_xyz123&state=${loginInfo.state}&email=lead_pastor@gracecommunity.org&org=Grace%20Community%20Church&tier=enterprise`;
     const validResult = auth.validateAuthCallback(validCallback);
     ok(validResult.ok === true, 'T2.9: Valid deep-link callback with matching state accepted');
     ok(validResult.session.email === 'lead_pastor@gracecommunity.org', 'T2.10: Session email extracted correctly');
@@ -142,11 +142,11 @@ async function runTests() {
     // Case 7.2: Packaged production build with correct production host MUST NOT throw
     let prodValidThrew = false;
     try {
-      assertProductionAuthUrl('https://auth.churchocs.com', true); // isPackaged = true
+      assertProductionAuthUrl('https://waveiosoftware.netlify.app', true); // isPackaged = true
     } catch (err) {
       prodValidThrew = true;
     }
-    ok(prodValidThrew === false, 'T7.3: Packaged build with official auth.churchocs.com launches cleanly');
+    ok(prodValidThrew === false, 'T7.3: Packaged build with official waveiosoftware.netlify.app launches cleanly');
 
     // Case 7.3: Dev mode (isPackaged = false, NODE_ENV != 'production') MUST NOT throw regardless of URL
     let devCustomThrew = false;
@@ -165,7 +165,7 @@ async function runTests() {
     console.log('\n--- 8. Mock Auth Server HTTP Integration ---');
     await new Promise((resolve) => mockServer.listen(MOCK_PORT, resolve));
     try {
-      const mockLoginUrl = `http://localhost:${MOCK_PORT}/login?state=mock_test_state&app=desktop&redirect_uri=ocs%3A%2F%2Fauth-callback`;
+      const mockLoginUrl = `http://localhost:${MOCK_PORT}/login?state=mock_test_state&app=desktop&redirect_uri=ocs%3A%2F%2Fauth%2Fcallback`;
       const html = await new Promise((resolve, reject) => {
         http.get(mockLoginUrl, (res) => {
           let data = '';
@@ -175,7 +175,7 @@ async function runTests() {
       });
       ok(html.includes('OCS Mock Auth Portal'), 'T8.1: Mock auth server serves login portal HTML');
       ok(html.includes('mock_test_state'), 'T8.2: Mock auth server embeds state parameter');
-      ok(html.includes('ocs://auth-callback'), 'T8.3: Mock auth server includes custom scheme redirect buttons');
+      ok(html.includes('ocs://auth/callback'), 'T8.3: Mock auth server includes custom scheme redirect buttons');
     } finally {
       await new Promise((resolve) => mockServer.close(resolve));
     }
