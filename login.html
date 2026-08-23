@@ -304,6 +304,13 @@
         waitingIndicator.style.display = 'none';
       });
     }
+  
+    // Auto-trigger browser login on load
+    window.addEventListener("DOMContentLoaded", () => {
+      setTimeout(() => {
+        if (btnLogin) btnLogin.click();
+      }, 400);
+    });
   </script>
 </body>
 </html>

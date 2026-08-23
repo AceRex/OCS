@@ -1,3 +1,41 @@
+
+function formatPlanDetails(planKey, rawDays) {
+    const p = (planKey || "trial").toLowerCase();
+    let name = "2-Month Free Trial (Mini Setup)";
+    
+    if (p === "mini") {
+        name = "Mini Setup ($2 / 6 Months)";
+    } else if (p === "standard") {
+        name = "Standard Setup ($3 / 6 Months)";
+    } else if (p === "large") {
+        name = "Large Setup ($5 / 6 Months)";
+    } else if (p === "premium") {
+        name = "Premium Enterprise (Unlimited)";
+    } else if (p === "free") {
+        name = "Free Mode (Timer & Broadcast)";
+    }
+
+    const days = rawDays !== undefined && rawDays !== null ? Number(rawDays) : (p === "free" ? 0 : 60);
+    let daysLabel = days + " Days Remaining";
+    let daysColor = "text-emerald-400";
+    
+    if (p === "free") {
+        daysLabel = "Continuous Free Mode";
+        daysColor = "text-slate-400";
+    } else if (p === "premium") {
+        daysLabel = "Continuous Enterprise Access";
+        daysColor = "text-amber-400";
+    } else if (days <= 0) {
+        daysLabel = "0 Days Left (Switched to Free Mode)";
+        daysColor = "text-red-400";
+    } else if (days <= 10) {
+        daysLabel = days + " Days Left (Expiring Soon)";
+        daysColor = "text-amber-400";
+    }
+
+    return { name, daysLabel, daysColor, days };
+}
+
 import React, { useState, useEffect, useRef } from "react";
 import {
     PiTextT,
@@ -1345,45 +1383,96 @@ export default function SettingsController() {
                             </p>
                         </div>
 
-                        {/* Workstation License Details */}
-                        {authContext && (
-                            <div className="bg-[#1A1428] border border-[#2E2542] p-6 rounded-3xl space-y-4">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex items-center gap-2">
-                                        <PiShieldCheck className="text-[#67E8F9]" size={20} />
-                                        <h3 className="text-sm font-black uppercase tracking-widest text-[#F5F2FA]">Workstation License</h3>
-                                    </div>
-                                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
-                                        authContext.isAuthenticated
-                                            ? 'bg-emerald-500/15 border border-emerald-500/30 text-emerald-300'
-                                            : 'bg-amber-500/15 border border-amber-500/30 text-amber-300'
-                                    }`}>
-                                        {authContext.isAuthenticated ? (authContext.isGracePeriod ? 'Offline Grace' : 'Active License') : 'Unregistered'}
-                                    </span>
-                                </div>
-
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-4 rounded-2xl bg-[#0B0814] border border-[#2E2542] text-xs">
-                                    <div>
-                                        <span className="text-[#8882A4] block text-[10px] font-bold uppercase">Church Organization</span>
-                                        <span className="text-white font-bold">{authContext.auth?.orgName || 'OCS Community Church'}</span>
-                                    </div>
-                                    <div>
-                                        <span className="text-[#8882A4] block text-[10px] font-bold uppercase">Account Email</span>
-                                        <span className="text-white font-mono">{authContext.auth?.email || 'local-workstation@churchocs.com'}</span>
-                                    </div>
-                                    <div>
-                                        <span className="text-[#8882A4] block text-[10px] font-bold uppercase">License Tier</span>
-                                        <span className="text-[#A788FA] font-black uppercase">{authContext.auth?.licenseTier || 'Pro Workstation'}</span>
-                                    </div>
-                                    <div>
-                                        <span className="text-[#8882A4] block text-[10px] font-bold uppercase">Offline Resilience</span>
-                                        <span className="text-emerald-400 font-bold">
-                                            {authContext.auth?.hoursRemaining != null ? `${authContext.auth.hoursRemaining}h remaining` : '72h Max Grace Period'}
+                        {/* Workstation License & Subscription Details */}
+                        {authContext && (() => {
+                            const planInfo = formatPlanDetails(
+                                authContext.auth?.subscriptionPlan || authContext.auth?.licenseTier,
+                                authContext.auth?.daysRemaining
+                            );
+                            return (
+                                <div className="bg-[#1A1428] border border-[#2E2542] p-6 rounded-3xl space-y-5">
+                                    <div className="flex items-center justify-between">
+                                        <div className="flex items-center gap-2.5">
+                                            <PiShieldCheck className="text-[#67E8F9]" size={22} />
+                                            <div>
+                                                <h3 className="text-sm font-black uppercase tracking-widest text-[#F5F2FA]">Subscription & License</h3>
+                                                <p className="text-[11px] text-[#8882A4]">Workstation entitlements and subscription status</p>
+                                            </div>
+                                        </div>
+                                        <span className={"px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider " + (
+                                            authContext.isAuthenticated
+                                                ? (authContext.isGracePeriod ? "bg-amber-500/15 border border-amber-500/30 text-amber-300" : "bg-emerald-500/15 border border-emerald-500/30 text-emerald-300")
+                                                : "bg-rose-500/15 border border-rose-500/30 text-rose-300"
+                                        )}>
+                                            {authContext.isAuthenticated ? (authContext.isGracePeriod ? "Offline Grace" : "Active License") : "Not Logged In"}
                                         </span>
                                     </div>
+
+                                    {/* Primary Plan & Days Remaining Card */}
+                                    <div className="p-4 rounded-2xl bg-gradient-to-r from-[#211838] to-[#161028] border border-[#3E3259] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                                        <div>
+                                            <span className="text-[10px] font-black tracking-widest uppercase text-[#A788FA] block mb-1">Current Subscription Plan</span>
+                                            <div className="text-base font-black text-white">
+                                                {planInfo.name}
+                                            </div>
+                                        </div>
+                                        <div className="sm:text-right">
+                                            <span className="text-[10px] font-black tracking-widest uppercase text-[#8882A4] block mb-1">Days Remaining</span>
+                                            <div className={"text-sm font-black " + planInfo.daysColor}>
+                                                {planInfo.daysLabel}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-4 rounded-2xl bg-[#0B0814] border border-[#2E2542] text-xs">
+                                        <div>
+                                            <span className="text-[#8882A4] block text-[10px] font-bold uppercase">Church Organization</span>
+                                            <span className="text-white font-bold">{authContext.auth?.orgName || (authContext.isAuthenticated ? "OCS Community Church" : "Unregistered")}</span>
+                                        </div>
+                                        <div>
+                                            <span className="text-[#8882A4] block text-[10px] font-bold uppercase">Account Email</span>
+                                            <span className="text-white font-mono">{authContext.auth?.email || (authContext.isAuthenticated ? "operator@churchocs.com" : "Not Logged In")}</span>
+                                        </div>
+                                        <div>
+                                            <span className="text-[#8882A4] block text-[10px] font-bold uppercase">Plan Tier Code</span>
+                                            <span className="text-[#A788FA] font-black uppercase">{authContext.auth?.subscriptionPlan || authContext.auth?.licenseTier || "trial"}</span>
+                                        </div>
+                                        <div>
+                                            <span className="text-[#8882A4] block text-[10px] font-bold uppercase">Offline Resilience</span>
+                                            <span className="text-emerald-400 font-bold">
+                                                {authContext.auth?.hoursRemaining != null ? (authContext.auth.hoursRemaining + "h remaining") : "72h Max Grace Period"}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div className="flex items-center gap-3 pt-1">
+                                        {!authContext.isAuthenticated ? (
+                                            <button
+                                                onClick={() => authContext.login()}
+                                                className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-purple-900/30"
+                                            >
+                                                Log In to Activate Workstation
+                                            </button>
+                                        ) : (
+                                            <>
+                                                <button
+                                                    onClick={() => authContext.login()}
+                                                    className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 text-white text-xs font-bold transition-colors"
+                                                >
+                                                    Manage / Refresh Plan
+                                                </button>
+                                                <button
+                                                    onClick={() => authContext.logout()}
+                                                    className="px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300 text-xs font-bold transition-colors"
+                                                >
+                                                    Log Out
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
                                 </div>
-                            </div>
-                        )}
+                            );
+                        })()}
 
                         {/* Factory Reset */}
                         <div className="bg-[#1A1428] border border-red-500/20 p-6 rounded-3xl space-y-3">

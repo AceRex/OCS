@@ -26,6 +26,23 @@ import { useAuth } from "../context/AuthContext";
 
 // ─── Sidebar Account / Login Component ───────────────────────────────────────
 
+
+function getPlanShortBadge(tier, days) {
+  const t = (tier || "trial").toLowerCase();
+  let label = "Trial";
+  if (t === "mini") label = "Mini";
+  else if (t === "standard") label = "Standard";
+  else if (t === "large") label = "Large";
+  else if (t === "premium") label = "Premium";
+  else if (t === "free") label = "Free";
+
+  let daysText = days != null ? days + "d" : "60d";
+  if (t === "free") daysText = "Free";
+  if (t === "premium") daysText = "Unlimited";
+
+  return { label, daysText };
+}
+
 function SidebarAccount({ isCollapsed }) {
   const {
     auth,
@@ -171,16 +188,24 @@ function SidebarAccount({ isCollapsed }) {
           {(auth.orgName || auth.email || "A")[0].toUpperCase()}
         </div>
 
-        {!isCollapsed && (
-          <div className="flex flex-col overflow-hidden flex-1 text-left">
-            <span className="text-xs font-bold text-white truncate">
-              {auth.orgName || "OCS Community Church"}
-            </span>
-            <span className="text-[10px] text-white/40 truncate">
-              {auth.email || "admin@churchocs.com"}
-            </span>
-          </div>
-        )}
+        {!isCollapsed && (() => {
+          const { label, daysText } = getPlanShortBadge(auth.subscriptionPlan || auth.licenseTier, auth.daysRemaining);
+          return (
+            <div className="flex flex-col overflow-hidden flex-1 text-left">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-bold text-white truncate">
+                  {auth.orgName || "OCS Community Church"}
+                </span>
+                <span className="text-[9px] font-black uppercase px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                  {label}
+                </span>
+              </div>
+              <span className="text-[10px] text-white/40 truncate">
+                {daysText} left • {auth.email || "admin@churchocs.com"}
+              </span>
+            </div>
+          );
+        })()}
 
         {/* State badge (collapsed: icon only, expanded: pill) */}
         {isCollapsed ? (
@@ -224,13 +249,16 @@ function SidebarAccount({ isCollapsed }) {
               </p>
             </div>
           )}
-          <div className="px-3 py-1.5 mb-1">
-            <p className="text-[10px] text-white/30 truncate">{auth.email}</p>
-            {auth.licenseTier && (
-              <p className="text-[10px] text-purple-400 font-bold uppercase tracking-wider mt-0.5">
-                {auth.licenseTier}
-              </p>
-            )}
+          <div className="px-3 py-2 mb-1 rounded-xl bg-white/5 space-y-1">
+            <p className="text-[10px] text-white/40 truncate">{auth.email}</p>
+            <div className="flex items-center justify-between text-[10px] font-bold">
+              <span className="text-purple-300 uppercase tracking-wider">
+                {auth.subscriptionPlan || auth.licenseTier || "trial"} plan
+              </span>
+              <span className="text-emerald-400 font-black">
+                {auth.daysRemaining != null ? `${auth.daysRemaining} days left` : (auth.subscriptionPlan === "free" ? "Free Mode" : "60 days left")}
+              </span>
+            </div>
           </div>
           <button
             onClick={() => {

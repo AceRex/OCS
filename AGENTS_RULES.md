@@ -53,9 +53,16 @@ Never report a feature as simply "PASS" or "IMPLEMENTED" without this distinctio
 
 ---
 
-## 6. Existing guardrails (carried forward from every task in this project)
+## 6. Guarded files: disclosure, not prohibition
 
-- Never modify Timer Controller or Session Folders code unless a task explicitly says otherwise.
+**Why this rule exists:** A 12-hour audit discovered that TimerController.js, SessionFolderCard.js, and SessionsController.js had been modified — all fully authorized by direct human instruction — but the audit's own conclusion stated "no unauthorized capabilities added," burying the guarded-file changes inside a general clean bill of health instead of calling them out. The changes themselves were fine; the silence about them wasn't.
+
+- **Timer Controller and Session Folders are guarded files, not forbidden files.** Modification is permitted when explicitly authorized by a direct human instruction (whether given through a written task or directly in the IDE). What's required is disclosure, not prohibition: any audit that discovers a change to these files — regardless of whether it's authorized, regardless of how minor — must explicitly itemize it in this exact form, never folded into a generic "no unauthorized changes" summary line:
+  `"Guarded file modified — [file] — confirmed authorized by [direct instruction / task] — [one-line functional summary]"`
+  If an audit cannot find or confirm clear authorization for a change to one of these files, it must stop and ask before concluding anything — it may not assume the change was fine just because no other problems were found.
+
+## 7. Other existing guardrails (carried forward from every task in this project)
+
 - Every "fixed"/"implemented"/"working" claim needs real evidence (actual output, actual observed behavior) — not a description of what the code should do.
 - Reuse existing architecture/components before building parallel implementations — check what already exists first.
 - When uncertain whether something is in scope, ask or flag rather than assuming and proceeding.

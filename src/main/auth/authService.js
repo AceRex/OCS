@@ -24,7 +24,7 @@ try {
   safeStorage = electron.safeStorage || null;
 } catch (_) {}
 
-const PRODUCTION_AUTH_HOST = 'auth.churchocs.com';
+const PRODUCTION_AUTH_HOST = 'waveiosoftware.netlify.app';
 
 function assertProductionAuthUrl(customUrl, isPackagedOverride) {
   let isPackaged = false;
@@ -39,7 +39,7 @@ function assertProductionAuthUrl(customUrl, isPackagedOverride) {
   // dev/test: allow anything
   if (process.env.NODE_ENV !== 'production' && !isPackaged) return;
 
-  const configuredStr = customUrl || (appSettings ? appSettings.get('authLoginUrl') : null) || 'https://auth.churchocs.com';
+  const configuredStr = customUrl || (appSettings ? appSettings.get('authLoginUrl') : null) || 'https://waveiosoftware.netlify.app';
   let configured;
   try {
     configured = new URL(configuredStr);
@@ -72,7 +72,11 @@ class AuthService extends EventEmitter {
     this.userDataPath = userDataPath;
     this.sessionFilePath = path.join(userDataPath, 'session.enc');
     this.gracePeriodHours = gracePeriodHours || 72;
-    this.defaultAuthHost = defaultAuthHost || (appSettings ? appSettings.get('authLoginUrl') : null);
+    let host = defaultAuthHost || (appSettings ? appSettings.get("authLoginUrl") : null) || "https://waveiosoftware.netlify.app";
+    if (typeof host === "string" && host.includes("churchocs.com")) {
+      host = "https://waveiosoftware.netlify.app";
+    }
+    this.defaultAuthHost = host;
 
     // Production safety assertion (fails loudly if dev override leaked into prod)
     assertProductionAuthUrl(this.defaultAuthHost);
@@ -115,7 +119,10 @@ class AuthService extends EventEmitter {
       token: sessionData.token,
       email: sessionData.email || 'operator@churchocs.com',
       orgName: sessionData.orgName || 'OCS Community Church',
-      licenseTier: sessionData.licenseTier || 'standard',
+      licenseTier: sessionData.licenseTier || sessionData.subscriptionPlan || 'trial',
+      subscriptionPlan: sessionData.subscriptionPlan || sessionData.licenseTier || 'trial',
+      daysRemaining: sessionData.daysRemaining !== undefined ? Number(sessionData.daysRemaining) : 60,
+      features: sessionData.features || [],
       lastValidatedAt: Date.now(),
       savedAt: Date.now(),
     };
@@ -133,7 +140,10 @@ class AuthService extends EventEmitter {
       token: sessionData.token,
       email: sessionData.email || 'operator@churchocs.com',
       orgName: sessionData.orgName || 'OCS Community Church',
-      licenseTier: sessionData.licenseTier || 'standard',
+      licenseTier: sessionData.licenseTier || sessionData.subscriptionPlan || 'trial',
+      subscriptionPlan: sessionData.subscriptionPlan || sessionData.licenseTier || 'trial',
+      daysRemaining: sessionData.daysRemaining !== undefined ? Number(sessionData.daysRemaining) : 60,
+      features: sessionData.features || [],
       lastValidatedAt: Date.now(),
       savedAt: Date.now(),
     };
@@ -217,7 +227,10 @@ class AuthService extends EventEmitter {
       state: check.state,
       email: check.session.email,
       orgName: check.session.orgName,
-      licenseTier: check.session.licenseTier,
+      licenseTier: check.session.licenseTier || check.session.subscriptionPlan || 'trial',
+      subscriptionPlan: check.session.subscriptionPlan || check.session.licenseTier || 'trial',
+      daysRemaining: check.session.daysRemaining !== undefined ? Number(check.session.daysRemaining) : (check.session.licenseTier === 'free' ? 0 : 60),
+      features: check.session.features || [],
       hoursRemaining: check.hoursRemaining,
       lastValidatedAt: check.session.lastValidatedAt,
     };
@@ -237,10 +250,10 @@ class AuthService extends EventEmitter {
 
   getLoginUrl(customAuthHost) {
     const state = this.generateAuthState();
-    const host = customAuthHost || this.defaultAuthHost;
-    const redirectUri = encodeURIComponent('ocs://auth-callback');
+    const host = (customAuthHost || this.defaultAuthHost || "https://waveiosoftware.netlify.app").replace(/\/+$/, "");
+    const redirectUri = encodeURIComponent("ocs://auth/callback");
     return {
-      url: `${host}/login?state=${state}&app=desktop&redirect_uri=${redirectUri}`,
+      url: `${host}/auth/desktop?state=${state}&platform=desktop&redirect_uri=${redirectUri}`,
       state,
     };
   }
@@ -257,7 +270,9 @@ class AuthService extends EventEmitter {
           state: params.get('state'),
           email: params.get('email'),
           org: params.get('org') || params.get('orgName'),
-          tier: params.get('tier') || 'standard',
+          tier: params.get('tier') || params.get('plan') || 'trial',
+          daysRemaining: params.get('days_left') || params.get('days') || params.get('daysRemaining') || 60,
+          features: params.get('features'),
         };
       } else {
         const u = new URL(rawUrl);
@@ -266,7 +281,9 @@ class AuthService extends EventEmitter {
           state: u.searchParams.get('state'),
           email: u.searchParams.get('email'),
           org: u.searchParams.get('org') || u.searchParams.get('orgName'),
-          tier: u.searchParams.get('tier') || 'standard',
+          tier: u.searchParams.get('tier') || u.searchParams.get('plan') || 'trial',
+          daysRemaining: u.searchParams.get('days_left') || u.searchParams.get('days') || u.searchParams.get('daysRemaining') || 60,
+          features: u.searchParams.get('features'),
         };
       }
 
@@ -296,11 +313,19 @@ class AuthService extends EventEmitter {
       this.pendingAuthState = null;
 
       // Save encrypted session
+      let parsedFeatures = [];
+      try {
+        if (parsed.features) parsedFeatures = typeof parsed.features === "string" ? JSON.parse(parsed.features) : parsed.features;
+      } catch (_) {}
+
       const session = this.saveSessionSync({
         token: parsed.token,
         email: parsed.email || 'admin@churchocs.com',
         orgName: parsed.org || 'OCS Community Church',
-        licenseTier: parsed.tier || 'standard',
+        licenseTier: parsed.tier || 'trial',
+        subscriptionPlan: parsed.tier || 'trial',
+        daysRemaining: parsed.daysRemaining ? Number(parsed.daysRemaining) : 60,
+        features: parsedFeatures,
       });
 
       return { ok: true, session };

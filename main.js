@@ -3253,11 +3253,10 @@ app.whenReady().then(async () => {
     splashWindow = null;
   }
 
+  // Launch controller window directly after splash screen
+  createWindows();
   if (authCheck.valid) {
-    createWindows();
     setTimeout(() => broadcastAuthStatus(), 500);
-  } else {
-    showLoginWindow();
   }
 });
 

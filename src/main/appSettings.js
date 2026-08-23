@@ -52,7 +52,7 @@ const DEFAULTS = {
   /** Authentication Offline Grace Period in hours (FR-13.5). Default 72 hours. */
   authGracePeriodHours: 72,
   /** Auth server login base URL (FR-13.3). Overridable via OCS_AUTH_BASE_URL in dev. */
-  authLoginUrl: process.env.OCS_AUTH_BASE_URL || 'https://auth.churchocs.com',
+  authLoginUrl: process.env.OCS_AUTH_BASE_URL || 'https://waveiosoftware.netlify.app',
   /** Launch OCS Service on System Startup / Boot */
   startAtLogin: false,
   /** Display overlay & Scripture styling configuration */
