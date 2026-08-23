@@ -209,6 +209,51 @@ class AuthService extends EventEmitter {
     return this.checkSession().valid === true;
   }
 
+
+  async validateTokenOnline(token) {
+    try {
+      const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-ten.vercel.app/api";
+      const https = require("https");
+      const url = new URL(`${apiBase.replace(/\/+$/, "")}/auth/validate-token`);
+      const postData = JSON.stringify({ token: token || this.cachedSession?.token });
+
+      return new Promise((resolve) => {
+        const req = https.request(
+          url,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Content-Length": Buffer.byteLength(postData),
+            },
+            timeout: 5000,
+          },
+          (res) => {
+            let data = "";
+            res.on("data", (chunk) => (data += chunk));
+            res.on("end", () => {
+              try {
+                const parsed = JSON.parse(data);
+                resolve({ valid: res.statusCode === 200 && parsed.valid !== false, data: parsed });
+              } catch (_) {
+                resolve({ valid: res.statusCode === 200 });
+              }
+            });
+          }
+        );
+        req.on("error", () => resolve({ valid: false, error: "network_error" }));
+        req.on("timeout", () => {
+          req.destroy();
+          resolve({ valid: false, error: "timeout" });
+        });
+        req.write(postData);
+        req.end();
+      });
+    } catch (err) {
+      return { valid: false, error: err.message };
+    }
+  }
+
   getAuthStatus() {
     const check = this.checkSession();
     if (!check.valid) {
