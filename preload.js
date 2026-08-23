@@ -2,22 +2,47 @@ const { ipcRenderer, contextBridge, clipboard } = require("electron");
 
 contextBridge.exposeInMainWorld("electron", {
   Clipboard: {
-    writeText: (text) => {
+    writeText: async (text) => {
       try {
-        if (text != null) clipboard.writeText(String(text));
-        return true;
-      } catch (e) {
-        console.error('Clipboard write error:', e);
-        return false;
-      }
+        if (text != null) {
+          clipboard.writeText(String(text));
+          return true;
+        }
+      } catch (_) {}
+      return ipcRenderer.invoke("clipboard:write-text", String(text || ""));
     },
-    readText: () => {
+    readText: async () => {
       try {
         return clipboard.readText();
-      } catch (e) {
-        return '';
-      }
+      } catch (_) {}
+      return ipcRenderer.invoke("clipboard:read-text");
     },
+  },
+  clipboard: {
+    writeText: async (text) => {
+      try {
+        if (text != null) {
+          clipboard.writeText(String(text));
+          return true;
+        }
+      } catch (_) {}
+      return ipcRenderer.invoke("clipboard:write-text", String(text || ""));
+    },
+    readText: async () => {
+      try {
+        return clipboard.readText();
+      } catch (_) {}
+      return ipcRenderer.invoke("clipboard:read-text");
+    },
+  },
+  copyToClipboard: async (text) => {
+    try {
+      if (text != null) {
+        clipboard.writeText(String(text));
+        return true;
+      }
+    } catch (_) {}
+    return ipcRenderer.invoke("clipboard:write-text", String(text || ""));
   },
   Timer: {
     setTimer(value) {

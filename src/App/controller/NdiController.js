@@ -51,6 +51,21 @@ function NdiPanel() {
   const [copiedKey, setCopiedKey] = useState(null);
   const [activeGuideTab, setActiveGuideTab] = useState("obs");
 
+  const handleScanSources = async () => {
+    setIsScanning(true);
+    try {
+      if (window.electron?.Ndi?.discoverSources) {
+        const sources = await window.electron.Ndi.discoverSources();
+        if (Array.isArray(sources)) {
+          setDiscoveredSources(sources);
+        }
+      }
+    } catch (_) {
+    } finally {
+      setIsScanning(false);
+    }
+  };
+
   useEffect(() => {
     // Initial fetch
     if (window.electron?.Ndi?.getStatus) {
@@ -95,21 +110,6 @@ function NdiPanel() {
     }
   };
 
-  const handleScanSources = async () => {
-    setIsScanning(true);
-    try {
-      if (window.electron?.Ndi?.discoverSources) {
-        const sources = await window.electron.Ndi.discoverSources();
-        if (Array.isArray(sources)) {
-          setDiscoveredSources(sources);
-        }
-      }
-    } catch (_) {
-    } finally {
-      setIsScanning(false);
-    }
-  };
-
   const programOverlayUrl = status.urls?.programOverlay || `http://${status.localIp || "127.0.0.1"}:${status.port || 4000}/overlay/program`;
   const programMjpegUrl = status.urls?.programMjpeg || `http://${status.localIp || "127.0.0.1"}:${status.port || 4000}/stream/program.mjpg`;
   const stageOverlayUrl = status.urls?.stageOverlay || `http://${status.localIp || "127.0.0.1"}:${status.port || 4000}/overlay/stage`;
@@ -117,29 +117,55 @@ function NdiPanel() {
 
   const copyToClipboard = async (text, key) => {
     const val = text || (
-      key === 'obs-program' ? programOverlayUrl :
-      key === 'mjpeg-program' ? programMjpegUrl :
-      key === 'obs-stage' ? stageOverlayUrl :
-      key === 'mjpeg-stage' ? stageMjpegUrl : ''
+      key === "obs-program" ? programOverlayUrl :
+      key === "mjpeg-program" ? programMjpegUrl :
+      key === "obs-stage" ? stageOverlayUrl :
+      key === "mjpeg-stage" ? stageMjpegUrl : ""
     );
     if (!val) return;
     try {
+      let written = false;
+
+      // 1. Electron bridge (direct / IPC)
       if (window.electron?.Clipboard?.writeText) {
-        window.electron.Clipboard.writeText(val);
-      } else if (navigator.clipboard && navigator.clipboard.writeText) {
-        await navigator.clipboard.writeText(val);
-      } else {
+        try {
+          await window.electron.Clipboard.writeText(val);
+          written = true;
+        } catch (_) {}
+      }
+      if (!written && window.electron?.copyToClipboard) {
+        try {
+          await window.electron.copyToClipboard(val);
+          written = true;
+        } catch (_) {}
+      }
+
+      // 2. Standard navigator.clipboard API
+      if (!written && navigator?.clipboard?.writeText) {
+        try {
+          await navigator.clipboard.writeText(val);
+          written = true;
+        } catch (_) {}
+      }
+
+      // 3. Robust DOM fallback
+      if (!written) {
         const textarea = document.createElement("textarea");
         textarea.value = val;
-        textarea.style.position = "fixed";
-        textarea.style.opacity = "0";
+        textarea.setAttribute("readonly", "");
+        textarea.style.contain = "strict";
+        textarea.style.position = "absolute";
+        textarea.style.left = "-9999px";
+        textarea.style.fontSize = "12pt";
         document.body.appendChild(textarea);
         textarea.select();
+        textarea.setSelectionRange(0, textarea.value.length);
         document.execCommand("copy");
         document.body.removeChild(textarea);
       }
+
       setCopiedKey(key);
-      setTimeout(() => setCopiedKey(null), 2000);
+      setTimeout(() => setCopiedKey(null), 2500);
     } catch (err) {
       console.warn("Failed to copy to clipboard:", err);
     }
@@ -296,7 +322,7 @@ function NdiPanel() {
                 </div>
                 <button
                   onClick={() => copyToClipboard(programMjpegUrl, "mjpeg-program")}
-                  className="px-3 py-2 bg-violet/20 hover:bg-violet/30 text-[#A788FA] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
+                  className="px-3 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-[#A788FA] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
                 >
                   {copiedKey === "mjpeg-program" ? <PiCheck size={14} /> : <PiCopy size={14} />}
                   {copiedKey === "mjpeg-program" ? "Copied!" : "Copy"}
@@ -400,7 +426,7 @@ function NdiPanel() {
                 </div>
                 <button
                   onClick={() => copyToClipboard(stageMjpegUrl, "mjpeg-stage")}
-                  className="px-3 py-2 bg-violet/20 hover:bg-violet/30 text-[#A788FA] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
+                  className="px-3 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-[#A788FA] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
                 >
                   {copiedKey === "mjpeg-stage" ? <PiCheck size={14} /> : <PiCopy size={14} />}
                   {copiedKey === "mjpeg-stage" ? "Copied!" : "Copy"}

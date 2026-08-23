@@ -3171,6 +3171,27 @@ ipcMain.handle("auth:logout", async () => {
 });
 // ─────────────────────────────────────────────────────────────────────────────
 
+
+// Clipboard IPC Handlers
+ipcMain.handle("clipboard:write-text", (_event, text) => {
+  try {
+    const { clipboard } = require("electron");
+    if (text != null) clipboard.writeText(String(text));
+    return true;
+  } catch (err) {
+    console.error("Clipboard write IPC error:", err);
+    return false;
+  }
+});
+ipcMain.handle("clipboard:read-text", () => {
+  try {
+    const { clipboard } = require("electron");
+    return clipboard.readText();
+  } catch (_) {
+    return "";
+  }
+});
+
 app.whenReady().then(async () => {
   // Show splash window immediately on startup (FR-13.2)
   showSplashWindow();

@@ -209,26 +209,13 @@ function SidebarAccount({ isCollapsed }) {
 
         {/* State badge (collapsed: icon only, expanded: pill) */}
         {isCollapsed ? (
-          isGracePeriod ? (
-            <PiWarning
-              size={10}
-              className="text-amber-400 absolute bottom-0 right-0"
-            />
-          ) : (
-            <PiCheckCircle
-              size={10}
-              className="text-emerald-400 absolute bottom-0 right-0"
-            />
-          )
-        ) : isGracePeriod ? (
-          <span className="text-[9px] font-black text-amber-300 bg-amber-500/15 border border-amber-500/20 rounded-full px-1.5 py-0.5 flex-shrink-0">
-            {auth.hoursRemaining != null
-              ? `${auth.hoursRemaining}h`
-              : "Offline"}
-          </span>
+          <PiCheckCircle
+            size={10}
+            className="text-emerald-400 absolute bottom-0 right-0"
+          />
         ) : (
           <span className="text-[9px] font-black text-emerald-300 bg-emerald-500/15 border border-emerald-500/20 rounded-full px-1.5 py-0.5 flex-shrink-0 whitespace-nowrap">
-            Live
+            Active
           </span>
         )}
       </button>
@@ -239,16 +226,7 @@ function SidebarAccount({ isCollapsed }) {
           className="absolute bottom-full mb-2 left-0 right-0 rounded-2xl border border-white/10 p-2 shadow-2xl z-[100]"
           style={{ background: "#161028" }}
         >
-          {isGracePeriod && (
-            <div className="px-3 py-2 mb-1 rounded-xl bg-amber-500/10 border border-amber-500/20">
-              <p className="text-[10px] text-amber-300 font-semibold leading-relaxed">
-                Operating offline on cached session — re-validates silently when
-                connectivity resumes.
-                {auth.hoursRemaining != null &&
-                  ` ${auth.hoursRemaining}h remaining.`}
-              </p>
-            </div>
-          )}
+
           <div className="px-3 py-2 mb-1 rounded-xl bg-white/5 space-y-1">
             <p className="text-[10px] text-white/40 truncate">{auth.email}</p>
             <div className="flex items-center justify-between text-[10px] font-bold">

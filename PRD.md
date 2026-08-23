@@ -3,9 +3,25 @@
 ## Product Requirements Document (PRD)
 
 **Author:** Are Oluwasegun Johnson
-**Version:** 1.11
+**Version:** 1.13
 **Last Updated:** August 2026
 **Status:** Active Development
+
+---
+
+## Changelog from v1.12 → v1.13 (Transactional Email & Password Reset)
+
+**Terminology correction to FR-13.15:** Production data confirms the customer account role is `church_admin` (the account owner, one per customer), not a generic `user` role as previously assumed — corrected below. This remains a label only; it carries no elevated backend permissions and does not constitute the per-church RBAC concept FR-13.15 already correctly states doesn't exist.
+
+**New Section 4.13 (Transactional Email & Password Reset):** Specified before implementation, per the same up-front spec-checkpoint discipline as Section 4.12. Covers the email provider decision and closes a real, previously-undiscovered gap: no password reset flow has existed anywhere in the auth system until now.
+
+---
+
+## Changelog from v1.11 → v1.12 (Auto-Update & Platform-Staff Role Clarification)
+
+**FR-13.15 added:** Clarifies `admin`/`super_admin` are both platform-staff roles, not per-church roles — see Section 4.10.
+
+**New Section 4.12 (Desktop Auto-Update):** Specified before implementation, not retroactively — this is the first new capability in this project's history to get a spec checkpoint up front rather than after discovery. The central design constraint is unique to OCS's context: this app runs live church services, so an update mechanism that could force a mid-service restart or steal focus during an active broadcast would be a genuine operational hazard, not just an annoyance. The FRs below treat live-session safety as the primary constraint the whole feature is designed around, not an afterthought.
 
 ---
 
@@ -631,6 +647,55 @@ Editable at runtime by `super_admin` via a dedicated admin console (FR-13.14).
 **FR-13.13 (New) — Customer Type Classification:** Signup collects a customer type — `church` (default), `streamer`, or `podcast` — stored on the user record. Confirmed: this field has **zero functional branching anywhere in app core logic** (Desktop Controller, ASR, Presentation, Permissions, Mobile). Its only current effect is at signup, where `streamer`/`podcast` types map a provided `channelLink`/`podcastLink` to `churchName` if no name was otherwise given. It is registration metadata only, not a feature-gating mechanism, as of this revision.
 
 **FR-13.14 (New) — Admin Tier & Permission Management, Restricted to Super Admin:** `PUT /auth/users/:id/tier`, `PUT /permissions/user/:id/tier`, and `PUT /permissions/toggle` allow overriding a user's tier or toggling tier-wide permissions. **These endpoints control real paid entitlements and SHALL be restricted to the `super_admin` role specifically** — a regular `admin` role must not be able to grant tier upgrades or alter permission definitions. _(Security note: an audit of the initial implementation found these three endpoints with no authentication or authorization enforcement at all — any unauthenticated request could modify any user's tier. This was flagged as a critical finding and corrected; this FR documents the intended, corrected access boundary, not the initial defective state.)_
+
+**FR-13.15 (Corrected in v1.13) — Role Model Clarification: Both Admin Roles Are Platform Staff:** `admin` and `super_admin` are both internal platform-staff roles, not church-level roles. Customer accounts carry role `church_admin` (the account owner — one per customer, confirmed via production data) or `user`; neither carries any elevated backend permission — `church_admin` is a label distinguishing the account owner, not a permissions tier, and there is currently no per-church RBAC or scoped-admin concept anywhere in the codebase. `admin` (platform staff) is a support tier (customer table visibility, testimonial/ticket moderation); `super_admin` (platform staff) is the senior/ops tier with billing and entitlement authority (tier changes, permission toggles, account deletion — per FR-13.14). A future feature allowing a `church_admin` to grant a teammate limited access to their own church's account is explicitly out of scope for this revision and would require its own FRs if built later.
+
+---
+
+## 4.12 Desktop Auto-Update (New in v1.12)
+
+**FR-14.1 (New) — Update Mechanism:** Desktop uses `electron-updater` against GitHub Releases as the update feed (consistent with GitHub Releases already being the recommended distribution host for installers per the web platform architecture). No separate update server is required.
+
+**FR-14.2 (New) — Check Timing:** The app checks for updates on launch, and periodically thereafter (default: every 6 hours) while running. Checking never blocks app startup or usage — it happens in the background.
+
+**FR-14.3 (New) — Silent Background Download:** Once an update is detected, it downloads silently in the background. The user is not interrupted during download, and clicking "Update Now" (FR-14.5) should feel instant, not trigger a fresh download at that moment.
+
+**FR-14.4 (New) — Non-Blocking Notification:** When a downloaded update is ready, the app shows a small, dismissible notification (not a modal that steals focus or blocks interaction) — e.g. a subtle banner or badge, consistent with how other non-urgent state is surfaced elsewhere in the app (the grace-period-offline indicator, FR-13.6, is a reasonable pattern to match). The user can dismiss it and keep working without being nagged repeatedly in the same session.
+
+**FR-14.5 (New) — Two Install Paths:**
+
+- **"Update Now"** — an explicit user action that quits and relaunches the app immediately at the new version.
+- **Defer to natural restart** — if the user takes no action, the update is NOT force-installed. It applies automatically the next time the user closes and reopens the app on their own, per `electron-updater`'s standard `autoInstallOnAppQuit` behavior.
+  There is no third path where the app auto-restarts itself unprompted — see FR-14.6.
+
+**FR-14.6 (New) — Live-Session Safety, the Primary Constraint:** The app SHALL NEVER auto-restart itself or force an update to apply while a live session is active — defined as: a Scene, Presentation, or Bible passage is currently being broadcast to General/Speaker View, a Session recording is in progress, or the primary/secondary voice pipeline is actively listening. Specifically:
+
+- If "Update Now" is clicked while a live session is active, show a clear warning ("A service appears to be live — updating now will interrupt it. Update anyway, or wait until after the service?") rather than proceeding silently.
+- The periodic background check (FR-14.2) and silent download (FR-14.3) are always safe to run regardless of session state, since they don't affect the running app. Only the actual restart-to-install step is session-state-sensitive.
+- This requirement exists because the consequence of getting it wrong is not a crashed app the user can just reopen — it's a live church service losing its display output mid-sermon or mid-worship, with a room full of people watching it happen.
+
+**FR-14.7 (New) — Code Signing Dependency:** Auto-update via `electron-updater` requires the app be code-signed (macOS Developer ID + notarization, Windows Authenticode) — unsigned or ad-hoc-signed builds have unreliable or blocked self-update behavior, particularly on macOS. This ties directly to the code-signing prerequisite already identified as a production-build blocker.
+
+**FR-14.8 (New) — Update Failure Handling:** If a download or install fails, the app SHALL fail gracefully — continue running the current version without disruption, log the failure, and retry on the next periodic check rather than repeatedly interrupting the user or entering a broken state.
+
+---
+
+## 4.13 Transactional Email & Password Reset (New in v1.13)
+
+**FR-15.1 (New) — Email Provider:** The backend uses Resend as its transactional email provider (free tier: 100/day, 3,000/month — sufficient at current and near-term expected volume). Chosen over SMTP-based free options (e.g. Gmail SMTP via Nodemailer) specifically because those carry real deliverability and account-suspension risk for automated sending; Resend's HTTP API is also a natural fit for the serverless Netlify Functions architecture (no persistent SMTP connection to manage per invocation).
+
+**FR-15.2 (New) — Email Triggers:** The following events send an email:
+
+- New ticket submitted → notification to platform staff.
+- Ticket status changed → notification to the original submitter.
+- Password reset requested (FR-15.3) → reset link to the requesting user.
+- New account signup → welcome/confirmation email.
+
+**FR-15.3 (New) — Password Reset Flow (closes a previously-existing gap):** Prior to this revision, no self-service password recovery existed anywhere in the auth system — a locked-out user had no path back into their account short of manual database intervention by a super_admin, which is not an acceptable ongoing support model.
+
+- `POST /auth/forgot-password` (email only, public) — generates a single-use, time-limited (default: 1 hour) reset token, stores its hash (never the raw token) in the database, and emails a reset link containing the raw token. Always returns a generic success response regardless of whether the email exists in the system, to avoid leaking which emails are registered.
+- `POST /auth/reset-password` (token + new password, public) — validates the token against its stored hash and expiry, and if valid, updates the password (bcrypt-hashed, per the existing standard) and invalidates the token so it cannot be reused.
+- Rate-limit `POST /auth/forgot-password` per email/IP, consistent with the rate-limiting already applied to login (FR-13.x's existing pattern) — this endpoint is a realistic target for enumeration/abuse otherwise.
 
 ---
 
