@@ -14,6 +14,7 @@ import SessionSaveProgress from "./SessionSaveProgress";
 
 import Dashboard from "./Dashboard";
 import PreviewModal from "./PreviewModal";
+import UpdateModal from "../components/updater/UpdateModal";
 
 import MobileConnectController from "./MobileConnectController";
 
@@ -261,6 +262,7 @@ function App() {
 
       <IncomingAssetModal />
       <MobileVoiceNotification />
+      <UpdateModal />
     </section>
   );
 }

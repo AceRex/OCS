@@ -90,6 +90,8 @@ const {
 } = require("./src/main/aligner/sceneAutoAdvance");
 const { ndiEngine } = require("./src/main/ndi/ndiEngine");
 const { authService } = require("./src/main/auth/authService");
+const { registerUpdaterIpc } = require("./src/main/updater/updaterIpc");
+const { updaterService } = require("./src/main/updater/updaterService");
 
 const globalAligner = new ReferenceAligner();
 const sceneAutoAdvance = new SceneAutoAdvanceManager({
@@ -3393,6 +3395,22 @@ app.whenReady().then(async () => {
 
   // Launch controller window directly after splash screen
   createWindows();
+
+  // Initialize Desktop Auto-Updater (PRD FR-14.1–FR-14.8)
+  registerUpdaterIpc({
+    liveSessionChecker: () => {
+      const isPresentationActive = Boolean(
+        currentCanvasState &&
+        currentCanvasState.contentSlot &&
+        currentCanvasState.contentSlot.type !== "none" &&
+        currentCanvasState.contentSlot.data != null
+      );
+      const isSessionRecording = Boolean(sessionArchive && sessionArchive.active);
+      return isPresentationActive || isSessionRecording;
+    },
+  });
+  updaterService.init({ checkOnStartup: true });
+
   if (authCheck.valid) {
     authService.validateTokenOnline().catch(() => {});
     authService.registerDeviceOnline().catch(() => {});

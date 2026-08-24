@@ -1,0 +1,66 @@
+appId: com.ocs.desktop
+productName: OCS
+copyright: "Copyright © 2026 Are Oluwasegun Johnson"
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - "main.js"
+  - "preload.js"
+  - "menu.js"
+  - "src/main/**/*"
+  - "dist/**/*"
+  - "package.json"
+  - "!ocs-mobile/**/*"
+  - "!tests/**/*"
+  - "!scripts/**/*"
+  - "!temp_output/**/*"
+  - "!voice_server/**/*"
+  - "!ocs_image_engine/**/*"
+
+publish:
+  provider: github
+  owner: AceRex
+  repo: OCS
+  releaseType: release
+
+mac:
+  category: public.app-category.lifestyle
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+
+dmg:
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+        - ia32
+
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: OCS

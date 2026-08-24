@@ -60,6 +60,7 @@ function formatPlanDetails(planKey, rawDays, { isAuthenticated = true, guestExpi
 import React, { useState, useEffect, useRef } from "react";
 import DisabledContainer from "../components/DisabledContainer";
 import { useAuth } from "../context/AuthContext";
+import { useAppUpdater } from "../hooks/useAppUpdater";
 import {
     PiTextT,
     PiPaintBucket,
@@ -91,6 +92,9 @@ import {
     PiMonitor,
     PiPower,
     PiX,
+    PiDownloadSimple,
+    PiArrowClockwise,
+    PiSpinner,
 } from "react-icons/pi";
 
 const TRANSLATIONS = ['KJV', 'NIV', 'ESV', 'NKJV', 'NLT', 'AMP', 'MSG', 'CSB', 'NASB', 'RSV', 'ASV'];
@@ -156,6 +160,7 @@ function formatBumperBytes(n) {
 export default function SettingsController() {
     const { hasPermission } = useAuth();
     const canAccessBumpers = hasPermission('session.bumper');
+    const updater = useAppUpdater();
 
     const [activeTab, setActiveTab] = useState('appearance');
 
@@ -1520,6 +1525,85 @@ export default function SettingsController() {
                                 </div>
                             );
                         })()}
+
+                        {/* OCS Desktop Version & Updates */}
+                        <div className="bg-[#1A1428] border border-[#2E2542] p-6 rounded-3xl space-y-4">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2.5">
+                                    <PiSparkle className="text-[#A788FA]" size={22} />
+                                    <div>
+                                        <h3 className="text-sm font-black uppercase tracking-widest text-[#F5F2FA]">Application Updates & Release</h3>
+                                        <p className="text-[11px] text-[#8882A4]">Automatic update channel and version management</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider bg-white/5 border border-white/10 text-white">
+                                        v{updater.currentVersion}
+                                    </span>
+                                    <span className={"px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider " + (
+                                        updater.status === 'downloaded'
+                                            ? "bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 animate-pulse"
+                                            : updater.status === 'available'
+                                                ? "bg-[#A788FA]/20 border border-[#A788FA]/40 text-[#A788FA]"
+                                                : updater.status === 'downloading'
+                                                    ? "bg-sky-500/15 border border-sky-500/30 text-sky-300"
+                                                    : updater.status === 'checking'
+                                                        ? "bg-amber-500/15 border border-amber-500/30 text-amber-300"
+                                                        : "bg-[#231A36] border border-[#2E2542] text-[#8882A4]"
+                                    )}>
+                                        {updater.status === 'downloaded' ? 'Ready to Install' :
+                                         updater.status === 'available' ? `v${updater.updateInfo?.version || ''} Available` :
+                                         updater.status === 'downloading' ? `Downloading ${updater.downloadProgress?.percent || 0}%` :
+                                         updater.status === 'checking' ? 'Checking...' :
+                                         updater.status === 'error' ? 'Check Failed' : 'Up to Date'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-4 bg-[#140F20] p-4 rounded-2xl border border-[#261E38] text-xs">
+                                <div>
+                                    <span className="text-[#8882A4] block text-[10px] font-bold uppercase">Installed Version</span>
+                                    <span className="text-white font-bold">OCS v{updater.currentVersion}</span>
+                                </div>
+                                <div>
+                                    <span className="text-[#8882A4] block text-[10px] font-bold uppercase">Update Channel</span>
+                                    <span className="text-[#A788FA] font-bold uppercase">GitHub Releases (Stable)</span>
+                                </div>
+                            </div>
+
+                            {/* Update Action Controls */}
+                            <div className="flex flex-wrap items-center gap-3 pt-1">
+                                {updater.status === 'available' ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => updater.downloadUpdate()}
+                                        className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-[#A788FA] to-[#818cf8] hover:from-[#9570f5] hover:to-[#6366f1] text-[#0B0814] text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-purple-500/25 flex items-center gap-2"
+                                    >
+                                        <PiDownloadSimple size={16} />
+                                        <span>Download Update (v{updater.updateInfo?.version})</span>
+                                    </button>
+                                ) : updater.status === 'downloaded' ? (
+                                    <button
+                                        type="button"
+                                        onClick={() => updater.quitAndInstall()}
+                                        className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-[#0B0814] text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-emerald-500/25 flex items-center gap-2"
+                                    >
+                                        <PiCheckCircle size={16} />
+                                        <span>Restart & Install Update</span>
+                                    </button>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        disabled={updater.status === 'checking' || updater.status === 'downloading'}
+                                        onClick={() => updater.checkForUpdates(true)}
+                                        className="px-5 py-2.5 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 text-white text-xs font-bold transition-all flex items-center gap-2"
+                                    >
+                                        <PiArrowClockwise size={15} className={updater.status === 'checking' ? 'animate-spin' : ''} />
+                                        <span>{updater.status === 'checking' ? 'Checking for updates...' : 'Check for Updates'}</span>
+                                    </button>
+                                )}
+                            </div>
+                        </div>
 
                         {/* Factory Reset */}
                         <div className="bg-[#1A1428] border border-red-500/20 p-6 rounded-3xl space-y-3">

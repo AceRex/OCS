@@ -473,4 +473,25 @@ contextBridge.exposeInMainWorld("electron", {
       return () => ipcRenderer.removeListener('menu-action', listener);
     },
   },
+  Updater: {
+    checkForUpdates: (isManual = true) => ipcRenderer.invoke('updater:check', isManual),
+    downloadUpdate: () => ipcRenderer.invoke('updater:download'),
+    quitAndInstall: (options) => ipcRenderer.invoke('updater:install', options),
+    getStatus: () => ipcRenderer.invoke('updater:get-status'),
+    onStatusChange: (callback) => {
+      const listener = (_e, payload) => callback(payload);
+      ipcRenderer.on('updater:status-changed', listener);
+      return () => ipcRenderer.removeListener('updater:status-changed', listener);
+    },
+    onDownloadProgress: (callback) => {
+      const listener = (_e, payload) => callback(payload);
+      ipcRenderer.on('updater:download-progress', listener);
+      return () => ipcRenderer.removeListener('updater:download-progress', listener);
+    },
+    onError: (callback) => {
+      const listener = (_e, payload) => callback(payload);
+      ipcRenderer.on('updater:error', listener);
+      return () => ipcRenderer.removeListener('updater:error', listener);
+    },
+  },
 });
