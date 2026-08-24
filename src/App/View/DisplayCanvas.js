@@ -126,6 +126,7 @@ export default function DisplayCanvas({
 
   // Helper to render Content Slot band (Band 2)
   const renderContentSlot = () => {
+    if (chrome?.blackout) return null;
     if (!contentSlot || contentSlot.type === "none" || !contentSlot.data) {
       return null;
     }
@@ -629,6 +630,7 @@ export default function DisplayCanvas({
 
   // Helper to render Pinned Overlays (Band 3)
   const renderPinnedLayers = () => {
+    if (chrome?.blackout) return null;
     if (!pinnedLayers || pinnedLayers.length === 0) return null;
 
     return (
@@ -662,7 +664,9 @@ export default function DisplayCanvas({
                 <img
                   src={layer.url || layer.content}
                   alt="pinned"
-                  className="w-full h-auto rounded"
+                  className={`w-full h-auto rounded ${
+                    isSelected ? "ring-2 ring-purple-500" : ""
+                  }`}
                   style={{ opacity: layer.opacity ?? 1 }}
                 />
               ) : layer.type === "video" ? (
@@ -671,21 +675,26 @@ export default function DisplayCanvas({
                   autoPlay
                   loop
                   muted
-                  className="w-full h-auto rounded"
+                  className={`w-full h-auto rounded ${
+                    isSelected ? "ring-2 ring-purple-500" : ""
+                  }`}
                   style={{ opacity: layer.opacity ?? 1 }}
                 />
-              ) : (
-                <p
-                  className="whitespace-pre-wrap text-center font-bold"
+              ) : layer.type === "text" ? (
+                <div
+                  className={`p-2 font-bold whitespace-pre-wrap ${
+                    isSelected ? "ring-2 ring-purple-500 rounded bg-purple-900/40" : ""
+                  }`}
                   style={{
-                    fontSize: `${(layer.fontSize ?? 0.05) * 100}vw`,
-                    color: layer.color || "#ffffff",
-                    opacity: layer.opacity ?? 1,
+                    color: layer.color || "#FFFFFF",
+                    fontSize: layer.fontSize || "2vw",
+                    fontFamily: layer.fontFamily || "sans-serif",
+                    textAlign: layer.textAlign || "center",
                   }}
                 >
-                  {layer.content}
-                </p>
-              )}
+                  {layer.text || layer.content || ""}
+                </div>
+              ) : null}
             </div>
           );
         })}
@@ -699,11 +708,6 @@ export default function DisplayCanvas({
 
     return (
       <div className="absolute inset-0 z-40 pointer-events-none">
-        {/* Full Blackout (FR-1.x) */}
-        {chrome.blackout && (
-          <div className="absolute inset-0 bg-black z-50 animate-in fade-in duration-150" />
-        )}
-
         {/* Logo Screen Mode */}
         {chrome.logo && chrome.logoUrl && !chrome.blackout && (
           <div className="absolute inset-0 bg-black flex items-center justify-center z-45 animate-in fade-in duration-200">

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { renderAnimatedLyrics } from './LyricAnimationEngine';
-import { PiMonitorFill, PiShieldCheckFill, PiClockFill } from 'react-icons/pi';
+import { PiShieldCheckFill } from 'react-icons/pi';
 
 export default function MiniPreview({ mode }) {
     const [countdown, setCountDown] = useState(null);
@@ -161,7 +161,7 @@ export default function MiniPreview({ mode }) {
 
     const renderSceneContent = () => {
         if (!presentationContent || !presentationContent.data) return null;
-        const { content, pageText, style = {}, translation = "", sceneType = "song", navMode = "read_along" } = presentationContent.data;
+        const { content, pageText, style = {}, sceneType = "song" } = presentationContent.data;
         const text = pageText || content || "";
         const length = text.length;
 
@@ -175,19 +175,13 @@ export default function MiniPreview({ mode }) {
             }
         }
 
-        const alignClass = style.textAlign === "left"
-            ? "text-left items-start"
-            : style.textAlign === "right"
-            ? "text-right items-end"
-            : "text-center items-center";
-
-        const bgUrl = style.backgroundImage || style.backgroundUrl || presentationStyle.backgroundImage;
-        const bgVid = style.backgroundVideo || presentationStyle.backgroundVideo;
+        const bgUrl = style.backgroundImage || style.backgroundUrl || canvasState?.background?.url || presentationStyle.backgroundImage;
+        const bgVid = style.backgroundVideo || canvasState?.background?.url || presentationStyle.backgroundVideo;
         const bgColor = style.backgroundColor || presentationStyle.backgroundColor || "#0B0814";
 
         return (
             <div className="w-full h-full relative overflow-hidden flex flex-col justify-center items-center p-3 select-none" style={{ backgroundColor: bgColor }}>
-                {bgVid ? (
+                {bgVid && canvasState?.background?.type === "video" ? (
                     <video src={bgVid} autoPlay loop muted playsInline className="absolute inset-0 w-full h-full object-cover opacity-60 pointer-events-none" />
                 ) : bgUrl ? (
                     <img src={bgUrl} alt="Background" className="absolute inset-0 w-full h-full object-cover opacity-60 pointer-events-none" />
@@ -253,16 +247,6 @@ export default function MiniPreview({ mode }) {
         );
     };
 
-    const renderBlackout = () => (
-        <div className="w-full h-full bg-black flex flex-col items-center justify-center relative overflow-hidden select-none">
-            <div className="flex flex-col items-center gap-1 text-center p-3 rounded-2xl bg-red-950/40 border border-red-500/40 shadow-2xl">
-                <PiMonitorFill className="text-red-400 text-2xl animate-pulse" />
-                <span className="text-xs font-black text-red-300 uppercase tracking-widest">Blackout Active</span>
-                <span className="text-[9px] text-red-200/60 font-mono">Outputs Muted</span>
-            </div>
-        </div>
-    );
-
     const renderLogo = () => (
         <div className="w-full h-full bg-[#0d0a1a] flex flex-col items-center justify-center relative overflow-hidden select-none p-4">
             <div className="flex flex-col items-center gap-2 text-center">
@@ -277,13 +261,16 @@ export default function MiniPreview({ mode }) {
 
     const renderIdleScreen = () => {
         const bgImg = canvasState?.background?.url || presentationStyle.backgroundImage;
+        const bgVid = canvasState?.background?.type === "video" ? canvasState?.background?.url : presentationStyle.backgroundVideo;
         const isSpeaker = mode === 'speaker';
 
         return (
             <div className="w-full h-full relative overflow-hidden bg-gradient-to-br from-[#120e26] via-[#090714] to-[#04030a] flex flex-col justify-between p-3 select-none">
-                {bgImg && (
-                    <img src={bgImg} className="w-full h-full object-cover absolute inset-0 opacity-25 pointer-events-none" alt="bg" />
-                )}
+                {bgVid ? (
+                    <video src={bgVid} autoPlay loop muted playsInline className="w-full h-full object-cover absolute inset-0 opacity-40 pointer-events-none" />
+                ) : bgImg ? (
+                    <img src={bgImg} className="w-full h-full object-cover absolute inset-0 opacity-35 pointer-events-none" alt="bg" />
+                ) : null}
 
                 {/* Top bar indicator */}
                 <div className="flex items-center justify-between z-10">
@@ -294,7 +281,7 @@ export default function MiniPreview({ mode }) {
                     <span className="text-[10px] font-mono text-white/50 font-bold">{currentTime}</span>
                 </div>
 
-                {/* Center Standby Brand */}
+                {/* Center Standby / Blackout OCS Screen */}
                 <div className="flex flex-col items-center justify-center text-center my-auto z-10 space-y-1">
                     <div className="size-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mb-1 shadow-inner">
                         <span className="text-white font-black text-sm tracking-tighter opacity-80">OCS</span>
@@ -304,7 +291,7 @@ export default function MiniPreview({ mode }) {
                     </span>
                     <p className="text-[10px] text-emerald-400/80 font-bold tracking-widest uppercase flex items-center gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                        STANDBY • READY
+                        {isBlackout ? "BLACKOUT • SCREEN READY" : "STANDBY • READY"}
                     </p>
                 </div>
 
@@ -336,12 +323,14 @@ export default function MiniPreview({ mode }) {
         </div>
     );
 
+    // If Logo is active, show Logo Splash
+    if (isLogo) return renderLogo();
+
+    // If Blackout is active, return to the user's background or OCS screen
+    if (isBlackout) return renderIdleScreen();
+
     const isPresenting = presentationContent && ['bible', 'custom', 'custom_layers', 'scene', 'presentation', 'slide_index'].includes(presentationContent.type) && presentationContent.data;
     const showSplitTimer = isPresenting && countdown > 0;
-
-    // Highest priority: Chrome Blackout & Logo Mute
-    if (isBlackout) return renderBlackout();
-    if (isLogo) return renderLogo();
 
     return (
         <div className="w-full h-full flex flex-col bg-black overflow-hidden relative rounded-xl border border-white/10 shadow-inner">
