@@ -111,6 +111,53 @@ export function AuthProvider({ children }) {
     }
   }, []);
 
+  // Real-time live countdown ticker for unauthenticated guest session (Wall-Clock sync)
+  useEffect(() => {
+    if (auth.authenticated) return undefined;
+
+    const syncTime = () => {
+      const now = Date.now();
+      const started = auth.guestStartedAt || now;
+      const durationMs = (auth.guestDurationMinutes || 60) * 60 * 1000;
+      const remainingMs = Math.max(0, (started + durationMs) - now);
+      const remainingSeconds = Math.floor(remainingMs / 1000);
+      const remainingMinutes = Math.ceil(remainingMs / 60000);
+      const isExpired = remainingMs <= 0;
+
+      setAuth((prev) => {
+        if (prev.authenticated) return prev;
+        if (
+          prev.guestRemainingSeconds === remainingSeconds &&
+          prev.guestExpired === isExpired
+        ) {
+          return prev;
+        }
+        return {
+          ...prev,
+          isGuest: true,
+          guestExpired: isExpired,
+          state: isExpired ? 'expired' : prev.state,
+          guestRemainingSeconds: remainingSeconds,
+          guestRemainingMinutes: remainingMinutes,
+        };
+      });
+    };
+
+    // Run immediately and start interval
+    syncTime();
+    const timer = setInterval(syncTime, 1000);
+
+    // Synchronize immediately whenever operator switches back from another application
+    window.addEventListener('focus', syncTime);
+    document.addEventListener('visibilitychange', syncTime);
+
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', syncTime);
+      document.removeEventListener('visibilitychange', syncTime);
+    };
+  }, [auth.authenticated, auth.guestStartedAt, auth.guestDurationMinutes]);
+
   const value = {
     auth,
     loading,
@@ -121,6 +168,10 @@ export function AuthProvider({ children }) {
     simulateLogin,
     cancelLogin,
     isAuthenticated: auth.authenticated === true,
+    isGuest: !auth.authenticated,
+    guestExpired: !auth.authenticated && (auth.guestExpired === true || auth.state === 'expired'),
+    guestRemainingMinutes: auth.guestRemainingMinutes != null ? auth.guestRemainingMinutes : 60,
+    guestRemainingSeconds: auth.guestRemainingSeconds != null ? auth.guestRemainingSeconds : 3600,
     isGracePeriod: auth.state === 'grace_period',
     isLoading: auth.state === 'loading' || loading,
   };
@@ -133,7 +184,7 @@ export function useAuth() {
   if (!ctx) {
     // Gracefully degrade when rendered outside AuthProvider (e.g. legacy tests)
     return {
-      auth: { authenticated: false, state: 'logged_out' },
+      auth: { authenticated: false, state: 'logged_out', isGuest: true, guestExpired: false },
       loading: false,
       error: null,
       waitingForBrowser: false,
@@ -142,6 +193,10 @@ export function useAuth() {
       simulateLogin: () => {},
       cancelLogin: () => {},
       isAuthenticated: false,
+      isGuest: true,
+      guestExpired: false,
+      guestRemainingMinutes: 60,
+      guestRemainingSeconds: 3600,
       isGracePeriod: false,
       isLoading: false,
     };

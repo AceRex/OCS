@@ -47,6 +47,9 @@ function SidebarAccount({ isCollapsed }) {
   const {
     auth,
     isAuthenticated,
+    isGuest,
+    guestExpired,
+    guestRemainingMinutes,
     isGracePeriod,
     waitingForBrowser,
     loading,
@@ -78,12 +81,28 @@ function SidebarAccount({ isCollapsed }) {
     );
   }
 
-  // ── Unauthenticated / Logged Out ──────────────────────────────────────────
+  // ── Unauthenticated / Guest Mode ──────────────────────────────────────────
   if (!isAuthenticated) {
     return (
       <div className="space-y-2">
         {error && !isCollapsed && (
           <p className="text-[10px] text-red-400 px-2 leading-tight">{error}</p>
+        )}
+
+        {/* Guest session status indicator */}
+        {!isCollapsed && (
+          <div
+            className={`px-2.5 py-1 rounded-xl text-[10px] font-bold flex items-center justify-between border ${
+              guestExpired
+                ? "bg-rose-500/15 border-rose-500/30 text-rose-300 animate-pulse"
+                : "bg-amber-500/10 border-amber-500/20 text-amber-300"
+            }`}
+          >
+            <span>{guestExpired ? "Guest Session Expired" : "1-Hr Guest Trial"}</span>
+            <span className="font-mono">
+              {guestExpired ? "Locked" : `${guestRemainingMinutes}m left`}
+            </span>
+          </div>
         )}
 
         {waitingForBrowser ? (
@@ -104,15 +123,8 @@ function SidebarAccount({ isCollapsed }) {
                 </span>
                 <div className="flex items-center gap-2 mt-1">
                   <button
-                    onClick={() => simulateLogin()}
-                    className="text-[10px] text-purple-300 hover:text-purple-200 underline font-medium"
-                  >
-                    Simulate
-                  </button>
-                  <span className="text-[10px] text-white/20">•</span>
-                  <button
                     onClick={cancelLogin}
-                    className="text-[10px] text-white/30 hover:text-white/60 transition-colors"
+                    className="text-[10px] text-white/40 hover:text-white/70 transition-colors"
                   >
                     Cancel
                   </button>
@@ -124,40 +136,44 @@ function SidebarAccount({ isCollapsed }) {
           // Log In button
           <button
             onClick={login}
-            title="Log In via Browser"
+            title={guestExpired ? "Log in to unlock all features" : "Log In via Browser to activate 60-day trial"}
             className={`flex items-center w-full p-2.5 rounded-2xl transition-all duration-200 group
               ${isCollapsed ? "justify-center" : "gap-2.5"}
             `}
             style={{
-              background:
-                "linear-gradient(135deg, rgba(124,58,237,0.2) 0%, rgba(168,85,247,0.12) 100%)",
-              border: "1px solid rgba(168, 85, 247, 0.25)",
+              background: guestExpired
+                ? "linear-gradient(135deg, rgba(225,29,72,0.25) 0%, rgba(159,18,57,0.18) 100%)"
+                : "linear-gradient(135deg, rgba(124,58,237,0.2) 0%, rgba(168,85,247,0.12) 100%)",
+              border: guestExpired
+                ? "1px solid rgba(244,63,94,0.35)"
+                : "1px solid rgba(168, 85, 247, 0.25)",
             }}
           >
             {/* Lock avatar */}
             <div
               className="w-8 h-8 rounded-full flex-shrink-0 flex items-center justify-center"
               style={{
-                background:
-                  "linear-gradient(135deg, rgba(124,58,237,0.35) 0%, rgba(6,182,212,0.2) 100%)",
+                background: guestExpired
+                  ? "linear-gradient(135deg, rgba(225,29,72,0.4) 0%, rgba(159,18,57,0.25) 100%)"
+                  : "linear-gradient(135deg, rgba(124,58,237,0.35) 0%, rgba(6,182,212,0.2) 100%)",
               }}
             >
-              <PiLockKey size={16} className="text-purple-300" />
+              <PiLockKey size={16} className={guestExpired ? "text-rose-300" : "text-purple-300"} />
             </div>
             {!isCollapsed && (
               <div className="flex flex-col overflow-hidden flex-1 text-left">
                 <span className="text-xs font-black text-purple-200 truncate">
-                  Log In via Browser
+                  {guestExpired ? "Log In to Unlock App" : "Log In via Browser"}
                 </span>
-                <span className="text-[10px] text-white/35 truncate">
-                  Activate workstation license
+                <span className="text-[10px] text-white/40 truncate">
+                  {guestExpired ? "All features locked" : "Activate 60-day trial"}
                 </span>
               </div>
             )}
             {!isCollapsed && (
               <PiArrowSquareOut
                 size={14}
-                className="text-purple-400 flex-shrink-0"
+                className={guestExpired ? "text-rose-400 flex-shrink-0" : "text-purple-400 flex-shrink-0"}
               />
             )}
           </button>

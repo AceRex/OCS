@@ -229,13 +229,6 @@
     <p class="security-note">
       Login opens your system default browser to securely protect credentials and password autofill (FR-13.3).
     </p>
-
-    <!-- Dev / Offline Activation Simulator -->
-    <div class="dev-simulate-box">
-      <button class="btn-dev" id="btn-simulate-auth">
-        ⚡ Demo/QA: Simulate Browser Login Callback
-      </button>
-    </div>
   </div>
 
   <script>
@@ -282,17 +275,21 @@
       waitingIndicator.style.display = 'none';
     });
 
-    btnSimulate.addEventListener('click', async () => {
-      clearError();
-      try {
-        if (window.electron?.Auth?.simulateCallback) {
-          const res = await window.electron.Auth.simulateCallback();
-          if (!res?.ok) {
-            showError(res?.error || 'Simulated callback failed');
+    if (btnSimulate) {
+      btnSimulate.addEventListener('click', async () => {
+        clearError();
+        try {
+          if (window.electron?.Auth?.simulateCallback) {
+            const res = await window.electron.Auth.simulateCallback();
+            if (!res?.ok) {
+              showError(res?.error || 'Simulated callback failed');
+            }
           }
+        } catch (err) {
+          showError(err.message || 'Simulate error');
         }
-      } catch (err) {
-        showError(err.message || 'Simulate error');
+      });
+    }
       }
     });
 

@@ -116,13 +116,6 @@ export default function DisabledContainer({
                 <PiArrowSquareOut size={16} />
                 {actionText}
               </button>
-              <button
-                onClick={() => simulateLogin()}
-                className="w-full py-2 rounded-xl text-xs font-semibold text-white/50 hover:text-white/80 hover:bg-white/5 transition-colors"
-                title="Instant activation without remote auth server"
-              >
-                ⚡ Quick Demo / Dev Activate
-              </button>
             </>
           )}
         </div>

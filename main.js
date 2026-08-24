@@ -2235,6 +2235,7 @@ function createWindows() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      backgroundThrottling: false,
       preload: path.join(__dirname, "preload.js"),
     },
   });
@@ -2267,6 +2268,7 @@ function createWindows() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      backgroundThrottling: false,
       preload: path.join(__dirname, "preload.js"),
     },
   });
@@ -2283,6 +2285,7 @@ function createWindows() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      backgroundThrottling: false,
       preload: path.join(__dirname, "preload.js"),
     },
   });
@@ -2312,14 +2315,13 @@ function createWindows() {
   generalWindow.loadFile("view.html", { search: "mode=general" });
   controllerWindow.loadFile("controller.html");
 
-  // Initialize NDI and Broadcast Video Engine (FR-4.42: default off)
-  const currentSettings = appSettings.loadSync();
+  // Initialize NDI and Broadcast Video Engine (FR-4.42: always default off on launch/login; manual user start required)
   ndiEngine.init({
     programWindow: generalWindow,
     stageWindow: speakerWindow,
     io,
     port: PORT,
-    enabled: !!currentSettings?.ndiStreamEnabled,
+    enabled: false,
   });
 
   ndiEngine.on("stats", (status) => {
@@ -2327,6 +2329,19 @@ function createWindows() {
       controllerWindow.webContents.send("ndi-status-update", status);
     }
   });
+
+  // Master Unthrottled Auth & Guest Session State Broadcaster
+  authService.on("auth-changed", (status) => {
+    if (controllerWindow && !controllerWindow.isDestroyed()) {
+      controllerWindow.webContents.send("auth:status", status);
+    }
+  });
+
+  setInterval(() => {
+    if (controllerWindow && !controllerWindow.isDestroyed()) {
+      controllerWindow.webContents.send("auth:status", authService.getAuthStatus());
+    }
+  }, 3000);
 
   // IPC Handlers
   ipcMain.on("activate_set_timer", (event, value) => {

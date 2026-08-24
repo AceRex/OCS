@@ -44,6 +44,7 @@ function App({ mode: propMode }) {
   });
 
   // Presentation State (backward compatibility)
+  const [authStatus, setAuthStatus] = useState(null);
   const [presentationContent, setPresentationContent] = useState(null);
   const [presentationStyle, setPresentationStyle] = useState({
     backgroundColor: '#000000',
@@ -53,6 +54,18 @@ function App({ mode: propMode }) {
     backgroundVideo: null,
     lowerThirdImage: null
   });
+
+  useEffect(() => {
+    if (window.electron?.Auth?.getStatus) {
+      window.electron.Auth.getStatus().then((res) => {
+        if (res) setAuthStatus(res);
+      });
+    }
+    const unsub = window.electron?.Auth?.onAuthStatus?.((res) => {
+      if (res) setAuthStatus(res);
+    });
+    return () => unsub?.();
+  }, []);
 
   const videoRef = useRef(null);
 
@@ -667,6 +680,7 @@ function App({ mode: propMode }) {
   const renderPresentation = () => {
     const effectiveCanvasState = {
       ...canvasState,
+      licenseTier: authStatus?.licenseTier || authStatus?.subscriptionTier || 'trial',
       background: {
         ...canvasState.background,
         type: presentationStyle.backgroundVideo
@@ -731,34 +745,46 @@ function App({ mode: propMode }) {
     </div>
   );
 
-  const renderIdleScreen = () => (
-    <div
-      className="w-full h-full flex items-center justify-center relative overflow-hidden"
-      style={{ backgroundColor: isAlphaMode ? 'transparent' : (presentationStyle.backgroundColor || '#000000') }}
-    >
-      {presentationStyle.backgroundImage ? (
-        <img
-          src={presentationStyle.backgroundImage}
-          className="absolute inset-0 w-full h-full object-cover"
-          alt="bg"
-        />
-      ) : presentationStyle.backgroundVideo ? (
-        <video
-          src={presentationStyle.backgroundVideo}
-          autoPlay
-          loop
-          muted
-          playsInline
-          className="absolute inset-0 w-full h-full object-cover"
-        />
-      ) : (
-        <div className="flex flex-col items-center animate-pulse">
-          <h1 className="text-[15vw] font-black text-light tracking-tighter leading-none opacity-20">OCS</h1>
-          <p className="text-light/30 text-2xl font-medium tracking-[1em] uppercase mt-4">Service is Starting</p>
-        </div>
-      )}
-    </div>
-  );
+  const renderIdleScreen = () => {
+    const tier = (authStatus?.licenseTier || authStatus?.subscriptionTier || "").toLowerCase();
+    const isTier1Or2 = !tier || ["guest", "trial", "free", "mini", "standard", "tier1", "tier2"].includes(tier) || !["pro", "enterprise", "premium", "large"].includes(tier);
+
+    return (
+      <div
+        className="w-full h-full flex items-center justify-center relative overflow-hidden"
+        style={{ backgroundColor: isAlphaMode ? 'transparent' : (presentationStyle.backgroundColor || '#0B0814') }}
+      >
+        {presentationStyle.backgroundImage && !isTier1Or2 ? (
+          <img
+            src={presentationStyle.backgroundImage}
+            className="absolute inset-0 w-full h-full object-cover"
+            alt="bg"
+          />
+        ) : presentationStyle.backgroundVideo && !isTier1Or2 ? (
+          <video
+            src={presentationStyle.backgroundVideo}
+            autoPlay
+            loop
+            muted
+            playsInline
+            className="absolute inset-0 w-full h-full object-cover"
+          />
+        ) : (
+          <div className="flex flex-col items-center justify-center text-center p-8 select-none animate-in fade-in duration-300">
+            <div className="size-28 rounded-3xl bg-gradient-to-br from-violet-600 to-purple-700 flex items-center justify-center shadow-2xl shadow-purple-900/60 mb-6 border border-purple-400/30">
+              <span className="text-white font-black text-5xl tracking-tighter">OCS</span>
+            </div>
+            <h1 className="text-3xl font-extrabold tracking-tight text-white/90">
+              Organised Church Service
+            </h1>
+            <p className="text-purple-300/70 text-xs font-semibold uppercase tracking-[0.35em] mt-3">
+              Presentation & Projection System
+            </p>
+          </div>
+        )}
+      </div>
+    );
+  };
 
   const renderTimeUp = () => (
     <div className="w-full rounded-2xl flex items-center justify-center bg-red animate-pulse">

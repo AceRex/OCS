@@ -450,7 +450,11 @@ contextBridge.exposeInMainWorld("electron", {
     onAuthStatus: (callback) => {
       const listener = (_e, payload) => callback(payload);
       ipcRenderer.on('auth-status', listener);
-      return () => ipcRenderer.removeListener('auth-status', listener);
+      ipcRenderer.on('auth:status', listener);
+      return () => {
+        ipcRenderer.removeListener('auth-status', listener);
+        ipcRenderer.removeListener('auth:status', listener);
+      };
     },
     onAuthError: (callback) => {
       const listener = (_e, payload) => callback(payload);

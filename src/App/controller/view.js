@@ -109,6 +109,8 @@ function NextTimerBanner() {
 import IncomingAssetModal from "./IncomingAssetModal";
 import MobileVoiceNotification from "./MobileVoiceNotification";
 
+import GuestExpiredGate from "../components/GuestExpiredGate";
+
 function App() {
   const [activeTab, setActiveTab] = useState("dashboard");
   const [previewMode, setPreviewMode] = useState(null); // 'speaker', 'general', or null
@@ -225,6 +227,11 @@ function App() {
             </div>
           </div>
         </div>
+
+        {/* Global 1-Hour Guest Session Expiration Lock Gate */}
+        {activeTab !== "settings" && (
+          <GuestExpiredGate onOpenSettings={() => setActiveTab("settings")} />
+        )}
 
         <PreviewModal
           isOpen={!!previewMode}

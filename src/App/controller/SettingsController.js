@@ -1,5 +1,26 @@
 
-function formatPlanDetails(planKey, rawDays) {
+function formatPlanDetails(planKey, rawDays, { isAuthenticated = true, guestExpired = false, guestRemainingMinutes = 60 } = {}) {
+    if (!isAuthenticated) {
+        if (guestExpired) {
+            return {
+                name: "1-Hour Guest Session (Expired)",
+                daysLabel: "0 Mins (All Features Locked)",
+                daysColor: "text-rose-400",
+                days: 0,
+                isGuest: true,
+                guestExpired: true,
+            };
+        }
+        return {
+            name: "Guest Evaluation (1-Hour Access)",
+            daysLabel: `${guestRemainingMinutes} Mins Left to Activate`,
+            daysColor: guestRemainingMinutes <= 10 ? "text-rose-400" : "text-amber-400",
+            days: 0,
+            isGuest: true,
+            guestExpired: false,
+        };
+    }
+
     const p = (planKey || "trial").toLowerCase();
     let name = "2-Month Free Trial (Mini Setup)";
     
@@ -33,7 +54,7 @@ function formatPlanDetails(planKey, rawDays) {
         daysColor = "text-amber-400";
     }
 
-    return { name, daysLabel, daysColor, days };
+    return { name, daysLabel, daysColor, days, isGuest: false, guestExpired: false };
 }
 
 import React, { useState, useEffect, useRef } from "react";
@@ -1387,7 +1408,12 @@ export default function SettingsController() {
                         {authContext && (() => {
                             const planInfo = formatPlanDetails(
                                 authContext.auth?.subscriptionPlan || authContext.auth?.licenseTier,
-                                authContext.auth?.daysRemaining
+                                authContext.auth?.daysRemaining,
+                                {
+                                    isAuthenticated: authContext.isAuthenticated,
+                                    guestExpired: authContext.guestExpired,
+                                    guestRemainingMinutes: authContext.guestRemainingMinutes,
+                                }
                             );
                             return (
                                 <div className="bg-[#1A1428] border border-[#2E2542] p-6 rounded-3xl space-y-5">
@@ -1402,9 +1428,9 @@ export default function SettingsController() {
                                         <span className={"px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider " + (
                                             authContext.isAuthenticated
                                                 ? (authContext.isGracePeriod ? "bg-amber-500/15 border border-amber-500/30 text-amber-300" : "bg-emerald-500/15 border border-emerald-500/30 text-emerald-300")
-                                                : "bg-rose-500/15 border border-rose-500/30 text-rose-300"
+                                                : (authContext.guestExpired ? "bg-rose-500/20 border border-rose-500/40 text-rose-300 animate-pulse" : "bg-amber-500/15 border border-amber-500/30 text-amber-300")
                                         )}>
-                                            {authContext.isAuthenticated ? (authContext.isGracePeriod ? "Offline Grace" : "Active License") : "Not Logged In"}
+                                            {authContext.isAuthenticated ? (authContext.isGracePeriod ? "Offline Grace" : "Active License") : (authContext.guestExpired ? "Guest Expired (Locked)" : "1-Hr Guest Trial")}
                                         </span>
                                     </div>
 
@@ -1417,7 +1443,9 @@ export default function SettingsController() {
                                             </div>
                                         </div>
                                         <div className="sm:text-right">
-                                            <span className="text-[10px] font-black tracking-widest uppercase text-[#8882A4] block mb-1">Days Remaining</span>
+                                            <span className="text-[10px] font-black tracking-widest uppercase text-[#8882A4] block mb-1">
+                                                {authContext.isAuthenticated ? "Days Remaining" : "Guest Time Remaining"}
+                                            </span>
                                             <div className={"text-sm font-black " + planInfo.daysColor}>
                                                 {planInfo.daysLabel}
                                             </div>
@@ -1427,7 +1455,7 @@ export default function SettingsController() {
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-4 rounded-2xl bg-[#0B0814] border border-[#2E2542] text-xs">
                                         <div>
                                             <span className="text-[#8882A4] block text-[10px] font-bold uppercase">Church Organization</span>
-                                            <span className="text-white font-bold">{authContext.auth?.orgName || (authContext.isAuthenticated ? "OCS Community Church" : "Unregistered")}</span>
+                                            <span className="text-white font-bold">{authContext.auth?.orgName || (authContext.isAuthenticated ? "OCS Community Church" : "Unregistered Guest")}</span>
                                         </div>
                                         <div>
                                             <span className="text-[#8882A4] block text-[10px] font-bold uppercase">Account Email</span>
@@ -1435,12 +1463,16 @@ export default function SettingsController() {
                                         </div>
                                         <div>
                                             <span className="text-[#8882A4] block text-[10px] font-bold uppercase">Plan Tier Code</span>
-                                            <span className="text-[#A788FA] font-black uppercase">{authContext.auth?.subscriptionPlan || authContext.auth?.licenseTier || "trial"}</span>
+                                            <span className="text-[#A788FA] font-black uppercase">
+                                                {authContext.isAuthenticated ? (authContext.auth?.subscriptionPlan || authContext.auth?.licenseTier || "trial") : (authContext.guestExpired ? "GUEST_EXPIRED" : "GUEST_TRIAL_1HR")}
+                                            </span>
                                         </div>
                                         <div>
-                                            <span className="text-[#8882A4] block text-[10px] font-bold uppercase">Offline Resilience</span>
-                                            <span className="text-emerald-400 font-bold">
-                                                {authContext.auth?.hoursRemaining != null ? (authContext.auth.hoursRemaining + "h remaining") : "72h Max Grace Period"}
+                                            <span className="text-[#8882A4] block text-[10px] font-bold uppercase">Workstation Status</span>
+                                            <span className={authContext.isAuthenticated ? "text-emerald-400 font-bold" : (authContext.guestExpired ? "text-rose-400 font-bold" : "text-amber-400 font-bold")}>
+                                                {authContext.isAuthenticated
+                                                    ? (authContext.auth?.hoursRemaining != null ? (authContext.auth.hoursRemaining + "h remaining") : "72h Max Grace Period")
+                                                    : (authContext.guestExpired ? "Locked (Log In Required)" : `${authContext.guestRemainingMinutes}m Guest Session`)}
                                             </span>
                                         </div>
                                     </div>
@@ -1451,7 +1483,7 @@ export default function SettingsController() {
                                                 onClick={() => authContext.login()}
                                                 className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-purple-900/30"
                                             >
-                                                Log In to Activate Workstation
+                                                Log In to Activate 60-Day Free Trial
                                             </button>
                                         ) : (
                                             <>

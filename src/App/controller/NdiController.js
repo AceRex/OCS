@@ -20,8 +20,8 @@ import DisabledContainer from "../components/DisabledContainer";
 
 function NdiPanel() {
   const [status, setStatus] = useState({
-    enabled: true,
-    isRunning: true,
+    enabled: false,
+    isRunning: false,
     nativeNdiAvailable: false,
     programStreamName: "OCS - Program Output",
     stageStreamName: "OCS - Stage Display",
@@ -29,8 +29,8 @@ function NdiPanel() {
     resolution: "1080p",
     fps: 30,
     stats: {
-      programFps: 30,
-      stageFps: 30,
+      programFps: 0,
+      stageFps: 0,
       programFramesSent: 0,
       stageFramesSent: 0,
       activeClients: 0,
@@ -211,18 +211,25 @@ function NdiPanel() {
         <div className="flex items-center gap-3">
           <button
             onClick={handleRestartStream}
-            className="flex items-center gap-2 px-4 py-2 bg-[#1A1428] hover:bg-[#231A36] text-[#A788FA] border border-[#2E2542] rounded-xl text-xs font-bold transition-all"
+            disabled={!status.isRunning && !status.enabled}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+              status.isRunning || status.enabled
+                ? "bg-[#1A1428] hover:bg-[#231A36] text-purple-300 border border-[#2E2542] cursor-pointer shadow-sm hover:border-purple-500/40"
+                : "bg-[#120D1D] text-slate-600 border border-slate-800/40 cursor-not-allowed opacity-40 pointer-events-none"
+            }`}
+            title={status.isRunning || status.enabled ? "Refresh and restart all NDI & WebRTC video streams" : "Streaming must be started before restarting streams"}
           >
             <PiArrowClockwise size={16} /> Restart Streams
           </button>
           <button
             onClick={() => handleUpdateConfig({ enabled: !status.enabled })}
-            className={`px-5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+            className={`px-5 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md ${
               status.enabled
                 ? "bg-red-500/20 text-red-300 border border-red-500/30 hover:bg-red-500/30"
-                : "bg-emerald-500 text-black hover:bg-emerald-400"
+                : "bg-emerald-500 text-black hover:bg-emerald-400 font-black shadow-emerald-500/20"
             }`}
           >
+            <PiBroadcast size={16} />
             {status.enabled ? "Disable All Streams" : "Enable Streaming"}
           </button>
         </div>
@@ -333,44 +340,50 @@ function NdiPanel() {
             {/* Config Controls */}
             <div className="grid grid-cols-2 gap-3 pt-3 border-t border-[#2E2542]">
               <div>
-                <label className="text-[10px] font-black uppercase tracking-wider text-[#8882A4] block mb-1.5">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-300 block mb-1.5">
                   Resolution
                 </label>
-                <div className="flex gap-2">
-                  {["1080p", "720p"].map((res) => (
-                    <button
-                      key={res}
-                      onClick={() => handleUpdateConfig({ resolution: res })}
-                      className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                        status.resolution === res
-                          ? "bg-cyan-500 text-black font-black"
-                          : "bg-[#0B0814] text-[#8882A4] hover:text-white"
-                      }`}
-                    >
-                      {res}
-                    </button>
-                  ))}
+                <div className="flex gap-1.5 bg-[#0B0814] p-1 rounded-xl border border-[#2E2542]">
+                  {["1080p", "720p"].map((res) => {
+                    const isSelected = (status.resolution || "1080p").toLowerCase() === res.toLowerCase();
+                    return (
+                      <button
+                        key={res}
+                        onClick={() => handleUpdateConfig({ resolution: res })}
+                        className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          isSelected
+                            ? "bg-cyan-400 text-slate-950 font-black shadow-md shadow-cyan-400/20"
+                            : "text-slate-200 hover:text-white hover:bg-[#1A1428]"
+                        }`}
+                      >
+                        {res}
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
               <div>
-                <label className="text-[10px] font-black uppercase tracking-wider text-[#8882A4] block mb-1.5">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-300 block mb-1.5">
                   Frame Rate
                 </label>
-                <div className="flex gap-2">
-                  {[30, 60].map((fps) => (
-                    <button
-                      key={fps}
-                      onClick={() => handleUpdateConfig({ fps })}
-                      className={`flex-1 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                        status.fps === fps
-                          ? "bg-cyan-500 text-black font-black"
-                          : "bg-[#0B0814] text-[#8882A4] hover:text-white"
-                      }`}
-                    >
-                      {fps} FPS
-                    </button>
-                  ))}
+                <div className="flex gap-1.5 bg-[#0B0814] p-1 rounded-xl border border-[#2E2542]">
+                  {[30, 60].map((fps) => {
+                    const isSelected = Number(status.fps) === fps;
+                    return (
+                      <button
+                        key={fps}
+                        onClick={() => handleUpdateConfig({ fps })}
+                        className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                          isSelected
+                            ? "bg-cyan-400 text-slate-950 font-black shadow-md shadow-cyan-400/20"
+                            : "text-slate-200 hover:text-white hover:bg-[#1A1428]"
+                        }`}
+                      >
+                        {fps} FPS
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
             </div>

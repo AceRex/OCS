@@ -32,7 +32,12 @@ async function runTests() {
 
   try {
     const auth = new AuthService();
-    auth.init(tmpDir, { gracePeriodHours: 72, defaultAuthHost: 'https://waveiosoftware.netlify.app' });
+    const systemAnchorPath = path.join(tmpDir, '.ocs_sys_anchor');
+    auth.init(tmpDir, {
+      gracePeriodHours: 72,
+      defaultAuthHost: 'https://waveiosoftware.netlify.app',
+      systemAnchorPath,
+    });
 
     // ── 1. Fresh Install / Hard Login Gate (FR-13.1) ──────────────────────────
     console.log('--- 1. Fresh Install & Login Gate (FR-13.1) ---');
@@ -43,6 +48,46 @@ async function runTests() {
     const freshStatus = auth.getAuthStatus();
     ok(freshStatus.authenticated === false, 'T1.4: getAuthStatus().authenticated is false');
     ok(freshStatus.state === 'logged_out', 'T1.5: getAuthStatus().state is logged_out');
+    ok(freshStatus.isGuest === true, 'T1.6: getAuthStatus().isGuest is true for unauthenticated launch');
+    ok(freshStatus.guestExpired === false, 'T1.7: guestExpired is false on fresh start');
+    ok(freshStatus.guestRemainingMinutes >= 59 && freshStatus.guestRemainingMinutes <= 60, 'T1.8: Guest remaining minutes is 60m');
+
+    // ── 1b. 1-Hour Unauthenticated Guest Session Expiration Lock ──────────────
+    console.log('\n--- 1b. 1-Hour Guest Session Expiration Lock ---');
+    auth.guestStartedAt = Date.now() - (60 * 60 * 1000 + 1000); // Backdate past 1 hour
+    ok(auth.isGuestExpired() === true, 'T1.9: isGuestExpired() returns true after 1 hour');
+    const expiredGuestStatus = auth.getAuthStatus();
+    ok(expiredGuestStatus.guestExpired === true, 'T1.10: getAuthStatus().guestExpired is true');
+    ok(expiredGuestStatus.state === 'expired', 'T1.11: getAuthStatus().state is expired after 1hr guest limit');
+    ok(expiredGuestStatus.guestRemainingMinutes === 0, 'T1.12: guestRemainingMinutes is 0 when expired');
+
+    // ── 1c. Hardware Anti-Tamper Machine ID & Multi-Anchor Persistence ─────────
+    console.log('\n--- 1c. Hardware Anti-Tamper & Multi-Anchor Persistence ---');
+    const { getMachineId } = require('../src/main/auth/machineId');
+    const mId = getMachineId();
+    ok(typeof mId === 'string' && mId.length === 64, 'T1.13: Hardware machineId generated (64-char SHA-256 hash)');
+    ok(mId === getMachineId(), 'T1.14: Hardware machineId is deterministic across invocations');
+
+    // Multi-anchor anti-deletion test: Delete primary session file, verify secondary anchor restores guestStartedAt
+    const backdatedTime = Date.now() - (45 * 60 * 1000);
+    auth.guestStartedAt = backdatedTime;
+    auth._saveGuestSession();
+    
+    // Simulate user deleting app directory
+    if (fs.existsSync(auth.guestSessionFilePath)) {
+      fs.unlinkSync(auth.guestSessionFilePath);
+    }
+    
+    // Re-initialize auth instance simulating fresh re-install
+    const freshReinstallAuth = new AuthService();
+    freshReinstallAuth.init(tmpDir, { gracePeriodHours: 72, systemAnchorPath });
+    ok(
+      Math.abs(freshReinstallAuth.guestStartedAt - backdatedTime) < 2000,
+      'T1.15: Multi-anchor successfully recovered guestStartedAt after primary file deletion'
+    );
+
+    // Reset guestStartedAt for subsequent tests
+    auth.guestStartedAt = Date.now();
 
     // ── 2. Web-Redirect Login Flow & CSRF State Security (FR-13.3) ────────────
     console.log('\n--- 2. Web-Redirect Flow & CSRF Validation (FR-13.3) ---');

@@ -14,6 +14,7 @@ const fs = require('fs');
 const fsp = fs.promises;
 const path = require('path');
 const crypto = require('crypto');
+const os = require('os');
 const EventEmitter = require('events');
 
 const appSettings = require('../appSettings');
@@ -57,29 +58,196 @@ function assertProductionAuthUrl(customUrl, isPackagedOverride) {
   }
 }
 
+const { getMachineId } = require('./machineId');
+
 class AuthService extends EventEmitter {
   constructor() {
     super();
     this.userDataPath = null;
     this.sessionFilePath = null;
+    this.guestSessionFilePath = null;
+    this.guestSystemAnchorPath = null;
     this.cachedSession = null;
     this.pendingAuthState = null;
     this.gracePeriodHours = 72; // default 72h per FR-13.5
     this.defaultAuthHost = null;
+    this.guestDurationMs = 60 * 60 * 1000; // 1-Hour Guest Session Limit
+    this.guestStartedAt = null;
+    this.guestTicker = null;
+    this.machineId = null;
+    this._guestExpiryEmitted = false;
   }
 
-  init(userDataPath, { gracePeriodHours = 72, defaultAuthHost } = {}) {
+  init(userDataPath, { gracePeriodHours = 72, defaultAuthHost, guestDurationMs = 60 * 60 * 1000, systemAnchorPath } = {}) {
     this.userDataPath = userDataPath;
     this.sessionFilePath = path.join(userDataPath, 'session.enc');
+    this.guestSessionFilePath = path.join(userDataPath, 'guest_session.json');
+    this.guestSystemAnchorPath = systemAnchorPath || path.join(os.homedir(), '.ocs_sys_anchor');
     this.gracePeriodHours = gracePeriodHours || 72;
+    this.guestDurationMs = guestDurationMs;
+    this.machineId = getMachineId();
+
     let host = defaultAuthHost || (appSettings ? appSettings.get("authLoginUrl") : null) || "https://waveiosoftware.netlify.app";
     if (typeof host === "string" && host.includes("churchocs.com")) {
       host = "https://waveiosoftware.netlify.app";
     }
     this.defaultAuthHost = host;
 
+    // Initialize or restore unauthenticated guest session timer
+    this._initGuestSession();
+    this._startGuestTimerTicker();
+
+    // Asynchronously synchronize guest device status with cloud backend
+    this.syncGuestWithCloud().catch(() => {});
+
     // Production safety assertion (fails loudly if dev override leaked into prod)
     assertProductionAuthUrl(this.defaultAuthHost);
+  }
+
+  _initGuestSession() {
+    // If an authenticated session exists, guest timer is not needed
+    if (this.cachedSession || (this.sessionFilePath && fs.existsSync(this.sessionFilePath))) {
+      return;
+    }
+
+    // 1. Check primary userData path
+    let primaryStartedAt = null;
+    try {
+      if (this.guestSessionFilePath && fs.existsSync(this.guestSessionFilePath)) {
+        const raw = fs.readFileSync(this.guestSessionFilePath, 'utf8');
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.guestStartedAt) {
+          primaryStartedAt = Number(parsed.guestStartedAt);
+        }
+      }
+    } catch (_) {}
+
+    // 2. Check secondary system hidden anchor (anti-deletion / reinstall protection)
+    let secondaryStartedAt = null;
+    try {
+      if (this.guestSystemAnchorPath && fs.existsSync(this.guestSystemAnchorPath)) {
+        const raw = fs.readFileSync(this.guestSystemAnchorPath, 'utf8');
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.guestStartedAt && (!parsed.machineId || parsed.machineId === this.machineId)) {
+          secondaryStartedAt = Number(parsed.guestStartedAt);
+        }
+      }
+    } catch (_) {}
+
+    // Choose earliest timestamp found across local anchors
+    if (primaryStartedAt && secondaryStartedAt) {
+      this.guestStartedAt = Math.min(primaryStartedAt, secondaryStartedAt);
+    } else if (primaryStartedAt) {
+      this.guestStartedAt = primaryStartedAt;
+    } else if (secondaryStartedAt) {
+      this.guestStartedAt = secondaryStartedAt;
+    } else {
+      this.guestStartedAt = Date.now();
+    }
+
+    this._saveGuestSession();
+  }
+
+  _saveGuestSession() {
+    const payload = JSON.stringify({
+      machineId: this.machineId,
+      guestStartedAt: this.guestStartedAt,
+      createdAt: new Date(this.guestStartedAt).toISOString(),
+    }, null, 2);
+
+    try {
+      if (this.guestSessionFilePath && this.guestStartedAt) {
+        fs.writeFileSync(this.guestSessionFilePath, payload);
+      }
+    } catch (_) {}
+
+    try {
+      if (this.guestSystemAnchorPath && this.guestStartedAt) {
+        fs.writeFileSync(this.guestSystemAnchorPath, payload);
+      }
+    } catch (_) {}
+  }
+
+  async syncGuestWithCloud() {
+    if (this.isAuthenticated()) return;
+    try {
+      const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-ten.vercel.app/api";
+      const https = require("https");
+      const http = require("http");
+      const url = new URL(`${apiBase.replace(/\/+$/, "")}/auth/guest-check`);
+      const client = url.protocol === "http:" ? http : https;
+
+      const postData = JSON.stringify({
+        machineId: this.machineId || getMachineId(),
+        platform: os.platform(),
+      });
+
+      return new Promise((resolve) => {
+        const req = client.request(
+          url,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Content-Length": Buffer.byteLength(postData),
+            },
+            timeout: 5000,
+          },
+          (res) => {
+            let data = "";
+            res.on("data", (chunk) => (data += chunk));
+            res.on("end", () => {
+              try {
+                const json = JSON.parse(data);
+                if (json.success && json.firstSeenAt) {
+                  const cloudFirstSeen = new Date(json.firstSeenAt).getTime();
+                  if (cloudFirstSeen && (!this.guestStartedAt || cloudFirstSeen < this.guestStartedAt)) {
+                    this.guestStartedAt = cloudFirstSeen;
+                    this._saveGuestSession();
+                    this.emit("auth-changed", this.getAuthStatus());
+                  }
+                }
+                resolve(json);
+              } catch (_) {
+                resolve(null);
+              }
+            });
+          }
+        );
+        req.on("error", () => resolve(null));
+        req.on("timeout", () => {
+          req.destroy();
+          resolve(null);
+        });
+        req.write(postData);
+        req.end();
+      });
+    } catch (_) {}
+  }
+
+  _startGuestTimerTicker() {
+    if (this.guestTicker) clearInterval(this.guestTicker);
+    this.guestTicker = setInterval(() => {
+      if (!this.isAuthenticated()) {
+        const now = Date.now();
+        const guestStartedAt = this.guestStartedAt || now;
+        const elapsedMs = now - guestStartedAt;
+        if (elapsedMs >= this.guestDurationMs) {
+          if (!this._guestExpiryEmitted) {
+            this._guestExpiryEmitted = true;
+            this.emit('auth-changed', this.getAuthStatus());
+          }
+        }
+      }
+    }, 5000);
+    if (this.guestTicker && this.guestTicker.unref) this.guestTicker.unref();
+  }
+
+  isGuestExpired() {
+    if (this.isAuthenticated()) return false;
+    const now = Date.now();
+    const guestStartedAt = this.guestStartedAt || now;
+    return (now - guestStartedAt) >= this.guestDurationMs;
   }
 
   // ── Secure Token Storage (FR-13.4) ──────────────────────────────────────────
@@ -257,13 +425,32 @@ class AuthService extends EventEmitter {
   getAuthStatus() {
     const check = this.checkSession();
     if (!check.valid) {
+      const now = Date.now();
+      const guestStartedAt = this.guestStartedAt || now;
+      const elapsedMs = Math.max(0, now - guestStartedAt);
+      const guestRemainingMs = Math.max(0, this.guestDurationMs - elapsedMs);
+      const guestExpired = guestRemainingMs <= 0;
+      const guestRemainingMinutes = Math.ceil(guestRemainingMs / 60000);
+      const guestRemainingSeconds = Math.floor(guestRemainingMs / 1000);
+
       return {
         authenticated: false,
-        state: check.reason === 'grace_period_expired' ? 'expired' : 'logged_out',
-        reason: check.reason,
-        message: check.message,
+        state: (check.reason === 'grace_period_expired' || guestExpired) ? 'expired' : 'logged_out',
+        reason: guestExpired ? 'guest_trial_expired' : check.reason,
+        message: guestExpired
+          ? '1-Hour guest trial expired. All workstation features locked. Please log in.'
+          : check.message,
         email: check.session?.email || null,
         orgName: check.session?.orgName || null,
+        isGuest: true,
+        guestExpired,
+        guestStartedAt,
+        guestRemainingMinutes,
+        guestRemainingSeconds,
+        guestDurationMinutes: Math.round(this.guestDurationMs / 60000),
+        licenseTier: 'guest',
+        subscriptionPlan: 'guest',
+        daysRemaining: 0,
       };
     }
 
@@ -278,6 +465,8 @@ class AuthService extends EventEmitter {
       features: check.session.features || [],
       hoursRemaining: check.hoursRemaining,
       lastValidatedAt: check.session.lastValidatedAt,
+      isGuest: false,
+      guestExpired: false,
     };
   }
 
@@ -386,7 +575,7 @@ class AuthService extends EventEmitter {
         await fsp.unlink(this.sessionFilePath);
       } catch (_) {}
     }
-    this.emit('auth-changed', { authenticated: false, state: 'logged_out' });
+    this.emit('auth-changed', this.getAuthStatus());
     return { ok: true };
   }
 
@@ -398,7 +587,7 @@ class AuthService extends EventEmitter {
         fs.unlinkSync(this.sessionFilePath);
       } catch (_) {}
     }
-    this.emit('auth-changed', { authenticated: false, state: 'logged_out' });
+    this.emit('auth-changed', this.getAuthStatus());
     return { ok: true };
   }
 }
