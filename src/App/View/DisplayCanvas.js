@@ -693,6 +693,10 @@ export default function DisplayCanvas({
     );
   };
 
+  // Helper to render Chrome (Band 4)
+  const renderChrome = () => {
+    if (!chrome) return null;
+
     const tier = (canvasState?.licenseTier || canvasState?.subscriptionTier || canvasState?.tier || "").toLowerCase();
     const isTier1Or2 = !tier || ["guest", "trial", "free", "mini", "standard", "tier1", "tier2"].includes(tier) || !["pro", "enterprise", "premium", "large"].includes(tier);
 
