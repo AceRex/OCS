@@ -822,6 +822,23 @@ Editable at runtime by `super_admin` via a dedicated admin console (FR-13.14).
 
 ---
 
+## 4.19 Admin Real-Time Notifications, Live Support Ticket Workflow & Production Metrics (New in v1.14)
+
+**FR-21.1 (New) — Interactive Admin Notification Dropdown & Dedicated Notification Hub (`/admin/notifications`):**
+- Real-time notification feed in `AdminLayout.tsx` top bar with live unread badge, category counters, and instant popover preview.
+- Dedicated `/admin/notifications` page featuring category filters (All, Complaints/Support, Suggestions, App Downloads, Testimonials) and 1-tap deep links to relevant management consoles.
+
+**FR-21.2 (New) — Dynamic Support & Complaints Management (`AdminComplaints.tsx`):**
+- Replaced all mock/dummy support data with live API queries (`useTicketsQuery()`).
+- Direct inline status mutation controls (Open, In Progress, Resolved) calling `PATCH /api/tickets/:id` with real-time email dispatch to the submitting church.
+- Internal administrative notes system calling `POST /api/tickets/:id/notes`.
+
+**FR-21.3 (New) — 100% Production Live Admin Dashboard (`AdminDashboard.tsx`):**
+- Replaced all hardcoded fallback metrics with real-time calculations from backend APIs (`useTicketsQuery()`, `useUsersQuery()`, `useAdminDownloadsQuery()`).
+- Accurately computes active customer counts, open ticket totals, real download platform distribution (macOS, Windows, Android, iOS), and live subscription breakdown across all 6 tiers (Trial, Mini, Standard, Large, Premium, Free).
+
+---
+
 ## 5. New Feature Modules
 
 ### 5.1 Order of Service Planner

@@ -171,7 +171,7 @@ class AuthService extends EventEmitter {
   async syncGuestWithCloud() {
     if (this.isAuthenticated()) return;
     try {
-      const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-ten.vercel.app/api";
+      const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend.netlify.app/api";
       const https = require("https");
       const http = require("http");
       const url = new URL(`${apiBase.replace(/\/+$/, "")}/auth/guest-check`);

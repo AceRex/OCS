@@ -3292,6 +3292,8 @@ app.whenReady().then(async () => {
   // Launch controller window directly after splash screen
   createWindows();
   if (authCheck.valid) {
+    authService.validateTokenOnline().catch(() => {});
+    authService.registerDeviceOnline().catch(() => {});
     setTimeout(() => broadcastAuthStatus(), 500);
   }
 });
