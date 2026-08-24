@@ -343,6 +343,17 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const unsub = window.electron?.Menu?.onAction?.((action) => {
+      if (action === "open_shortcuts") {
+        setShortcutsModalOpen(true);
+      } else if (action === "quick_search") {
+        setActiveTab("bible");
+      }
+    });
+    return () => unsub?.();
+  }, []);
+
   return (
     <section className="w-screen h-screen flex flex-row bg-[#08080c] p-3 gap-3 overflow-hidden text-white selection:bg-purple-500/30 font-outfit">
       {/* Background Ambient Radial Pattern */}

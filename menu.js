@@ -1,9 +1,10 @@
 const { app, shell } = require("electron");
 
-exports.createTemplate = (electronApp) => {
+exports.createTemplate = (electronApp, actions = {}) => {
   const isMac = process.platform === "darwin";
   const appInstance = electronApp || app;
-  const appName = appInstance?.name || (appInstance?.getName ? appInstance.getName() : "OCS");
+  const appName =
+    appInstance?.name || (appInstance?.getName ? appInstance.getName() : "OCS");
 
   const template = [
     // App Menu (macOS only)
@@ -13,6 +14,12 @@ exports.createTemplate = (electronApp) => {
             label: appName,
             submenu: [
               { role: "about" },
+              { type: "separator" },
+              {
+                label: "Sanctuary Shortcuts Guide...",
+                accelerator: "CmdOrCtrl+/",
+                click: () => actions?.openShortcuts?.(),
+              },
               { type: "separator" },
               { role: "services" },
               { type: "separator" },
@@ -29,7 +36,15 @@ exports.createTemplate = (electronApp) => {
     // File Menu
     {
       label: "File",
-      submenu: [isMac ? { role: "close" } : { role: "quit" }],
+      submenu: [
+        {
+          label: "Sanctuary Shortcuts Guide",
+          accelerator: "CmdOrCtrl+/",
+          click: () => actions?.openShortcuts?.(),
+        },
+        { type: "separator" },
+        isMac ? { role: "close" } : { role: "quit" },
+      ],
     },
 
     // Edit Menu — Required for native Copy, Paste, Cut, Select All, Undo, Redo
@@ -58,6 +73,50 @@ exports.createTemplate = (electronApp) => {
               { type: "separator" },
               { role: "selectAll" },
             ]),
+      ],
+    },
+
+    // Sanctuary / Presentation Controls Menu (Active Native Accelerators)
+    {
+      label: "Sanctuary Controls",
+      submenu: [
+        {
+          label: "Instant Blackout",
+          accelerator: isMac ? "Cmd+Shift+B" : "F10",
+          click: () => actions?.toggleBlackout?.(),
+        },
+        {
+          label: "Logo Mute",
+          accelerator: isMac ? "Cmd+Shift+L" : "F11",
+          click: () => actions?.toggleLogo?.(),
+        },
+        {
+          label: "Clear Active Content",
+          accelerator: "Esc",
+          click: () => actions?.clearContent?.(),
+        },
+        { type: "separator" },
+        {
+          label: "Take Live / Screen On",
+          accelerator: "CmdOrCtrl+Enter",
+          click: () => actions?.takeLive?.(),
+        },
+        {
+          label: "Previous Verse / Slide",
+          accelerator: "Left",
+          click: () => actions?.prevItem?.(),
+        },
+        {
+          label: "Next Verse / Slide",
+          accelerator: "Right",
+          click: () => actions?.nextItem?.(),
+        },
+        { type: "separator" },
+        {
+          label: "Quick Bible Search",
+          accelerator: "CmdOrCtrl+K",
+          click: () => actions?.quickSearch?.(),
+        },
       ],
     },
 
@@ -99,10 +158,15 @@ exports.createTemplate = (electronApp) => {
       role: "help",
       submenu: [
         {
-          label: "OCS Documentation",
+          label: "OCS Documentation & Setup Guide",
           click: async () => {
-            await shell.openExternal("https://github.com");
+            await shell.openExternal("https://waveiosoftware.netlify.app/docs");
           },
+        },
+        {
+          label: "Keyboard Shortcuts Guide...",
+          accelerator: "CmdOrCtrl+Shift+/",
+          click: () => actions?.openShortcuts?.(),
         },
       ],
     },

@@ -3313,7 +3313,38 @@ app.whenReady().then(async () => {
     },
   );
 
-  const template = require("./menu.js").createTemplate(app);
+  const menuActions = {
+    toggleBlackout: () => toggleBlackout(),
+    toggleLogo: () => toggleLogo(),
+    clearContent: () => clearContent(),
+    takeLive: () => {
+      if (controllerWindow && !controllerWindow.isDestroyed()) {
+        controllerWindow.webContents.send("menu-action", "take_live");
+      }
+    },
+    prevItem: () => {
+      if (controllerWindow && !controllerWindow.isDestroyed()) {
+        controllerWindow.webContents.send("menu-action", "prev_item");
+      }
+    },
+    nextItem: () => {
+      if (controllerWindow && !controllerWindow.isDestroyed()) {
+        controllerWindow.webContents.send("menu-action", "next_item");
+      }
+    },
+    quickSearch: () => {
+      if (controllerWindow && !controllerWindow.isDestroyed()) {
+        controllerWindow.webContents.send("menu-action", "quick_search");
+      }
+    },
+    openShortcuts: () => {
+      if (controllerWindow && !controllerWindow.isDestroyed()) {
+        controllerWindow.webContents.send("menu-action", "open_shortcuts");
+      }
+    },
+  };
+
+  const template = require("./menu.js").createTemplate(app, menuActions);
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
 

@@ -466,4 +466,11 @@ contextBridge.exposeInMainWorld("electron", {
       return () => ipcRenderer.removeListener('auth-error', listener);
     },
   },
+  Menu: {
+    onAction: (callback) => {
+      const listener = (_e, action) => callback(action);
+      ipcRenderer.on('menu-action', listener);
+      return () => ipcRenderer.removeListener('menu-action', listener);
+    },
+  },
 });
