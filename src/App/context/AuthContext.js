@@ -197,6 +197,31 @@ export function AuthProvider({ children }) {
     return false;
   }, [auth?.features, auth?.licenseTier, auth?.subscriptionPlan, auth?.isGuest]);
 
+  const silentReload = useCallback(async () => {
+    try {
+      if (window.electron?.Auth?.silentReload) {
+        const updated = await window.electron.Auth.silentReload();
+        if (updated) {
+          setAuth(updated);
+        }
+        return updated;
+      }
+    } catch (_) {}
+  }, []);
+
+  // Periodic silent reload of days left (Works 100% offline + online background sync)
+  useEffect(() => {
+    silentReload();
+    const interval = setInterval(silentReload, 60000);
+    window.addEventListener('focus', silentReload);
+    document.addEventListener('visibilitychange', silentReload);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('focus', silentReload);
+      document.removeEventListener('visibilitychange', silentReload);
+    };
+  }, [silentReload]);
+
   const value = {
     auth,
     loading,
@@ -204,14 +229,15 @@ export function AuthProvider({ children }) {
     waitingForBrowser,
     login,
     logout,
+    silentReload,
     simulateLogin,
     cancelLogin,
     hasPermission,
-    isAuthenticated: auth.authenticated === true,
-    isGuest: !auth.authenticated,
-    guestExpired: !auth.authenticated && (auth.guestExpired === true || auth.state === 'expired'),
-    guestRemainingMinutes: auth.guestRemainingMinutes != null ? auth.guestRemainingMinutes : 60,
-    guestRemainingSeconds: auth.guestRemainingSeconds != null ? auth.guestRemainingSeconds : 3600,
+    isAuthenticated: auth.authenticated && !auth.isGuest,
+    isGuest: !auth.authenticated || !!auth.isGuest,
+    guestExpired: !!auth.guestExpired,
+    guestRemainingMinutes: auth.guestRemainingMinutes ?? 60,
+    guestRemainingSeconds: auth.guestRemainingSeconds ?? 3600,
     isGracePeriod: auth.state === 'grace_period',
     isLoading: auth.state === 'loading' || loading,
   };

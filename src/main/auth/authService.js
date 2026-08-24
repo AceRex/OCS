@@ -501,6 +501,17 @@ class AuthService extends EventEmitter {
       };
     }
 
+    const session = check.session;
+    let daysRemaining = 60;
+    if (session.subscriptionPlan === 'free' || session.licenseTier === 'free') {
+      daysRemaining = 0;
+    } else {
+      const baseDays = session.daysRemaining !== undefined ? Number(session.daysRemaining) : 60;
+      const refTime = session.lastValidatedAt || session.savedAt || Date.now();
+      const elapsedDays = Math.max(0, Math.floor((Date.now() - refTime) / (24 * 3600 * 1000)));
+      daysRemaining = Math.min(60, Math.max(0, baseDays - elapsedDays));
+    }
+
     return {
       authenticated: true,
       state: check.state,
@@ -508,13 +519,58 @@ class AuthService extends EventEmitter {
       orgName: check.session.orgName,
       licenseTier: check.session.licenseTier || check.session.subscriptionPlan || 'trial',
       subscriptionPlan: check.session.subscriptionPlan || check.session.licenseTier || 'trial',
-      daysRemaining: check.session.daysRemaining !== undefined ? Number(check.session.daysRemaining) : (check.session.licenseTier === 'free' ? 0 : 60),
+      daysRemaining,
       features: check.session.features || [],
       hoursRemaining: check.hoursRemaining,
       lastValidatedAt: check.session.lastValidatedAt,
       isGuest: false,
       guestExpired: false,
     };
+  }
+
+  async silentCheckDaysLeft() {
+    const session = this.loadSession();
+    if (!session || !session.token) {
+      const current = this.getAuthStatus();
+      this.emit('auth-changed', current);
+      return current;
+    }
+
+    // 1. Recalculate local offline wall-clock remaining days immediately
+    const baseDays = session.daysRemaining !== undefined ? Number(session.daysRemaining) : 60;
+    const refTime = session.lastValidatedAt || session.savedAt || Date.now();
+    const elapsedDays = Math.max(0, Math.floor((Date.now() - refTime) / (24 * 3600 * 1000)));
+    const calculatedDays = Math.min(60, Math.max(0, baseDays - elapsedDays));
+
+    // 2. Silently attempt online refresh in the background if network is available
+    try {
+      const onlineCheck = await this.validateTokenOnline(session.token);
+      if (onlineCheck && onlineCheck.valid && onlineCheck.data) {
+        const userData = onlineCheck.data.user || {};
+        const serverDays = userData.trialRemainingDays !== undefined
+          ? Number(userData.trialRemainingDays)
+          : (userData.graceExpiresAt ? Math.max(0, Math.ceil((new Date(userData.graceExpiresAt).getTime() - Date.now()) / (24 * 3600 * 1000))) : undefined);
+
+        if (serverDays !== undefined) {
+          session.daysRemaining = Math.min(60, Math.max(0, serverDays));
+        } else {
+          session.daysRemaining = calculatedDays;
+        }
+
+        if (userData.subscriptionTier || userData.effectiveTier) {
+          session.licenseTier = userData.subscriptionTier || userData.effectiveTier;
+          session.subscriptionPlan = session.licenseTier;
+        }
+        session.lastValidatedAt = Date.now();
+        this.saveSessionSync(session);
+      }
+    } catch (_) {
+      // Offline / Network unreachable — silent offline fallback remains intact
+    }
+
+    const currentStatus = this.getAuthStatus();
+    this.emit('auth-changed', currentStatus);
+    return currentStatus;
   }
 
   // ── CSRF State & Web-Redirect Login Flow (FR-13.3) ──────────────────────────

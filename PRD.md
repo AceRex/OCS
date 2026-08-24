@@ -839,6 +839,18 @@ Editable at runtime by `super_admin` via a dedicated admin console (FR-13.14).
 
 ---
 
+## 4.20 Silent Offline Dynamic Days-Left Calculation & Background Verification (New in v1.14)
+
+**FR-22.1 (New) — Offline Wall-Clock Dynamic Degradation:**
+- When the desktop application runs without an internet connection, `authService.js` and `AuthContext.js` dynamically compute the remaining trial days from the local hardware clock (`Math.min(60, Math.max(0, baseDays - elapsedDays))`).
+- Days left counts down smoothly even during extended offline sanctuary rehearsals without requiring cloud connectivity.
+
+**FR-22.2 (New) — Silent Background Reload & Window Focus Synchronization:**
+- `AuthContext.js` executes `silentReload()` on application launch, window focus, visibility change, and every 60 seconds.
+- `authService.silentCheckDaysLeft()` transparently validates credentials with the cloud backend whenever an internet connection is present, updating the local encrypted session cache without interrupting presentation or causing visual UI flashing.
+
+---
+
 ## 5. New Feature Modules
 
 ### 5.1 Order of Service Planner

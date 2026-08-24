@@ -2332,16 +2332,28 @@ function createWindows() {
 
   // Master Unthrottled Auth & Guest Session State Broadcaster
   authService.on("auth-changed", (status) => {
-    if (controllerWindow && !controllerWindow.isDestroyed()) {
-      controllerWindow.webContents.send("auth:status", status);
-    }
+    broadcastAuthStatus();
   });
 
+  // Fast UI pulse for sub-second guest counters
   setInterval(() => {
     if (controllerWindow && !controllerWindow.isDestroyed()) {
       controllerWindow.webContents.send("auth:status", authService.getAuthStatus());
     }
   }, 3000);
+
+  // Periodic Silent Reload of Days Left (Offline Wall-Clock + Background Sync)
+  setInterval(() => {
+    authService.silentCheckDaysLeft().catch(() => {});
+  }, 60000);
+
+  ipcMain.handle("auth:silent-reload", async () => {
+    return await authService.silentCheckDaysLeft();
+  });
+
+  ipcMain.handle("auth:check-status", async () => {
+    return await authService.silentCheckDaysLeft();
+  });
 
   // IPC Handlers
   ipcMain.on("activate_set_timer", (event, value) => {

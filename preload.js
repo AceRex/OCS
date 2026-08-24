@@ -444,6 +444,7 @@ contextBridge.exposeInMainWorld("electron", {
   },
   Auth: {
     getStatus: () => ipcRenderer.invoke('auth:get-status'),
+    silentReload: () => ipcRenderer.invoke('auth:silent-reload'),
     openBrowserLogin: () => ipcRenderer.invoke('auth:open-browser-login'),
     simulateCallback: (url) => ipcRenderer.invoke('auth:simulate-callback', url),
     logout: () => ipcRenderer.invoke('auth:logout'),
