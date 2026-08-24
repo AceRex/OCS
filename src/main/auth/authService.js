@@ -378,21 +378,68 @@ class AuthService extends EventEmitter {
   }
 
 
+  async registerDeviceOnline() {
+    const session = this.loadSession();
+    if (!session || !session.token) return;
+    try {
+      const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend.netlify.app/api";
+      const https = require("https");
+      const http = require("http");
+      const url = new URL(`${apiBase.replace(/\/+$/, "")}/auth/device/register`);
+      const client = url.protocol === "http:" ? http : https;
+      const postData = JSON.stringify({
+        platform: "desktop",
+        deviceId: this.machineId || getMachineId(),
+        name: `${os.hostname()} Sanctuary Workstation`,
+      });
+
+      const req = client.request(
+        url,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Content-Length": Buffer.byteLength(postData),
+            "Authorization": `Bearer ${session.token}`,
+            "x-ocs-platform": "desktop",
+          },
+          timeout: 5000,
+        },
+        () => {}
+      );
+      req.on("error", () => {});
+      req.write(postData);
+      req.end();
+    } catch (_) {}
+  }
+
   async validateTokenOnline(token) {
     try {
-      const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-ten.vercel.app/api";
+      const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend.netlify.app/api";
       const https = require("https");
+      const http = require("http");
       const url = new URL(`${apiBase.replace(/\/+$/, "")}/auth/validate-token`);
-      const postData = JSON.stringify({ token: token || this.cachedSession?.token });
+      const client = url.protocol === "http:" ? http : https;
+      const deviceId = this.machineId || getMachineId();
+      const deviceName = `${os.hostname()} Sanctuary Workstation`;
+      const postData = JSON.stringify({
+        token: token || this.cachedSession?.token,
+        platform: "desktop",
+        deviceId,
+        deviceName,
+      });
 
       return new Promise((resolve) => {
-        const req = https.request(
+        const req = client.request(
           url,
           {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
               "Content-Length": Buffer.byteLength(postData),
+              "x-ocs-platform": "desktop",
+              "x-ocs-device-id": deviceId,
+              "x-ocs-device-name": deviceName,
             },
             timeout: 5000,
           },
@@ -558,6 +605,8 @@ class AuthService extends EventEmitter {
         daysRemaining: parsed.daysRemaining ? Number(parsed.daysRemaining) : 60,
         features: parsedFeatures,
       });
+
+      this.registerDeviceOnline().catch(() => {});
 
       return { ok: true, session };
     } catch (err) {

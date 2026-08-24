@@ -800,6 +800,20 @@ Editable at runtime by `super_admin` via a dedicated admin console (FR-13.14).
 
 ---
 
+## 4.17 Standardized 60-Day Free Trial & Automatic Desktop Workstation Registration (New in v1.14)
+
+**FR-19.1 (New) — Strict 60-Day (2-Month) Trial Calculation:**
+- All trial subscriptions across `ocs-backend` (`User.js`, `auth.js`) and `ocs-web` (`AdminUsers.tsx`) strictly enforce a **60-day (2-Month)** evaluation duration (`Math.min(60, Math.max(0, trialRemainingDays))`).
+- Prevents legacy 3-month (90-day) computation drift in grace period handlers.
+- Both customer dashboards and in-house administrative user tables reflect the accurate remaining day count without exceeding the 60-day cap.
+
+**FR-19.2 (New) — Automatic Desktop Device Registration & Quota Tracking:**
+- When an operator authenticates on a desktop workstation (via browser callback, login portal, or direct token validation in `authService.js`), the desktop client automatically transmits hardware platform and machine identifiers (`x-ocs-platform: desktop`, `deviceId`).
+- `ocs-backend` updates the church's license quotas (`licenseQuotas.activeDesktops`), registering the station if new or updating its `lastActiveAt` timestamp.
+- Web administrative portals (`AdminUsers.tsx`) accurately reflect current workstation usage (e.g., `1 / 1` or `1 / 2` desktops active).
+
+---
+
 ## 5. New Feature Modules
 
 ### 5.1 Order of Service Planner
