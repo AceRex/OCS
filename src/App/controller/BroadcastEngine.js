@@ -3847,36 +3847,48 @@ export default function BroadcastEngine() {
                 <div className="grid grid-cols-4 gap-2.5">
                   <button
                     type="button"
-                    onClick={() => executeCommand("black_screen")}
-                    className="flex items-center justify-center gap-2 py-3 px-3 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 text-xs font-bold transition-all shadow-sm active:scale-95"
+                    onClick={() => (window.api?.Canvas?.toggleBlackout ? window.api.Canvas.toggleBlackout() : executeCommand("black_screen"))}
+                    className="flex items-center justify-center gap-1.5 py-3 px-2 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer"
+                    title={`Instant Blackout (${typeof navigator !== "undefined" && (navigator.userAgent.includes("Mac") || navigator.platform?.includes("Mac")) ? "⌘+⇧+B" : "F10"})`}
                   >
-                    <PiMonitorFill size={16} />
+                    <PiMonitorFill size={15} />
                     <span>Blackout</span>
+                    <span className="text-[9px] font-mono opacity-80 bg-red-950/60 border border-red-500/30 px-1 rounded">
+                      {typeof navigator !== "undefined" && (navigator.userAgent.includes("Mac") || navigator.platform?.includes("Mac")) ? "⌘⇧B" : "F10"}
+                    </span>
                   </button>
 
                   <button
                     type="button"
                     onClick={() => executeCommand("screen_on")}
-                    className="flex items-center justify-center gap-2 py-3 px-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-xs font-bold transition-all shadow-sm active:scale-95"
+                    className="flex items-center justify-center gap-1.5 py-3 px-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer"
                   >
-                    <PiMonitorPlay size={16} />
+                    <PiMonitorPlay size={15} />
                     <span>Take Live</span>
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => executeCommand("prev_verse")}
-                    className="flex items-center justify-center gap-2 py-3 px-3 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/80 hover:text-white text-xs font-bold transition-all active:scale-95"
+                    onClick={() => (window.api?.Canvas?.toggleLogo ? window.api.Canvas.toggleLogo() : null)}
+                    className="flex items-center justify-center gap-1.5 py-3 px-2 rounded-xl bg-purple-500/15 hover:bg-purple-500/25 border border-purple-500/30 text-purple-300 text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer"
+                    title={`Logo Mute (${typeof navigator !== "undefined" && (navigator.userAgent.includes("Mac") || navigator.platform?.includes("Mac")) ? "⌘+⇧+L" : "F11"})`}
                   >
-                    <span>◀ Previous</span>
+                    <span>Logo</span>
+                    <span className="text-[9px] font-mono opacity-80 bg-purple-950/60 border border-purple-500/30 px-1 rounded">
+                      {typeof navigator !== "undefined" && (navigator.userAgent.includes("Mac") || navigator.platform?.includes("Mac")) ? "⌘⇧L" : "F11"}
+                    </span>
                   </button>
 
                   <button
                     type="button"
-                    onClick={() => executeCommand("next_verse")}
-                    className="flex items-center justify-center gap-2 py-3 px-3 rounded-xl bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/30 text-cyan-300 text-xs font-bold transition-all shadow-sm active:scale-95"
+                    onClick={() => (window.api?.Canvas?.clearContent ? window.api.Canvas.clearContent() : executeCommand("black_screen"))}
+                    className="flex items-center justify-center gap-1.5 py-3 px-2 rounded-xl bg-white/5 hover:bg-amber-500/20 border border-white/10 text-white/80 hover:text-amber-300 text-xs font-bold transition-all active:scale-95 cursor-pointer"
+                    title="Clear Active Content (ESC)"
                   >
-                    <span>Next ▶</span>
+                    <span>Clear</span>
+                    <span className="text-[9px] font-mono opacity-80 bg-black/40 border border-white/20 px-1 rounded">
+                      ESC
+                    </span>
                   </button>
                 </div>
               </div>
