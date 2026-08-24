@@ -3,9 +3,20 @@
 ## Product Requirements Document (PRD)
 
 **Author:** Are Oluwasegun Johnson
-**Version:** 1.14
+**Version:** 1.15
 **Last Updated:** August 2026
 **Status:** Active Development
+
+---
+
+## Changelog from v1.14 → v1.15 (Profile Photo Management, Semi-Annual Billing, Suggestions, Password Reset UI & Customer Admin Barrier)
+
+**Section 4.21 (Profile Management, Billing Cadences, Community Suggestions, Password Reset & RBAC Barriers):**
+- **Profile Photo Management & Cloudinary Storage (FR-23.1):** Added self-service avatar uploads backed by Cloudinary SDK with real-time UI loading states. Admin console (`AdminUsers.tsx`) reflects user avatars and supports direct administrative photo management.
+- **Semi-Annual Billing & Unified Pricing Architecture (FR-23.2):** Introduced 6-month (Semi-Annual) billing cadence alongside Monthly and Annual cycles. Standardized pricing display across `/pricing` and `/profile` using unified responsive card components.
+- **Community Suggestions System (FR-23.3):** Added public suggestions submission and voting portal (`/suggestions`) with category tagging, alongside an admin moderation hub (`AdminSuggestions.tsx`) with status lifecycles and real-time Socket.IO broadcasts.
+- **Frontend Password Reset Portal (FR-23.4):** Built dedicated user-facing `/reset-password` route in `ocs-web` with real-time strength validation, automatic missing-token redirect, and feedback notifications consuming `POST /api/auth/reset-password`.
+- **Customer Admin Console Isolation & RBAC Barrier (FR-23.5):** Added dedicated `/auth/admin/login` endpoint and frontend route guards strictly restricting administrative access to `super_admin` and `admin` roles, returning `403 Forbidden` to customer accounts.
 
 ---
 
@@ -848,6 +859,34 @@ Editable at runtime by `super_admin` via a dedicated admin console (FR-13.14).
 **FR-22.2 (New) — Silent Background Reload & Window Focus Synchronization:**
 - `AuthContext.js` executes `silentReload()` on application launch, window focus, visibility change, and every 60 seconds.
 - `authService.silentCheckDaysLeft()` transparently validates credentials with the cloud backend whenever an internet connection is present, updating the local encrypted session cache without interrupting presentation or causing visual UI flashing.
+
+---
+
+## 4.21 Profile Management, Billing Cadences, Community Suggestions & Security Barriers (New in v1.15)
+
+**FR-23.1 (New) — Customer & Admin Profile Management & Cloudinary Image Upload (`/profile`, `PUT /api/auth/profile`, `POST /api/auth/profile/photo`):**
+- Customer and platform administrative users can manage organization details, telephone numbers, and change passwords from the web portal.
+- Integrates Cloudinary cloud media storage for direct profile picture uploads with automated image optimization, responsive cropping, and real-time upload progress indicators.
+- User management table (`AdminUsers.tsx`) displays live customer and staff avatars (`avatarUrl`) with in-place upload, edit, and deletion capabilities.
+
+**FR-23.2 (New) — Semi-Annual Billing & Unified Pricing Architecture:**
+- Expands commercial billing options to include **Semi-Annual (6-Month)** subscriptions alongside standard Monthly and Annual billing cadences across all tiers (`mini`, `standard`, `large`, `premium`).
+- Standardizes pricing presentation across both public `/pricing` and authenticated `/profile` pages using shared, responsive card components with unified currency formatting, feature entitlement matrices, and instant upgrade triggers.
+
+**FR-23.3 (New) — Community Suggestions & Feature Feedback Engine (`/suggestions`, `AdminSuggestions.tsx`):**
+- Public `/suggestions` portal allowing church administrators and worship leaders to submit feature requests across categorized domains (`Feature Request`, `Worship Workflow`, `Bible Translation`, `Mobile App`).
+- Interactive community upvoting and downvoting with rate limiting (`20 requests/hour/IP`).
+- Administrative moderation console (`AdminSuggestions.tsx`) with status lifecycles (`Under Review`, `Planned`, `In Progress`, `Completed`, `Declined`), filtering, and real-time Socket.IO broadcasts.
+
+**FR-23.4 (New) — Frontend Self-Service Password Reset Portal (`/reset-password`, `POST /api/auth/reset-password`):**
+- Dedicated `/reset-password` route in `ocs-web` accepting a single-use cryptographic token query parameter (`?token=...`).
+- Graceful validation: if accessed without a security token, presents a clear notification and safely redirects to `/login`.
+- Interactive form with real-time password length validation (minimum 8 characters), confirmation matching, password visibility toggles, loading feedback, and automatic redirect to login upon successful reset.
+
+**FR-23.5 (New) — Customer Admin Console Isolation & RBAC Barrier (`POST /api/auth/admin/login`, `AdminLayout.tsx`):**
+- Strict server-side and client-side access control isolating the administrative management portal.
+- Dedicated `POST /api/auth/admin/login` endpoint rejects customer accounts (`church_admin`, `user`, `pastor`, `operator`, `viewer`) with `403 Forbidden` (`"Access denied. Customer accounts are not authorized to log into the Admin Console."`).
+- Frontend route guards in `AdminLayout.tsx` and `AdminLoginPage.tsx` actively inspect authenticated roles, preventing customer token entry and automatically redirecting non-administrative sessions back to `/profile`.
 
 ---
 
