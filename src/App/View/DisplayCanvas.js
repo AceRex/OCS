@@ -708,19 +708,13 @@ export default function DisplayCanvas({
 
     return (
       <div className="absolute inset-0 z-40 pointer-events-none">
-        {/* Logo Screen Mode */}
-        {chrome.logo && chrome.logoUrl && !chrome.blackout && (
-          <div className="absolute inset-0 bg-black flex items-center justify-center z-45 animate-in fade-in duration-200">
-            <img
-              src={chrome.logoUrl}
-              alt="Logo"
-              className="max-w-[40%] max-h-[40%] object-contain shadow-2xl"
-            />
-          </div>
+        {/* Full Blackout / Blank Screen Feature */}
+        {chrome.blackout && (
+          <div className="absolute inset-0 bg-black z-50 animate-in fade-in duration-150" />
         )}
 
         {/* Optional Branding Text Overlay */}
-        {chrome.brandingText && !chrome.blackout && !chrome.logo && (
+        {chrome.brandingText && !chrome.blackout && (
           <div className="absolute bottom-[2vw] left-[3vw] z-40">
             <span className="font-bold text-white/50 text-[1.2vw] tracking-wider uppercase">
               {chrome.brandingText}

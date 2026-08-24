@@ -247,18 +247,6 @@ export default function MiniPreview({ mode }) {
         );
     };
 
-    const renderLogo = () => (
-        <div className="w-full h-full bg-[#0d0a1a] flex flex-col items-center justify-center relative overflow-hidden select-none p-4">
-            <div className="flex flex-col items-center gap-2 text-center">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-700 flex items-center justify-center shadow-lg border border-purple-400/30">
-                    <PiShieldCheckFill className="text-white text-2xl" />
-                </div>
-                <span className="text-xs font-black text-purple-200 uppercase tracking-wider">Church Logo Splash</span>
-                <span className="text-[9px] text-purple-300/50 font-mono">Screen Muted with Branding</span>
-            </div>
-        </div>
-    );
-
     const renderIdleScreen = () => {
         const bgImg = canvasState?.background?.url || presentationStyle.backgroundImage;
         const bgVid = canvasState?.background?.type === "video" ? canvasState?.background?.url : presentationStyle.backgroundVideo;
@@ -281,7 +269,7 @@ export default function MiniPreview({ mode }) {
                     <span className="text-[10px] font-mono text-white/50 font-bold">{currentTime}</span>
                 </div>
 
-                {/* Center Standby / Blackout OCS Screen */}
+                {/* Center Standby Screen */}
                 <div className="flex flex-col items-center justify-center text-center my-auto z-10 space-y-1">
                     <div className="size-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mb-1 shadow-inner">
                         <span className="text-white font-black text-sm tracking-tighter opacity-80">OCS</span>
@@ -291,7 +279,7 @@ export default function MiniPreview({ mode }) {
                     </span>
                     <p className="text-[10px] text-emerald-400/80 font-bold tracking-widest uppercase flex items-center gap-1">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                        {isBlackout ? "BLACKOUT • SCREEN READY" : "STANDBY • READY"}
+                        STANDBY • READY
                     </p>
                 </div>
 
@@ -323,11 +311,16 @@ export default function MiniPreview({ mode }) {
         </div>
     );
 
-    // If Logo is active, show Logo Splash
-    if (isLogo) return renderLogo();
-
-    // If Blackout is active, return to the user's background or OCS screen
-    if (isBlackout) return renderIdleScreen();
+    // Blackout is the true Blank Screen feature
+    if (isBlackout) {
+        return (
+            <div className="w-full h-full bg-black flex items-center justify-center select-none">
+                <span className="text-[10px] font-mono font-bold text-white/20 tracking-[0.25em] uppercase">
+                    BLACKOUT
+                </span>
+            </div>
+        );
+    }
 
     const isPresenting = presentationContent && ['bible', 'custom', 'custom_layers', 'scene', 'presentation', 'slide_index'].includes(presentationContent.type) && presentationContent.data;
     const showSplitTimer = isPresenting && countdown > 0;

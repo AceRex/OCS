@@ -2486,15 +2486,6 @@ function createWindows() {
     console.log("[Hotkeys] Blackout toggled:", currentCanvasState.chrome.blackout);
   }
 
-  function toggleLogo() {
-    currentCanvasState.chrome = {
-      ...currentCanvasState.chrome,
-      logo: !currentCanvasState.chrome?.logo,
-    };
-    broadcastCanvasState(currentCanvasState);
-    console.log("[Hotkeys] Logo toggled:", currentCanvasState.chrome.logo);
-  }
-
   function clearContent() {
     currentCanvasState.contentSlot = { type: "none", data: null };
     broadcastCanvasState(currentCanvasState);
@@ -2502,7 +2493,6 @@ function createWindows() {
   }
 
   ipcMain.on("canvas-toggle-blackout", () => toggleBlackout());
-  ipcMain.on("canvas-toggle-logo", () => toggleLogo());
   ipcMain.on("canvas-clear-content", () => clearContent());
 
   const handleEmergencyInput = (event, input) => {
@@ -2511,21 +2501,14 @@ function createWindows() {
     const isCmdOrCtrl = input.control || input.meta;
     const isShift = input.shift;
 
-    // 1. Blackout: F10, or Cmd/Ctrl+Shift+B, or Cmd/Ctrl+B
+    // 1. Blackout (Blank Screen): F10, or Cmd/Ctrl+Shift+B, or Cmd/Ctrl+B
     if (key === "f10" || (isCmdOrCtrl && isShift && key === "b") || (isCmdOrCtrl && key === "b")) {
       event.preventDefault();
       toggleBlackout();
       return;
     }
 
-    // 2. Logo Mute: F11, or Cmd/Ctrl+Shift+L, or Cmd/Ctrl+L
-    if (key === "f11" || (isCmdOrCtrl && isShift && key === "l") || (isCmdOrCtrl && key === "l")) {
-      event.preventDefault();
-      toggleLogo();
-      return;
-    }
-
-    // 3. Clear Active Content: Escape, or Cmd/Ctrl+.
+    // 2. Clear Active Content: Escape, or Cmd/Ctrl+.
     if (key === "escape" || (isCmdOrCtrl && key === ".")) {
       if (currentCanvasState.contentSlot?.type !== "none") {
         event.preventDefault();
@@ -2547,9 +2530,7 @@ function createWindows() {
 
   try {
     globalShortcut.register("CommandOrControl+Shift+B", () => toggleBlackout());
-    globalShortcut.register("CommandOrControl+Shift+L", () => toggleLogo());
     globalShortcut.register("F10", () => toggleBlackout());
-    globalShortcut.register("F11", () => toggleLogo());
   } catch (err) {
     console.warn("[Hotkeys] Global shortcut notice:", err.message);
   }

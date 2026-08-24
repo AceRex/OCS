@@ -81,14 +81,9 @@ exports.createTemplate = (electronApp, actions = {}) => {
       label: "Sanctuary Controls",
       submenu: [
         {
-          label: "Instant Blackout",
+          label: "Instant Blackout (Blank Screen)",
           accelerator: isMac ? "Cmd+Shift+B" : "F10",
           click: () => actions?.toggleBlackout?.(),
-        },
-        {
-          label: "Logo Mute",
-          accelerator: isMac ? "Cmd+Shift+L" : "F11",
-          click: () => actions?.toggleLogo?.(),
         },
         {
           label: "Clear Active Content",
