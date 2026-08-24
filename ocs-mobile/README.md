@@ -1,50 +1,51 @@
-# Welcome to your Expo app 👋
+# OCS Mobile — The Wireless Worship & Stage Companion
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+**OCS Mobile** is the dedicated handheld companion application for the **OCS (Organised Church Service)** ecosystem, crafted specifically for pastors, worship leaders, stage managers, and church production crews.
 
-## Get started
+Connecting directly with your sanctuary's OCS Desktop workstation over local Wi-Fi or secure QR pairing, OCS Mobile gives church teams real-time control over worship presentations, song lyrics, stage timers, and crew communications from the palm of their hand.
 
-1. Install dependencies
+---
 
-   ```bash
-   npm install
-   ```
+## 🌟 Leadership & Vision
 
-2. Start the app
+- **CEO & Founder**: **Are Oluwasegun Johnson**
+- **Mission**: Removing friction from the altar and stage by giving worship leaders and ministry coordinators instant, wireless control over their church presentation and media workflows.
 
-   ```bash
-   npx expo start
-   ```
+---
 
-In the output, you'll find options to open the app in a
+## 📱 Core Capabilities for Worship Teams
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+### 1. Stage Teleprompter & Live Presentation Control
+- **Hands-Free Foldback**: View current scripture passages, sermon notes, and song lyrics in real time with high-contrast legibility designed for the stage.
+- **Dynamic Slide Navigation**: Move seamlessly through order-of-service slides without needing to signal the AV booth.
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+### 2. Low-Latency Push-to-Talk Intercom
+- **Instant Crew Communications**: Communicate directly between stage managers, sound engineers, camera operators, and the presentation desk without noisy walkie-talkies.
+- **Live Voice Streaming & Announcements**: Crystal-clear team broadcasts with live waveform indicators and automatic background audio ducking.
 
-## Get a fresh project
+### 3. Smart Scripture & Hymn Lookup
+- **Instant Bible Navigation**: Search verses across multiple translations (KJV, NKJV, NIV, AMP, NLT, and local languages) and push them live to the sanctuary screens with a single tap.
+- **Scene & Media Sharing**: Upload sermon slides, guest speaker graphics, and media assets straight from your mobile photo library to the sanctuary projection screen.
 
-When you're ready, run:
+### 4. Live Agenda & Countdown Timers
+- **Service Flow Monitoring**: Keep worship sets, announcements, and sermon durations perfectly synchronized with real-time countdown timers visible to all stage personnel.
 
-```bash
-npm run reset-project
-```
+### 5. Offline-First Reliability & Seamless Cloud Sync
+- **1-Hour Offline Guest Window**: Jump straight into testing without mandatory internet access during rehearsals.
+- **Cloud Account Integration**: Sign in with your church credentials to unlock your full **60-Day Free Trial** or active church subscription across up to 5 mobile stage devices.
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+---
 
-## Learn more
+## 🌐 The OCS Ecosystem
 
-To learn more about developing your project with Expo, look at the following resources:
+- **OCS Desktop**: Sanctuary projection engine for voice-driven scriptures, NDI video, and automated sermon recording.
+- **OCS Mobile**: Portable stage controller and intercom for pastors, worship teams, and AV crew.
+- **OCS Web**: Cloud portal for downloads, church licenses, and account support.
+- **OCS Cloud Engine**: Secure backbone for real-time messaging, licensing, and device synchronization.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+---
 
-## Join the community
+## 📄 Licensing & Copyright
 
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Copyright © 2026 **OCS (Organised Church Service)**. All rights reserved.  
+Founded and led by **Are Oluwasegun Johnson**.

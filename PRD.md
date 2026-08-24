@@ -814,6 +814,14 @@ Editable at runtime by `super_admin` via a dedicated admin console (FR-13.14).
 
 ---
 
+## 4.18 Cross-Platform Project Documentation & Ecosystem Branding (New in v1.14)
+
+**FR-20.1 (New) — Platform-Specific Project READMEs:**
+- Dedicated, product-focused documentation across all four project repositories (`ocs-web`, `ocs-mobile`, `OCS` desktop, and `ocs-backend`) emphasizing the mission, worship presentation capabilities, customer experience, and ministry value proposition.
+- All documentation prominently credits **CEO & Founder: Are Oluwasegun Johnson**.
+
+---
+
 ## 5. New Feature Modules
 
 ### 5.1 Order of Service Planner
