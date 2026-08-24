@@ -58,6 +58,8 @@ function formatPlanDetails(planKey, rawDays, { isAuthenticated = true, guestExpi
 }
 
 import React, { useState, useEffect, useRef } from "react";
+import DisabledContainer from "../components/DisabledContainer";
+import { useAuth } from "../context/AuthContext";
 import {
     PiTextT,
     PiPaintBucket,
@@ -90,7 +92,6 @@ import {
     PiPower,
     PiX,
 } from "react-icons/pi";
-import { useAuth } from "../context/AuthContext";
 
 const TRANSLATIONS = ['KJV', 'NIV', 'ESV', 'NKJV', 'NLT', 'AMP', 'MSG', 'CSB', 'NASB', 'RSV', 'ASV'];
 
@@ -153,6 +154,9 @@ function formatBumperBytes(n) {
 }
 
 export default function SettingsController() {
+    const { hasPermission } = useAuth();
+    const canAccessBumpers = hasPermission('session.bumper');
+
     const [activeTab, setActiveTab] = useState('appearance');
 
     // Display Styles state with live two-way sync
@@ -1067,6 +1071,16 @@ export default function SettingsController() {
                     4. BUMPERS (INTRO & OUTRO) TAB
                 ══════════════════════════════════════════════════════════════ */}
                 {activeTab === 'bumpers' && (
+                    !canAccessBumpers ? (
+                        <div className="max-w-4xl py-4">
+                            <DisabledContainer
+                                featureName="Broadcast Bumpers & Auto-Stitching"
+                                description="Intro & Outro Bumpers and automatic recording stitching are available exclusively on Tier 2 (Standard, Large, or Premium) plans. Upgrade your subscription to enable broadcast bumpers."
+                            >
+                                <div className="p-8 text-center text-white/40">Bumpers configuration locked on current plan</div>
+                            </DisabledContainer>
+                        </div>
+                    ) : (
                     <div className="space-y-6 max-w-4xl">
                         {/* Auto-Merge Master Switch */}
                         <div className="bg-[#1A1428] border border-[#2E2542] p-6 rounded-3xl shadow-lg">
@@ -1236,6 +1250,7 @@ export default function SettingsController() {
                             </div>
                         </div>
                     </div>
+                    )
                 )}
 
                 {/* ══════════════════════════════════════════════════════════════

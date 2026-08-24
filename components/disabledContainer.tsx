@@ -52,7 +52,7 @@ export default function DisabledContainer({
             <PiDeviceMobileFill size={22} className="text-purple-400" />
           </div>
           <p className="text-white/80 text-xs font-semibold leading-relaxed text-center">
-            {message || "This feature is not available on desktop."}
+            {message || "Your current plan does not support this feature."}
           </p>
         </div>
       </div>

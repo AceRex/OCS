@@ -21,11 +21,16 @@ import {
 } from 'react-icons/pi';
 import SessionFolderCard, { formatBytes, formatDate } from './SessionFolderCard';
 import FileTypeBadge from './FileTypeBadge';
+import DisabledContainer from '../components/DisabledContainer';
+import { useAuth } from '../context/AuthContext';
 import pdfPngIcon from '../../../assets/text_line_pdf.png';
 import mp3PngIcon from '../../../assets/text_line_mp3.png';
 import mp4PngIcon from '../../../assets/text_line_mp4.png';
 
 export default function SessionsController() {
+  const { hasPermission } = useAuth();
+  const canAccessSessions = hasPermission('session.recording');
+
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
@@ -261,6 +266,19 @@ export default function SessionsController() {
 
   const transcriptLinesCount = editTranscript.split('\n').filter(Boolean).length;
   const transcriptWordsCount = editTranscript.trim() ? editTranscript.trim().split(/\s+/).length : 0;
+
+  if (!canAccessSessions) {
+    return (
+      <div className="w-full h-full flex flex-col items-center justify-center p-6">
+        <DisabledContainer
+          featureName="Sessions Archive & Multi-Track Recording"
+          description="Sessions Archive, automated sermon audio recording, and sermon PDF generation are available exclusively on Tier 2 (Standard, Large, or Premium) plans. Upgrade your subscription to unlock automatic recording."
+        >
+          <div className="p-8 text-center text-white/40">Sessions Archive locked</div>
+        </DisabledContainer>
+      </div>
+    );
+  }
 
   return (
     <div className="w-full h-full flex flex-col text-white/90 overflow-hidden relative">

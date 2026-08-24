@@ -158,6 +158,45 @@ export function AuthProvider({ children }) {
     };
   }, [auth.authenticated, auth.guestStartedAt, auth.guestDurationMinutes]);
 
+  const hasPermission = useCallback((permissionKey) => {
+    if (!permissionKey) return true;
+    const features = Array.isArray(auth?.features) ? auth.features : [];
+    if (features.length > 0) {
+      return features.includes(permissionKey);
+    }
+    const tier = (auth?.licenseTier || auth?.subscriptionPlan || (auth?.isGuest ? 'guest' : 'trial')).toLowerCase();
+    if (['premium', 'large', 'enterprise'].includes(tier)) {
+      return true;
+    }
+    if (tier === 'standard') {
+      return [
+        'timer.basic',
+        'timer.interval',
+        'timer.change_view',
+        'session.recording',
+        'session.bumper',
+        'broadcast.basic',
+        'presentation.basic',
+        'pdf.view',
+        'pdf.edit',
+        'slides.use',
+        'scene.basic',
+        'song.basic',
+      ].includes(permissionKey);
+    }
+    if (['mini', 'trial', 'free', 'guest'].includes(tier)) {
+      return [
+        'timer.basic',
+        'broadcast.basic',
+        'presentation.basic',
+        'pdf.view',
+        'scene.basic',
+        'song.basic',
+      ].includes(permissionKey);
+    }
+    return false;
+  }, [auth?.features, auth?.licenseTier, auth?.subscriptionPlan, auth?.isGuest]);
+
   const value = {
     auth,
     loading,
@@ -167,6 +206,7 @@ export function AuthProvider({ children }) {
     logout,
     simulateLogin,
     cancelLogin,
+    hasPermission,
     isAuthenticated: auth.authenticated === true,
     isGuest: !auth.authenticated,
     guestExpired: !auth.authenticated && (auth.guestExpired === true || auth.state === 'expired'),
@@ -192,6 +232,7 @@ export function useAuth() {
       logout: () => {},
       simulateLogin: () => {},
       cancelLogin: () => {},
+      hasPermission: (key) => key === 'timer.basic' || key === 'broadcast.basic',
       isAuthenticated: false,
       isGuest: true,
       guestExpired: false,

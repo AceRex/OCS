@@ -245,6 +245,7 @@ class SessionArchiveService extends EventEmitter {
       completedAt: null,
       durationSec: 0,
       timerId: e.timerId || null,
+      recordAudio: e.recordAudio !== false,
       files: {
         audio: null,
         video: null,
@@ -263,6 +264,7 @@ class SessionArchiveService extends EventEmitter {
       meta,
       startedAt: Date.now(),
       plannedDurationSec: e.durationSec || 0,
+      recordAudio: e.recordAudio !== false,
       audioChunks: [],
       audioMime: 'audio/webm',
       transcriptLines: [],
@@ -319,7 +321,7 @@ class SessionArchiveService extends EventEmitter {
 
   pushAudioChunk(buf) {
     const target = this.active || this._finalizing;
-    if (!target || !buf) return;
+    if (!target || !buf || target.recordAudio === false) return;
     const chunk = Buffer.isBuffer(buf) ? buf : Buffer.from(buf);
     if (!chunk.length) return;
     if (!target.audioChunks) target.audioChunks = [];
@@ -450,50 +452,56 @@ class SessionArchiveService extends EventEmitter {
       }
 
       let audioOk = false;
-      try {
-        const introPath = appSettings.get('sessionIntroPath') || null;
-        const outroPath = appSettings.get('sessionOutroPath') || null;
-        const autoMergeBumpers = appSettings.get('sessionAutoMergeBumpers') !== false;
-
-        const result = await finalizeAudio({
-          chunks: session.audioChunks || [],
-          mime: session.audioMime || 'audio/webm',
-          dir: session.dir,
-          durationSec: session.meta.durationSec || 0,
-          introPath,
-          outroPath,
-          autoMergeBumpers,
-          onProgress: (p) => {
-            const mapped = mapAudioProgressToOverall(p);
-            this._emitProgress({
-              phase: mapped.phase,
-              current: mapped.current,
-              total: mapped.total,
-              percent: mapped.percent,
-            });
-          },
-        });
-        session.meta.files.audio = result.audioFile;
-        session.meta.files.video = result.format === 'mp4' ? result.audioFile : null;
-        if (result.finalDurationSec) {
-          session.meta.durationSec = result.finalDurationSec;
-        }
-        audioOk = true;
-        console.log('[SessionArchive] audio saved', result.audioFile, formatBytes(result.bytes));
-      } catch (err) {
-        console.error('[SessionArchive] audio export failed', err);
-        audioOk = false;
-        session.meta.status = incomplete ? 'incomplete' : 'audio_failed';
-        finalizeError = err.message || String(err);
-        this._emitProgress({
-          phase: 'error',
-          current: 28,
-          total: 32,
-          percent: 87,
-          error: finalizeError,
-        });
-      } finally {
+      if (session.recordAudio === false || (session.audioChunks || []).length === 0) {
+        console.log('[SessionArchive] Audio recording skipped for session (Tier 1 plan or disabled in Agenda Planner)');
+        session.meta.status = incomplete ? 'incomplete' : 'ready';
         session.audioChunks = [];
+      } else {
+        try {
+          const introPath = appSettings.get('sessionIntroPath') || null;
+          const outroPath = appSettings.get('sessionOutroPath') || null;
+          const autoMergeBumpers = appSettings.get('sessionAutoMergeBumpers') !== false;
+
+          const result = await finalizeAudio({
+            chunks: session.audioChunks || [],
+            mime: session.audioMime || 'audio/webm',
+            dir: session.dir,
+            durationSec: session.meta.durationSec || 0,
+            introPath,
+            outroPath,
+            autoMergeBumpers,
+            onProgress: (p) => {
+              const mapped = mapAudioProgressToOverall(p);
+              this._emitProgress({
+                phase: mapped.phase,
+                current: mapped.current,
+                total: mapped.total,
+                percent: mapped.percent,
+              });
+            },
+          });
+          session.meta.files.audio = result.audioFile;
+          session.meta.files.video = result.format === 'mp4' ? result.audioFile : null;
+          if (result.finalDurationSec) {
+            session.meta.durationSec = result.finalDurationSec;
+          }
+          audioOk = true;
+          console.log('[SessionArchive] audio saved', result.audioFile, formatBytes(result.bytes));
+        } catch (err) {
+          console.error('[SessionArchive] audio export failed', err);
+          audioOk = false;
+          session.meta.status = incomplete ? 'incomplete' : 'audio_failed';
+          finalizeError = err.message || String(err);
+          this._emitProgress({
+            phase: 'error',
+            current: 28,
+            total: 32,
+            percent: 87,
+            error: finalizeError,
+          });
+        } finally {
+          session.audioChunks = [];
+        }
       }
 
       this._emitProgress({ phase: 'pdf', current: 29, total: 32, percent: 91 });

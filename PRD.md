@@ -3,9 +3,26 @@
 ## Product Requirements Document (PRD)
 
 **Author:** Are Oluwasegun Johnson
-**Version:** 1.13
+**Version:** 1.14
 **Last Updated:** August 2026
 **Status:** Active Development
+
+---
+
+## Changelog from v1.13 → v1.14 (Web Real-Time Notifications & Downloads + Desktop Tier 2 Gating & Agenda Planner)
+
+**Section 4.14 (Web Platform Real-Time Dashboard, WebSocket Notification Feed & Downloads API):**
+- **WebSocket Broadcast Feed (Socket.IO):** Added bidirectional real-time push notification bus broadcasting `admin:notification` and `admin:metrics` on ticket submissions, suggestions, testimonials, and application downloads.
+- **Admin Real-Time Notification Dropdown & Toasts:** Admin panel live notification bell with badge counts, deep-link navigation, and instant popup toasts.
+- **Live Dashboard & Download Analytics:** Converted Admin Dashboard to consume live API aggregations for KPIs (Total Downloads, Active Accounts, Open Tickets, Active Trials), dynamic 6-tier subscription breakdowns, platform percentage distributions, and monthly download timeline charts. Added `POST /api/downloads` client logging and `GET /api/admin/downloads` audit view.
+- **Web Interface Streamlining:** Removed deprecated web settings navigation route.
+- **Commercial Pricing Matrix Update:** Formally gated Sessions Archive and Automated Multi-Track Audio Recording to Tier 2+ (`standard`, `large`, `premium`) in web pricing and tier matrix.
+
+**Section 4.15 (Desktop Tier 2 Session & Bumper Gating, and Agenda Planner):**
+- **Tier 2 Gating for Sessions & Bumpers:** Added `session.recording` and `session.bumper` permission keys; gated `SessionsController.js` and the Bumpers tab in `SettingsController.js` with `DisabledContainer` for Tier 1 users (`free`, `mini`, `trial`, `guest`).
+- **Tier 1 Audio Recording Bypass:** When running a service on a Tier 1 plan or for muted sessions, `sessionArchive.js` skips audio chunk buffering and FFmpeg compression entirely, creating lightweight session records without audio capture.
+- **Agenda Planner:** Introduced `AgendaPlannerModal.jsx` integrated into `TimerController.js` allowing operators to select which agenda sessions to record, and configure automated Start Media Cues (solid colors, intro bumpers, intro chimes), Mid-Run Warning Cues (half-time flash, warning chimes), and Completion Cues (auto-blackout, outro bumpers).
+- **Add/Update Dual-Mode Timer Editing:** Enhanced timer editing with distinct "Add" and "Update" actions while continuously preserving label and anchor/speaker metadata.
 
 ---
 
@@ -617,7 +634,7 @@ Documented directly from `ocs-backend` source (`User.js`, `PlanPermission.js`, `
 
 **FR-13.11 (New) — Trial/Subscription Expiration Behavior:** When the Trial period (FR-13.9) or a paid tier's billing period elapses without renewal, the account's effective tier becomes **Free** (a downgrade, not a block) — the user is not locked out, consistent with FR-13.1's Free/Guest Mode principle.
 
-**FR-13.12 (New) — Permission Taxonomy:** 20 permissions across 5 categories (`timer`, `broadcast`, `presentation`, `documents`, `worship`, `system`), each mapped to the tiers that include it:
+**FR-13.12 (New) — Permission Taxonomy:** 22 permissions across 6 categories (`timer`, `session`, `broadcast`, `presentation`, `documents`, `worship`, `system`), each mapped to the tiers that include it:
 
 | Key                   | Name                                | Category     | Tiers                                 |
 | --------------------- | ----------------------------------- | ------------ | ------------------------------------- |
@@ -626,6 +643,8 @@ Documented directly from `ocs-backend` source (`User.js`, `PlanPermission.js`, `
 | `timer.start_time`    | Scheduled Start Timer               | timer        | large, premium                        |
 | `timer.interval`      | Interval & Multi-Segment Timers     | timer        | standard, large, premium              |
 | `timer.change_view`   | Custom Timer View & Skins           | timer        | standard, large, premium              |
+| `session.recording`   | Automated Session Audio Recording   | session      | standard, large, premium              |
+| `session.bumper`      | Broadcast Bumpers & Auto-Stitching  | session      | standard, large, premium              |
 | `presentation.intro`  | Service Intro Video Bumpers         | presentation | large, premium                        |
 | `presentation.outro`  | Service Outro & Benediction Wraps   | presentation | large, premium                        |
 | `presentation.basic`  | General Presentation Engine         | presentation | trial, mini, standard, large, premium |
@@ -696,6 +715,61 @@ Editable at runtime by `super_admin` via a dedicated admin console (FR-13.14).
 - `POST /auth/forgot-password` (email only, public) — generates a single-use, time-limited (default: 1 hour) reset token, stores its hash (never the raw token) in the database, and emails a reset link containing the raw token. Always returns a generic success response regardless of whether the email exists in the system, to avoid leaking which emails are registered.
 - `POST /auth/reset-password` (token + new password, public) — validates the token against its stored hash and expiry, and if valid, updates the password (bcrypt-hashed, per the existing standard) and invalidates the token so it cannot be reused.
 - Rate-limit `POST /auth/forgot-password` per email/IP, consistent with the rate-limiting already applied to login (FR-13.x's existing pattern) — this endpoint is a realistic target for enumeration/abuse otherwise.
+
+---
+
+## 4.14 Web Platform Real-Time Dashboard, WebSocket Notification Feed & Downloads API (New in v1.14)
+
+**FR-16.1 (New) — WebSocket Real-Time Notification Bus:** `ocs-backend` initializes Socket.IO supporting bidirectional events across connected administrative clients. When platform events occur (e.g., ticket submissions, user suggestions, testimonials, app downloads), the server emits `admin:notification` and `admin:metrics` payloads to the authenticated `admin-room` channel.
+
+**FR-16.2 (New) — Admin Live Notification Dropdown & Toast Feeds:** The web portal (`ocs-web` in `AdminLayout.tsx`) subscribes to real-time WebSocket events to:
+- Instantly increment the notification badge counter without polling.
+- Render dismissible toast alerts with deep-link navigation to the appropriate admin section (`/admin/tickets`, `/admin/downloads`, `/admin/suggestions`).
+- Provide an interactive notification dropdown with time-ago formatting, category badges, and direct navigation.
+
+**FR-16.3 (New) — Live Dynamic Dashboard Analytics:** `AdminDashboard.tsx` consumes live API endpoints (`GET /api/admin/downloads`, `GET /api/admin/users`, `GET /api/tickets`) to compute:
+- Real-time KPI summaries: Total Downloads, Active Registered Accounts, Open Support Tickets, Active 60-Day Trials.
+- Dynamic 6-tier subscription plan distribution breakdown.
+- Client platform split (macOS, Windows, Android, iOS) with visual progress bars.
+- 6-month monthly download trend timeline charts.
+
+**FR-16.4 (New) — App Download Logging & Audit Analytics:**
+- Client download buttons (`DownloadPage.tsx`) trigger `POST /api/downloads` recording client OS platform (`mac`, `windows`, `android`, `ios`) and application version.
+- Administrative downloads page (`AdminDownloads.tsx`) queries `GET /api/admin/downloads` to display an audited timeline table of all installations with church name, country, version tag, and platform pie charts.
+
+**FR-16.5 (New) — Web Navigation Streamlining:** Deprecated settings navigation links are removed from web management layouts to maintain an uncluttered operational portal.
+
+---
+
+## 4.15 Desktop Tier 2 Session & Bumper Gating, and Agenda Planner (New in v1.14)
+
+**FR-17.1 (New) — Tier 2+ Feature Gating for Sessions & Bumpers:** Access to the Sessions Archive controller and broadcast Bumpers (intro/outro stitching) requires `session.recording` and `session.bumper` permissions, which are included exclusively in Tier 2+ (`standard`, `large`, `premium`) plans.
+
+**FR-17.2 (New) — DisabledContainer Upgrade Interface:** When a Tier 1 user (`free`, `mini`, `trial`, `guest`) visits Sessions or Bumpers, the UI renders `DisabledContainer` stating:
+> *"Sessions Archive, automated sermon audio recording, and sermon PDF generation are available exclusively on Tier 2 (Standard, Large, or Premium) plans. Upgrade your subscription to unlock automatic recording."*
+
+**FR-17.3 (New) — Tier 1 Audio Capture Bypass:** When a timer countdown or agenda item starts on a Tier 1 account (or when audio recording is disabled for that session), `sessionArchive.js` and `sessionAudio.js` skip audio chunk buffering and FFmpeg encoding entirely, creating lightweight metadata-only logs without consuming disk space or audio resources.
+
+**FR-17.4 (New) — Agenda Planner Modal Interface:** In `TimerController.js`, Tier 2+ operators can open the **Agenda Planner** (`AgendaPlannerModal.jsx`) to:
+- Selectively enable or disable audio recording on a per-session basis or bulk toggle ("Record All" / "None").
+- Configure automated media cues across the lifecycle of each agenda session.
+
+**FR-17.5 (New) — Start Media Cues:** Operators can configure actions triggered when an agenda session starts:
+- Set solid background color on display canvas.
+- Trigger intro video bumper playback.
+- Play intro audio chime or announcement.
+
+**FR-17.6 (New) — Mid-Run Warning Cues:** Operators can configure cues for the middle/warning phase of a running session:
+- Flash amber warning background color at 10s or half-time threshold.
+- Play audible warning chime.
+- Display intermediate prompt image.
+
+**FR-17.7 (New) — Completion Cues:** Operators can configure actions executed when a session timer completes (`00:00:00`):
+- Automatic blackout of presentation display.
+- Trigger outro video bumper playback.
+- Play closing audio chime / benediction wrap.
+
+**FR-17.8 (New) — Dual-Action Timer Editing:** In `TimerController.js`, the timer editor provides distinct **"Add"** (accumulates entered minutes to current remaining time) and **"Update"** (replaces set duration with entered time) actions, while continuously updating label and speaker metadata across both actions.
 
 ---
 

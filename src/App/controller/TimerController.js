@@ -14,10 +14,24 @@ import {
   PiGear,
   PiClock,
   PiX,
+  PiCalendarCheck,
 } from "react-icons/pi";
 import { Button, DisabledContainer, Input } from "../../../components";
+import { useAuth } from "../context/AuthContext";
+import AgendaPlannerModal from "./AgendaPlannerModal.jsx";
 
 export default function TimerController() {
+  const { hasPermission } = useAuth();
+  const canChangeView = hasPermission("timer.change_view");
+  const canUseInterval = hasPermission("timer.interval");
+  const canUseStartTime = hasPermission("timer.start_time");
+  const canAccessSessions = hasPermission("session.recording");
+  const hasOnlyBasicTimer =
+    hasPermission("timer.basic") &&
+    !canUseInterval &&
+    !canChangeView &&
+    !canUseStartTime;
+
   const time = useSelector((state) => state.util.time);
   const agenda = useSelector((state) => state.util.agenda);
   const isEventMode = useSelector((state) => state.util.isEventMode);
@@ -36,11 +50,13 @@ export default function TimerController() {
   const [activeMenuId, setActiveMenuId] = useState(null);
   const [editingId, setEditingId] = useState(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isPlannerOpen, setIsPlannerOpen] = useState(false);
+  const [plannerConfig, setPlannerConfig] = useState({});
 
   // Edit states
   const [editLabel, setEditLabel] = useState("");
   const [editAnchor, setEditAnchor] = useState("");
-  const [editTime, setEditTime] = useState(0);
+  const [editTimeMinutes, setEditTimeMinutes] = useState("");
 
   const timer = useRef(null);
   const delayTimer = useRef(null);
@@ -263,12 +279,23 @@ export default function TimerController() {
     }
   }, [countdown]);
 
-  const handleStart = (item) => {
+  const handleStart = (item, customPlanConfig) => {
     dispatch(utilAction.setEventMode(false));
     dispatch(utilAction.setTime(Number(item.time) || 0));
     dispatch(utilAction.setActiveId(item._id));
     dispatch(utilAction.setPaused(false));
     setActiveMenuId(null);
+
+    const activeConf = (customPlanConfig || plannerConfig)[item._id];
+    const shouldRecordAudio = canAccessSessions ? (activeConf?.recordAudio !== false) : false;
+
+    // Trigger Start Media Cue (if specified)
+    if (activeConf?.startMedia === "color" && activeConf?.startValue) {
+      try {
+        window.electron?.Presentation?.setStyles?.({ backgroundColor: activeConf.startValue });
+      } catch (_) {}
+    }
+
     window.electron?.Session?.emitTimerLifecycle?.({
       type: "timer:started",
       timerId: item._id,
@@ -276,6 +303,7 @@ export default function TimerController() {
       durationSec: Number(item.time) || 0,
       category: item.agenda || "",
       speakerName: (item.anchor && String(item.anchor).trim()) || "Speaker",
+      recordAudio: shouldRecordAudio,
     });
   };
 
@@ -324,27 +352,56 @@ export default function TimerController() {
 
   const handleEditStart = (item) => {
     setEditingId(item._id);
-    setEditLabel(item.agenda);
-    setEditAnchor(item.anchor);
-    setEditTime(item.time);
+    setEditLabel(item.agenda || "");
+    setEditAnchor(item.anchor || "");
+    setEditTimeMinutes("");
     setActiveMenuId(null);
   };
 
-  const handleEditSave = (id) => {
+  const handleEditAdd = (item) => {
+    const enteredSec = (Number(editTimeMinutes) || 0) * 60;
+    const newTime = Math.max(0, (Number(item.time) || 0) + enteredSec);
+
     dispatch(
       utilAction.editAgenda({
-        _id: id,
+        _id: item._id,
         agenda: editLabel,
         anchor: editAnchor,
-        time: editTime,
+        time: newTime,
       }),
     );
 
-    if (activeId === id) {
-      dispatch(utilAction.setTime(Number(editTime) || 0));
+    if (activeId === item._id) {
+      const newCountdown = Math.max(0, (Number(countdown) || 0) + enteredSec);
+      setCountDown(newCountdown);
+      dispatch(utilAction.setTime(newTime));
     }
 
     setEditingId(null);
+    setEditTimeMinutes("");
+  };
+
+  const handleEditUpdate = (item) => {
+    const enteredSec = (Number(editTimeMinutes) || 0) * 60;
+    const newTime =
+      editTimeMinutes !== "" ? Math.max(0, enteredSec) : Number(item.time) || 0;
+
+    dispatch(
+      utilAction.editAgenda({
+        _id: item._id,
+        agenda: editLabel,
+        anchor: editAnchor,
+        time: newTime,
+      }),
+    );
+
+    if (activeId === item._id) {
+      setCountDown(newTime);
+      dispatch(utilAction.setTime(newTime));
+    }
+
+    setEditingId(null);
+    setEditTimeMinutes("");
   };
 
   const handleThemeChange = (newTheme) => {
@@ -353,16 +410,30 @@ export default function TimerController() {
 
   return (
     <section className="w-full h-full flex flex-row gap-4 relative">
-      <div className="absolute top-2 right-2 z-50">
-        <button
-          onClick={() => setIsSettingsOpen(!isSettingsOpen)}
-          className="p-3 bg-ash/40 hover:bg-ash/60 rounded-full text-light transition-all"
-        >
-          <PiGear size={24} />
-        </button>
+      <div className="absolute top-2 right-2 z-50 flex items-center gap-2">
+        {canAccessSessions && (
+          <button
+            onClick={() => setIsPlannerOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-2 bg-violet-600 hover:bg-violet-500 rounded-xl text-white text-xs font-black uppercase tracking-wider shadow-lg shadow-purple-950/40 transition-all cursor-pointer"
+            title="Open Agenda Planner"
+          >
+            <PiCalendarCheck size={16} />
+            <span>Agenda Planner</span>
+          </button>
+        )}
+
+        {canChangeView && (
+          <button
+            onClick={() => setIsSettingsOpen(!isSettingsOpen)}
+            className="p-2.5 bg-ash/40 hover:bg-ash/60 rounded-xl text-light transition-all cursor-pointer"
+            title="Display Settings"
+          >
+            <PiGear size={20} />
+          </button>
+        )}
       </div>
 
-      {isSettingsOpen && (
+      {canChangeView && isSettingsOpen && (
         <div className="absolute top-12 right-2 w-[300px] bg-primary border border-light/20 rounded-2xl shadow-2xl p-4 z-50 flex flex-col gap-4">
           <h3 className="text-light font-bold text-lg">Display Settings</h3>
           <div className="grid grid-cols-2 gap-2">
@@ -475,30 +546,39 @@ export default function TimerController() {
                             value={editAnchor}
                             onChange={(e) => setEditAnchor(e.target.value)}
                             className="bg-primary p-1 rounded text-sm text-light"
-                            placeholder="Anchor"
+                            placeholder="Speaker / Anchor"
                           />
                           <Input
-                            onChange={(e) =>
-                              setEditTime((e.target.valueAsNumber || 0) * 60)
-                            }
+                            value={editTimeMinutes}
+                            onChange={(e) => setEditTimeMinutes(e.target.value)}
                             type="number"
+                            min="0"
                             className="bg-primary p-1 rounded text-sm text-light"
-                            placeholder="Add more time (minutes)..."
+                            placeholder="Time (minutes)..."
                           />
-                          <div className="flex justify-end gap-2 mt-2">
+                          <div className="flex justify-end items-center gap-2 mt-2">
                             <Button
-                              onClick={() => handleEditSave(_id)}
+                              onClick={() => handleEditAdd(item)}
                               variant="secondary"
+                              title="Add entered minutes to existing timer"
                             >
                               <p>Add</p>
-                              <PiPlus />
+                              <PiPlus size={12} />
+                            </Button>
+                            <Button
+                              onClick={() => handleEditUpdate(item)}
+                              variant="primary"
+                              title="Override timer with entered minutes"
+                            >
+                              <p>Update</p>
+                              <PiCheck size={12} />
                             </Button>
                             <Button
                               onClick={() => setEditingId(null)}
                               variant="secondary"
                             >
                               <p>Cancel</p>
-                              <PiX />
+                              <PiX size={12} />
                             </Button>
                           </div>
                         </div>
@@ -537,6 +617,12 @@ export default function TimerController() {
                           <Button
                             variant="secondary"
                             onClick={() => handleEditStart(item)}
+                            disabled={hasOnlyBasicTimer}
+                            title={
+                              hasOnlyBasicTimer
+                                ? "Your current plan does not support editing timers"
+                                : undefined
+                            }
                           >
                             <p>Edit timer</p>
                             <PiPencil size={12} />
@@ -565,6 +651,22 @@ export default function TimerController() {
           )}
         </div>
       </div>
+
+      <AgendaPlannerModal
+        isOpen={isPlannerOpen}
+        onClose={() => setIsPlannerOpen(false)}
+        agenda={agenda}
+        onApplyPlan={(config) => {
+          setPlannerConfig(config);
+        }}
+        onStartWithPlan={(config, startItem) => {
+          setPlannerConfig(config);
+          const target = startItem || (agenda && agenda[0]);
+          if (target) {
+            handleStart(target, config);
+          }
+        }}
+      />
     </section>
   );
 }

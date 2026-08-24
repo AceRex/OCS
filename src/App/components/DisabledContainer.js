@@ -26,10 +26,10 @@ import { PiLockKey, PiArrowSquareOut, PiSpinner } from 'react-icons/pi';
 export default function DisabledContainer({
   children,
   featureName = 'This Feature',
-  description = 'Sign in with your organization account to unlock this feature.',
+  description,
   isGated,
   mode = 'replace',
-  actionText = 'Log In via Browser',
+  actionText,
 }) {
   const { isAuthenticated, waitingForBrowser, login, cancelLogin } = useAuth();
 
@@ -37,6 +37,15 @@ export default function DisabledContainer({
   const gated = isGated !== undefined ? isGated : !isAuthenticated;
 
   if (!gated) return <>{children}</>;
+
+  const displayDescription =
+    description ||
+    (isAuthenticated
+      ? 'Your current plan does not support this feature.'
+      : 'Sign in with your organization account to unlock this feature.');
+
+  const displayActionText =
+    actionText || (isAuthenticated ? 'Upgrade Plan' : 'Log In via Browser');
 
   const card = (
     <div
@@ -83,7 +92,7 @@ export default function DisabledContainer({
         {/* Text */}
         <div className="space-y-2 relative z-10">
           <h3 className="text-base font-black text-white tracking-tight">{featureName}</h3>
-          <p className="text-xs text-white/45 leading-relaxed">{description}</p>
+          <p className="text-xs text-white/45 leading-relaxed">{displayDescription}</p>
         </div>
 
         {/* CTA */}
@@ -114,7 +123,7 @@ export default function DisabledContainer({
                 }}
               >
                 <PiArrowSquareOut size={16} />
-                {actionText}
+                {displayActionText}
               </button>
             </>
           )}

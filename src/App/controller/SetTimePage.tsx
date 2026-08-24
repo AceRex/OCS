@@ -2,9 +2,20 @@ import React, { useState } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { utilAction } from "../../Redux/state";
 import { Button, Input } from "../../../components";
+import { useAuth } from "../context/AuthContext";
 
 export default function SetTimePage() {
   let dispatch = useDispatch();
+  const { hasPermission } = useAuth();
+
+  const canUseStartTime = hasPermission("timer.start_time");
+  const canUseInterval = hasPermission("timer.interval");
+  const hasOnlyBasicTimer =
+    hasPermission("timer.basic") &&
+    !canUseInterval &&
+    !hasPermission("timer.change_view") &&
+    !canUseStartTime;
+
   const [hours, setHours] = useState<number | string>(0);
   const [minutes, setMinutes] = useState<number | string>(0);
   const [isEditingHours, setIsEditingHours] = useState(false);
@@ -210,10 +221,16 @@ export default function SetTimePage() {
           </div>
         </div>
         <div className="w-full m-auto flex flex-row gap-4 place-content-center pb-4">
-          <Button variant="secondary" onClick={handleClose} className="w-[50%]">
-            Quick Start
-          </Button>
-          <Button variant="success" onClick={handleClick} className="w-[50%]">
+          {!hasOnlyBasicTimer && (
+            <Button variant="secondary" onClick={handleClose} className="w-[50%]">
+              Quick Start
+            </Button>
+          )}
+          <Button
+            variant="success"
+            onClick={handleClick}
+            className={hasOnlyBasicTimer ? "w-full" : "w-[50%]"}
+          >
             Add to list
           </Button>
         </div>
@@ -229,26 +246,40 @@ export default function SetTimePage() {
               type="text"
               value={eventTime}
               onChange={handleTimeChange}
+              disabled={!canUseStartTime}
               placeholder="00:00"
               maxLength={5}
-              className="py-3 w-[110px] bg-transparent text-[35px] text-center text-light focus:outline-none placeholder:text-light/40 font-semibold"
+              className={`py-3 w-[110px] bg-transparent text-[35px] text-center text-light focus:outline-none placeholder:text-light/40 font-semibold ${
+                !canUseStartTime ? "opacity-40 cursor-not-allowed" : ""
+              }`}
             />
             <button
               type="button"
+              disabled={!canUseStartTime}
               onClick={() => setPeriod((p) => (p === "AM" ? "PM" : "AM"))}
-              className="py-3 bg-transparent text-[35px] font-bold text-blue-500 transition-colors select-none"
+              className={`py-3 bg-transparent text-[35px] font-bold text-blue-500 transition-colors select-none ${
+                !canUseStartTime ? "opacity-40 cursor-not-allowed" : ""
+              }`}
             >
               {period}
             </button>
           </div>
 
-          <Button
-            variant="primary"
-            onClick={handleEventStart}
-            className="w-[50%]"
-          >
-            Start Event
-          </Button>
+          {canUseStartTime ? (
+            <Button
+              variant="primary"
+              onClick={handleEventStart}
+              className="w-[50%]"
+            >
+              Start Event
+            </Button>
+          ) : (
+            <div className="px-3 text-center">
+              <p className="text-xs text-purple-300/80 font-medium leading-relaxed">
+                You cannot use this feature because your current subscription plan does not support scheduled start times.
+              </p>
+            </div>
+          )}
         </div>
       </div>
       <div className="w-full border-light/10 mt-4 pt-4">
@@ -261,29 +292,40 @@ export default function SetTimePage() {
               type="text"
               value={intervalInput}
               onChange={handleIntervalChange}
+              disabled={!canUseInterval}
               placeholder="00:00"
               maxLength={5}
-              className="py-3 w-[110px] bg-transparent text-[35px] text-center text-light focus:outline-none placeholder:text-light/40 font-semibold"
+              className={`py-3 w-[110px] bg-transparent text-[35px] text-center text-light focus:outline-none placeholder:text-light/40 font-semibold ${
+                !canUseInterval ? "opacity-40 cursor-not-allowed" : ""
+              }`}
             />
           </div>
-          <div className="flex items-center gap-2 w-full">
-            <Button
-              variant="secondary"
-              disabled={intervalInput === ""}
-              onClick={handleSetInterval}
-              className="w-full"
-            >
-              Set
-            </Button>
-            <Button
-              variant="secondary"
-              disabled={nextStartInterval === 0}
-              onClick={handleClearInterval}
-              className="w-full"
-            >
-              Clear
-            </Button>
-          </div>
+          {canUseInterval ? (
+            <div className="flex items-center gap-2 w-full">
+              <Button
+                variant="secondary"
+                disabled={intervalInput === ""}
+                onClick={handleSetInterval}
+                className="w-full"
+              >
+                Set
+              </Button>
+              <Button
+                variant="secondary"
+                disabled={nextStartInterval === 0}
+                onClick={handleClearInterval}
+                className="w-full"
+              >
+                Clear
+              </Button>
+            </div>
+          ) : (
+            <div className="px-3 text-center">
+              <p className="text-xs text-purple-300/80 font-medium leading-relaxed">
+                Your current plan does not support agenda start intervals.
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>

@@ -746,21 +746,18 @@ function App({ mode: propMode }) {
   );
 
   const renderIdleScreen = () => {
-    const tier = (authStatus?.licenseTier || authStatus?.subscriptionTier || "").toLowerCase();
-    const isTier1Or2 = !tier || ["guest", "trial", "free", "mini", "standard", "tier1", "tier2"].includes(tier) || !["pro", "enterprise", "premium", "large"].includes(tier);
-
     return (
       <div
         className="w-full h-full flex items-center justify-center relative overflow-hidden"
-        style={{ backgroundColor: isAlphaMode ? 'transparent' : (presentationStyle.backgroundColor || '#0B0814') }}
+        style={{ backgroundColor: isAlphaMode ? 'transparent' : (presentationStyle.backgroundColor || '#282828') }}
       >
-        {presentationStyle.backgroundImage && !isTier1Or2 ? (
+        {presentationStyle.backgroundImage ? (
           <img
             src={presentationStyle.backgroundImage}
             className="absolute inset-0 w-full h-full object-cover"
             alt="bg"
           />
-        ) : presentationStyle.backgroundVideo && !isTier1Or2 ? (
+        ) : presentationStyle.backgroundVideo ? (
           <video
             src={presentationStyle.backgroundVideo}
             autoPlay
@@ -770,16 +767,9 @@ function App({ mode: propMode }) {
             className="absolute inset-0 w-full h-full object-cover"
           />
         ) : (
-          <div className="flex flex-col items-center justify-center text-center p-8 select-none animate-in fade-in duration-300">
-            <div className="size-28 rounded-3xl bg-gradient-to-br from-violet-600 to-purple-700 flex items-center justify-center shadow-2xl shadow-purple-900/60 mb-6 border border-purple-400/30">
-              <span className="text-white font-black text-5xl tracking-tighter">OCS</span>
-            </div>
-            <h1 className="text-3xl font-extrabold tracking-tight text-white/90">
-              Organised Church Service
-            </h1>
-            <p className="text-purple-300/70 text-xs font-semibold uppercase tracking-[0.35em] mt-3">
-              Presentation & Projection System
-            </p>
+          <div className="flex flex-col items-center animate-pulse">
+            <h1 className="text-[15vw] font-black text-light tracking-tighter leading-none opacity-20" style={{ color: '#F6F3F1' }}>OCS</h1>
+            <p className="text-light/30 text-2xl font-medium tracking-[1em] uppercase mt-4" style={{ color: '#F6F3F1' }}>Service is Starting</p>
           </div>
         )}
       </div>

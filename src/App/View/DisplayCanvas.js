@@ -697,28 +697,11 @@ export default function DisplayCanvas({
   const renderChrome = () => {
     if (!chrome) return null;
 
-    const tier = (canvasState?.licenseTier || canvasState?.subscriptionTier || canvasState?.tier || "").toLowerCase();
-    const isTier1Or2 = !tier || ["guest", "trial", "free", "mini", "standard", "tier1", "tier2"].includes(tier) || !["pro", "enterprise", "premium", "large"].includes(tier);
-
     return (
       <div className="absolute inset-0 z-40 pointer-events-none">
-        {/* Full Blackout / Blank Screen (FR-1.x) */}
+        {/* Full Blackout (FR-1.x) */}
         {chrome.blackout && (
-          <div className="absolute inset-0 bg-[#0B0814] z-50 animate-in fade-in duration-150 flex items-center justify-center pointer-events-auto">
-            {isTier1Or2 && (
-              <div className="flex flex-col items-center justify-center text-center p-8 select-none">
-                <div className="size-28 rounded-3xl bg-gradient-to-br from-violet-600 to-purple-700 flex items-center justify-center shadow-2xl shadow-purple-900/60 mb-6 border border-purple-400/30">
-                  <span className="text-white font-black text-5xl tracking-tighter">OCS</span>
-                </div>
-                <h2 className="text-3xl font-extrabold tracking-tight text-white/90">
-                  Organised Church Service
-                </h2>
-                <p className="text-purple-300/70 text-xs font-semibold uppercase tracking-[0.35em] mt-3">
-                  Presentation & Projection System
-                </p>
-              </div>
-            )}
-          </div>
+          <div className="absolute inset-0 bg-black z-50 animate-in fade-in duration-150" />
         )}
 
         {/* Logo Screen Mode */}
