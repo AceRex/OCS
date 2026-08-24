@@ -209,6 +209,9 @@ contextBridge.exposeInMainWorld("electron", {
     setBackground: (bg) => ipcRenderer.send("canvas-set-background", bg),
     setPinnedLayers: (layers) => ipcRenderer.send("canvas-set-pinned-layers", layers),
     setChrome: (chrome) => ipcRenderer.send("canvas-set-chrome", chrome),
+    toggleBlackout: () => ipcRenderer.send("canvas-toggle-blackout"),
+    toggleLogo: () => ipcRenderer.send("canvas-toggle-logo"),
+    clearContent: () => ipcRenderer.send("canvas-clear-content"),
     onCanvasSync: (callback) => {
       const listener = (event, val) => callback(val);
       ipcRenderer.on("canvas-state-update", listener);
