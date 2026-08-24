@@ -478,6 +478,7 @@ contextBridge.exposeInMainWorld("electron", {
     downloadUpdate: () => ipcRenderer.invoke('updater:download'),
     quitAndInstall: (options) => ipcRenderer.invoke('updater:install', options),
     getStatus: () => ipcRenderer.invoke('updater:get-status'),
+    simulateUpdate: (stage) => ipcRenderer.invoke('updater:simulate-update', stage),
     onStatusChange: (callback) => {
       const listener = (_e, payload) => callback(payload);
       ipcRenderer.on('updater:status-changed', listener);

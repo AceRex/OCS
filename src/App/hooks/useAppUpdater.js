@@ -128,6 +128,31 @@ export function useAppUpdater() {
     setIsDismissed(true);
   }, []);
 
+  const simulateUpdate = useCallback(async (stage = 'available') => {
+    setIsDismissed(false);
+    setErrorMessage(null);
+    if (!window.electron?.Updater?.simulateUpdate) {
+      setStatus(stage === 'downloaded' ? 'downloaded' : 'available');
+      setUpdateInfo({
+        version: '1.1.0',
+        releaseDate: new Date().toISOString(),
+        releaseNotes: '• Real-time lyrics alignment & auto-advance\n• NDI high-throughput broadcast engine\n• Offline licensing & self-service password recovery\n• Performance optimizations and UI enhancements',
+        releaseName: 'OCS v1.1.0 Feature Release',
+      });
+      return;
+    }
+    try {
+      const res = await window.electron.Updater.simulateUpdate(stage);
+      if (res) {
+        setStatus(res.status || 'available');
+        if (res.updateInfo) setUpdateInfo(res.updateInfo);
+      }
+      return res;
+    } catch (err) {
+      console.warn('[useAppUpdater] simulateUpdate error:', err);
+    }
+  }, []);
+
   return {
     status,
     currentVersion,
@@ -145,6 +170,7 @@ export function useAppUpdater() {
     downloadUpdate,
     quitAndInstall,
     dismissNotification,
+    simulateUpdate,
   };
 }
 

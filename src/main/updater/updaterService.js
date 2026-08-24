@@ -170,6 +170,43 @@ class UpdaterService {
     }
   }
 
+  simulateUpdate(stage = 'available') {
+    if (stage === 'available') {
+      this.status = UPDATE_STATUS.AVAILABLE;
+      this.updateInfo = {
+        version: '1.1.0',
+        releaseDate: new Date().toISOString(),
+        releaseNotes: '• Real-time lyrics alignment & auto-advance\n• NDI high-throughput broadcast engine\n• Offline licensing & self-service password recovery\n• Performance optimizations and UI enhancements',
+        releaseName: 'OCS v1.1.0 Feature Release',
+      };
+      this.errorMessage = null;
+      this._broadcast(UPDATER_CHANNELS.STATUS_CHANGED, this.getStatus());
+      return this.getStatus();
+    }
+
+    if (stage === 'download') {
+      return this.downloadUpdate();
+    }
+
+    if (stage === 'downloaded') {
+      this.status = UPDATE_STATUS.DOWNLOADED;
+      this.downloadProgress = { percent: 100, bytesPerSecond: 0, transferred: 88473600, total: 88473600 };
+      this._broadcast(UPDATER_CHANNELS.STATUS_CHANGED, this.getStatus());
+      return this.getStatus();
+    }
+
+    if (stage === 'reset') {
+      this.status = UPDATE_STATUS.IDLE;
+      this.updateInfo = null;
+      this.downloadProgress = { percent: 0, bytesPerSecond: 0, transferred: 0, total: 0 };
+      this.errorMessage = null;
+      this._broadcast(UPDATER_CHANNELS.STATUS_CHANGED, this.getStatus());
+      return this.getStatus();
+    }
+
+    return this.getStatus();
+  }
+
   quitAndInstall(options = {}) {
     const isForce = options.force ?? false;
 

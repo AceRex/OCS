@@ -44,6 +44,10 @@ function registerUpdaterIpc(options = {}) {
     return updaterService.getStatus();
   });
 
+  ipcMain.handle('updater:simulate-update', (_event, stage) => {
+    return updaterService.simulateUpdate(stage);
+  });
+
   return {
     broadcastToAllWindows,
     updaterService,

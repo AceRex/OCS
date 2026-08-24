@@ -1592,15 +1592,26 @@ export default function SettingsController() {
                                         <span>Restart & Install Update</span>
                                     </button>
                                 ) : (
-                                    <button
-                                        type="button"
-                                        disabled={updater.status === 'checking' || updater.status === 'downloading'}
-                                        onClick={() => updater.checkForUpdates(true)}
-                                        className="px-5 py-2.5 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 text-white text-xs font-bold transition-all flex items-center gap-2"
-                                    >
-                                        <PiArrowClockwise size={15} className={updater.status === 'checking' ? 'animate-spin' : ''} />
-                                        <span>{updater.status === 'checking' ? 'Checking for updates...' : 'Check for Updates'}</span>
-                                    </button>
+                                    <>
+                                        <button
+                                            type="button"
+                                            disabled={updater.status === 'checking' || updater.status === 'downloading'}
+                                            onClick={() => updater.checkForUpdates(true)}
+                                            className="px-5 py-2.5 rounded-2xl bg-white/10 hover:bg-white/15 border border-white/10 text-white text-xs font-bold transition-all flex items-center gap-2"
+                                        >
+                                            <PiArrowClockwise size={15} className={updater.status === 'checking' ? 'animate-spin' : ''} />
+                                            <span>{updater.status === 'checking' ? 'Checking for updates...' : 'Check for Updates'}</span>
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => updater.simulateUpdate('available')}
+                                            className="px-4 py-2.5 rounded-2xl bg-purple-500/10 hover:bg-purple-500/20 border border-purple-500/30 text-purple-300 text-xs font-bold transition-all flex items-center gap-1.5"
+                                            title="Simulate discovering a new version to preview notification, background download bar, and ready states"
+                                        >
+                                            <PiSparkle size={14} />
+                                            <span>Test Notification (Simulate v1.1.0)</span>
+                                        </button>
+                                    </>
                                 )}
                             </div>
                         </div>
