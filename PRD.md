@@ -773,6 +773,33 @@ Editable at runtime by `super_admin` via a dedicated admin console (FR-13.14).
 
 ---
 
+## 4.16 Mobile Authentication, 1-Hour Offline Guest Evaluation & Companion Sign-In (New in v1.14)
+
+**FR-18.1 (New) — 1-Hour Offline Guest Evaluation Session:**
+- When an operator launches the OCS Mobile Companion (`ocs-mobile`) without logging in, a 1-hour (3600 seconds) unauthenticated evaluation window begins.
+- The evaluation timer is persisted locally (via JSON storage on native devices and `localStorage` on web), ensuring app restarts or backgrounding do not reset the 1-hour quota.
+- Wall-clock synchronization enforces expiration even when the mobile device is completely offline or not connected to the internet.
+
+**FR-18.2 (New) — Full-Screen Guest Expiration Gate (`GuestExpiredGate.tsx`):**
+- When the 1-hour unauthenticated window expires (`guestExpired === true` and `!isAuthenticated`), the app presents a blocking full-screen modal lock gate.
+- The lock gate informs the user:
+  > *"Your 1-hour unauthenticated guest evaluation window has concluded. Sign in with your OCS account to unlock stage controls, lyric projection, teleprompter, and your full 60-Day Free Trial."*
+- Provides direct navigation to the Mobile Sign-In screen (`/login`) or workstation QR pairing.
+
+**FR-18.3 (New) — Mobile Companion Login Screen (`/login` in `app/login.tsx`):**
+- A dedicated, high-performance mobile authentication screen connecting directly to the OCS API (`POST /api/auth/login`).
+- Includes Email and Password inputs with visibility toggles, client-side validation, haptic feedback, and error handling.
+- Optional expandable Advanced Server configuration for testing against custom backend endpoints.
+- Provides deep links to account registration (60-Day Free Trial) and password reset flows.
+
+**FR-18.4 (New) — Dashboard Auth & Session Status Indicator:**
+- The mobile dashboard header displays a real-time session badge:
+  - When unauthenticated: Displays `Guest: XXm` remaining time pill in amber. Tapping opens the `/login` screen.
+  - When authenticated: Displays the user's name, church affiliation, and plan badge.
+- The connection menu modal provides quick account management and 1-tap Sign Out capabilities.
+
+---
+
 ## 5. New Feature Modules
 
 ### 5.1 Order of Service Planner

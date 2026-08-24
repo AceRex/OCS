@@ -26,9 +26,15 @@ import {
   QrCode,
   XCircle,
   X,
+  User,
+  SignIn,
+  SignOut,
+  LockSimple,
+  Sparkle,
 } from "phosphor-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSocketStore } from "../store/socketStore";
+import { useAuthStore } from "../store/authStore";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -45,6 +51,7 @@ export default function Dashboard() {
     reconnectLastSession,
     disconnect,
   } = useSocketStore();
+  const { user, isAuthenticated, guestRemainingMinutes, logout } = useAuthStore();
 
   const [renameModalVisible, setRenameModalVisible] = useState(false);
   const [menuModalVisible, setMenuModalVisible] = useState(false);
@@ -162,38 +169,66 @@ export default function Dashboard() {
             </TouchableOpacity>
           </View>
 
-          {/* Connection Status Dropdown Trigger */}
-          <TouchableOpacity
-            onPress={() => setMenuModalVisible(true)}
-            activeOpacity={0.8}
-            className={`flex-row items-center gap-1.5 px-3 py-1.5 rounded-full border ${
-              isPaired
-                ? "bg-emerald-500/20 border-emerald-400/40"
-                : "bg-white/10 border-white/20"
-            }`}
-          >
-            <View
-              className={`w-2 h-2 rounded-full ${
+          {/* Top Right: Auth Status & Connection Trigger */}
+          <View className="flex-row items-center gap-2">
+            {/* Account / Guest Pill */}
+            {isAuthenticated ? (
+              <TouchableOpacity
+                onPress={() => setMenuModalVisible(true)}
+                activeOpacity={0.8}
+                className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-purple-500/20 border border-purple-500/40"
+              >
+                <User size={12} color="#C084FC" weight="bold" />
+                <Text className="text-[11px] font-bold text-purple-200 truncate max-w-[100px]">
+                  {user?.name || user?.churchName || "Account"}
+                </Text>
+              </TouchableOpacity>
+            ) : (
+              <TouchableOpacity
+                onPress={() => router.push("/login" as any)}
+                activeOpacity={0.8}
+                className="flex-row items-center gap-1.5 px-3 py-1.5 rounded-full bg-amber-500/15 border border-amber-500/40"
+              >
+                <LockSimple size={12} color="#FBBF24" weight="bold" />
+                <Text className="text-[11px] font-bold text-amber-300">
+                  Guest: {guestRemainingMinutes}m
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Connection Status Dropdown Trigger */}
+            <TouchableOpacity
+              onPress={() => setMenuModalVisible(true)}
+              activeOpacity={0.8}
+              className={`flex-row items-center gap-1.5 px-3 py-1.5 rounded-full border ${
                 isPaired
-                  ? "bg-emerald-400"
-                  : "bg-white/40"
-              }`}
-            />
-            <Text
-              className={`text-[11px] font-extrabold tracking-wide ${
-                isPaired
-                  ? "text-emerald-300"
-                  : "text-white/70"
+                  ? "bg-emerald-500/20 border-emerald-400/40"
+                  : "bg-white/10 border-white/20"
               }`}
             >
-              {isPaired ? "Paired" : "Offline"}
-            </Text>
-            <CaretDown
-              size={11}
-              color={isPaired ? "#6EE7B7" : "rgba(255,255,255,0.7)"}
-              weight="bold"
-            />
-          </TouchableOpacity>
+              <View
+                className={`w-2 h-2 rounded-full ${
+                  isPaired
+                    ? "bg-emerald-400"
+                    : "bg-white/40"
+                }`}
+              />
+              <Text
+                className={`text-[11px] font-extrabold tracking-wide ${
+                  isPaired
+                    ? "text-emerald-300"
+                    : "text-white/70"
+                }`}
+              >
+                {isPaired ? "Paired" : "Offline"}
+              </Text>
+              <CaretDown
+                size={11}
+                color={isPaired ? "#6EE7B7" : "rgba(255,255,255,0.7)"}
+                weight="bold"
+              />
+            </TouchableOpacity>
+          </View>
         </View>
 
         {/* Connection Menu Modal — Full Page */}
@@ -274,6 +309,62 @@ export default function Dashboard() {
                     </View>
                   </TouchableOpacity>
 
+                  {/* Account Section */}
+                  <View className="pt-2 border-t border-white/10">
+                    <Text className="text-white/40 text-[10px] font-black uppercase tracking-wider mb-2">
+                      OCS Account & License
+                    </Text>
+
+                    {isAuthenticated ? (
+                      <View className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 flex-row items-center justify-between">
+                        <View className="flex-row items-center gap-3">
+                          <View className="w-10 h-10 rounded-xl bg-purple-600/30 border border-purple-500/40 items-center justify-center">
+                            <User size={20} color="#C084FC" weight="bold" />
+                          </View>
+                          <View>
+                            <Text className="text-white font-bold text-sm">
+                              {user?.name || user?.churchName || "Authenticated"}
+                            </Text>
+                            <Text className="text-white/40 text-[11px]">
+                              {user?.email || "Signed In"}
+                            </Text>
+                          </View>
+                        </View>
+                        <TouchableOpacity
+                          onPress={() => {
+                            logout();
+                            setMenuModalVisible(false);
+                          }}
+                          className="px-3 py-2 rounded-xl bg-red-500/10 border border-red-500/30 flex-row items-center gap-1.5"
+                        >
+                          <SignOut size={14} color="#F87171" weight="bold" />
+                          <Text className="text-red-400 font-bold text-xs">Sign Out</Text>
+                        </TouchableOpacity>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        onPress={() => {
+                          setMenuModalVisible(false);
+                          router.push("/login" as any);
+                        }}
+                        className="p-4 rounded-2xl bg-gradient-to-r from-violet-600/20 to-pink-600/20 border border-purple-500/40 flex-row items-center justify-between"
+                      >
+                        <View className="flex-row items-center gap-3">
+                          <View className="w-10 h-10 rounded-xl bg-purple-600/30 items-center justify-center">
+                            <SignIn size={20} color="#C084FC" weight="bold" />
+                          </View>
+                          <View>
+                            <Text className="text-white font-bold text-sm">Sign In to OCS Account</Text>
+                            <Text className="text-amber-300/80 text-[11px]">
+                              Guest Mode: {guestRemainingMinutes}m left
+                            </Text>
+                          </View>
+                        </View>
+                        <Text className="text-purple-400 font-extrabold text-xs">LOG IN</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
                   {/* When CONNECTED: Show Disconnect Option */}
                   {isPaired && (
                     <TouchableOpacity
@@ -285,7 +376,7 @@ export default function Dashboard() {
                     >
                       <XCircle size={22} color="#F87171" weight="bold" />
                       <View>
-                        <Text className="text-red-400 font-bold text-sm">Disconnect</Text>
+                        <Text className="text-red-400 font-bold text-sm">Disconnect Workstation</Text>
                         <Text className="text-red-400/60 text-[11px] mt-0.5">
                           End current remote controller session
                         </Text>

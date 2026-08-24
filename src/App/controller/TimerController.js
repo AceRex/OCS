@@ -15,6 +15,7 @@ import {
   PiClock,
   PiX,
   PiCalendarCheck,
+  PiLockKey,
 } from "react-icons/pi";
 import { Button, DisabledContainer, Input } from "../../../components";
 import { useAuth } from "../context/AuthContext";
@@ -52,6 +53,7 @@ export default function TimerController() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isPlannerOpen, setIsPlannerOpen] = useState(false);
   const [plannerConfig, setPlannerConfig] = useState({});
+  const [showSubscriptionNotice, setShowSubscriptionNotice] = useState(false);
 
   // Edit states
   const [editLabel, setEditLabel] = useState("");
@@ -172,6 +174,10 @@ export default function TimerController() {
               speakerName:
                 (item?.anchor && String(item.anchor).trim()) || undefined,
             });
+
+            if (!canAccessSessions) {
+              setShowSubscriptionNotice(true);
+            }
 
             const nextItem =
               currentIndex > -1 ? agenda[currentIndex + 1] : null;
@@ -667,6 +673,34 @@ export default function TimerController() {
           }
         }}
       />
+
+      {/* Subscription Tier 1 Recording Notice Modal */}
+      {showSubscriptionNotice && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fade-in">
+          <div className="w-full max-w-md bg-[#161224] border border-[#2E2542] rounded-3xl p-6 shadow-2xl flex flex-col items-center text-center space-y-4 text-white">
+            <div className="w-14 h-14 rounded-2xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-lg shadow-amber-950/40">
+              <PiLockKey size={28} />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-base font-black uppercase tracking-wider text-white">
+                Audio Recording Skipped
+              </h3>
+              <p className="text-xs text-white/70 leading-relaxed">
+                Recording did not happen because your current subscription does not cover this feature. Subscribe to a Tier 2 plan (Standard, Large, or Premium) to unlock automated session audio recording and archiving.
+              </p>
+            </div>
+            <div className="w-full pt-2">
+              <button
+                type="button"
+                onClick={() => setShowSubscriptionNotice(false)}
+                className="w-full py-3 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-xs font-black uppercase tracking-wider text-white shadow-lg shadow-purple-950/50 transition-all cursor-pointer"
+              >
+                Got It
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 }
