@@ -2218,6 +2218,125 @@ ipcMain.on("bible-sync", (event, state) => {
 });
 // --------------------------
 
+// Display Canvas State Store (FR-4.13, FR-4.14, FR-4.15)
+let currentCanvasState = {
+  background: {
+    type: "color",
+    url: null,
+    color: "#000000",
+    panX: 0,
+    panY: 0,
+    zoom: 1,
+    muted: true,
+    loop: true,
+    autoPlay: true,
+  },
+  contentSlot: {
+    type: "none",
+    data: null,
+  },
+  pinnedLayers: [],
+  chrome: {
+    blackout: false,
+    logo: false,
+    logoUrl: null,
+    brandingText: null,
+    timerSplit: false,
+    timerCountdown: null,
+  },
+};
+
+function broadcastCanvasState(state, allowedTargets = null) {
+  if (state) currentCanvasState = state;
+  if (io) io.emit("overlay-canvas", currentCanvasState);
+  const speakerAllowed =
+    allowedTargets === null ||
+    allowedTargets.includes("speaker") ||
+    allowedTargets.includes("all");
+  const generalAllowed =
+    allowedTargets === null ||
+    allowedTargets.includes("general") ||
+    allowedTargets.includes("all");
+
+  if (speakerWindow && !speakerWindow.isDestroyed()) {
+    const speakerState = speakerAllowed
+      ? currentCanvasState
+      : { ...currentCanvasState, contentSlot: { type: "none", data: null } };
+    speakerWindow.webContents.send("canvas-state-update", speakerState);
+  }
+  if (generalWindow && !generalWindow.isDestroyed()) {
+    const generalState = generalAllowed
+      ? currentCanvasState
+      : { ...currentCanvasState, contentSlot: { type: "none", data: null } };
+    generalWindow.webContents.send("canvas-state-update", generalState);
+  }
+  if (controllerWindow && !controllerWindow.isDestroyed()) {
+    controllerWindow.webContents.send(
+      "canvas-state-update",
+      currentCanvasState,
+    );
+  }
+
+  // FR-4.15: lightweight summary to Mobile Companion
+  const summary = {
+    activeContentSlotType: currentCanvasState.contentSlot?.type || "none",
+    hasContent:
+      currentCanvasState.contentSlot?.type !== "none" &&
+      currentCanvasState.contentSlot?.data != null,
+    pinnedLayerCount: Array.isArray(currentCanvasState.pinnedLayers)
+      ? currentCanvasState.pinnedLayers.length
+      : 0,
+    isBlackout: !!currentCanvasState.chrome?.blackout,
+  };
+  if (io) {
+    for (const [id, sock] of io.sockets.sockets) {
+      if (isPaired(id)) {
+        sock.emit("mobile-data", {
+          type: "canvas-summary",
+          payload: summary,
+        });
+      }
+    }
+  }
+}
+
+function toggleBlackout() {
+  currentCanvasState.chrome = {
+    ...currentCanvasState.chrome,
+    blackout: !currentCanvasState.chrome?.blackout,
+  };
+  broadcastCanvasState(currentCanvasState);
+  console.log("[Hotkeys] Blackout toggled:", currentCanvasState.chrome.blackout);
+}
+
+function clearContent() {
+  currentCanvasState.contentSlot = { type: "none", data: null };
+  broadcastCanvasState(currentCanvasState);
+  console.log("[Hotkeys] Content cleared");
+}
+
+ipcMain.on("canvas-sync-state", (event, state) => {
+  broadcastCanvasState(state);
+});
+
+ipcMain.on("canvas-set-background", (event, bg) => {
+  currentCanvasState.background = { ...currentCanvasState.background, ...bg };
+  broadcastCanvasState(currentCanvasState);
+});
+
+ipcMain.on("canvas-set-pinned-layers", (event, layers) => {
+  currentCanvasState.pinnedLayers = Array.isArray(layers) ? layers : [];
+  broadcastCanvasState(currentCanvasState);
+});
+
+ipcMain.on("canvas-set-chrome", (event, chrome) => {
+  currentCanvasState.chrome = { ...currentCanvasState.chrome, ...chrome };
+  broadcastCanvasState(currentCanvasState);
+});
+
+ipcMain.on("canvas-toggle-blackout", () => toggleBlackout());
+ipcMain.on("canvas-clear-content", () => clearContent());
+
 function createWindows() {
   const displays = screen.getAllDisplays();
   const primaryDisplay = screen.getPrimaryDisplay();
@@ -2374,126 +2493,6 @@ function createWindows() {
         : Number(value);
     sleepPrevention.reconcile({ timerLive: Number.isFinite(t) && t > 0 });
   });
-
-  // Display Canvas State Store (FR-4.13, FR-4.14, FR-4.15)
-  let currentCanvasState = {
-    background: {
-      type: "color",
-      url: null,
-      color: "#000000",
-      panX: 0,
-      panY: 0,
-      zoom: 1,
-      muted: true,
-      loop: true,
-      autoPlay: true,
-    },
-    contentSlot: {
-      type: "none",
-      data: null,
-    },
-    pinnedLayers: [],
-    chrome: {
-      blackout: false,
-      logo: false,
-      logoUrl: null,
-      brandingText: null,
-      timerSplit: false,
-      timerCountdown: null,
-    },
-  };
-
-  function broadcastCanvasState(state, allowedTargets = null) {
-    if (state) currentCanvasState = state;
-    if (io) io.emit("overlay-canvas", currentCanvasState);
-    const speakerAllowed =
-      allowedTargets === null ||
-      allowedTargets.includes("speaker") ||
-      allowedTargets.includes("all");
-    const generalAllowed =
-      allowedTargets === null ||
-      allowedTargets.includes("general") ||
-      allowedTargets.includes("all");
-
-    if (speakerWindow && !speakerWindow.isDestroyed()) {
-      const speakerState = speakerAllowed
-        ? currentCanvasState
-        : { ...currentCanvasState, contentSlot: { type: "none", data: null } };
-      speakerWindow.webContents.send("canvas-state-update", speakerState);
-    }
-    if (generalWindow && !generalWindow.isDestroyed()) {
-      const generalState = generalAllowed
-        ? currentCanvasState
-        : { ...currentCanvasState, contentSlot: { type: "none", data: null } };
-      generalWindow.webContents.send("canvas-state-update", generalState);
-    }
-    if (controllerWindow && !controllerWindow.isDestroyed()) {
-      controllerWindow.webContents.send(
-        "canvas-state-update",
-        currentCanvasState,
-      );
-    }
-
-    // FR-4.15: lightweight summary to Mobile Companion
-    const summary = {
-      activeContentSlotType: currentCanvasState.contentSlot?.type || "none",
-      hasContent:
-        currentCanvasState.contentSlot?.type !== "none" &&
-        currentCanvasState.contentSlot?.data != null,
-      pinnedLayerCount: Array.isArray(currentCanvasState.pinnedLayers)
-        ? currentCanvasState.pinnedLayers.length
-        : 0,
-      isBlackout: !!currentCanvasState.chrome?.blackout,
-    };
-    if (io) {
-      for (const [id, sock] of io.sockets.sockets) {
-        if (isPaired(id)) {
-          sock.emit("mobile-data", {
-            type: "canvas-summary",
-            payload: summary,
-          });
-        }
-      }
-    }
-  }
-
-  ipcMain.on("canvas-sync-state", (event, state) => {
-    broadcastCanvasState(state);
-  });
-
-  ipcMain.on("canvas-set-background", (event, bg) => {
-    currentCanvasState.background = { ...currentCanvasState.background, ...bg };
-    broadcastCanvasState(currentCanvasState);
-  });
-
-  ipcMain.on("canvas-set-pinned-layers", (event, layers) => {
-    currentCanvasState.pinnedLayers = Array.isArray(layers) ? layers : [];
-    broadcastCanvasState(currentCanvasState);
-  });
-
-  ipcMain.on("canvas-set-chrome", (event, chrome) => {
-    currentCanvasState.chrome = { ...currentCanvasState.chrome, ...chrome };
-    broadcastCanvasState(currentCanvasState);
-  });
-
-  // Emergency Hotkeys Helpers & Handlers (FR-1.5, FR-4.21)
-  function toggleBlackout() {
-    currentCanvasState.chrome = {
-      ...currentCanvasState.chrome,
-      blackout: !currentCanvasState.chrome?.blackout,
-    };
-    broadcastCanvasState(currentCanvasState);
-    console.log("[Hotkeys] Blackout toggled:", currentCanvasState.chrome.blackout);
-  }
-
-  function clearContent() {
-    currentCanvasState.contentSlot = { type: "none", data: null };
-    broadcastCanvasState(currentCanvasState);
-    console.log("[Hotkeys] Content cleared");
-  }
-
-  ipcMain.on("canvas-toggle-blackout", () => toggleBlackout());
-  ipcMain.on("canvas-clear-content", () => clearContent());
 
   const handleEmergencyInput = (event, input) => {
     if (input.type !== "keyDown") return;

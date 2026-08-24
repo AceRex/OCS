@@ -1,6 +1,5 @@
 import React, { useEffect, useState } from 'react';
 import { renderAnimatedLyrics } from './LyricAnimationEngine';
-import { PiShieldCheckFill } from 'react-icons/pi';
 
 export default function MiniPreview({ mode }) {
     const [countdown, setCountDown] = useState(null);
@@ -9,26 +8,6 @@ export default function MiniPreview({ mode }) {
     const [isEventMode, setIsEventMode] = useState(false);
     const [theme, setTheme] = useState("default");
     const [presentationContent, setPresentationContent] = useState(null);
-    const [canvasState, setCanvasState] = useState({
-        background: { type: "color", color: "#0B0814", url: null },
-        contentSlot: { type: "none", data: null },
-        pinnedLayers: [],
-        chrome: { blackout: false, logo: false },
-    });
-
-    const [currentTime, setCurrentTime] = useState("");
-
-    // Live clock for standby preview
-    useEffect(() => {
-        const updateClock = () => {
-            const now = new Date();
-            setCurrentTime(now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }));
-        };
-        updateClock();
-        const timer = setInterval(updateClock, 1000);
-        return () => clearInterval(timer);
-    }, []);
-
     const [presentationStyle, setPresentationStyle] = useState({
         backgroundColor: '#0B0814',
         textColor: '#F5F2FA',
@@ -39,6 +18,7 @@ export default function MiniPreview({ mode }) {
         textShadow: true,
         backgroundImage: null,
         backgroundVideo: null,
+        // Bible-specific display settings
         bibleRefPosition: 'top-center',
         bibleBodyPosition: 'center',
         bibleTranslation: 'KJV',
@@ -59,25 +39,8 @@ export default function MiniPreview({ mode }) {
     };
 
     useEffect(() => {
-        // 1. Subscribe to Canvas Compositor State (FR-4.15)
-        const unsubCanvas = (window.electron?.Canvas?.onCanvasSync || window.api?.Canvas?.onCanvasSync)?.((state) => {
-            if (state) {
-                setCanvasState(state);
-                if (state.contentSlot && state.contentSlot.type !== 'none' && state.contentSlot.data) {
-                    setPresentationContent({
-                        type: state.contentSlot.type,
-                        data: state.contentSlot.data,
-                    });
-                } else if (state.contentSlot && state.contentSlot.type === 'none') {
-                    setPresentationContent(null);
-                }
-            }
-        });
-
-        // 2. Subscribe to Timer
-        let unsubTimer = null;
         if (window.electron && window.electron.Timer) {
-            unsubTimer = window.electron.Timer.onSetTimer((value) => {
+            window.electron.Timer.onSetTimer((value) => {
                 let newTime, newEventMode, newTheme;
                 if (typeof value === "object" && value !== null) {
                     newTime = value.time;
@@ -110,18 +73,22 @@ export default function MiniPreview({ mode }) {
             });
         }
 
-        // 3. Subscribe to Presentation content & styles
         let unsubContent = null;
         let unsubStyle = null;
 
         if (window.electron && window.electron.Presentation) {
             unsubContent = window.electron.Presentation.onSetContent((value) => {
+                // null = black/blank screen — must not touch .target
                 if (value && value.target && Array.isArray(value.target)) {
                     if (!value.target.includes(mode) && !value.target.includes('all') && mode !== 'controller') {
                         setPresentationContent(null);
                         return;
                     }
                 }
+                const summary = value == null
+                    ? 'null (black)'
+                    : `${value.type || '?'} ${value.data?.title || ''}`.trim();
+                console.log(`[MiniPreview] RENDER mode=${mode} set-content ←`, summary);
                 setPresentationContent(value);
             });
             unsubStyle = window.electron.Presentation.onSetStyle((value) => {
@@ -141,8 +108,10 @@ export default function MiniPreview({ mode }) {
         }
 
         return () => {
-            if (typeof unsubCanvas === 'function') unsubCanvas();
-            if (typeof unsubTimer === 'function') unsubTimer();
+            if (window.electron && window.electron.Timer) {
+                window.electron.Timer.removeSetTimerListener();
+            }
+            // Prefer per-listener disposer — removeAllListeners would kill sibling MiniPreviews
             if (typeof unsubContent === 'function') unsubContent();
             if (typeof unsubStyle === 'function') unsubStyle();
         };
@@ -156,16 +125,15 @@ export default function MiniPreview({ mode }) {
         }
     }, [countdown]);
 
-    const isBlackout = !!canvasState?.chrome?.blackout;
-    const isLogo = !!canvasState?.chrome?.logo;
-
     const renderSceneContent = () => {
         if (!presentationContent || !presentationContent.data) return null;
-        const { content, pageText, style = {}, sceneType = "song" } = presentationContent.data;
+        const { content, pageText, style = {}, translation = "", sceneType = "song", navMode = "read_along" } = presentationContent.data;
         const text = pageText || content || "";
         const length = text.length;
+        const isSong = sceneType === "song" || navMode === "read_along";
 
-        let fontSize = length > 600 ? 'text-[11px]' : length > 300 ? 'text-[12px]' : length > 150 ? 'text-[14px]' : length > 70 ? 'text-[16px]' : 'text-[20px]';
+        // Scaled down font sizes for mini preview matching Bible preview scale
+        let fontSize = length > 600 ? 'text-[11px]' : length > 300 ? 'text-[12px]' : length > 150 ? 'text-[15px]' : length > 70 ? 'text-[18px]' : 'text-[22px]';
 
         if (style.fontSize && style.fontSize !== "auto") {
             const num = parseFloat(style.fontSize);
@@ -175,22 +143,71 @@ export default function MiniPreview({ mode }) {
             }
         }
 
-        const bgUrl = style.backgroundImage || style.backgroundUrl || canvasState?.background?.url || presentationStyle.backgroundImage;
-        const bgVid = style.backgroundVideo || canvasState?.background?.url || presentationStyle.backgroundVideo;
-        const bgColor = style.backgroundColor || presentationStyle.backgroundColor || "#0B0814";
+        const alignClass = style.textAlign === "left"
+            ? "text-left items-start"
+            : style.textAlign === "right"
+            ? "text-right items-end"
+            : "text-center items-center";
+
+        const fontClass = style.fontFamily === "serif"
+            ? "font-serif"
+            : style.fontFamily === "mono"
+            ? "font-mono"
+            : "font-sans";
+
+        const bgColor = style.backgroundColor || "#000000";
+        const textColor = style.color || "#FFFFFF";
 
         return (
-            <div className="w-full h-full relative overflow-hidden flex flex-col justify-center items-center p-3 select-none" style={{ backgroundColor: bgColor }}>
-                {bgVid && canvasState?.background?.type === "video" ? (
-                    <video src={bgVid} autoPlay loop muted playsInline className="absolute inset-0 w-full h-full object-cover opacity-60 pointer-events-none" />
-                ) : bgUrl ? (
-                    <img src={bgUrl} alt="Background" className="absolute inset-0 w-full h-full object-cover opacity-60 pointer-events-none" />
-                ) : null}
-
-                <div className="relative z-10 w-full flex flex-col items-center justify-center text-center">
-                    <p className={`${fontSize} font-bold text-white leading-relaxed drop-shadow-md`}>
-                        {text}
-                    </p>
+            <div className="w-full h-full relative overflow-hidden flex flex-col justify-center items-center px-8 py-6 transition-colors" style={{ backgroundColor: bgColor }}>
+                {style.backgroundImage && (
+                    <div
+                        className="absolute inset-0 z-0 bg-cover pointer-events-none"
+                        style={{
+                            backgroundImage: style.backgroundImage.startsWith('url(')
+                                ? style.backgroundImage
+                                : `url("${style.backgroundImage}")`,
+                            backgroundPosition: style.backgroundPosition === 'top'
+                                ? 'center top'
+                                : style.backgroundPosition === 'bottom'
+                                ? 'center bottom'
+                                : 'center center',
+                            opacity: typeof style.backgroundOpacity === 'number' ? style.backgroundOpacity : 0.85,
+                        }}
+                    />
+                )}
+                {style.backgroundImage && (
+                    <div className="absolute inset-0 z-0 bg-black/40 pointer-events-none" />
+                )}
+                <div className={`w-full max-w-[92%] flex justify-center my-auto px-2 z-10 ${alignClass}`}>
+                    <div
+                        className={`leading-relaxed whitespace-pre-wrap ${fontClass} ${fontSize}`}
+                        style={{
+                            color: textColor,
+                            fontWeight: style.fontWeight || "600",
+                            fontStyle: style.isItalic ? "italic" : "normal",
+                            textDecoration: style.isUnderline ? "underline" : "none",
+                            textAlign: style.textAlign || "center",
+                            lineHeight: style.lineHeight || "1.45",
+                            textShadow: style.textShadow === "none"
+                                ? "none"
+                                : style.textShadow === "soft"
+                                ? "0 2px 8px rgba(0,0,0,0.65)"
+                                : "0 4px 16px rgba(0,0,0,0.85), 0 1px 3px rgba(0,0,0,0.9)",
+                            maxWidth: "96%",
+                            width: "100%",
+                        }}
+                    >
+                        {renderAnimatedLyrics({
+                            text,
+                            translation: translation || "",
+                            currentWordIndex: -1,
+                            animationType: style.animation || "karaoke",
+                            style,
+                            isSingAlong: isSong,
+                            enableWordTracking: false,
+                        })}
+                    </div>
                 </div>
             </div>
         );
@@ -198,19 +215,21 @@ export default function MiniPreview({ mode }) {
 
     const renderPresentationContent = () => {
         if (!presentationContent || !presentationContent.data) return null;
-        const { currentSlide, slideIndex, totalSlides, title } = presentationContent.data;
+        const { slideUrl, slideImageUrl, url, slideIndex = 0, slideCount = 0, notes } = presentationContent.data;
+        const imgUrl = slideUrl || slideImageUrl || url;
+        if (!imgUrl) return null;
+
         return (
-            <div className="w-full h-full relative overflow-hidden flex flex-col justify-center items-center p-4 bg-[#090710] select-none">
-                {currentSlide?.imageUrl ? (
-                    <img src={currentSlide.imageUrl} alt="Slide" className="w-full h-full object-contain" />
-                ) : (
-                    <div className="flex flex-col items-center justify-center text-center space-y-2">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-purple-400">
-                            {title || "Presentation"}
-                        </span>
-                        <p className="text-sm font-bold text-white">
-                            Slide {(slideIndex != null ? slideIndex : 0) + 1} of {totalSlides || 1}
-                        </p>
+            <div className="w-full h-full relative overflow-hidden flex flex-col bg-black items-center justify-center p-2">
+                <img src={imgUrl} className="w-full h-full object-contain pointer-events-none" alt="Slide" />
+                {slideCount > 0 && (
+                    <div className="absolute bottom-2 right-2 bg-black/80 px-2 py-0.5 rounded text-[10px] font-mono text-white/70 border border-white/10">
+                        Slide {slideIndex + 1}/{slideCount}
+                    </div>
+                )}
+                {notes && mode === 'speaker' && (
+                    <div className="absolute bottom-2 left-2 max-w-[70%] bg-black/85 px-2 py-1 rounded text-[10px] text-yellow-300 border border-yellow-500/30 truncate">
+                        📝 {notes}
                     </div>
                 )}
             </div>
@@ -219,114 +238,236 @@ export default function MiniPreview({ mode }) {
 
     const renderBibleContent = () => {
         if (!presentationContent || !presentationContent.data) return null;
-        const { title, fullText, content, translation = "KJV" } = presentationContent.data;
-        const text = fullText || content || "";
-        const length = text.length;
-        const fontSize = length > 400 ? 'text-[11px]' : length > 200 ? 'text-[13px]' : length > 100 ? 'text-[15px]' : 'text-[18px]';
+        const { title, body, readAlong, rangeStart, rangeEnd, currentVerse } = presentationContent.data;
+        const safeBody = body || "";
+        const length = safeBody.length;
+        const useReadAlong = readAlong?.enabled
+            && Array.isArray(readAlong.tokens)
+            && readAlong.tokens.length > 0;
+        const activeIdx = typeof readAlong?.activeIndex === 'number' ? readAlong.activeIndex : -1;
+
+        // Scaled down font sizes for preview
+        let fontSize = length > 600 ? 'text-[11px]' : length > 300 ? 'text-[12px]' : length > 150 ? 'text-[16px]' : 'text-[22px]';
+
+        const {
+            backgroundColor = '#0B0814',
+            textColor = '#F5F2FA',
+            backgroundImage,
+            backgroundVideo,
+            bibleRefPosition = 'top-center',
+            bibleBodyPosition = 'center',
+            bibleTranslation = 'KJV',
+            bibleServiceLabel = '',
+            bibleShowOrbs = true,
+        } = presentationStyle;
+
+        let bookLabel = '';
+        let cvLabel = '';
+        if (title && typeof title === 'string') {
+            const parts = title.match(/^(.+?)\s+(\d+):(\d+)(?:-(\d+))?$/);
+            if (parts) {
+                bookLabel = parts[1].toUpperCase();
+                const ch = parts[2];
+                const rs = rangeStart != null ? rangeStart : parseInt(parts[3], 10);
+                const re = rangeEnd != null ? rangeEnd : (parts[4] ? parseInt(parts[4], 10) : rs);
+                const cur = currentVerse != null ? currentVerse : rs;
+                if (re > rs) {
+                    cvLabel = cur !== rs
+                        ? `CHAPTER ${ch} · VERSES ${rs}–${re} · ${cur}`
+                        : `CHAPTER ${ch} · VERSES ${rs}–${re}`;
+                } else {
+                    cvLabel = `CHAPTER ${ch} · VERSE ${rs}`;
+                }
+            } else {
+                bookLabel = title.toUpperCase();
+            }
+        } else if (title) {
+            bookLabel = String(title).toUpperCase();
+        }
+
+        const refPositionMap = {
+            'top-center': 'top-4 left-1/2 -translate-x-1/2',
+            'top-left': 'top-4 left-4',
+            'top-right': 'top-4 right-4',
+            'bottom-center': 'bottom-4 left-1/2 -translate-x-1/2',
+            'bottom-left': 'bottom-4 left-4',
+            'bottom-right': 'bottom-4 right-4',
+        };
+
+        const bodyAlignMap = {
+            'center': 'items-center justify-center text-center',
+            'bottom-left': 'items-end justify-start text-left pb-8 pl-8',
+            'bottom-right': 'items-end justify-end text-right pb-8 pr-8',
+        };
+
+        const refPosClass = refPositionMap[bibleRefPosition] || refPositionMap['top-center'];
+        const bodyAlign = bodyAlignMap[bibleBodyPosition] || bodyAlignMap['center'];
+        const useCustomBg = !!backgroundImage || !!backgroundVideo;
+        const bgColor = useCustomBg ? '#000000' : backgroundColor;
 
         return (
-            <div className="w-full h-full relative overflow-hidden flex flex-col justify-between p-4 bg-gradient-to-b from-[#140e2b] to-[#080512] text-white select-none">
-                {/* Header reference */}
-                <div className="flex items-center justify-between border-b border-white/10 pb-1.5 z-10">
-                    <span className="text-xs font-black text-amber-300 tracking-wide">{title || "Scripture"}</span>
-                    <span className="text-[9px] font-bold px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30 uppercase">{translation}</span>
-                </div>
+            <div className="w-full h-full relative overflow-hidden flex flex-col" style={{ backgroundColor: bgColor }}>
+                {bibleShowOrbs && !useCustomBg && (
+                    <>
+                        <div className="absolute pointer-events-none" style={{
+                            top: '-20%', left: '-20%', width: '60%', height: '60%', borderRadius: '50%',
+                            background: 'radial-gradient(circle, rgba(167,136,250,0.55) 0%, rgba(167,136,250,0.12) 55%, transparent 70%)', filter: 'blur(2px)'
+                        }} />
+                        <div className="absolute pointer-events-none" style={{
+                            bottom: '-20%', right: '-20%', width: '55%', height: '55%', borderRadius: '50%',
+                            background: 'radial-gradient(circle, rgba(103,232,249,0.45) 0%, rgba(103,232,249,0.10) 55%, transparent 70%)', filter: 'blur(2px)'
+                        }} />
+                    </>
+                )}
 
-                {/* Body Text */}
-                <div className="flex-1 flex items-center justify-center text-center my-2 overflow-hidden z-10">
-                    <p className={`${fontSize} font-bold leading-relaxed text-white drop-shadow-md line-clamp-6`}>
-                        "{text}"
-                    </p>
-                </div>
-
-                <div className="flex items-center justify-between text-[9px] text-white/40 border-t border-white/5 pt-1 z-10">
-                    <span>{mode === 'speaker' ? 'Stage Foldback' : 'Congregation Output'}</span>
-                    <span className="text-emerald-400 font-semibold">● LIVE</span>
-                </div>
-            </div>
-        );
-    };
-
-    const renderIdleScreen = () => {
-        const bgImg = canvasState?.background?.url || presentationStyle.backgroundImage;
-        const bgVid = canvasState?.background?.type === "video" ? canvasState?.background?.url : presentationStyle.backgroundVideo;
-        const isSpeaker = mode === 'speaker';
-
-        return (
-            <div className="w-full h-full relative overflow-hidden bg-gradient-to-br from-[#120e26] via-[#090714] to-[#04030a] flex flex-col justify-between p-3 select-none">
-                {bgVid ? (
-                    <video src={bgVid} autoPlay loop muted playsInline className="w-full h-full object-cover absolute inset-0 opacity-40 pointer-events-none" />
-                ) : bgImg ? (
-                    <img src={bgImg} className="w-full h-full object-cover absolute inset-0 opacity-35 pointer-events-none" alt="bg" />
+                {backgroundVideo ? (
+                    <video className="absolute inset-0 w-full h-full object-cover z-0" autoPlay loop muted playsInline>
+                        <source src={backgroundVideo} />
+                    </video>
+                ) : backgroundImage ? (
+                    <img src={backgroundImage} className="absolute inset-0 w-full h-full object-cover z-0" alt="bg" />
                 ) : null}
+                {useCustomBg && <div className="absolute inset-0 bg-black/50 z-[1]" />}
 
-                {/* Top bar indicator */}
-                <div className="flex items-center justify-between z-10">
-                    <span className="text-[9px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30 flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
-                        {isSpeaker ? "Output 2 • Speaker Foldback" : "Output 1 • Auditorium Main"}
-                    </span>
-                    <span className="text-[10px] font-mono text-white/50 font-bold">{currentTime}</span>
-                </div>
-
-                {/* Center Standby Screen */}
-                <div className="flex flex-col items-center justify-center text-center my-auto z-10 space-y-1">
-                    <div className="size-10 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center mb-1 shadow-inner">
-                        <span className="text-white font-black text-sm tracking-tighter opacity-80">OCS</span>
+                {title && (
+                    <div className={`absolute z-20 flex items-center gap-1 ${refPosClass}`}>
+                        <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '0.15em', color: '#67E8F9', textTransform: 'uppercase' }}>
+                            {bookLabel} {cvLabel && <>· <span style={{ color: '#A788FA' }}>{cvLabel}</span></>}
+                        </span>
                     </div>
-                    <span className="text-xs font-black text-white/80 tracking-wide uppercase">
-                        {isSpeaker ? "Stage Confidence Display" : "Sanctuary Projection"}
-                    </span>
-                    <p className="text-[10px] text-emerald-400/80 font-bold tracking-widest uppercase flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                        STANDBY • READY
+                )}
+
+                <div
+                    className={`w-full h-full flex ${bodyAlign} z-10 relative`}
+                    style={{
+                        overflow: 'hidden',
+                        boxSizing: 'border-box',
+                        paddingLeft: 24,
+                        paddingRight: 24,
+                        paddingTop: 28,
+                        paddingBottom: 24,
+                    }}
+                >
+                    <p
+                        className={`${fontSize}`}
+                        style={{
+                            fontFamily: '"Outfit", "Space Grotesk", sans-serif',
+                            fontWeight: useReadAlong ? 600 : 800,
+                            color: textColor,
+                            lineHeight: 1.25,
+                            maxWidth: '88%',
+                            width: '100%',
+                            boxSizing: 'border-box',
+                            padding: '0 4px',
+                            margin: '0 auto',
+                            textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                            overflowWrap: 'anywhere',
+                            wordBreak: 'break-word',
+                        }}
+                    >
+                        {useReadAlong ? (
+                            readAlong.tokens.map((tok, i) => {
+                                const isActive = i === activeIdx;
+                                const isPast = activeIdx >= 0 && i < activeIdx;
+                                return (
+                                    <span
+                                        key={`${i}-${tok}`}
+                                        className="ocs-ra-word-mini"
+                                        data-i={i}
+                                        style={{
+                                            display: 'inline',
+                                            fontWeight: 600,
+                                            color: isActive ? '#FFFFFF' : textColor,
+                                            opacity: isActive ? 1 : (isPast ? 0.42 : 0.58),
+                                            transition: 'color 180ms cubic-bezier(0.33, 1, 0.68, 1), opacity 180ms cubic-bezier(0.33, 1, 0.68, 1), text-shadow 180ms cubic-bezier(0.33, 1, 0.68, 1)',
+                                            textShadow: isActive
+                                                ? '0 0 0.5px #fff, 0 0 0.5px #fff, 0 0 8px rgba(255,255,255,0.2), 0 2px 10px rgba(0,0,0,0.5)'
+                                                : '0 2px 10px rgba(0,0,0,0.5)',
+                                        }}
+                                    >
+                                        {tok}{i < readAlong.tokens.length - 1 ? ' ' : ''}
+                                    </span>
+                                );
+                            })
+                        ) : (
+                            <span dangerouslySetInnerHTML={{ __html: safeBody }} />
+                        )}
                     </p>
                 </div>
 
-                {/* Bottom Bar Info */}
-                <div className="flex items-center justify-between text-[9px] text-white/30 border-t border-white/5 pt-1 z-10">
-                    <span>1080p 60FPS</span>
-                    <span>Direct Feed</span>
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2">
+                    <span style={{ fontFamily: '"Outfit", sans-serif', fontSize: '9px', fontWeight: 600, color: 'rgba(245,242,250,0.45)', letterSpacing: '0.15em', textTransform: 'uppercase' }}>
+                        {bibleTranslation} {bibleServiceLabel && <>· <span style={{ color: 'rgba(245,242,250,0.35)' }}>{bibleServiceLabel}</span></>}
+                    </span>
                 </div>
             </div>
         );
     };
 
     const renderEvent = () => (
-        <div className={`w-full h-full flex flex-col items-center justify-center p-3 ${bgChange ? "bg-red-600 animate-pulse" : "bg-[#18122c]"}`}>
-            <h1 className="text-white text-xs font-black uppercase mb-1 tracking-widest">Service Starts In</h1>
-            <div className={`text-3xl font-black font-mono ${bgChange ? "text-white" : "text-emerald-400"}`}>{formatTime(countdown)}</div>
+        <div className={`w-full h-full flex flex-col items-center justify-center ${bgChange ? "bg-red-600" : "bg-[#282828]"}`}>
+            <h1 className="text-white text-sm font-bold uppercase mb-1 tracking-widest">Event Starts In</h1>
+            <div className={`text-4xl font-bold ${bgChange ? "text-white" : "text-green-500"}`}>{formatTime(countdown)}</div>
         </div>
     );
 
     const renderDefault = () => (
-        <div className={`w-full h-full flex items-center justify-center transition-colors duration-300 p-3 ${bgChange ? "bg-red-600 animate-pulse" : "bg-[#18122c]"}`}>
-            <p className={`text-4xl font-black font-mono leading-none tracking-tight ${bgChange ? "text-white" : "text-emerald-400"}`}>{formatTime(countdown)}</p>
+        <div className={`w-full h-full flex items-center justify-center transition-colors duration-300 ${bgChange ? "bg-red-600 animate-pulse" : "bg-[#282828]"}`}>
+            <p className={`text-5xl font-bold leading-none tracking-tight ${bgChange ? "text-white" : "text-green-500"}`}>{formatTime(countdown)}</p>
         </div>
     );
+
+    const renderIdleScreen = () => {
+        const bgImg = presentationStyle.backgroundImage;
+        const bgVid = presentationStyle.backgroundVideo;
+        const bgColor = presentationStyle.backgroundColor || '#0B0814';
+
+        if (bgImg) {
+            return (
+                <div className="w-full h-full relative overflow-hidden bg-black flex items-center justify-center">
+                    <img
+                        src={bgImg}
+                        className="w-full h-full object-cover absolute inset-0"
+                        alt="bg"
+                    />
+                </div>
+            );
+        }
+        if (bgVid) {
+            return (
+                <div className="w-full h-full relative overflow-hidden bg-black flex items-center justify-center">
+                    <video
+                        src={bgVid}
+                        autoPlay
+                        loop
+                        muted
+                        playsInline
+                        className="w-full h-full object-cover absolute inset-0"
+                    />
+                </div>
+            );
+        }
+        return (
+            <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: bgColor }}>
+                <div className="flex flex-col items-center animate-pulse scale-75">
+                    <h1 className="text-5xl font-black text-white tracking-tighter leading-none opacity-20">OCS</h1>
+                    <p className="text-white/30 text-xs font-bold tracking-[0.5em] uppercase mt-2">Service is Starting</p>
+                </div>
+            </div>
+        );
+    };
 
     const renderTimeUp = () => (
         <div className="w-full h-full flex items-center justify-center bg-red-600 animate-pulse">
-            <h1 className="text-3xl font-black text-white uppercase tracking-tight leading-none">TIME UP</h1>
+            <h1 className="text-5xl font-black text-white uppercase tracking-tight leading-none">TIME UP</h1>
         </div>
     );
-
-    // Blackout is the true Blank Screen feature
-    if (isBlackout) {
-        return (
-            <div className="w-full h-full bg-black flex items-center justify-center select-none">
-                <span className="text-[10px] font-mono font-bold text-white/20 tracking-[0.25em] uppercase">
-                    BLACKOUT
-                </span>
-            </div>
-        );
-    }
 
     const isPresenting = presentationContent && ['bible', 'custom', 'custom_layers', 'scene', 'presentation', 'slide_index'].includes(presentationContent.type) && presentationContent.data;
     const showSplitTimer = isPresenting && countdown > 0;
 
     return (
-        <div className="w-full h-full flex flex-col bg-black overflow-hidden relative rounded-xl border border-white/10 shadow-inner">
+        <div className="w-full h-full flex flex-col bg-black overflow-hidden relative">
             <div className="w-full flex-1 flex flex-col relative overflow-hidden">
                 {isPresenting ? (
                     presentationContent.type === 'scene'
@@ -345,8 +486,8 @@ export default function MiniPreview({ mode }) {
                 )}
             </div>
             {showSplitTimer && (
-                <div className={`absolute bottom-0 left-0 w-full h-[32px] flex items-center justify-center z-20 ${bgChange ? "bg-red-600" : "bg-black/80 backdrop-blur-md border-t border-white/10"}`}>
-                    <p className={`text-sm font-black font-mono ${bgChange ? "text-white" : "text-emerald-400"}`}>{formatTime(countdown)}</p>
+                <div className={`absolute bottom-0 left-0 w-full h-[40px] flex items-center justify-center z-20 ${bgChange ? "bg-red-600" : "bg-black/60 backdrop-blur-md border-t border-white/10"}`}>
+                    <p className={`text-xl font-bold ${bgChange ? "text-white" : "text-green-500"}`}>{formatTime(countdown)}</p>
                 </div>
             )}
         </div>
