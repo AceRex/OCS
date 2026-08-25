@@ -1398,10 +1398,11 @@ io.on("connection", (socket) => {
     device.status = "connected";
     device.name = socket.handshake.auth.deviceName || "Mobile";
     device.isAdmin = adminDeviceIds.has(device.id) || adminDeviceNames.has(device.name);
+    if (!device.deviceRole) device.deviceRole = device.isAdmin ? "admin" : "speaker";
     const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-ten.vercel.app/api";
     const authUrl = (appSettings ? appSettings.get("authLoginUrl") : null) || "https://ocs-web-three.vercel.app";
-    console.log("[Remote] paired via handshake:", socket.id, "isAdmin:", device.isAdmin);
-    socket.emit("pair-result", { ok: true, deviceName: device.name, isAdmin: device.isAdmin, apiBaseUrl: apiBase, authLoginUrl: authUrl });
+    console.log("[Remote] paired via handshake:", socket.id, "isAdmin:", device.isAdmin, "role:", device.deviceRole);
+    socket.emit("pair-result", { ok: true, deviceName: device.name, isAdmin: device.isAdmin, deviceRole: device.deviceRole, apiBaseUrl: apiBase, authLoginUrl: authUrl });
     notifyController("mobile-connected", device);
     broadcastDevicesUpdated();
   } else {
@@ -1469,9 +1470,10 @@ io.on("connection", (socket) => {
     device.status = "connected";
     device.name = payload.deviceName || device.name || "Mobile";
     device.isAdmin = adminDeviceIds.has(device.id) || adminDeviceNames.has(device.name);
+    if (!device.deviceRole) device.deviceRole = device.isAdmin ? "admin" : "speaker";
     const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-ten.vercel.app/api";
     const authUrl = (appSettings ? appSettings.get("authLoginUrl") : null) || "https://ocs-web-three.vercel.app";
-    socket.emit("pair-result", { ok: true, deviceName: device.name, isAdmin: device.isAdmin, apiBaseUrl: apiBase, authLoginUrl: authUrl });
+    socket.emit("pair-result", { ok: true, deviceName: device.name, isAdmin: device.isAdmin, deviceRole: device.deviceRole, apiBaseUrl: apiBase, authLoginUrl: authUrl });
     notifyController("mobile-connected", device);
     broadcastDevicesUpdated();
   });
@@ -1497,18 +1499,18 @@ io.on("connection", (socket) => {
       return;
     }
 
-    const isDeviceAdmin =
-      adminDeviceIds.has(device.id) ||
-      adminDeviceNames.has(device.name) ||
-      !!device.isAdmin;
-    if (!isDeviceAdmin) {
+    const deviceRole = device.deviceRole || (device.isAdmin ? "admin" : "speaker");
+    // Admin and StageManager can use controller/mic voice; Speaker is locked to peers only
+    const canUseControllerMode = deviceRole === "admin" || deviceRole === "stageManager";
+    const roleForPayload = payload.role || "controller";
+    if ((roleForPayload === "controller" || roleForPayload === "mic") && !canUseControllerMode) {
       console.warn(
-        `[Remote Voice] Blocked non-admin device ${device.name} (${socket.id}) from controller/mic mode`,
+        `[Remote Voice] Blocked ${deviceRole} device ${device.name} (${socket.id}) from controller/mic mode`,
       );
       ack({
         ok: false,
         error:
-          "Unauthorized: Controller Voice and Wireless Mic modes are strictly for Admin devices.",
+          "Unauthorized: Controller Voice and Wireless Mic modes are for Admin and Stage Manager devices only.",
       });
       return;
     }
@@ -1984,6 +1986,12 @@ server.listen(PORT, "0.0.0.0", () => {
   });
 });
 
+// Keep MJPEG connections alive indefinitely — Node.js defaults (5s keepAliveTimeout)
+// would drop vMix / OBS connections mid-stream causing a required reload.
+server.keepAliveTimeout = 0;   // Never close idle keep-alive connections
+server.headersTimeout = 0;     // Never timeout waiting for headers on persistent streams
+server.timeout = 0;            // Disable socket-level idle timeout for streaming clients
+
 ipcMain.handle("get-server-info", async () => {
   // Refresh IP in case it changed
   serverIp = ip.address();
@@ -2021,17 +2029,21 @@ ipcMain.handle("pairing-rotate", async () => {
       paired: !!d.paired,
       status: d.paired ? "connected" : "pending",
       isAdmin: adminDeviceIds.has(d.id) || adminDeviceNames.has(d.name) || !!d.isAdmin,
+      deviceRole: d.deviceRole || (adminDeviceIds.has(d.id) ? "admin" : "speaker"),
       isVoiceActive: !!d.isVoiceActive,
       connectedAt: d.connectedAt,
     })),
   };
 });
 
-ipcMain.handle("mobile-device-set-admin", async (_event, { deviceId, isAdmin }) => {
+ipcMain.handle("mobile-device-set-role", async (_event, { deviceId, role }) => {
+  const VALID_ROLES = ["admin", "stageManager", "speaker"];
+  if (!VALID_ROLES.includes(role)) return { ok: false, error: "Invalid role" };
   const dev = connectedDevices.find((d) => d.id === deviceId);
   if (dev) {
-    dev.isAdmin = !!isAdmin;
-    if (isAdmin) {
+    dev.deviceRole = role;
+    dev.isAdmin = role === "admin";
+    if (dev.isAdmin) {
       adminDeviceIds.add(dev.id);
       if (dev.name) adminDeviceNames.add(dev.name);
     } else {
@@ -2039,11 +2051,17 @@ ipcMain.handle("mobile-device-set-admin", async (_event, { deviceId, isAdmin }) 
       if (dev.name) adminDeviceNames.delete(dev.name);
     }
     const sock = io.sockets.sockets.get(deviceId);
-    if (sock) sock.emit("device-role-updated", { isAdmin: dev.isAdmin });
+    if (sock) sock.emit("device-role-updated", { isAdmin: dev.isAdmin, deviceRole: dev.deviceRole });
     broadcastDevicesUpdated();
-    return { ok: true, isAdmin: dev.isAdmin };
+    return { ok: true, deviceRole: dev.deviceRole, isAdmin: dev.isAdmin };
   }
   return { ok: false, error: "Device not found" };
+});
+
+// Legacy shim so old callers still work
+ipcMain.handle("mobile-device-set-admin", async (_event, { deviceId, isAdmin }) => {
+  const role = isAdmin ? "admin" : "speaker";
+  return ipcMain.listeners("mobile-device-set-role")?.[0]?.({ deviceId, role });
 });
 
 ipcMain.handle("mobile-device-remove", async (_event, deviceId) => {

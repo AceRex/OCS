@@ -8,7 +8,7 @@ import {
     PiCaretDownBold, PiTextAlignLeft, PiTextAlignCenter, PiTextAlignRight,
     PiEye, PiPlay, PiPause, PiSkipBack, PiSkipForward, PiStop, PiSpeakerHigh, PiSpeakerSlash, PiCornersOut,
     PiStack, PiMusicNotes, PiRepeat, PiFileText, PiDotsThreeVertical,
-    PiPresentation, PiSlideshow, PiDotsSixVertical, PiSlidersHorizontal, PiArrowsDownUp, PiVideo,
+    PiPresentation, PiSlideshow, PiDotsSixVertical, PiSlidersHorizontal, PiArrowsDownUp, PiVideo, PiArrowClockwise,
 } from "react-icons/pi";
 import SceneModal from "./SceneModal";
 import { PresentationImportProgressModal, PresentationFontAdvisoryModal } from "./PresentationImportModal";
@@ -1350,6 +1350,40 @@ export default function PresentationController() {
         window.electron.Presentation.setContent(payload);
     };
 
+    const handleUpdatePresentation = () => {
+        if (!window.electron?.Presentation) return;
+        const targetArr = [];
+        if (targets.general) targetArr.push('general');
+        if (targets.speaker) targetArr.push('speaker');
+        const finalTargets = targetArr.length > 0 ? targetArr : ['general', 'speaker'];
+
+        const payload = {
+            type: 'custom_layers',
+            data: {
+                background: {
+                    ...background,
+                    muted: videoMuted || videoVolume === 0,
+                    volume: videoVolume,
+                    aspectRatio: videoAspectRatio,
+                },
+                layers: layers.map(l => ({
+                    ...l,
+                    style: {
+                        ...l.style,
+                        muted: videoMuted || videoVolume === 0,
+                        volume: videoVolume,
+                        aspectRatio: videoAspectRatio,
+                    }
+                })),
+                volume: videoVolume,
+                muted: videoMuted || videoVolume === 0,
+                aspectRatio: videoAspectRatio,
+            },
+            target: finalTargets,
+        };
+        window.electron.Presentation.setContent(payload);
+    };
+
     const handleStopCustomPresentation = () => {
         setIsPresentingCustom(false);
         if (window.electron?.Presentation?.setContent) {
@@ -1941,7 +1975,8 @@ export default function PresentationController() {
                         </div>
                     )}
 
-                    <div className="h-14 border-t border-white/5 flex items-center justify-between px-6 bg-[#1a1a1a]">
+                    {/* Action Bar (Clear Slide, Update Display, Present / Stop) — immediately below display interface */}
+                    <div className="h-13 border-y border-white/10 flex items-center justify-between px-4 py-2 bg-[#18181c] shrink-0">
                         <div className="flex items-center gap-3">
                             {activeTab === 'presentation' && selectedPresentation ? (
                                 <>
@@ -2017,61 +2052,358 @@ export default function PresentationController() {
                                 </>
                             ) : (
                                 <>
-                                    <button onClick={clearBg} className="text-red-400/80 hover:text-red-400 text-xs flex items-center gap-2 transition-colors"><PiTrash /> Clear Slide</button>
-                                    <span className="text-xs text-white/30 border-l border-white/10 pl-4">{layers.length} Layers Active</span>
+                                    <button onClick={clearBg} className="text-red-400/80 hover:text-red-400 text-xs font-bold flex items-center gap-1.5 bg-red-500/10 hover:bg-red-500/20 px-2.5 py-1.5 rounded-lg transition-colors">
+                                        <PiTrash size={13} /> Clear Slide
+                                    </button>
+                                    <span className="text-xs text-white/40 border-l border-white/10 pl-3">
+                                        {layers.length + (background.url ? 1 : 0)} Layers Active
+                                    </span>
                                 </>
                             )}
                         </div>
-                        <button
-                            onClick={() => {
-                                if (activeTab === 'presentation') {
-                                    const deck = selectedPresentation || presentations[0];
-                                    if (deck) {
-                                        if (isPresentingSlide && activeDeckId === deck.id) {
-                                            handleStopSlidePresentation();
-                                        } else {
-                                            handlePresentSlide(deck, activeSlideIndex || 0);
+
+                        {/* Action Buttons Right Side */}
+                        <div className="flex items-center gap-2">
+                            {activeTab === 'presentation' ? (
+                                <button
+                                    onClick={() => {
+                                        const deck = selectedPresentation || presentations[0];
+                                        if (deck) {
+                                            if (isPresentingSlide && activeDeckId === deck.id) {
+                                                handleStopSlidePresentation();
+                                            } else {
+                                                handlePresentSlide(deck, activeSlideIndex || 0);
+                                            }
                                         }
-                                    }
-                                } else if (activeTab === 'scene') {
-                                    if (isPresentingScene) {
-                                        handleStopScene();
-                                    } else if (previewScene) {
-                                        activateScene(previewScene.scene, previewScene.pageIndex, previewScene.sequenceIndex || 0);
-                                    } else if (scenes.length > 0) {
-                                        const sc = scenes.find(s => s.id === activeSceneId) || scenes[0];
-                                        if (sc) activateScene(sc, activePageIndex || 0, activeSequenceIndex || 0);
-                                    }
-                                } else {
-                                    if (isPresentingCustom) {
-                                        handleStopCustomPresentation();
-                                    } else {
-                                        handlePresent();
-                                    }
-                                }
-                            }}
-                            className={`${
-                                activeTab === 'presentation'
-                                    ? (isPresentingSlide
-                                        ? 'bg-red hover:bg-red/90'
-                                        : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500')
-                                    : activeTab === 'scene'
-                                    ? (isPresentingScene
-                                        ? 'bg-red hover:bg-red/90'
-                                        : 'bg-gradient-to-r from-orange-500 to-purple-600 hover:from-orange-400 hover:to-purple-500')
-                                    : (isPresentingCustom
-                                        ? 'bg-red hover:bg-red/90'
-                                        : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500')
-                            } text-white px-8 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-lg active:scale-95`}
-                        >
-                            <PiBroadcast size={16} />
-                            {activeTab === 'presentation'
-                                ? (isPresentingSlide ? 'Stop Slides' : 'Present Slide Now')
-                                : activeTab === 'scene'
-                                ? (isPresentingScene ? 'Stop Scene' : (previewScene?.scene?.sceneType === 'song' ? 'Present Song Now' : 'Present Scene Now'))
-                                : (isPresentingCustom ? 'Stop Presenting' : 'Present Now')}
-                        </button>
+                                    }}
+                                    className={`${
+                                        isPresentingSlide
+                                            ? 'bg-red-600 hover:bg-red-500'
+                                            : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500'
+                                    } text-white px-6 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-lg active:scale-95`}
+                                >
+                                    <PiBroadcast size={15} />
+                                    {isPresentingSlide ? 'Stop Slides' : 'Present Slide Now'}
+                                </button>
+                            ) : activeTab === 'scene' ? (
+                                <button
+                                    onClick={() => {
+                                        if (isPresentingScene) {
+                                            handleStopScene();
+                                        } else if (previewScene) {
+                                            activateScene(previewScene.scene, previewScene.pageIndex, previewScene.sequenceIndex || 0);
+                                        } else if (scenes.length > 0) {
+                                            const sc = scenes.find(s => s.id === activeSceneId) || scenes[0];
+                                            if (sc) activateScene(sc, activePageIndex || 0, activeSequenceIndex || 0);
+                                        }
+                                    }}
+                                    className={`${
+                                        isPresentingScene
+                                            ? 'bg-red-600 hover:bg-red-500'
+                                            : 'bg-gradient-to-r from-orange-500 to-purple-600 hover:from-orange-400 hover:to-purple-500'
+                                    } text-white px-6 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-lg active:scale-95`}
+                                >
+                                    <PiBroadcast size={15} />
+                                    {isPresentingScene ? 'Stop Scene' : (previewScene?.scene?.sceneType === 'song' ? 'Present Song Now' : 'Present Scene Now')}
+                                </button>
+                            ) : (
+                                <>
+                                    {isPresentingCustom ? (
+                                        <>
+                                            <button
+                                                type="button"
+                                                onClick={handleUpdatePresentation}
+                                                className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-md active:scale-95 border border-emerald-400/30"
+                                                title="Push current canvas changes directly to live display without stopping"
+                                            >
+                                                <PiArrowClockwise size={15} />
+                                                Update Display
+                                            </button>
+                                            <button
+                                                type="button"
+                                                onClick={handleStopCustomPresentation}
+                                                className="bg-red-600 hover:bg-red-500 text-white px-5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-md active:scale-95"
+                                            >
+                                                <PiBroadcast size={15} />
+                                                Stop Presenting
+                                            </button>
+                                        </>
+                                    ) : (
+                                        <button
+                                            type="button"
+                                            onClick={handlePresent}
+                                            className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-6 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-lg active:scale-95"
+                                        >
+                                            <PiBroadcast size={16} />
+                                            Present Now
+                                        </button>
+                                    )}
+                                </>
+                            )}
+                        </div>
                     </div>
+
+                    {/* Controls & Edit Settings Area (Compact, sleek toolbar below action bar) */}
+                    {selectedLayerId === 'bg' && background.url ? (
+                        /* Background Asset Setting Toolbar */
+                        <div className="shrink-0 bg-[#121215] border-t border-white/10 px-4 py-2.5 flex flex-col gap-2">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-8 h-5 rounded overflow-hidden bg-black shrink-0 border border-white/15">
+                                        {background.type === 'video' ? (
+                                            <video src={background.url} className="w-full h-full object-cover" muted />
+                                        ) : (
+                                            <img src={background.url} className="w-full h-full object-cover" alt="bg" />
+                                        )}
+                                    </div>
+                                    <span className="text-[10px] uppercase font-bold tracking-widest text-white/80 flex items-center gap-1">
+                                        <PiSlidersHorizontal size={12} /> Background
+                                    </span>
+                                    <span className="text-[8px] font-bold px-1 py-0.2 rounded bg-white/15 text-white/70 uppercase">
+                                        {background.type}
+                                    </span>
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                    <button
+                                        type="button"
+                                        onClick={() => setBackground(prev => ({ ...prev, width: 100, height: 100, x: 50, y: 50 }))}
+                                        className="px-2 py-0.5 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] font-semibold transition-all border border-white/10"
+                                    >
+                                        Fit (100%)
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => setBackground(prev => ({ ...prev, x: 50, y: 50 }))}
+                                        className="px-2 py-0.5 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] font-semibold transition-all border border-white/10"
+                                    >
+                                        Center
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={clearBg}
+                                        className="px-2 py-0.5 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded text-[10px] font-semibold transition-colors flex items-center gap-1"
+                                    >
+                                        <PiTrash size={11} /> Clear
+                                    </button>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-4 bg-black/30 px-3 py-1.5 rounded-lg border border-white/5">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-white/50 w-16 shrink-0">Width: <b className="text-white font-mono">{Math.round(background.width || 100)}%</b></span>
+                                    <input
+                                        type="range"
+                                        min="20"
+                                        max="200"
+                                        step="2"
+                                        value={background.width || 100}
+                                        onChange={(e) => setBackground(prev => ({ ...prev, width: parseInt(e.target.value, 10) }))}
+                                        className="flex-1 accent-white h-1 bg-white/20 rounded cursor-pointer"
+                                    />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-white/50 w-16 shrink-0">Height: <b className="text-white font-mono">{Math.round(background.height || 100)}%</b></span>
+                                    <input
+                                        type="range"
+                                        min="20"
+                                        max="200"
+                                        step="2"
+                                        value={background.height || 100}
+                                        onChange={(e) => setBackground(prev => ({ ...prev, height: parseInt(e.target.value, 10) }))}
+                                        className="flex-1 accent-white h-1 bg-white/20 rounded cursor-pointer"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    ) : selectedLayer && selectedLayer.type === 'image' ? (
+                        /* Adjust Selected Image Layer Toolbar */
+                        <div className="shrink-0 bg-[#121215] border-t border-white/10 px-4 py-2.5 flex flex-col gap-2">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] uppercase font-bold tracking-widest text-purple-400 flex items-center gap-1">
+                                        <PiSlidersHorizontal size={12} /> Image Layer
+                                    </span>
+                                    <div className="flex items-center gap-1 ml-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => updateLayer(selectedLayer.id, { style: { ...selectedLayer.style, width: 100 }, x: 50, y: 50 })}
+                                            className="px-2 py-0.5 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] font-semibold transition-all border border-white/10"
+                                        >
+                                            Fit (100%)
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => updateLayer(selectedLayer.id, { x: 50, y: 50 })}
+                                            className="px-2 py-0.5 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] font-semibold transition-all border border-white/10"
+                                        >
+                                            Center
+                                        </button>
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => removeLayer(selectedLayer.id)}
+                                    className="px-2 py-0.5 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded text-[10px] font-semibold transition-colors flex items-center gap-1"
+                                >
+                                    <PiTrash size={11} /> Remove
+                                </button>
+                            </div>
+                            <div className="grid grid-cols-3 gap-3 bg-black/30 px-3 py-1.5 rounded-lg border border-white/5">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-white/50 w-14 shrink-0">Scale: <b className="text-purple-300 font-mono">{selectedLayer.style?.width || 30}%</b></span>
+                                    <input
+                                        type="range"
+                                        min="5"
+                                        max="100"
+                                        step="1"
+                                        value={selectedLayer.style?.width || 30}
+                                        onChange={(e) => updateLayer(selectedLayer.id, { style: { ...selectedLayer.style, width: parseInt(e.target.value, 10) } })}
+                                        className="flex-1 accent-purple-500 h-1 bg-white/20 rounded cursor-pointer"
+                                    />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-white/50 w-16 shrink-0">Opacity: <b className="text-purple-300 font-mono">{Math.round((selectedLayer.style?.opacity ?? 1) * 100)}%</b></span>
+                                    <input
+                                        type="range"
+                                        min="0.05"
+                                        max="1"
+                                        step="0.05"
+                                        value={selectedLayer.style?.opacity ?? 1}
+                                        onChange={(e) => updateLayer(selectedLayer.id, { style: { ...selectedLayer.style, opacity: parseFloat(e.target.value) } })}
+                                        className="flex-1 accent-purple-500 h-1 bg-white/20 rounded cursor-pointer"
+                                    />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-white/50 w-14 shrink-0">Radius: <b className="text-purple-300 font-mono">{selectedLayer.style?.borderRadius ?? 8}px</b></span>
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="48"
+                                        step="2"
+                                        value={selectedLayer.style?.borderRadius ?? 8}
+                                        onChange={(e) => updateLayer(selectedLayer.id, { style: { ...selectedLayer.style, borderRadius: parseInt(e.target.value, 10) } })}
+                                        className="flex-1 accent-purple-500 h-1 bg-white/20 rounded cursor-pointer"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    ) : selectedLayer && selectedLayer.type === 'video' ? (
+                        /* Adjust Selected Video Layer Toolbar */
+                        <div className="shrink-0 bg-[#121215] border-t border-white/10 px-4 py-2.5 flex flex-col gap-2">
+                            <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] uppercase font-bold tracking-widest text-cyan-400 flex items-center gap-1">
+                                        <PiSlidersHorizontal size={12} /> Video Layer
+                                    </span>
+                                    <div className="flex items-center gap-1 ml-2">
+                                        <button
+                                            type="button"
+                                            onClick={() => updateLayer(selectedLayer.id, { style: { ...selectedLayer.style, width: 100 }, x: 50, y: 50 })}
+                                            className="px-2 py-0.5 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] font-semibold transition-all border border-white/10"
+                                        >
+                                            Fit (100%)
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => updateLayer(selectedLayer.id, { x: 50, y: 50 })}
+                                            className="px-2 py-0.5 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] font-semibold transition-all border border-white/10"
+                                        >
+                                            Center
+                                        </button>
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => removeLayer(selectedLayer.id)}
+                                    className="px-2 py-0.5 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded text-[10px] font-semibold transition-colors flex items-center gap-1"
+                                >
+                                    <PiTrash size={11} /> Remove
+                                </button>
+                            </div>
+                            <div className="grid grid-cols-3 gap-3 bg-black/30 px-3 py-1.5 rounded-lg border border-white/5">
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-white/50 w-14 shrink-0">Scale: <b className="text-cyan-300 font-mono">{selectedLayer.style?.width || 30}%</b></span>
+                                    <input
+                                        type="range"
+                                        min="5"
+                                        max="100"
+                                        step="1"
+                                        value={selectedLayer.style?.width || 30}
+                                        onChange={(e) => updateLayer(selectedLayer.id, { style: { ...selectedLayer.style, width: parseInt(e.target.value, 10) } })}
+                                        className="flex-1 accent-cyan-500 h-1 bg-white/20 rounded cursor-pointer"
+                                    />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-white/50 w-16 shrink-0">Opacity: <b className="text-cyan-300 font-mono">{Math.round((selectedLayer.style?.opacity ?? 1) * 100)}%</b></span>
+                                    <input
+                                        type="range"
+                                        min="0.05"
+                                        max="1"
+                                        step="0.05"
+                                        value={selectedLayer.style?.opacity ?? 1}
+                                        onChange={(e) => updateLayer(selectedLayer.id, { style: { ...selectedLayer.style, opacity: parseFloat(e.target.value) } })}
+                                        className="flex-1 accent-cyan-500 h-1 bg-white/20 rounded cursor-pointer"
+                                    />
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span className="text-[10px] text-white/50 w-14 shrink-0">Radius: <b className="text-cyan-300 font-mono">{selectedLayer.style?.borderRadius ?? 8}px</b></span>
+                                    <input
+                                        type="range"
+                                        min="0"
+                                        max="48"
+                                        step="2"
+                                        value={selectedLayer.style?.borderRadius ?? 8}
+                                        onChange={(e) => updateLayer(selectedLayer.id, { style: { ...selectedLayer.style, borderRadius: parseInt(e.target.value, 10) } })}
+                                        className="flex-1 accent-cyan-500 h-1 bg-white/20 rounded cursor-pointer"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    ) : selectedLayer && selectedLayer.type === 'text' ? (
+                        /* Edit Selected Text Layer Toolbar */
+                        <div className="shrink-0 bg-[#121215] border-t border-white/10 px-4 py-2.5 flex flex-col gap-2">
+                            <div className="flex items-center justify-between">
+                                <span className="text-[10px] uppercase font-bold tracking-widest text-blue-400 flex items-center gap-1">
+                                    <PiTextAa size={12} /> Edit Text
+                                </span>
+                                <div className="flex items-center gap-3">
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-[10px] text-white/50">Size: <b className="text-white font-mono">{selectedLayer.style.fontSize}cqw</b></span>
+                                        <input
+                                            type="range"
+                                            min="1"
+                                            max="20"
+                                            step="0.5"
+                                            value={selectedLayer.style.fontSize || 5}
+                                            onChange={(e) => updateLayer(selectedLayer.id, { style: { ...selectedLayer.style, fontSize: parseFloat(e.target.value) } })}
+                                            className="w-24 accent-blue-500 h-1 bg-white/20 rounded cursor-pointer"
+                                        />
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => removeLayer(selectedLayer.id)}
+                                        className="px-2 py-0.5 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded text-[10px] font-semibold transition-colors flex items-center gap-1"
+                                    >
+                                        <PiTrash size={11} /> Remove
+                                    </button>
+                                </div>
+                            </div>
+                            <input
+                                type="text"
+                                value={selectedLayer.content}
+                                onChange={(e) => updateLayer(selectedLayer.id, { content: e.target.value })}
+                                className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-colors font-sans"
+                                placeholder="Enter text..."
+                            />
+                        </div>
+                    ) : (
+                        /* Empty State / Sleek subtle status line */
+                        <div className="shrink-0 bg-[#121215] border-t border-white/10 px-4 py-2 flex items-center justify-center text-white/30 text-[11px] select-none">
+                            <div className="flex items-center gap-1.5">
+                                <PiSlidersHorizontal size={13} className="text-white/20" />
+                                <span>Select an element or background to adjust settings</span>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
                 {/* RIGHT: 4 TABS (MEDIA, TEXT, SCENE, SLIDES) + LAYERS SECTION BELOW */}
@@ -2107,101 +2439,6 @@ export default function PresentationController() {
 
                         {activeTab === 'media' && (
                             <div className="flex flex-col gap-3">
-                                {/* TOP OF INTERFACE: Background Asset Setting Card */}
-                                <div className={`p-3 rounded-xl border transition-all ${background.url ? 'bg-white/5 border-white/20 shadow-md' : 'bg-white/[0.02] border-white/10'}`}>
-                                    <div className="flex items-center justify-between mb-2">
-                                        <div className="flex items-center gap-2">
-                                            <span className="text-[10px] uppercase font-bold tracking-widest text-white flex items-center gap-1.5">
-                                                <PiSlidersHorizontal size={13} className="text-white" /> Background Asset Setting
-                                            </span>
-                                            {background.url && (
-                                                <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-white/20 text-white uppercase tracking-wider">
-                                                    {background.type === 'video' ? 'Video' : 'Image'}
-                                                </span>
-                                            )}
-                                        </div>
-                                        {background.url && (
-                                            <button
-                                                type="button"
-                                                onClick={clearBg}
-                                                className="text-[10px] text-red-400 hover:text-red-300 flex items-center gap-1 font-bold px-2 py-0.5 rounded hover:bg-red-500/10 transition-colors"
-                                                title="Remove background"
-                                            >
-                                                <PiTrash size={12} /> Clear
-                                            </button>
-                                        )}
-                                    </div>
-
-                                    {background.url ? (
-                                        <div className="flex flex-col gap-2.5">
-                                            {/* Preview & Actions */}
-                                            <div className="flex items-center gap-3 bg-black/40 p-2 rounded-lg border border-white/10">
-                                                <div className="w-16 h-10 rounded overflow-hidden bg-black shrink-0 border border-white/20">
-                                                    {background.type === 'video' ? (
-                                                        <video src={background.url} className="w-full h-full object-cover" muted />
-                                                    ) : (
-                                                        <img src={background.url} className="w-full h-full object-cover" alt="bg-thumb" />
-                                                    )}
-                                                </div>
-                                                <div className="flex items-center gap-1.5 flex-1 justify-end">
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setBackground(prev => ({ ...prev, width: 100, height: 100, x: 50, y: 50 }))}
-                                                        className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] font-bold transition-all border border-white/10"
-                                                    >
-                                                        Fit (100%)
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        onClick={() => setBackground(prev => ({ ...prev, x: 50, y: 50 }))}
-                                                        className="px-2.5 py-1 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] font-bold transition-all border border-white/10"
-                                                    >
-                                                        Center
-                                                    </button>
-                                                </div>
-                                            </div>
-
-                                            {/* Width Scale */}
-                                            <div className="flex flex-col gap-1">
-                                                <div className="flex justify-between items-center text-xs">
-                                                    <span className="text-white/60">Width Scale</span>
-                                                    <span className="font-mono text-white font-bold">{Math.round(background.width || 100)}%</span>
-                                                </div>
-                                                <input
-                                                    type="range"
-                                                    min="20"
-                                                    max="200"
-                                                    step="2"
-                                                    value={background.width || 100}
-                                                    onChange={(e) => setBackground(prev => ({ ...prev, width: parseInt(e.target.value, 10) }))}
-                                                    className="w-full accent-white cursor-pointer"
-                                                />
-                                            </div>
-
-                                            {/* Height Scale */}
-                                            <div className="flex flex-col gap-1">
-                                                <div className="flex justify-between items-center text-xs">
-                                                    <span className="text-white/60">Height Scale</span>
-                                                    <span className="font-mono text-white font-bold">{Math.round(background.height || 100)}%</span>
-                                                </div>
-                                                <input
-                                                    type="range"
-                                                    min="20"
-                                                    max="200"
-                                                    step="2"
-                                                    value={background.height || 100}
-                                                    onChange={(e) => setBackground(prev => ({ ...prev, height: parseInt(e.target.value, 10) }))}
-                                                    className="w-full accent-white cursor-pointer"
-                                                />
-                                            </div>
-                                        </div>
-                                    ) : (
-                                        <p className="text-[11px] text-white/40 leading-tight">
-                                            No background set. Select any asset below and click <span className="text-white font-semibold">"Set Background"</span> or drag onto canvas.
-                                        </p>
-                                    )}
-                                </div>
-
                                 <div className="flex justify-between items-center mb-0.5">
                                     <div className="flex items-center gap-2">
                                         <span className="text-[10px] uppercase text-white/40 font-bold tracking-widest">
@@ -2267,7 +2504,6 @@ export default function PresentationController() {
                                         const isVideo = isVideoFile(fileUrl);
                                         const isAudio = isAudioFile(fileUrl);
                                         const isSelected = selectedAssetUrls.includes(fileUrl);
-                                        const fileName = decodeURIComponent((fileUrl || '').split('/').pop() || 'Audio');
                                         return (
                                             <div
                                                 key={`${fileUrl}-${index}`}
@@ -2350,93 +2586,6 @@ export default function PresentationController() {
                                         <PiImage size={24} />
                                         <span>No imported assets yet</span>
                                         <button onClick={handleImport} className="text-blue-400 hover:underline text-[11px] font-bold">Import Media</button>
-                                    </div>
-                                )}
-
-                                {/* Image Layer Adjustments */}
-                                {selectedLayer && selectedLayer.type === 'image' && (
-                                    <div className="flex flex-col gap-3.5 border-t border-white/10 pt-3 mt-1">
-                                        <div className="flex items-center justify-between">
-                                            <span className="text-[10px] uppercase text-purple-400 font-bold tracking-widest flex items-center gap-1.5">
-                                                <PiSlidersHorizontal size={13} /> Adjust Selected Image Layer
-                                            </span>
-                                            <button
-                                                type="button"
-                                                onClick={() => removeLayer(selectedLayer.id)}
-                                                className="text-[10px] text-red-400 hover:text-red-300 flex items-center gap-1 font-bold"
-                                            >
-                                                <PiTrash size={12} /> Remove
-                                            </button>
-                                        </div>
-
-                                        {/* Width / Scale Slider */}
-                                        <div className="flex flex-col gap-1">
-                                            <div className="flex justify-between items-center text-xs">
-                                                <span className="text-white/60">Width / Scale</span>
-                                                <span className="font-mono text-purple-300 font-bold">{selectedLayer.style?.width || 30}%</span>
-                                            </div>
-                                            <input
-                                                type="range"
-                                                min="5"
-                                                max="100"
-                                                step="1"
-                                                value={selectedLayer.style?.width || 30}
-                                                onChange={(e) => updateLayer(selectedLayer.id, { style: { ...selectedLayer.style, width: parseInt(e.target.value, 10) } })}
-                                                className="w-full accent-purple-500"
-                                            />
-                                        </div>
-
-                                        {/* Opacity Slider */}
-                                        <div className="flex flex-col gap-1">
-                                            <div className="flex justify-between items-center text-xs">
-                                                <span className="text-white/60">Opacity</span>
-                                                <span className="font-mono text-purple-300 font-bold">{Math.round((selectedLayer.style?.opacity ?? 1) * 100)}%</span>
-                                            </div>
-                                            <input
-                                                type="range"
-                                                min="0.05"
-                                                max="1"
-                                                step="0.05"
-                                                value={selectedLayer.style?.opacity ?? 1}
-                                                onChange={(e) => updateLayer(selectedLayer.id, { style: { ...selectedLayer.style, opacity: parseFloat(e.target.value) } })}
-                                                className="w-full accent-purple-500"
-                                            />
-                                        </div>
-
-                                        {/* Rounded Corners */}
-                                        <div className="flex flex-col gap-1">
-                                            <div className="flex justify-between items-center text-xs">
-                                                <span className="text-white/60">Corner Radius</span>
-                                                <span className="font-mono text-purple-300 font-bold">{selectedLayer.style?.borderRadius ?? 8}px</span>
-                                            </div>
-                                            <input
-                                                type="range"
-                                                min="0"
-                                                max="48"
-                                                step="2"
-                                                value={selectedLayer.style?.borderRadius ?? 8}
-                                                onChange={(e) => updateLayer(selectedLayer.id, { style: { ...selectedLayer.style, borderRadius: parseInt(e.target.value, 10) } })}
-                                                className="w-full accent-purple-500"
-                                            />
-                                        </div>
-
-                                        {/* Drop Shadow & Quick Alignment */}
-                                        <div className="flex items-center justify-between pt-1">
-                                            <button
-                                                type="button"
-                                                onClick={() => updateLayer(selectedLayer.id, { style: { ...selectedLayer.style, width: 100 }, x: 50, y: 50 })}
-                                                className="px-2.5 py-1 bg-white/5 hover:bg-white/10 rounded text-[10px] font-bold text-white/70 hover:text-white transition-colors"
-                                            >
-                                                Fit (100%)
-                                            </button>
-                                            <button
-                                                type="button"
-                                                onClick={() => updateLayer(selectedLayer.id, { x: 50, y: 50 })}
-                                                className="px-2.5 py-1 bg-white/5 hover:bg-white/10 rounded text-[10px] font-bold text-white/70 hover:text-white transition-colors"
-                                            >
-                                                Center on Canvas
-                                            </button>
-                                        </div>
                                     </div>
                                 )}
                             </div>

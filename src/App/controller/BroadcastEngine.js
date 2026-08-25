@@ -2819,7 +2819,7 @@ export default function BroadcastEngine() {
         const prefix = isSecondary
           ? res.role === "mic"
             ? `[Wireless Mic - ${res.deviceName || "Mobile"}] `
-            : "[Remote PTT] "
+            : `[${res.deviceName || "Remote"}] `
           : pass === "B"
             ? "[B] "
             : "";

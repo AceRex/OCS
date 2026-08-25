@@ -13,6 +13,9 @@ import {
   PiPower,
   PiTrash,
   PiUserMinus,
+  PiUsers,
+  PiStar,
+  PiPerson,
 } from "react-icons/pi";
 import DisabledContainer from "../components/DisabledContainer";
 
@@ -73,13 +76,12 @@ function MobileConnectPanel() {
     setEditingDeviceId(null);
   };
 
-  const toggleAdmin = async (device) => {
+  const setRole = async (device, role) => {
     setActiveMenuDeviceId(null);
-    if (window.electron?.Network?.setDeviceAdmin) {
-      const nextAdminState = !device.isAdmin;
-      await window.electron.Network.setDeviceAdmin(device.id, nextAdminState);
+    if (window.electron?.Network?.setDeviceRole) {
+      await window.electron.Network.setDeviceRole(device.id, role);
       setConnectedDevices((prev) =>
-        prev.map((d) => (d.id === device.id ? { ...d, isAdmin: nextAdminState } : d)),
+        prev.map((d) => (d.id === device.id ? { ...d, deviceRole: role, isAdmin: role === "admin" } : d)),
       );
     }
   };
@@ -323,11 +325,23 @@ function MobileConnectPanel() {
                               >
                                 {device.name || `Device ${idx + 1}`}
                               </span>
-                              {device.isAdmin && (
-                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-purple-500/20 border border-purple-500/40 text-purple-300 shadow-sm">
-                                  Admin
-                                </span>
-                              )}
+                          {/* Role badge */}
+                          {device.deviceRole && (
+                            <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider shadow-sm ${
+                              device.deviceRole === "admin"
+                                ? "bg-purple-500/20 border border-purple-500/40 text-purple-300"
+                                : device.deviceRole === "stageManager"
+                                  ? "bg-blue-500/20 border border-blue-500/40 text-blue-300"
+                                  : "bg-white/10 border border-white/20 text-white/50"
+                            }`}>
+                              {device.deviceRole === "admin" ? "Admin" : device.deviceRole === "stageManager" ? "Stage Mgr" : "Speaker"}
+                            </span>
+                          )}
+                          {!device.deviceRole && device.isAdmin && (
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-purple-500/20 border border-purple-500/40 text-purple-300 shadow-sm">
+                              Admin
+                            </span>
+                          )}
                               <button
                                 onClick={() => startRename(device)}
                                 className="opacity-0 group-hover:opacity-100 text-white/40 hover:text-white p-0.5 transition-opacity"
@@ -393,24 +407,33 @@ function MobileConnectPanel() {
                           {/* Floating Dropdown */}
                           {isMenuOpen && (
                             <div className="absolute right-0 top-10 w-48 bg-[#181622] border border-white/15 rounded-xl shadow-2xl z-50 py-1.5 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-150">
-                              {/* Set as Admin / Remove Admin */}
-                              <button
-                                type="button"
-                                onClick={() => toggleAdmin(device)}
-                                className="w-full px-3.5 py-2 text-left text-xs font-semibold flex items-center gap-2.5 hover:bg-white/10 text-white transition-colors"
-                              >
-                                {device.isAdmin ? (
-                                  <>
-                                    <PiShield size={15} className="text-amber-400" />
-                                    <span>Demote to Member</span>
-                                  </>
-                                ) : (
-                                  <>
-                                    <PiShieldCheck size={15} className="text-purple-400" />
-                                    <span>Set as Admin</span>
-                                  </>
-                                )}
-                              </button>
+                              {/* Role selector */}
+                              <div className="px-3 py-1.5">
+                                <div className="text-[10px] uppercase tracking-widest text-white/30 font-bold mb-1.5">Set Role</div>
+                                {[
+                                  { role: "admin", label: "Admin", icon: <PiShieldCheck size={14} className="text-purple-400" />, desc: "Full access: peers + controller" },
+                                  { role: "stageManager", label: "Stage Manager", icon: <PiStar size={14} className="text-blue-400" />, desc: "Stage manager controls only" },
+                                  { role: "speaker", label: "Speaker", icon: <PiPerson size={14} className="text-white/50" />, desc: "Peers & mic only" },
+                                ].map(({ role, label, icon, desc }) => (
+                                  <button
+                                    key={role}
+                                    type="button"
+                                    onClick={() => setRole(device, role)}
+                                    className={`w-full px-2.5 py-1.5 mb-0.5 text-left text-xs flex items-center gap-2 rounded-lg transition-colors ${
+                                      (device.deviceRole || (device.isAdmin ? "admin" : "speaker")) === role
+                                        ? "bg-white/15 text-white"
+                                        : "hover:bg-white/10 text-white/70"
+                                    }`}
+                                  >
+                                    {icon}
+                                    <div>
+                                      <div className="font-semibold leading-none">{label}</div>
+                                      <div className="text-[10px] text-white/40 mt-0.5">{desc}</div>
+                                    </div>
+                                  </button>
+                                ))}
+                              </div>
+                              <div className="my-1 border-t border-white/10" />
 
                               {/* Disconnect */}
                               <button

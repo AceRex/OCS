@@ -249,23 +249,24 @@ export default function DisplayCanvas({
                       const isCurrent = activeIdx >= 0 && i === activeIdx;
                       const isPast = activeIdx >= 0 && i < activeIdx;
                       return (
-                        <span
-                          key={i}
-                          style={{
-                            transition: "all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)",
-                            willChange: "transform, opacity, color",
-                          }}
-                          className={`inline-block origin-center ${
-                            isCurrent
-                              ? "text-cyan-200 font-black underline decoration-cyan-400 decoration-2 underline-offset-8 scale-[1.08] drop-shadow-[0_0_16px_rgba(34,211,238,0.95)]"
-                              : isPast
-                                ? "text-white font-extrabold opacity-95"
-                                : "text-white/40 font-semibold opacity-45"
-                          }`}
-                        >
-                          {tok}
+                        <React.Fragment key={i}>
+                          <span
+                            style={{
+                              transition: "all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+                              willChange: "transform, opacity, color",
+                            }}
+                            className={`inline-block origin-center ${
+                              isCurrent
+                                ? "text-cyan-200 font-black underline decoration-cyan-400 decoration-2 underline-offset-8 scale-[1.08] drop-shadow-[0_0_16px_rgba(34,211,238,0.95)]"
+                                : isPast
+                                  ? "text-white font-extrabold opacity-95"
+                                  : "text-white/40 font-semibold opacity-45"
+                            }`}
+                          >
+                            {tok}
+                          </span>
                           {i < readAlong.tokens.length - 1 ? " " : ""}
-                        </span>
+                        </React.Fragment>
                       );
                     })
                   : safeBody}"

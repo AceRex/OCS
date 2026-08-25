@@ -300,6 +300,7 @@ contextBridge.exposeInMainWorld("electron", {
     disconnectDevice: (deviceId) => ipcRenderer.send('mobile-disconnect-device', deviceId),
     removeDevice: (deviceId) => ipcRenderer.invoke('mobile-device-remove', deviceId),
     setDeviceAdmin: (deviceId, isAdmin) => ipcRenderer.invoke('mobile-device-set-admin', { deviceId, isAdmin }),
+    setDeviceRole: (deviceId, role) => ipcRenderer.invoke('mobile-device-set-role', { deviceId, role }),
     onMobileConnected: (callback) => {
       const listener = (event, val) => callback(val);
       ipcRenderer.on('mobile-connected', listener);

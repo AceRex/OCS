@@ -179,21 +179,23 @@ export default function PreviewModal({ isOpen, onClose, mode }) {
                                 const isActive = i === activeIdx;
                                 const isPast = activeIdx >= 0 && i < activeIdx;
                                 return (
-                                    <span
-                                        key={`${i}-${tok}`}
-                                        style={{
-                                            display: 'inline',
-                                            fontWeight: 600,
-                                            color: isActive ? '#FFFFFF' : textColor,
-                                            opacity: isActive ? 1 : (isPast ? 0.42 : 0.58),
-                                            transition: 'color 180ms ease, opacity 180ms ease',
-                                            textShadow: isActive
-                                                ? '0 0 10px rgba(255,255,255,0.4), 0 2px 10px rgba(0,0,0,0.6)'
-                                                : '0 2px 10px rgba(0,0,0,0.5)',
-                                        }}
-                                    >
-                                        {tok}{i < readAlong.tokens.length - 1 ? ' ' : ''}
-                                    </span>
+                                    <React.Fragment key={`${i}-${tok}`}>
+                                        <span
+                                            style={{
+                                                display: 'inline',
+                                                fontWeight: 600,
+                                                color: isActive ? '#FFFFFF' : textColor,
+                                                opacity: isActive ? 1 : (isPast ? 0.42 : 0.58),
+                                                transition: 'color 180ms ease, opacity 180ms ease',
+                                                textShadow: isActive
+                                                    ? '0 0 10px rgba(255,255,255,0.4), 0 2px 10px rgba(0,0,0,0.6)'
+                                                    : '0 2px 10px rgba(0,0,0,0.5)',
+                                            }}
+                                        >
+                                            {tok}
+                                        </span>
+                                        {i < readAlong.tokens.length - 1 ? ' ' : ''}
+                                    </React.Fragment>
                                 );
                             })
                         ) : (

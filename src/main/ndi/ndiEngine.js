@@ -1,70 +1,59 @@
 /**
  * NDI & Network Video Broadcast Engine for OCS
- * 
+ *
  * Provides:
- * 1. Zero-configuration LAN mDNS Service Advertisement for NDI receivers (OBS Studio, vMix, TriCaster, NewTek Studio Monitor)
- * 2. High-performance frame grabber from Electron render windows (Program & Stage Display)
- * 3. Dynamic Native NDI SDK runtime binding (when native grandiose/ndi addon is available)
- * 4. High-throughput MJPEG & Web video streaming (/stream/program.mjpg, /stream/stage.mjpg)
- * 5. Transparent alpha-channel overlay rendering for OBS Studio Browser Sources (/overlay/program)
+ * 1. Zero-configuration LAN mDNS Service Advertisement (OBS Studio, vMix, TriCaster)
+ * 2. High-performance frame grabber from Electron render windows
+ * 3. Dynamic Native NDI SDK runtime binding (grandiose when available)
+ * 4. Reliable MJPEG streaming (/stream/program.mjpg, /stream/stage.mjpg)
+ * 5. Alpha-channel overlay rendering for OBS Browser Sources (/overlay/program)
  * 6. LAN NDI source discovery scanner
  */
 
-const os = require('os');
+'use strict';
+
+const os    = require('os');
 const dgram = require('dgram');
 const EventEmitter = require('events');
-const ip = require('ip');
+const ip    = require('ip');
+
+const BOUNDARY = 'ocsframe';
 
 class NdiEngine extends EventEmitter {
   constructor() {
     super();
     this.config = {
-      enabled: false, // FR-4.42: OFF by default on fresh launch. Must be explicitly enabled in Settings.
+      enabled: false,
       programStreamName: 'OCS - Program Output',
-      stageStreamName: 'OCS - Stage Display',
-      alphaEnabled: true, // Alpha transparency for Lower Thirds / OBS overlays
-      fps: 30, // 30 or 60
-      resolution: '1080p', // 1080p (1920x1080) or 720p (1280x720)
+      stageStreamName:   'OCS - Stage Display',
+      alphaEnabled: true,
+      fps: 30,
+      resolution: '1080p',
       port: 4000,
     };
-
-    this.isRunning = false;
+    this.isRunning     = false;
     this.programWindow = null;
-    this.stageWindow = null;
-    this.io = null;
-
-    // Frame capture state
+    this.stageWindow   = null;
+    this.io            = null;
     this.programFrameBuffer = null;
-    this.stageFrameBuffer = null;
-    this.programLastTimestamp = 0;
-    this.stageLastTimestamp = 0;
-    this.captureTimer = null;
-
-    // Stats
+    this.stageFrameBuffer   = null;
+    this._captureInterval   = null;
+    this._capturingProgram  = false;
+    this._capturingStage    = false;
     this.stats = {
-      programFps: 0,
-      stageFps: 0,
-      programFramesSent: 0,
-      stageFramesSent: 0,
-      activeClients: 0,
-      startTime: null,
-      nativeNdiAvailable: false,
+      programFps: 0, stageFps: 0,
+      programFramesSent: 0, stageFramesSent: 0,
+      activeClients: 0, startTime: null, nativeNdiAvailable: false,
     };
-
-    // Subscribed MJPEG HTTP response streams
     this.mjpegProgramClients = new Set();
-    this.mjpegStageClients = new Set();
-
-    // mDNS LAN Advertiser socket
-    this.mdnsSocket = null;
-
-    // Probe native NDI SDK availability
+    this.mjpegStageClients   = new Set();
+    this.mdnsSocket   = null;
+    this.mdnsInterval = null;
     this._probeNativeNdi();
   }
 
   _probeNativeNdi() {
     try {
-      // Check if native grandiose or node-ndi is installed
       const grandiose = require('grandiose');
       if (grandiose && typeof grandiose.send === 'function') {
         this.stats.nativeNdiAvailable = true;
@@ -73,387 +62,270 @@ class NdiEngine extends EventEmitter {
       }
     } catch (_) {
       this.stats.nativeNdiAvailable = false;
-      console.log('[NDI] Operating in High-Throughput IP Video & OBS/vMix Direct Stream Mode.');
+      console.log('[NDI] Operating in MJPEG/IP-Video mode (OBS · vMix · TriCaster).');
     }
   }
 
-  /**
-   * Initialize and attach render windows and Socket.IO instance
-   */
   init({ programWindow, stageWindow, io, port = 4000, enabled = false }) {
-    this.programWindow = programWindow;
-    this.stageWindow = stageWindow;
-    this.io = io;
-    this.config.port = port;
+    this.programWindow  = programWindow;
+    this.stageWindow    = stageWindow;
+    this.io             = io;
+    this.config.port    = port;
     this.config.enabled = !!enabled;
-
-    if (this.config.enabled) {
-      this.start();
-    }
+    if (this.config.enabled) this.start();
   }
 
-  /**
-   * Start NDI engine, mDNS advertiser, and frame grabber
-   */
   start() {
     if (this.isRunning) return;
     this.isRunning = true;
     this.stats.startTime = Date.now();
+    console.log('[NDI] Starting (' + this.config.resolution + ' @ ' + this.config.fps + ' fps)...');
 
-    console.log(`[NDI] Starting NDI & Broadcast Engine (${this.config.resolution} @ ${this.config.fps}fps)...`);
+    const intervalMs = Math.round(1000 / Math.max(1, this.config.fps || 30));
+    let fpsCountProgram = 0;
+    let fpsCountStage   = 0;
+    let fpsLastTs       = Date.now();
 
-    // 1. Start frame grabber loop
-    const frameIntervalMs = Math.round(1000 / (this.config.fps || 30));
-    let frameCountProgram = 0;
-    let frameCountStage = 0;
-    let lastFpsCalculation = Date.now();
-    let isCapturingProgram = false;
-    let isCapturingStage = false;
-
-    this.captureTimer = setInterval(async () => {
+    this._captureInterval = setInterval(async () => {
       if (!this.isRunning) return;
 
-      const now = Date.now();
-
-      // Program Window Frame Capture (Low Latency)
       if (
         this.programWindow &&
         !this.programWindow.isDestroyed() &&
         (this.mjpegProgramClients.size > 0 || this.stats.nativeNdiAvailable) &&
-        !isCapturingProgram
+        !this._capturingProgram
       ) {
-        isCapturingProgram = true;
+        this._capturingProgram = true;
         try {
-          const image = await this.programWindow.webContents.capturePage();
-          if (!image.isEmpty()) {
-            this.programFrameBuffer = image.toJPEG(80);
-            frameCountProgram++;
+          const img = await this.programWindow.webContents.capturePage();
+          if (img && !img.isEmpty()) {
+            this.programFrameBuffer = img.toJPEG(85);
+            fpsCountProgram++;
             this.stats.programFramesSent++;
-
-            // Dispatch to connected MJPEG HTTP clients
-            this._broadcastMjpegFrame(this.mjpegProgramClients, this.programFrameBuffer);
+            this._broadcastFrame(this.mjpegProgramClients, this.programFrameBuffer);
           }
         } catch (_) {}
-        finally {
-          isCapturingProgram = false;
-        }
+        finally { this._capturingProgram = false; }
       }
 
-      // Stage Window Frame Capture (Low Latency)
       if (
         this.stageWindow &&
         !this.stageWindow.isDestroyed() &&
         (this.mjpegStageClients.size > 0 || this.stats.nativeNdiAvailable) &&
-        !isCapturingStage
+        !this._capturingStage
       ) {
-        isCapturingStage = true;
+        this._capturingStage = true;
         try {
-          const image = await this.stageWindow.webContents.capturePage();
-          if (!image.isEmpty()) {
-            this.stageFrameBuffer = image.toJPEG(80);
-            frameCountStage++;
+          const img = await this.stageWindow.webContents.capturePage();
+          if (img && !img.isEmpty()) {
+            this.stageFrameBuffer = img.toJPEG(85);
+            fpsCountStage++;
             this.stats.stageFramesSent++;
-
-            this._broadcastMjpegFrame(this.mjpegStageClients, this.stageFrameBuffer);
+            this._broadcastFrame(this.mjpegStageClients, this.stageFrameBuffer);
           }
         } catch (_) {}
-        finally {
-          isCapturingStage = false;
-        }
+        finally { this._capturingStage = false; }
       }
 
-      // Compute rolling FPS stats every second
-      if (now - lastFpsCalculation >= 1000) {
-        const elapsedSec = (now - lastFpsCalculation) / 1000;
-        this.stats.programFps = Math.round(frameCountProgram / elapsedSec);
-        this.stats.stageFps = Math.round(frameCountStage / elapsedSec);
+      const now     = Date.now();
+      const elapsed = now - fpsLastTs;
+      if (elapsed >= 1000) {
+        const sec = elapsed / 1000;
+        this.stats.programFps    = Math.round(fpsCountProgram / sec);
+        this.stats.stageFps      = Math.round(fpsCountStage   / sec);
         this.stats.activeClients = this.mjpegProgramClients.size + this.mjpegStageClients.size;
-        frameCountProgram = 0;
-        frameCountStage = 0;
-        lastFpsCalculation = now;
-
+        fpsCountProgram = 0;
+        fpsCountStage   = 0;
+        fpsLastTs       = now;
         this.emit('stats', this.getStatus());
       }
-    }, frameIntervalMs);
+    }, intervalMs);
 
-    // Initial instant background capture
     setTimeout(() => {
-      this._captureSingleFrame('program');
-      this._captureSingleFrame('stage');
-    }, 500);
+      this._warmFrame('program');
+      this._warmFrame('stage');
+    }, 300);
 
-    // 2. Start mDNS NDI LAN Advertiser
-    this._startMdnsAdvertisement();
+    this._startMdns();
   }
 
-  /**
-   * Stop NDI engine and release resources
-   */
   stop() {
     if (!this.isRunning) return;
     this.isRunning = false;
-
-    if (this.captureTimer) {
-      clearInterval(this.captureTimer);
-      this.captureTimer = null;
+    if (this._captureInterval) {
+      clearInterval(this._captureInterval);
+      this._captureInterval = null;
     }
-
-    this._stopMdnsAdvertisement();
-
-    // Close any active MJPEG client streams
-    for (const res of this.mjpegProgramClients) {
-      try { res.end(); } catch (_) {}
-    }
+    this._stopMdns();
+    for (const res of this.mjpegProgramClients) { try { res.end(); } catch (_) {} }
     this.mjpegProgramClients.clear();
-
-    for (const res of this.mjpegStageClients) {
-      try { res.end(); } catch (_) {}
-    }
+    for (const res of this.mjpegStageClients)   { try { res.end(); } catch (_) {} }
     this.mjpegStageClients.clear();
-
     console.log('[NDI] Engine stopped.');
   }
 
-  /**
-   * Broadcast mDNS announcement on local network for NDI discovery
-   */
-  _startMdnsAdvertisement() {
+  _writeFrame(res, jpegBuffer) {
     try {
-      const localIp = this.getLocalIp();
-      const hostname = os.hostname();
-
-      this.mdnsSocket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
-
-      this.mdnsSocket.on('error', (err) => {
-        console.warn('[NDI mDNS] Socket notice:', err.message);
-      });
-
-      this.mdnsSocket.bind(5353, () => {
-        try {
-          this.mdnsSocket.addMembership('224.0.0.251');
-        } catch (_) {}
-      });
-
-      // Send periodic announcement packets
-      this.mdnsInterval = setInterval(() => {
-        if (!this.isRunning) return;
-        this._sendMdnsAnnouncement();
-      }, 5000);
-
-      this._sendMdnsAnnouncement();
-    } catch (e) {
-      console.warn('[NDI mDNS] Could not initialize mDNS broadcaster:', e.message);
+      res.write('--' + BOUNDARY + '\r\nContent-Type: image/jpeg\r\nContent-Length: ' + jpegBuffer.length + '\r\n\r\n');
+      res.write(jpegBuffer);
+      res.write('\r\n');
+      return true;
+    } catch (_) {
+      return false;
     }
   }
 
-  _sendMdnsAnnouncement() {
-    if (!this.mdnsSocket) return;
-    try {
-      const localIp = this.getLocalIp();
-      const msg = JSON.stringify({
-        type: 'ndi-source',
-        streams: [
-          { name: this.config.programStreamName, type: 'program', ip: localIp, port: this.config.port, url: `http://${localIp}:${this.config.port}/overlay/program` },
-          { name: this.config.stageStreamName, type: 'stage', ip: localIp, port: this.config.port, url: `http://${localIp}:${this.config.port}/overlay/stage` },
-        ],
-      });
-      const buffer = Buffer.from(msg);
-      this.mdnsSocket.send(buffer, 0, buffer.length, 5353, '224.0.0.251', () => {});
-    } catch (_) {}
-  }
-
-  _stopMdnsAdvertisement() {
-    if (this.mdnsInterval) {
-      clearInterval(this.mdnsInterval);
-      this.mdnsInterval = null;
-    }
-    if (this.mdnsSocket) {
-      try {
-        this.mdnsSocket.close();
-      } catch (_) {}
-      this.mdnsSocket = null;
-    }
-  }
-
-  /**
-   * Broadcast a single JPEG frame to a set of HTTP MJPEG responses
-   */
-  _broadcastMjpegFrame(clientSet, frameBuffer) {
-    if (!frameBuffer || clientSet.size === 0) return;
-
+  _broadcastFrame(clientSet, jpegBuffer) {
+    if (!jpegBuffer || clientSet.size === 0) return;
     for (const res of clientSet) {
-      try {
-        res.write(`--ocs-frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${frameBuffer.length}\r\n\r\n`);
-        res.write(frameBuffer);
-        res.write('\r\n');
-      } catch (err) {
+      if (!this._writeFrame(res, jpegBuffer)) {
+        try { res.destroy(); } catch (_) {}
         clientSet.delete(res);
       }
     }
   }
 
-  /**
-   * Capture a single frame immediately for a given window
-   */
-  async _captureSingleFrame(streamType = 'program') {
+  async _warmFrame(streamType) {
     const win = streamType === 'stage' ? this.stageWindow : this.programWindow;
-    if (!win || win.isDestroyed()) return;
-
+    if (!win || win.isDestroyed()) return null;
     try {
-      const image = await win.webContents.capturePage();
-      if (!image.isEmpty()) {
-        const buf = image.toJPEG(80);
-        if (streamType === 'stage') {
-          this.stageFrameBuffer = buf;
-          this._broadcastMjpegFrame(this.mjpegStageClients, buf);
-        } else {
-          this.programFrameBuffer = buf;
-          this._broadcastMjpegFrame(this.mjpegProgramClients, buf);
-        }
+      const img = await win.webContents.capturePage();
+      if (img && !img.isEmpty()) {
+        const buf = img.toJPEG(85);
+        if (streamType === 'stage') this.stageFrameBuffer   = buf;
+        else                        this.programFrameBuffer = buf;
+        return buf;
       }
     } catch (_) {}
+    return null;
   }
 
-  /**
-   * Handle incoming HTTP MJPEG Stream Request
-   */
-  handleMjpegRequest(req, res, streamType = 'program') {
+  handleMjpegRequest(req, res, streamType) {
+    streamType = streamType || 'program';
+
     if (!this.config.enabled || !this.isRunning) {
-      res.writeHead(403, {
-        'Content-Type': 'text/plain; charset=utf-8',
-        'Access-Control-Allow-Origin': '*',
-      });
-      res.end('NDI & Broadcast Streaming is disabled in OCS Settings (FR-4.42).\nEnable it under Settings -> NDI & Broadcast to stream over LAN.');
+      res.writeHead(503, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
+      res.end('NDI Streaming is disabled. Enable under Settings → NDI & Broadcast.');
       return;
     }
 
-    if (res.socket) {
+    const sock = res.socket;
+    if (sock) {
       try {
-        res.socket.setNoDelay(true);
-        res.socket.setKeepAlive(true, 1000);
+        sock.setNoDelay(true);
+        sock.setKeepAlive(true, 5000);
+        sock.setTimeout(0);
       } catch (_) {}
     }
 
     res.writeHead(200, {
-      'Content-Type': 'multipart/x-mixed-replace; boundary=ocs-frame',
-      'Cache-Control': 'no-cache, no-store, must-revalidate, max-age=0',
-      'Connection': 'close',
-      'Pragma': 'no-cache',
-      'Expires': '0',
+      'Content-Type':  'multipart/x-mixed-replace; boundary=' + BOUNDARY,
+      'Cache-Control': 'no-cache, no-store',
+      'Pragma':        'no-cache',
+      'Connection':    'keep-alive',
       'Access-Control-Allow-Origin': '*',
     });
 
-    try {
-      if (typeof res.flushHeaders === 'function') res.flushHeaders();
-      res.write('--ocs-frame\r\n');
-    } catch (_) {}
+    try { res.flushHeaders(); } catch (_) { return; }
 
     const clientSet = streamType === 'stage' ? this.mjpegStageClients : this.mjpegProgramClients;
     clientSet.add(res);
 
-    // Send the latest cached frame immediately for 0ms initial start latency
     const cached = streamType === 'stage' ? this.stageFrameBuffer : this.programFrameBuffer;
     if (cached && cached.length > 0) {
-      try {
-        res.write(`--ocs-frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${cached.length}\r\n\r\n`);
-        res.write(cached);
-        res.write('\r\n');
-      } catch (_) {}
+      this._writeFrame(res, cached);
     } else {
-      this._captureSingleFrame(streamType);
+      this._warmFrame(streamType).then(function(buf) {
+        if (buf) this._writeFrame(res, buf);
+      }.bind(this));
     }
 
-    req.on('close', () => {
+    const self = this;
+    const cleanup = function() {
       clientSet.delete(res);
-    });
+      try { res.destroy(); } catch (_) {}
+    };
+    req.on('close',  cleanup);
+    req.on('error',  cleanup);
+    res.on('error',  cleanup);
   }
 
-  /**
-   * Discover NDI and network video sources on the LAN
-   */
-  async discoverSources() {
-    const localIp = this.getLocalIp();
-    const discovered = [
-      {
-        id: 'ocs-program',
-        name: this.config.programStreamName,
-        ip: localIp,
-        port: this.config.port,
-        type: 'OCS Program Output',
-        url: `http://${localIp}:${this.config.port}/overlay/program`,
-        isLocal: true,
-      },
-      {
-        id: 'ocs-stage',
-        name: this.config.stageStreamName,
-        ip: localIp,
-        port: this.config.port,
-        type: 'OCS Stage Display',
-        url: `http://${localIp}:${this.config.port}/overlay/stage`,
-        isLocal: true,
-      },
-    ];
-
-    // Check if native NDI scanner can discover additional hardware/software sources
-    if (this.stats.nativeNdiAvailable && this.nativeNdi?.find) {
-      try {
-        const nativeFinder = await this.nativeNdi.find();
-        const nativeSources = await nativeFinder.sources();
-        if (Array.isArray(nativeSources)) {
-          for (const s of nativeSources) {
-            discovered.push({
-              id: s.name || s.urlAddress,
-              name: s.name || 'NDI Video Source',
-              ip: s.urlAddress || 'LAN',
-              type: 'NDI Network Video',
-              isLocal: false,
-            });
-          }
-        }
-      } catch (_) {}
+  _startMdns() {
+    try {
+      this.mdnsSocket = dgram.createSocket({ type: 'udp4', reuseAddr: true });
+      this.mdnsSocket.on('error', function(err) { console.warn('[NDI mDNS]', err.message); });
+      this.mdnsSocket.bind(5353, function() {
+        try { this.addMembership('224.0.0.251'); } catch (_) {}
+      });
+      const self = this;
+      this.mdnsInterval = setInterval(function() {
+        if (self.isRunning) self._sendMdnsPacket();
+      }, 5000);
+      this._sendMdnsPacket();
+    } catch (e) {
+      console.warn('[NDI mDNS] Could not start:', e.message);
     }
-
-    return discovered;
   }
 
-  /**
-   * Update configuration
-   */
+  _sendMdnsPacket() {
+    if (!this.mdnsSocket) return;
+    try {
+      const localIp = this.getLocalIp();
+      const payload = JSON.stringify({
+        type: 'ndi-source',
+        streams: [
+          { name: this.config.programStreamName, type: 'program', ip: localIp, port: this.config.port,
+            mjpeg: 'http://' + localIp + ':' + this.config.port + '/stream/program.mjpg',
+            overlay: 'http://' + localIp + ':' + this.config.port + '/overlay/program' },
+          { name: this.config.stageStreamName, type: 'stage', ip: localIp, port: this.config.port,
+            mjpeg: 'http://' + localIp + ':' + this.config.port + '/stream/stage.mjpg',
+            overlay: 'http://' + localIp + ':' + this.config.port + '/overlay/stage' },
+        ],
+      });
+      const buf = Buffer.from(payload);
+      this.mdnsSocket.send(buf, 0, buf.length, 5353, '224.0.0.251', function() {});
+    } catch (_) {}
+  }
+
+  _stopMdns() {
+    if (this.mdnsInterval) { clearInterval(this.mdnsInterval); this.mdnsInterval = null; }
+    if (this.mdnsSocket)   { try { this.mdnsSocket.close(); } catch (_) {} this.mdnsSocket = null; }
+  }
+
   setConfig(newConfig) {
-    this.config = { ...this.config, ...newConfig };
+    const wasRunning  = this.isRunning;
+    const fpsChanged  = newConfig.fps && newConfig.fps !== this.config.fps;
+    this.config = Object.assign({}, this.config, newConfig);
+    if (wasRunning && fpsChanged) { this.stop(); this.start(); }
     this.emit('config-updated', this.config);
     return this.config;
   }
 
-  /**
-   * Get engine status and URLs
-   */
   getStatus() {
     const localIp = this.getLocalIp();
-    const port = this.config.port;
-
+    const port    = this.config.port;
     return {
-      enabled: this.config.enabled,
-      isRunning: this.isRunning,
+      enabled:            this.config.enabled,
+      isRunning:          this.isRunning,
       nativeNdiAvailable: this.stats.nativeNdiAvailable,
-      programStreamName: this.config.programStreamName,
-      stageStreamName: this.config.stageStreamName,
-      alphaEnabled: this.config.alphaEnabled,
-      resolution: this.config.resolution,
-      fps: this.config.fps,
+      programStreamName:  this.config.programStreamName,
+      stageStreamName:    this.config.stageStreamName,
+      alphaEnabled:       this.config.alphaEnabled,
+      resolution:         this.config.resolution,
+      fps:                this.config.fps,
       stats: {
-        programFps: this.stats.programFps,
-        stageFps: this.stats.stageFps,
+        programFps:        this.stats.programFps,
+        stageFps:          this.stats.stageFps,
         programFramesSent: this.stats.programFramesSent,
-        stageFramesSent: this.stats.stageFramesSent,
-        activeClients: this.mjpegProgramClients.size + this.mjpegStageClients.size,
-        uptimeSeconds: this.stats.startTime ? Math.round((Date.now() - this.stats.startTime) / 1000) : 0,
+        stageFramesSent:   this.stats.stageFramesSent,
+        activeClients:     this.mjpegProgramClients.size + this.mjpegStageClients.size,
+        uptimeSeconds:     this.stats.startTime ? Math.round((Date.now() - this.stats.startTime) / 1000) : 0,
       },
       urls: {
-        programOverlay: `http://${localIp}:${port}/overlay/program`,
-        stageOverlay: `http://${localIp}:${port}/overlay/stage`,
-        programMjpeg: `http://${localIp}:${port}/stream/program.mjpg`,
-        stageMjpeg: `http://${localIp}:${port}/stream/stage.mjpg`,
+        programOverlay: 'http://' + localIp + ':' + port + '/overlay/program',
+        stageOverlay:   'http://' + localIp + ':' + port + '/overlay/stage',
+        programMjpeg:   'http://' + localIp + ':' + port + '/stream/program.mjpg',
+        stageMjpeg:     'http://' + localIp + ':' + port + '/stream/stage.mjpg',
       },
       localIp,
       port,
@@ -461,11 +333,44 @@ class NdiEngine extends EventEmitter {
   }
 
   getLocalIp() {
-    try {
-      return ip.address() || '127.0.0.1';
-    } catch (_) {
-      return '127.0.0.1';
+    try { return ip.address() || '127.0.0.1'; } catch (_) { return '127.0.0.1'; }
+  }
+
+  restartStream() {
+    this.stop();
+    this.config.enabled = true;
+    this.start();
+    return this.getStatus();
+  }
+
+  async discoverSources() {
+    const localIp = this.getLocalIp();
+    const port    = this.config.port;
+    const discovered = [
+      { id: 'ocs-program', name: this.config.programStreamName, ip: localIp, port,
+        type: 'OCS Program Output (MJPEG)',
+        url:     'http://' + localIp + ':' + port + '/stream/program.mjpg',
+        overlay: 'http://' + localIp + ':' + port + '/overlay/program',
+        isLocal: true },
+      { id: 'ocs-stage', name: this.config.stageStreamName, ip: localIp, port,
+        type: 'OCS Stage Display (MJPEG)',
+        url:     'http://' + localIp + ':' + port + '/stream/stage.mjpg',
+        overlay: 'http://' + localIp + ':' + port + '/overlay/stage',
+        isLocal: true },
+    ];
+    if (this.stats.nativeNdiAvailable && this.nativeNdi && this.nativeNdi.find) {
+      try {
+        const finder  = await this.nativeNdi.find();
+        const sources = await finder.sources();
+        if (Array.isArray(sources)) {
+          for (const s of sources) {
+            discovered.push({ id: s.name || s.urlAddress, name: s.name || 'NDI Source',
+              ip: s.urlAddress || 'LAN', type: 'NDI Network Video', isLocal: false });
+          }
+        }
+      } catch (_) {}
     }
+    return discovered;
   }
 }
 

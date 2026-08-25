@@ -293,24 +293,26 @@ function App({ mode: propMode }) {
                   const isActive = activeIdx >= 0 && i === activeIdx;
                   const isPast = activeIdx >= 0 && i < activeIdx;
                   return (
-                    <span
-                      key={`${i}-${tok}`}
-                      className="ocs-ra-word"
-                      data-i={i}
-                      style={{
-                        display: 'inline-block',
-                        fontWeight: isActive ? 800 : (isPast ? 600 : 500),
-                        color: isActive ? '#38bdf8' : (isPast ? '#FFFFFF' : baseColor),
-                        opacity: isActive ? 1 : (isPast ? 0.9 : 0.45),
-                        transform: isActive ? 'scale(1.06) translateY(-1px)' : 'scale(1)',
-                        transition: 'all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)',
-                        textShadow: isActive
-                          ? '0 0 16px rgba(56,189,248,0.9), 0 2px 30px rgba(0,0,0,0.6)'
-                          : '0 2px 30px rgba(0,0,0,0.6)',
-                      }}
-                    >
-                      {tok}{i < readAlong.tokens.length - 1 ? ' ' : ''}
-                    </span>
+                    <React.Fragment key={`${i}-${tok}`}>
+                      <span
+                        className="ocs-ra-word"
+                        data-i={i}
+                        style={{
+                          display: 'inline-block',
+                          fontWeight: isActive ? 800 : (isPast ? 600 : 500),
+                          color: isActive ? '#38bdf8' : (isPast ? '#FFFFFF' : baseColor),
+                          opacity: isActive ? 1 : (isPast ? 0.9 : 0.45),
+                          transform: isActive ? 'scale(1.06) translateY(-1px)' : 'scale(1)',
+                          transition: 'all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+                          textShadow: isActive
+                            ? '0 0 16px rgba(56,189,248,0.9), 0 2px 30px rgba(0,0,0,0.6)'
+                            : '0 2px 30px rgba(0,0,0,0.6)',
+                        }}
+                      >
+                        {tok}
+                      </span>
+                      {i < readAlong.tokens.length - 1 ? ' ' : ''}
+                    </React.Fragment>
                   );
                 })
               ) : (

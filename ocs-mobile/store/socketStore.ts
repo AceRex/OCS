@@ -17,6 +17,7 @@ interface SocketState {
     isConnected: boolean;
     isPaired: boolean;
     isAdmin: boolean;
+    deviceRole: 'admin' | 'stageManager' | 'speaker';
     serverIp: string;
     lastHost: string;
     lastCode: string;
@@ -45,6 +46,7 @@ export const useSocketStore = create<SocketState>((set, get) => ({
     isConnected: false,
     isPaired: false,
     isAdmin: false,
+    deviceRole: 'speaker' as const,
     serverIp: '',
     lastHost: '',
     lastCode: '',
@@ -166,7 +168,7 @@ export const useSocketStore = create<SocketState>((set, get) => ({
             socket.emit('pair', { code, token: code, deviceName: get().deviceName || 'Mobile Companion' });
         });
 
-        socket.on('pair-result', (result: { ok: boolean; error?: string; deviceName?: string; isAdmin?: boolean }) => {
+        socket.on('pair-result', (result: { ok: boolean; error?: string; deviceName?: string; isAdmin?: boolean; deviceRole?: string }) => {
             if (result?.ok) {
                 set({
                     isPaired: true,
@@ -182,20 +184,33 @@ export const useSocketStore = create<SocketState>((set, get) => ({
                 if (result.isAdmin != null) {
                     set({ isAdmin: !!result.isAdmin });
                 }
+                const role = result.deviceRole as 'admin' | 'stageManager' | 'speaker' | undefined;
+                if (role === 'admin' || role === 'stageManager' || role === 'speaker') {
+                    set({ deviceRole: role });
+                } else if (result.isAdmin) {
+                    set({ deviceRole: 'admin' });
+                }
                 get().fetchPeers();
             } else {
                 set({
                     isPaired: false,
                     isAdmin: false,
+                    deviceRole: 'speaker',
                     connectionError: result?.error || 'Invalid pairing code',
                 });
             }
         });
 
-        socket.on('device-role-updated', (payload: { isAdmin?: boolean }) => {
+        socket.on('device-role-updated', (payload: { isAdmin?: boolean; deviceRole?: string }) => {
             console.log('[Remote] Role updated from desktop:', payload);
             if (payload?.isAdmin != null) {
                 set({ isAdmin: !!payload.isAdmin });
+            }
+            const role = payload?.deviceRole as 'admin' | 'stageManager' | 'speaker' | undefined;
+            if (role === 'admin' || role === 'stageManager' || role === 'speaker') {
+                set({ deviceRole: role });
+            } else if (payload?.isAdmin != null) {
+                set({ deviceRole: payload.isAdmin ? 'admin' : 'speaker' });
             }
         });
 
