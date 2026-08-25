@@ -1383,12 +1383,13 @@ io.on("connection", (socket) => {
     socket.handshake.auth &&
     (socket.handshake.auth.token || socket.handshake.auth.code);
   if (handshakeCred && validateCredential(pairing, handshakeCred)) {
-    // Gate mobile pairing on desktop auth state (FR-13.7)
-    if (!authService.isAuthenticated()) {
+    // Gate mobile pairing on desktop auth / guest state
+    const isAllowedToPair = authService.isAuthenticated() || !authService.isGuestExpired();
+    if (!isAllowedToPair) {
       socket.emit("pair-result", {
         ok: false,
         error:
-          "Desktop Controller must be authenticated to accept mobile pairings (FR-13.7).",
+          "Desktop Controller session expired. Please sign in to accept mobile pairings.",
       });
       return;
     }
@@ -1418,12 +1419,13 @@ io.on("connection", (socket) => {
   }
 
   socket.on("pair", (payload = {}) => {
-    // Gate mobile pairing on desktop auth state (FR-13.7)
-    if (!authService.isAuthenticated()) {
+    // Gate mobile pairing on desktop auth / guest state
+    const isAllowedToPair = authService.isAuthenticated() || !authService.isGuestExpired();
+    if (!isAllowedToPair) {
       socket.emit("pair-result", {
         ok: false,
         error:
-          "Desktop Controller must be authenticated to accept mobile pairings (FR-13.7).",
+          "Desktop Controller session expired. Please sign in to accept mobile pairings.",
       });
       return;
     }

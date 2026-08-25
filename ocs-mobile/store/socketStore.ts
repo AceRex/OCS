@@ -207,7 +207,7 @@ export const useSocketStore = create<SocketState>((set, get) => ({
 
         socket.on('intercom-message', (message: { fromName: string; audioBase64: string; format: string; timestamp: number }) => {
             console.log('[Intercom] Received audio message from:', message.fromName);
-            set({ incomingIntercom: message });
+            set({ incomingIntercom: { ...message, timestamp: Date.now(), msgId: `${Date.now()}_${Math.random()}` } });
         });
 
         socket.on('pair-required', (payload: { message?: string }) => {
