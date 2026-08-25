@@ -290,7 +290,7 @@ function App({ mode: propMode }) {
             }}>
               {useReadAlong ? (
                 readAlong.tokens.map((tok, i) => {
-                  const isActive = i === activeIdx;
+                  const isActive = activeIdx >= 0 && i === activeIdx;
                   const isPast = activeIdx >= 0 && i < activeIdx;
                   return (
                     <span
@@ -298,14 +298,14 @@ function App({ mode: propMode }) {
                       className="ocs-ra-word"
                       data-i={i}
                       style={{
-                        display: 'inline',
-                        // Same weight for every token — bolding via shadow avoids layout growth / frame overflow
-                        fontWeight: 600,
-                        color: isActive ? '#FFFFFF' : baseColor,
-                        opacity: isActive ? 1 : (isPast ? 0.42 : 0.58),
-                        transition: 'color 180ms cubic-bezier(0.33, 1, 0.68, 1), opacity 180ms cubic-bezier(0.33, 1, 0.68, 1), text-shadow 180ms cubic-bezier(0.33, 1, 0.68, 1)',
+                        display: 'inline-block',
+                        fontWeight: isActive ? 800 : (isPast ? 600 : 500),
+                        color: isActive ? '#38bdf8' : (isPast ? '#FFFFFF' : baseColor),
+                        opacity: isActive ? 1 : (isPast ? 0.9 : 0.45),
+                        transform: isActive ? 'scale(1.06) translateY(-1px)' : 'scale(1)',
+                        transition: 'all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)',
                         textShadow: isActive
-                          ? '0 0 0.6px #fff, 0 0 0.6px #fff, 0 0 12px rgba(255,255,255,0.25), 0 2px 30px rgba(0,0,0,0.6)'
+                          ? '0 0 16px rgba(56,189,248,0.9), 0 2px 30px rgba(0,0,0,0.6)'
                           : '0 2px 30px rgba(0,0,0,0.6)',
                       }}
                     >

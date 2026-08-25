@@ -448,6 +448,8 @@ export function renderAnimatedLyrics({
 
 // ─── 1. Word Highlight (Read-Along Default) ────────────────────────────────
 
+// ─── 1. Word Highlight (Read-Along Default) ────────────────────────────────
+
 function renderWordHighlight(text, currentWordIndex) {
   const segments = text.split(/(\s+)/);
   let wordCounter = 0;
@@ -456,18 +458,22 @@ function renderWordHighlight(text, currentWordIndex) {
     if (/^\s+$/.test(seg)) return <span key={idx}>{seg}</span>;
 
     const tokenIdx = wordCounter++;
-    const isRead = tokenIdx <= currentWordIndex;
-    const isActive = tokenIdx === currentWordIndex + 1;
+    const isRead = currentWordIndex >= 0 && tokenIdx < currentWordIndex;
+    const isActive = currentWordIndex >= 0 && tokenIdx === currentWordIndex;
 
     return (
       <span
         key={idx}
-        className={`transition-all duration-150 inline-block ${
+        style={{
+          transition: "all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+          willChange: "transform, color, opacity",
+        }}
+        className={`inline-block origin-center ${
           isActive
-            ? "text-amber-300 font-bold bg-amber-500/20 px-1 py-0.5 rounded shadow-[0_0_10px_rgba(252,211,77,0.5)] ring-1 ring-amber-400/40"
+            ? "text-amber-300 font-extrabold bg-amber-500/25 px-1.5 py-0.5 rounded-md scale-[1.06] shadow-[0_0_16px_rgba(252,211,77,0.7)] ring-1 ring-amber-400/60"
             : isRead
-            ? "text-white font-semibold"
-            : "text-white/45"
+            ? "text-white font-bold opacity-90"
+            : "text-white/45 font-medium opacity-50"
         }`}
       >
         {seg}
@@ -479,8 +485,7 @@ function renderWordHighlight(text, currentWordIndex) {
 // ─── 2. Phrase Highlight (3-4 Word Chunking) ───────────────────────────────
 
 function renderPhraseHighlight(text, currentWordIndex) {
-  const words = text.split(/\s+/).filter(Boolean);
-  const activePhraseIdx = Math.floor((currentWordIndex + 1) / 3);
+  const activePhraseIdx = currentWordIndex >= 0 ? Math.floor(currentWordIndex / 3) : -1;
   let wordCounter = 0;
 
   const segments = text.split(/(\s+)/);
@@ -489,18 +494,22 @@ function renderPhraseHighlight(text, currentWordIndex) {
 
     const tokenIdx = wordCounter++;
     const phraseIdx = Math.floor(tokenIdx / 3);
-    const isCurrentPhrase = phraseIdx === activePhraseIdx;
-    const isPastPhrase = phraseIdx < activePhraseIdx;
+    const isCurrentPhrase = activePhraseIdx >= 0 && phraseIdx === activePhraseIdx;
+    const isPastPhrase = activePhraseIdx >= 0 && phraseIdx < activePhraseIdx;
 
     return (
       <span
         key={idx}
-        className={`transition-all duration-200 inline-block ${
+        style={{
+          transition: "all 180ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+          willChange: "transform, color, opacity",
+        }}
+        className={`inline-block ${
           isCurrentPhrase
-            ? "text-cyan-200 font-bold bg-cyan-500/20 px-1 py-0.5 rounded-md shadow-[0_0_12px_rgba(34,211,238,0.4)]"
+            ? "text-cyan-200 font-extrabold bg-cyan-500/25 px-1.5 py-0.5 rounded-lg shadow-[0_0_16px_rgba(34,211,238,0.6)] scale-[1.04]"
             : isPastPhrase
-            ? "text-white/90 font-medium"
-            : "text-white/35"
+            ? "text-white/95 font-semibold opacity-90"
+            : "text-white/40 font-medium opacity-45"
         }`}
       >
         {seg}
@@ -513,7 +522,6 @@ function renderPhraseHighlight(text, currentWordIndex) {
 
 function renderLineHighlight(text, currentWordIndex) {
   const lines = text.split("\n");
-  const targetWordIndex = currentWordIndex + 1;
   let wordCounter = 0;
 
   return (
@@ -524,19 +532,21 @@ function renderLineHighlight(text, currentWordIndex) {
         const lineEndWord = wordCounter + lineWords.length - 1;
         wordCounter += lineWords.length;
 
-        // Immediate advance: As soon as previous line finishes, targetWordIndex lands on next line
-        const isCurrentLine = targetWordIndex >= lineStartWord && targetWordIndex <= lineEndWord;
+        const isCurrentLine = currentWordIndex >= lineStartWord && currentWordIndex <= lineEndWord;
 
         return (
           <div
             key={lIdx}
-            className={`transition-all duration-300 rounded-xl px-3 py-1 ${
+            style={{
+              transition: "all 220ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+            }}
+            className={`rounded-xl px-3 py-1 ${
               isCurrentLine
-                ? "bg-white/10 text-white font-bold shadow-lg border border-white/15 scale-[1.02]"
-                : "text-white/30 opacity-40 scale-95"
+                ? "bg-white/15 text-white font-bold shadow-lg border border-white/25 scale-[1.02]"
+                : "text-white/35 opacity-40 scale-95"
             }`}
           >
-            {renderWordHighlight(line, currentWordIndex - lineStartWord)}
+            {renderWordHighlight(line, currentWordIndex >= 0 ? currentWordIndex - lineStartWord : -1)}
           </div>
         );
       })}
@@ -548,7 +558,6 @@ function renderLineHighlight(text, currentWordIndex) {
 
 function renderSentenceHighlight(text, currentWordIndex) {
   const sentences = text.match(/[^.!?]+[.!?]+|\s*[^.!?]+$/g) || [text];
-  const targetWordIndex = currentWordIndex + 1;
   let wordCounter = 0;
 
   return (
@@ -559,18 +568,21 @@ function renderSentenceHighlight(text, currentWordIndex) {
         const sEnd = wordCounter + sWords.length - 1;
         wordCounter += sWords.length;
 
-        const isCurrent = targetWordIndex >= sStart && targetWordIndex <= sEnd;
+        const isCurrent = currentWordIndex >= sStart && currentWordIndex <= sEnd;
         const isPast = currentWordIndex > sEnd;
 
         return (
           <span
             key={sIdx}
-            className={`transition-all duration-300 inline ${
+            style={{
+              transition: "all 200ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+            }}
+            className={`inline rounded px-1.5 py-0.5 ${
               isCurrent
-                ? "text-white font-bold bg-amber-400/15 rounded px-1.5 py-0.5 border border-amber-400/30 shadow-[0_0_15px_rgba(251,191,36,0.25)]"
+                ? "text-white font-extrabold bg-amber-400/20 border border-amber-400/40 shadow-[0_0_18px_rgba(251,191,36,0.35)]"
                 : isPast
-                ? "text-white/80"
-                : "text-white/35"
+                ? "text-white/85 font-medium"
+                : "text-white/40 font-normal opacity-45"
             }`}
           >
             {sentence}
@@ -591,12 +603,15 @@ function renderReadingCursor(text, currentWordIndex) {
     if (/^\s+$/.test(seg)) return <span key={idx}>{seg}</span>;
 
     const tokenIdx = wordCounter++;
-    const isRead = tokenIdx <= currentWordIndex;
-    const isActive = tokenIdx === currentWordIndex + 1;
+    const isRead = currentWordIndex >= 0 && tokenIdx < currentWordIndex;
+    const isActive = currentWordIndex >= 0 && tokenIdx === currentWordIndex;
 
     return (
       <span key={idx} className="relative inline-block">
-        <span className={isRead ? "text-white font-semibold" : isActive ? "text-amber-300 font-bold" : "text-white/40"}>
+        <span
+          style={{ transition: "color 150ms ease" }}
+          className={isActive ? "text-amber-300 font-extrabold" : isRead ? "text-white font-semibold" : "text-white/40"}
+        >
           {seg}
         </span>
         {isActive && (
@@ -619,19 +634,22 @@ function renderSpotlightReading(text, currentWordIndex) {
         if (/^\s+$/.test(seg)) return <span key={idx}>{seg}</span>;
 
         const tokenIdx = wordCounter++;
-        const dist = Math.abs(tokenIdx - (currentWordIndex + 1));
-        const isSpot = dist === 0;
-        const isNear = dist <= 2;
+        const isSpot = currentWordIndex >= 0 && tokenIdx === currentWordIndex;
+        const isNear = currentWordIndex >= 0 && Math.abs(tokenIdx - currentWordIndex) <= 2;
 
         return (
           <span
             key={idx}
-            className={`transition-all duration-300 inline-block ${
+            style={{
+              transition: "all 200ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+              willChange: "transform, opacity",
+            }}
+            className={`inline-block ${
               isSpot
-                ? "text-white font-extrabold scale-110 drop-shadow-[0_0_18px_rgba(255,255,255,0.9)] bg-white/20 px-1.5 py-0.5 rounded-lg"
+                ? "text-white font-black scale-110 drop-shadow-[0_0_20px_rgba(255,255,255,1)] bg-white/20 px-1.5 py-0.5 rounded-lg ring-1 ring-white/40"
                 : isNear
-                ? "text-white/70 font-medium"
-                : "text-white/15 opacity-30"
+                ? "text-white/80 font-medium opacity-80"
+                : "text-white/20 font-normal opacity-30 scale-95"
             }`}
           >
             {seg}
@@ -646,7 +664,6 @@ function renderSpotlightReading(text, currentWordIndex) {
 
 function renderFocusWindow(text, currentWordIndex) {
   const lines = text.split("\n");
-  const targetWordIndex = currentWordIndex + 1;
   let wordCounter = 0;
 
   return (
@@ -657,19 +674,21 @@ function renderFocusWindow(text, currentWordIndex) {
         const lineEndWord = wordCounter + lineWords.length - 1;
         wordCounter += lineWords.length;
 
-        // Immediate advance to next line upon completing previous line
-        const isCurrentLine = targetWordIndex >= lineStartWord && targetWordIndex <= lineEndWord;
+        const isCurrentLine = currentWordIndex >= lineStartWord && currentWordIndex <= lineEndWord;
 
         return (
           <div
             key={lIdx}
-            className={`transition-all duration-400 rounded-2xl p-3 relative ${
+            style={{
+              transition: "all 250ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+            }}
+            className={`rounded-2xl p-3 relative ${
               isCurrentLine
-                ? "bg-gradient-to-r from-blue-600/20 via-purple-600/20 to-blue-600/20 border-2 border-cyan-400/50 shadow-[0_0_25px_rgba(34,211,238,0.25)] text-white font-bold scale-100"
+                ? "bg-gradient-to-r from-blue-600/25 via-purple-600/25 to-blue-600/25 border-2 border-cyan-400/60 shadow-[0_0_25px_rgba(34,211,238,0.3)] text-white font-bold scale-100"
                 : "text-white/25 opacity-30 scale-95 border border-transparent"
             }`}
           >
-            {renderWordHighlight(line, currentWordIndex - lineStartWord)}
+            {renderWordHighlight(line, currentWordIndex >= 0 ? currentWordIndex - lineStartWord : -1)}
           </div>
         );
       })}
@@ -681,14 +700,13 @@ function renderFocusWindow(text, currentWordIndex) {
 
 function renderCenterLineReading(text, currentWordIndex) {
   const lines = text.split("\n");
-  const targetWordIndex = currentWordIndex + 1;
   let wordCounter = 0;
   let activeLineIdx = 0;
 
   lines.forEach((line, idx) => {
     const count = line.trim().split(/\s+/).filter(Boolean).length;
     const start = wordCounter;
-    if (targetWordIndex >= start) {
+    if (currentWordIndex >= start) {
       activeLineIdx = idx;
     }
     wordCounter += count;
@@ -696,19 +714,25 @@ function renderCenterLineReading(text, currentWordIndex) {
 
   return (
     <div
-      className="flex flex-col gap-4 w-full transition-transform duration-500 ease-out text-center"
-      style={{ transform: `translateY(-${Math.max(0, activeLineIdx - 1) * 28}px)` }}
+      className="flex flex-col gap-4 w-full text-center"
+      style={{
+        transform: `translateY(-${Math.max(0, activeLineIdx - 1) * 28}px)`,
+        transition: "transform 350ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+      }}
     >
       {lines.map((line, idx) => {
         const isCurrent = idx === activeLineIdx;
         return (
           <div
             key={idx}
-            className={`transition-all duration-300 ${
+            style={{
+              transition: "all 200ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+            }}
+            className={
               isCurrent
                 ? "text-amber-300 font-bold scale-110 drop-shadow-lg"
                 : "text-white/30 font-normal scale-90 opacity-40"
-            }`}
+            }
           >
             {line}
           </div>
@@ -728,18 +752,21 @@ function renderFadePreviousText(text, currentWordIndex) {
     if (/^\s+$/.test(seg)) return <span key={idx}>{seg}</span>;
 
     const tokenIdx = wordCounter++;
-    const isPast = tokenIdx < currentWordIndex - 3;
-    const isCurrent = tokenIdx >= currentWordIndex - 3 && tokenIdx <= currentWordIndex + 1;
+    const isPast = currentWordIndex >= 0 && tokenIdx < currentWordIndex - 2;
+    const isCurrent = currentWordIndex >= 0 && tokenIdx >= currentWordIndex - 2 && tokenIdx <= currentWordIndex;
 
     return (
       <span
         key={idx}
-        className={`transition-opacity duration-300 inline-block ${
+        style={{
+          transition: "opacity 200ms ease, color 200ms ease",
+        }}
+        className={`inline-block ${
           isCurrent
             ? "opacity-100 text-white font-bold"
             : isPast
-            ? "opacity-25 text-white/40"
-            : "opacity-40 text-white/30"
+            ? "opacity-30 text-white/40 font-medium"
+            : "opacity-45 text-white/35 font-normal"
         }`}
       >
         {seg}
@@ -758,15 +785,19 @@ function renderDimAndFocus(text, currentWordIndex) {
     if (/^\s+$/.test(seg)) return <span key={idx}>{seg}</span>;
 
     const tokenIdx = wordCounter++;
-    const isFocus = tokenIdx === currentWordIndex + 1;
+    const isFocus = currentWordIndex >= 0 && tokenIdx === currentWordIndex;
 
     return (
       <span
         key={idx}
-        className={`transition-all duration-200 inline-block ${
+        style={{
+          transition: "all 180ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+          willChange: "transform, opacity",
+        }}
+        className={`inline-block origin-center ${
           isFocus
-            ? "opacity-100 text-cyan-300 font-extrabold scale-115 drop-shadow-[0_0_15px_rgba(34,211,238,0.8)]"
-            : "opacity-20 text-white/40 scale-95"
+            ? "opacity-100 text-cyan-300 font-black scale-110 drop-shadow-[0_0_16px_rgba(34,211,238,0.9)]"
+            : "opacity-25 text-white/40 scale-95 font-medium"
         }`}
       >
         {seg}
@@ -785,18 +816,22 @@ function renderWordPop(text, currentWordIndex) {
     if (/^\s+$/.test(seg)) return <span key={idx}>{seg}</span>;
 
     const tokenIdx = wordCounter++;
-    const isPop = tokenIdx === currentWordIndex + 1;
-    const isRead = tokenIdx <= currentWordIndex;
+    const isPop = currentWordIndex >= 0 && tokenIdx === currentWordIndex;
+    const isRead = currentWordIndex >= 0 && tokenIdx < currentWordIndex;
 
     return (
       <span
         key={idx}
-        className={`transition-all duration-150 inline-block ${
+        style={{
+          transition: "all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+          willChange: "transform, color, opacity",
+        }}
+        className={`inline-block origin-center ${
           isPop
-            ? "text-emerald-300 font-extrabold scale-125 -translate-y-1 drop-shadow-[0_0_14px_rgba(110,231,183,0.9)]"
+            ? "text-emerald-300 font-black scale-[1.14] -translate-y-0.5 drop-shadow-[0_0_16px_rgba(110,231,183,0.95)]"
             : isRead
-            ? "text-white font-semibold"
-            : "text-white/40"
+            ? "text-white font-bold opacity-90"
+            : "text-white/40 font-medium opacity-50"
         }`}
       >
         {seg}
@@ -809,7 +844,6 @@ function renderWordPop(text, currentWordIndex) {
 
 function renderReadingRuler(text, currentWordIndex) {
   const lines = text.split("\n");
-  const targetWordIndex = currentWordIndex + 1;
   let wordCounter = 0;
 
   return (
@@ -820,19 +854,21 @@ function renderReadingRuler(text, currentWordIndex) {
         const lineEndWord = wordCounter + lineWords.length - 1;
         wordCounter += lineWords.length;
 
-        // Immediate advance to next line upon finishing previous line
-        const isCurrentLine = targetWordIndex >= lineStartWord && targetWordIndex <= lineEndWord;
+        const isCurrentLine = currentWordIndex >= lineStartWord && currentWordIndex <= lineEndWord;
 
         return (
           <div
             key={lIdx}
-            className={`relative transition-all duration-300 px-3 py-1 rounded-xl ${
+            style={{
+              transition: "all 220ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+            }}
+            className={`relative px-3 py-1 rounded-xl ${
               isCurrentLine
-                ? "bg-amber-500/15 border-l-4 border-amber-400 text-white font-bold shadow-md scale-[1.01]"
+                ? "bg-amber-500/20 border-l-4 border-amber-400 text-white font-bold shadow-md scale-[1.01]"
                 : "text-white/40 opacity-40 scale-95"
             }`}
           >
-            {renderWordHighlight(line, currentWordIndex - lineStartWord)}
+            {renderWordHighlight(line, currentWordIndex >= 0 ? currentWordIndex - lineStartWord : -1)}
           </div>
         );
       })}
@@ -850,8 +886,8 @@ function renderBionicReading(text, currentWordIndex) {
     if (/^\s+$/.test(seg)) return <span key={idx}>{seg}</span>;
 
     const tokenIdx = wordCounter++;
-    const isActive = tokenIdx === currentWordIndex + 1;
-    const isRead = tokenIdx <= currentWordIndex;
+    const isActive = currentWordIndex >= 0 && tokenIdx === currentWordIndex;
+    const isRead = currentWordIndex >= 0 && tokenIdx < currentWordIndex;
 
     const mid = Math.ceil(seg.length / 2);
     const head = seg.slice(0, mid);
@@ -860,9 +896,12 @@ function renderBionicReading(text, currentWordIndex) {
     return (
       <span
         key={idx}
-        className={`inline-block transition-all duration-150 ${
+        style={{
+          transition: "all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+        }}
+        className={`inline-block ${
           isActive
-            ? "text-amber-300 font-extrabold scale-110 drop-shadow-[0_0_12px_rgba(251,191,36,0.8)]"
+            ? "text-amber-300 font-black scale-105 drop-shadow-[0_0_14px_rgba(251,191,36,0.9)]"
             : isRead
             ? "text-white"
             : "text-white/50"
@@ -885,18 +924,22 @@ function renderKaraokeHighlight(text, currentWordIndex) {
     if (/^\s+$/.test(seg)) return <span key={idx}>{seg}</span>;
 
     const tokenIdx = wordCounter++;
-    const isRead = tokenIdx <= currentWordIndex;
-    const isActive = tokenIdx === currentWordIndex + 1;
+    const isRead = currentWordIndex >= 0 && tokenIdx < currentWordIndex;
+    const isActive = currentWordIndex >= 0 && tokenIdx === currentWordIndex;
 
     return (
       <span
         key={idx}
-        className={`transition-all duration-200 inline-block ${
+        style={{
+          transition: "all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+          willChange: "transform, color, opacity",
+        }}
+        className={`inline-block origin-center ${
           isActive
-            ? "text-cyan-300 font-bold underline decoration-cyan-400 decoration-2 underline-offset-4 scale-[1.04] drop-shadow-[0_0_12px_rgba(34,211,238,0.8)]"
+            ? "text-cyan-300 font-extrabold underline decoration-cyan-400 decoration-2 underline-offset-4 scale-[1.06] drop-shadow-[0_0_16px_rgba(34,211,238,0.9)]"
             : isRead
-            ? "text-white font-semibold"
-            : "text-white/35"
+            ? "text-white font-bold opacity-95"
+            : "text-white/40 font-medium opacity-50"
         }`}
       >
         {seg}
@@ -917,21 +960,24 @@ function renderLineByLineReveal(text, currentWordIndex) {
         const lineEndWord = wordCounter + lineWords.length - 1;
         wordCounter += lineWords.length;
 
-        const isLineReached = currentWordIndex >= lineStartWord - 1;
-        const isCurrentLine = currentWordIndex >= lineStartWord - 1 && currentWordIndex <= lineEndWord;
+        const isLineReached = currentWordIndex >= lineStartWord;
+        const isCurrentLine = currentWordIndex >= lineStartWord && currentWordIndex <= lineEndWord;
 
         return (
           <div
             key={lIdx}
-            className={`transition-all duration-500 ease-out ${
+            style={{
+              transition: "all 350ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+            }}
+            className={
               isCurrentLine
                 ? "opacity-100 scale-100 text-white font-bold translate-y-0"
                 : isLineReached
                 ? "opacity-80 scale-[0.98] text-white/80"
                 : "opacity-15 scale-95 text-white/20 translate-y-2"
-            }`}
+            }
           >
-            {renderKaraokeHighlight(line, currentWordIndex - lineStartWord)}
+            {renderKaraokeHighlight(line, currentWordIndex >= 0 ? currentWordIndex - lineStartWord : -1)}
           </div>
         );
       })}
@@ -947,17 +993,21 @@ function renderWordByWordReveal(text, currentWordIndex) {
     if (/^\s+$/.test(seg)) return <span key={idx}>{seg}</span>;
 
     const tokenIdx = wordCounter++;
-    const isVisible = tokenIdx <= currentWordIndex + 1;
-    const isActive = tokenIdx === currentWordIndex + 1;
+    const isVisible = currentWordIndex >= 0 && tokenIdx <= currentWordIndex;
+    const isActive = currentWordIndex >= 0 && tokenIdx === currentWordIndex;
 
     return (
       <span
         key={idx}
-        className={`transition-all duration-300 inline-block ${
+        style={{
+          transition: "all 200ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+          willChange: "transform, opacity",
+        }}
+        className={`inline-block origin-center ${
           isActive
-            ? "opacity-100 text-amber-300 font-bold scale-110 drop-shadow-[0_0_14px_rgba(252,211,77,0.9)] animate-in zoom-in-90"
+            ? "opacity-100 text-amber-300 font-extrabold scale-110 drop-shadow-[0_0_16px_rgba(252,211,77,0.95)]"
             : isVisible
-            ? "opacity-100 text-white font-semibold"
+            ? "opacity-100 text-white font-bold"
             : "opacity-0 scale-75 pointer-events-none"
         }`}
       >
@@ -970,7 +1020,7 @@ function renderWordByWordReveal(text, currentWordIndex) {
 function renderProgressiveFill(text, currentWordIndex) {
   const words = text.split(/\s+/).filter(Boolean);
   const total = Math.max(1, words.length);
-  const ratio = Math.min(1, Math.max(0, (currentWordIndex + 1) / total));
+  const ratio = currentWordIndex >= 0 ? Math.min(1, (currentWordIndex + 1) / total) : 0;
   const pct = Math.round(ratio * 100);
 
   return (
@@ -979,9 +1029,10 @@ function renderProgressiveFill(text, currentWordIndex) {
         {text}
       </div>
       <div
-        className="absolute inset-0 text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-cyan-300 to-emerald-300 font-bold select-none transition-all duration-200"
+        className="absolute inset-0 text-transparent bg-clip-text bg-gradient-to-r from-amber-300 via-cyan-300 to-emerald-300 font-extrabold select-none"
         style={{
           clipPath: `polygon(0 0, ${pct}% 0, ${pct}% 100%, 0 100%)`,
+          transition: "clip-path 180ms cubic-bezier(0.2, 0.8, 0.2, 1)",
         }}
       >
         {text}
@@ -998,18 +1049,22 @@ function renderBouncingWord(text, currentWordIndex) {
     if (/^\s+$/.test(seg)) return <span key={idx}>{seg}</span>;
 
     const tokenIdx = wordCounter++;
-    const isRead = tokenIdx <= currentWordIndex;
-    const isActive = tokenIdx === currentWordIndex + 1;
+    const isRead = currentWordIndex >= 0 && tokenIdx < currentWordIndex;
+    const isActive = currentWordIndex >= 0 && tokenIdx === currentWordIndex;
 
     return (
       <span
         key={idx}
-        className={`transition-all duration-200 inline-block ${
+        style={{
+          transition: "all 180ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+          willChange: "transform, opacity",
+        }}
+        className={`inline-block origin-center ${
           isActive
-            ? "text-yellow-300 font-bold -translate-y-2 scale-125 drop-shadow-[0_0_16px_rgba(253,224,71,0.9)] animate-bounce"
+            ? "text-yellow-300 font-black -translate-y-1.5 scale-115 drop-shadow-[0_0_18px_rgba(253,224,71,0.95)]"
             : isRead
-            ? "text-white font-semibold"
-            : "text-white/35"
+            ? "text-white font-bold opacity-90"
+            : "text-white/40 font-medium opacity-50"
         }`}
       >
         {seg}
@@ -1026,23 +1081,26 @@ function renderUnderlineTracker(text, currentWordIndex) {
     if (/^\s+$/.test(seg)) return <span key={idx}>{seg}</span>;
 
     const tokenIdx = wordCounter++;
-    const isRead = tokenIdx <= currentWordIndex;
-    const isActive = tokenIdx === currentWordIndex + 1;
+    const isRead = currentWordIndex >= 0 && tokenIdx < currentWordIndex;
+    const isActive = currentWordIndex >= 0 && tokenIdx === currentWordIndex;
 
     return (
       <span
         key={idx}
-        className={`relative inline-block transition-all duration-200 pb-1.5 ${
+        style={{
+          transition: "all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+        }}
+        className={`relative inline-block pb-1.5 ${
           isActive
-            ? "text-cyan-200 font-bold"
+            ? "text-cyan-200 font-extrabold scale-[1.04]"
             : isRead
-            ? "text-white font-semibold"
-            : "text-white/40"
+            ? "text-white font-bold opacity-90"
+            : "text-white/40 font-medium opacity-50"
         }`}
       >
         {seg}
         {isActive && (
-          <span className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-cyan-400 via-emerald-400 to-cyan-400 rounded-full animate-pulse shadow-[0_0_10px_rgba(34,211,238,1)]" />
+          <span className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-cyan-400 via-emerald-400 to-cyan-400 rounded-full animate-pulse shadow-[0_0_12px_rgba(34,211,238,1)]" />
         )}
       </span>
     );
@@ -1057,18 +1115,22 @@ function renderGlowingWord(text, currentWordIndex) {
     if (/^\s+$/.test(seg)) return <span key={idx}>{seg}</span>;
 
     const tokenIdx = wordCounter++;
-    const isRead = tokenIdx <= currentWordIndex;
-    const isActive = tokenIdx === currentWordIndex + 1;
+    const isRead = currentWordIndex >= 0 && tokenIdx < currentWordIndex;
+    const isActive = currentWordIndex >= 0 && tokenIdx === currentWordIndex;
 
     return (
       <span
         key={idx}
-        className={`transition-all duration-200 inline-block ${
+        style={{
+          transition: "all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+          willChange: "transform, text-shadow",
+        }}
+        className={`inline-block origin-center ${
           isActive
-            ? "text-white font-extrabold scale-110 drop-shadow-[0_0_20px_rgba(255,255,255,1)] drop-shadow-[0_0_35px_rgba(56,189,248,0.9)]"
+            ? "text-white font-black scale-110 drop-shadow-[0_0_24px_rgba(255,255,255,1)] drop-shadow-[0_0_35px_rgba(56,189,248,0.9)]"
             : isRead
-            ? "text-white/90 font-semibold"
-            : "text-white/30"
+            ? "text-white/95 font-bold"
+            : "text-white/35 font-medium opacity-45"
         }`}
       >
         {seg}
@@ -1085,18 +1147,21 @@ function renderColorShift(text, currentWordIndex) {
     if (/^\s+$/.test(seg)) return <span key={idx}>{seg}</span>;
 
     const tokenIdx = wordCounter++;
-    const isRead = tokenIdx <= currentWordIndex;
-    const isActive = tokenIdx === currentWordIndex + 1;
+    const isRead = currentWordIndex >= 0 && tokenIdx < currentWordIndex;
+    const isActive = currentWordIndex >= 0 && tokenIdx === currentWordIndex;
 
     return (
       <span
         key={idx}
-        className={`transition-all duration-300 inline-block ${
+        style={{
+          transition: "all 180ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+        }}
+        className={`inline-block ${
           isActive
-            ? "text-emerald-300 font-extrabold scale-105 drop-shadow-[0_0_12px_rgba(110,231,183,0.8)]"
+            ? "text-emerald-300 font-black scale-105 drop-shadow-[0_0_16px_rgba(110,231,183,0.9)]"
             : isRead
-            ? "text-amber-200 font-semibold"
-            : "text-white/35"
+            ? "text-amber-200 font-bold opacity-90"
+            : "text-white/40 font-medium opacity-50"
         }`}
       >
         {seg}
@@ -1107,14 +1172,13 @@ function renderColorShift(text, currentWordIndex) {
 
 function renderScrollingLyrics(text, currentWordIndex) {
   const lines = text.split("\n");
-  const targetWordIndex = currentWordIndex + 1;
   let wordCounter = 0;
-
   let activeLineIdx = 0;
+
   lines.forEach((line, idx) => {
     const count = line.trim().split(/\s+/).filter(Boolean).length;
     const start = wordCounter;
-    if (targetWordIndex >= start) {
+    if (currentWordIndex >= start) {
       activeLineIdx = idx;
     }
     wordCounter += count;
@@ -1123,7 +1187,13 @@ function renderScrollingLyrics(text, currentWordIndex) {
   wordCounter = 0;
 
   return (
-    <div className="flex flex-col gap-4 w-full transition-transform duration-500 ease-out text-center" style={{ transform: `translateY(-${Math.max(0, activeLineIdx - 1) * 28}px)` }}>
+    <div
+      className="flex flex-col gap-4 w-full text-center"
+      style={{
+        transform: `translateY(-${Math.max(0, activeLineIdx - 1) * 28}px)`,
+        transition: "transform 350ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+      }}
+    >
       {lines.map((line, idx) => {
         const lineWords = line.trim().split(/\s+/).filter(Boolean);
         const lineStartWord = wordCounter;
@@ -1133,14 +1203,17 @@ function renderScrollingLyrics(text, currentWordIndex) {
         return (
           <div
             key={idx}
-            className={`transition-all duration-300 ${
+            style={{
+              transition: "all 200ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+            }}
+            className={
               isCurrent
                 ? "text-cyan-300 font-bold scale-105 drop-shadow-md"
                 : "text-white/40 font-normal scale-95 opacity-40"
-            }`}
+            }
           >
             {isCurrent
-              ? renderKaraokeHighlight(line, currentWordIndex - lineStartWord)
+              ? renderKaraokeHighlight(line, currentWordIndex >= 0 ? currentWordIndex - lineStartWord : -1)
               : line}
           </div>
         );
@@ -1152,7 +1225,7 @@ function renderScrollingLyrics(text, currentWordIndex) {
 function renderTypewriter(text, currentWordIndex) {
   const words = text.split(/\s+/).filter(Boolean);
   const total = Math.max(1, words.length);
-  const charRatio = Math.min(1, Math.max(0, (currentWordIndex + 1) / total));
+  const charRatio = currentWordIndex >= 0 ? Math.min(1, (currentWordIndex + 1) / total) : 0;
   const visibleChars = Math.round(charRatio * text.length);
 
   return (
@@ -1172,13 +1245,16 @@ function renderFadeAnimation(text, currentWordIndex) {
     if (/^\s+$/.test(seg)) return <span key={idx}>{seg}</span>;
 
     const tokenIdx = wordCounter++;
-    const isPast = tokenIdx < currentWordIndex - 2;
-    const isCurrent = tokenIdx >= currentWordIndex - 2 && tokenIdx <= currentWordIndex + 1;
+    const isPast = currentWordIndex >= 0 && tokenIdx < currentWordIndex - 2;
+    const isCurrent = currentWordIndex >= 0 && tokenIdx >= currentWordIndex - 2 && tokenIdx <= currentWordIndex;
 
     return (
       <span
         key={idx}
-        className={`transition-opacity duration-500 inline-block ${
+        style={{
+          transition: "opacity 250ms ease, color 250ms ease",
+        }}
+        className={`inline-block ${
           isCurrent
             ? "opacity-100 text-white font-bold"
             : isPast
@@ -1319,7 +1395,7 @@ function renderCallAndResponse(text, currentWordIndex, isTracking) {
               </span>
             )}
             <span className="leading-tight">
-              {isTracking ? renderKaraokeHighlight(cleanText, currentWordIndex - lineStartWord) : cleanText}
+              {isTracking ? renderKaraokeHighlight(cleanText, currentWordIndex >= 0 ? currentWordIndex - lineStartWord : -1) : cleanText}
             </span>
           </div>
         );
@@ -1366,18 +1442,22 @@ function renderBeatSyncLyrics(text, currentWordIndex) {
     if (/^\s+$/.test(seg)) return <span key={idx}>{seg}</span>;
 
     const tokenIdx = wordCounter++;
-    const isRead = tokenIdx <= currentWordIndex;
-    const isActive = tokenIdx === currentWordIndex + 1;
+    const isRead = currentWordIndex >= 0 && tokenIdx < currentWordIndex;
+    const isActive = currentWordIndex >= 0 && tokenIdx === currentWordIndex;
 
     return (
       <span
         key={idx}
-        className={`transition-all duration-150 inline-block ${
+        style={{
+          transition: "all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+          willChange: "transform, opacity",
+        }}
+        className={`inline-block origin-center ${
           isActive
-            ? "text-cyan-300 font-extrabold scale-125 animate-pulse drop-shadow-[0_0_16px_rgba(34,211,238,1)]"
+            ? "text-cyan-300 font-black scale-125 animate-pulse drop-shadow-[0_0_18px_rgba(34,211,238,1)]"
             : isRead
-            ? "text-white font-semibold"
-            : "text-white/35"
+            ? "text-white font-bold opacity-90"
+            : "text-white/35 font-medium opacity-50"
         }`}
       >
         {seg}

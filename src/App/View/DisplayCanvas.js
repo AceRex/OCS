@@ -246,17 +246,21 @@ export default function DisplayCanvas({
               >
                 "{useReadAlong
                   ? readAlong.tokens.map((tok, i) => {
-                      const isSpoken = i <= activeIdx;
-                      const isCurrent = i === activeIdx;
+                      const isCurrent = activeIdx >= 0 && i === activeIdx;
+                      const isPast = activeIdx >= 0 && i < activeIdx;
                       return (
                         <span
                           key={i}
-                          className={`transition-colors duration-150 ${
+                          style={{
+                            transition: "all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+                            willChange: "transform, opacity, color",
+                          }}
+                          className={`inline-block origin-center ${
                             isCurrent
-                              ? "text-white font-black underline decoration-cyan-400 decoration-2 underline-offset-4"
-                              : isSpoken
-                                ? "text-white"
-                                : "text-white/40"
+                              ? "text-cyan-200 font-black underline decoration-cyan-400 decoration-2 underline-offset-8 scale-[1.08] drop-shadow-[0_0_16px_rgba(34,211,238,0.95)]"
+                              : isPast
+                                ? "text-white font-extrabold opacity-95"
+                                : "text-white/40 font-semibold opacity-45"
                           }`}
                         >
                           {tok}
