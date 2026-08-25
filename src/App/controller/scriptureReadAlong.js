@@ -105,8 +105,9 @@ function buildReadAlongPayload({
   rangeStart,
   rangeEnd,
   currentVerse,
+  version = 'kjv',
 }) {
-  const data = { title, body };
+  const data = { title, body, version: (version || 'kjv').toUpperCase() };
   if (rangeEnd != null && rangeStart != null && rangeEnd > rangeStart) {
     data.rangeStart = rangeStart;
     data.rangeEnd = rangeEnd;
@@ -115,7 +116,7 @@ function buildReadAlongPayload({
   if (enabled && tokens && tokens.length) {
     data.readAlong = {
       enabled: true,
-      tokens: tokens.map((t) => t.display),
+      tokens: tokens.map((t) => (typeof t === 'string' ? t : t.display || t.norm || '')),
       activeIndex: typeof activeIndex === 'number' ? activeIndex : -1,
       rangeStart: data.rangeStart,
       rangeEnd: data.rangeEnd,

@@ -31,12 +31,12 @@ const {
 
 const SAMPLE_RATE = 16000;
 const DEFAULT_CONFIDENCE_THRESHOLD = 0.42; // recalibrated vs Vosk 0.48 for logprob mapping
-const PRE_ROLL_MS = 500;
-const OVERLAP_MS = 300;
-const SILENCE_END_MS = 450;
+const PRE_ROLL_MS = 350;
+const OVERLAP_MS = 250;
+const SILENCE_END_MS = 320;
 const MAX_UTTERANCE_MS = 6000;
-const ROLLING_WINDOW_MS = 1600;
-const ROLLING_HOP_MS = 500;
+const ROLLING_WINDOW_MS = 1800;
+const ROLLING_HOP_MS = 250;
 const ENERGY_SPEECH = 0.012;
 const ENERGY_SILENCE = 0.006;
 
@@ -509,12 +509,12 @@ class WhisperEngine extends EventEmitter {
   _maybeRollingProbe() {
     // If an inference is already in flight, drop intermediate probe to prevent queue lag
     if (this._inferInFlight || this._busy) return;
-    if (!this._rollingBuf.length || this._rollingBuf.length < SAMPLE_RATE * 2 * 0.4) return;
+    if (!this._rollingBuf.length || this._rollingBuf.length < SAMPLE_RATE * 2 * 0.28) return;
     const buf = Buffer.from(this._rollingBuf);
     const uttId = this._activeUttId;
 
     this._inferInFlight = true;
-    this._runTranscribe(buf)
+    this._runTranscribe(buf, { isProbe: true })
       .then((res) => {
         this._inferInFlight = false;
         if (!this._inSpeech || this._activeUttId !== uttId) return;
@@ -547,10 +547,10 @@ class WhisperEngine extends EventEmitter {
 
     if (!chunks.length) return;
     const fullBuf = Buffer.concat(chunks);
-    if (fullBuf.length < SAMPLE_RATE * 2 * 0.3) return; // ignore <300ms blips
+    if (fullBuf.length < SAMPLE_RATE * 2 * 0.25) return; // ignore <250ms blips
 
     // Save overlap tail for next utterance
-    const overlapBytes = Math.floor(0.3 * SAMPLE_RATE) * 2;
+    const overlapBytes = Math.floor(0.25 * SAMPLE_RATE) * 2;
     this._overlapTail = fullBuf.length > overlapBytes ? fullBuf.slice(fullBuf.length - overlapBytes) : Buffer.from(fullBuf);
 
     this._inferQueue = this._inferQueue
@@ -586,7 +586,7 @@ class WhisperEngine extends EventEmitter {
       });
   }
 
-  async _runTranscribe(int16buf) {
+  async _runTranscribe(int16buf, { isProbe = false } = {}) {
     if (!this._whisper || !this.modelInfo) {
       return { text: '', language: null, filtered: false };
     }
@@ -595,9 +595,9 @@ class WhisperEngine extends EventEmitter {
     const englishOnly = !!this.modelInfo.englishOnly;
     let detected = null;
 
-    // Detect pass on multilingual tiny/base only when gate is on AND not an English-only target
+    // Detect pass on multilingual tiny/base only when gate is on AND not an English-only target AND not an interim probe
     const isSingleEnglishTarget = this._langPolicy.languages && this._langPolicy.languages.length === 1 && this._langPolicy.languages[0] === 'en';
-    if (this._langPolicy.enabled && this._detectModel && !englishOnly && !isSingleEnglishTarget) {
+    if (!isProbe && this._langPolicy.enabled && this._detectModel && !englishOnly && !isSingleEnglishTarget) {
       try {
         const det = await this._whisper.transcribe({
           model: this._detectModel.path,

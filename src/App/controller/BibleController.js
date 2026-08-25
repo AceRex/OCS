@@ -286,8 +286,8 @@ export default function BibleController() {
       if (needsNav) {
         // CRITICAL: book/chapter state change triggers clear-on-nav effect.
         // Voice already called Presentation.setContent — must not wipe it.
-        // Hold skip for ~600ms so Strict Mode double-invoke cannot clear.
-        skipPresentationClearUntilRef.current = Date.now() + 600;
+        // Hold skip for ~1500ms so async state changes and fetch cannot clear.
+        skipPresentationClearUntilRef.current = Date.now() + 1500;
         if (version) setSelectedVersion(version);
         setSelectedBookIndex(bookIndex);
         setSelectedChapterIndex(chapterIndex);

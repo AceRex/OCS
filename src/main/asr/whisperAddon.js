@@ -48,6 +48,8 @@ function getTranscribe() {
   return _transcribe;
 }
 
+const os = require('os');
+
 let _transcribeQueue = Promise.resolve();
 
 async function transcribe(options) {
@@ -56,6 +58,8 @@ async function transcribe(options) {
       .then(async () => {
         try {
           const fn = getTranscribe();
+          const cpuCount = os.cpus()?.length || 4;
+          const numThreads = Math.min(8, Math.max(4, cpuCount));
           const params = {
             language: 'en',
             use_gpu: true,
@@ -65,7 +69,8 @@ async function transcribe(options) {
             translate: false,
             no_timestamps: true,
             detect_language: false,
-            audio_ctx: 0,
+            threads: numThreads,
+            audio_ctx: 512,
             max_len: 0,
             ...options,
           };

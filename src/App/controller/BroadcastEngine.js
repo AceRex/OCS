@@ -1060,24 +1060,40 @@ export default function BroadcastEngine() {
     startVerse,
     endVerse,
   ) => {
-    const bookId = Number.isInteger(booksRef.current[bookIndex]?.id)
-      ? booksRef.current[bookIndex].id
-      : bookIndex;
+    let books = booksRef.current;
+    if (!books || !books.length) {
+      try {
+        if (window.electron?.Bible?.getBooks) {
+          books = await window.electron.Bible.getBooks();
+          if (books?.length) {
+            setBooks(books);
+            booksRef.current = books;
+          }
+        }
+      } catch (err) {
+        console.error("[Voice] presentVoicePassage books fetch error:", err);
+      }
+    }
+    const bookObj = (books && books[bookIndex]) || (books && books.find((b) => b.id === bookIndex)) || null;
+    const bookId = Number.isInteger(bookObj?.id) ? bookObj.id : bookIndex;
+    const bookName = bookObj?.name || (books && books[bookIndex]?.name) || "";
+    const currentVersion = (currentBibleVersionRef.current || "kjv").toLowerCase();
+
     // Use chapter cache to avoid redundant IPC calls (major performance win)
-    const cacheKey = `${currentBibleVersionRef.current}:${bookId}:${chapter}`;
+    const cacheKey = `${currentVersion}:${bookId}:${chapter}`;
     let vers = chapterCacheRef.current[cacheKey];
     if (!vers) {
       vers = await window.electron.Bible.getChapter(
-        currentBibleVersionRef.current,
+        currentVersion,
         bookId,
         chapter,
       );
       if (vers && vers.length > 0) chapterCacheRef.current[cacheKey] = vers;
     }
-    const bookName = booksRef.current[bookIndex]?.name || "";
     const start = Math.max(1, startVerse | 0);
     const end = Math.max(start, endVerse | 0 || start);
     if (!vers || !vers[start - 1]) {
+      console.warn(`[Voice] No verse ${chapter}:${start} in book ${bookName} (id ${bookId})`);
       setCommandFeedback({
         label: `No verse ${chapter}:${start} in this chapter`,
         ok: false,
@@ -1109,11 +1125,11 @@ export default function BroadcastEngine() {
       gateTranscript: null,
       advanceLockUntil: 0,
     };
-    pushBibleContent(step.title, step.body, tokens, -1, step);
+    pushBibleContent(step.title, step.body, tokens, -1, step, currentVersion);
     window.dispatchEvent(
       new CustomEvent("voice-bible-sync", {
         detail: {
-          version: currentBibleVersionRef.current,
+          version: currentVersion,
           bookIndex,
           chapterIndex: chapter - 1,
           indices: [step.currentVerse - 1],
@@ -1129,6 +1145,7 @@ export default function BroadcastEngine() {
     tokens,
     activeIndex,
     rangeMeta = null,
+    version = "kjv",
   ) => {
     if (!window.electron?.Presentation?.setContent) return;
     const enabled = readAlongEnabledRef.current && tokens && tokens.length > 0;
@@ -1151,6 +1168,7 @@ export default function BroadcastEngine() {
       rangeStart: meta?.startVerse,
       rangeEnd: meta?.endVerse,
       currentVerse: meta?.currentVerse,
+      version: version || currentBibleVersionRef.current || "kjv",
     });
     // Preserve operator amber highlights on body when cache exists
     const cache = highlightCacheRef.current[title];
@@ -2652,7 +2670,7 @@ export default function BroadcastEngine() {
         normalizeTranscript(res.text || ""),
       );
       const allowShaped =
-        pass === "A" &&
+        (pass === "A" || pass === "W") &&
         maybeShape.complete &&
         (res.confidence == null || res.confidence >= CONF_TIER_A_SHAPE * 0.7);
       if (!allowShaped) {
@@ -2845,7 +2863,8 @@ export default function BroadcastEngine() {
       // Interim — UI only. Never run commands on partials (false-fires mid-speech).
       if (rawText === lastPartialTextRef.current) return;
       lastPartialTextRef.current = rawText;
-      if (pass === "A") lastFinalTextRef.current = { key: "", time: 0 };
+      if (pass === "A" || pass === "W")
+        lastFinalTextRef.current = { key: "", time: 0 };
       const displayInterim = liveTranscriptCorrectionRef.current
         ? correctLiveTranscript(rawText)
         : rawText;
@@ -2880,7 +2899,7 @@ export default function BroadcastEngine() {
 
       // Ambient scripture: fire as soon as ordered shape is COMPLETE on partials
       // (faster than FR-3.8 1.5s probe). Commands still wait for final.
-      if (pass === "A" && handleTranscriptionRef.current) {
+      if ((pass === "A" || pass === "W") && handleTranscriptionRef.current) {
         const core = extractScriptureCore(commandText) || commandText;
         let shape = matchReferenceShape(core);
         if (!shape.complete) shape = matchReferenceShape(commandText);
@@ -2900,7 +2919,7 @@ export default function BroadcastEngine() {
             amb.utteranceId = utteranceId;
             amb.spanKey = shape.span;
             handleTranscriptionRef.current(shape.span, booksRef.current, {
-              pass: "A",
+              pass,
               triggerArmed: false,
               utteranceId,
               role: "probe",
@@ -2922,7 +2941,7 @@ export default function BroadcastEngine() {
               latest.firedKey = spanKey;
               latest.timer = null;
               handleTranscriptionRef.current?.(shape.span, booksRef.current, {
-                pass: "A",
+                pass,
                 triggerArmed: false,
                 utteranceId,
                 role: "probe",
@@ -3579,18 +3598,9 @@ export default function BroadcastEngine() {
 
           {/* Detected commands + bible refs footer */}
           {(commandFeedback ||
-            utteranceDebug ||
             detectedBiblePassages.length > 0 ||
             detectedCommands.length > 0) && (
             <div className="border-t border-white/5 p-3 space-y-2 bg-black/20">
-              {utteranceDebug && (
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-[8px] border border-amber-500/25 bg-amber-500/5">
-                  <span className="w-2 h-2 rounded-full bg-amber-400/80 shrink-0" />
-                  <span className="text-[9px] font-mono text-amber-200/90 tracking-wide">
-                    {utteranceDebug}
-                  </span>
-                </div>
-              )}
               {commandFeedback && (
                 <div
                   className={`flex items-center gap-2 px-3 py-1.5 rounded-[8px] border animate-in slide-in-from-bottom-2 duration-300 ${commandFeedback.ok ? "bg-emerald-500/10 border-emerald-500/30" : "bg-red-500/10 border-red-500/30"}`}
@@ -3790,7 +3800,10 @@ export default function BroadcastEngine() {
         </div>
 
         {/* Live Master Control & Stage Status Panel (Increased Height) */}
-        <DisabledContainer disabled={true} message="Stage Master Control is a phone-only feature. Use the OCS companion app on an Admin device to control the stage.">
+        <DisabledContainer
+          disabled={true}
+          message="This feature is not available yet"
+        >
           <div className="flex-1 bg-[#12111a]/95 border border-white/10 rounded-2xl flex flex-col overflow-hidden shadow-2xl relative">
             {/* Header with Live Content Telemetry */}
             <div className="py-2.5 px-5 flex items-center justify-between border-b border-white/5 bg-white/[0.02] shrink-0">
@@ -3847,7 +3860,11 @@ export default function BroadcastEngine() {
                 <div className="grid grid-cols-4 gap-2.5">
                   <button
                     type="button"
-                    onClick={() => (window.api?.Canvas?.toggleBlackout ? window.api.Canvas.toggleBlackout() : executeCommand("black_screen"))}
+                    onClick={() =>
+                      window.api?.Canvas?.toggleBlackout
+                        ? window.api.Canvas.toggleBlackout()
+                        : executeCommand("black_screen")
+                    }
                     className="flex items-center justify-center gap-2 py-3 px-3 rounded-xl bg-red-500/15 hover:bg-red-500/25 border border-red-500/30 text-red-300 text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer"
                   >
                     <PiMonitorFill size={16} />
@@ -3934,7 +3951,10 @@ export default function BroadcastEngine() {
                       dispatch(utilAction.setTime(300));
                       dispatch(utilAction.setPaused(false));
                       dispatch(utilAction.setActiveId(null));
-                      setCommandFeedback({ label: "5m Timer Started", ok: true });
+                      setCommandFeedback({
+                        label: "5m Timer Started",
+                        ok: true,
+                      });
                       setTimeout(() => setCommandFeedback(null), 2500);
                     }}
                     className="flex-1 py-2 px-2.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/70 hover:text-white text-xs font-mono font-bold transition-all text-center"
