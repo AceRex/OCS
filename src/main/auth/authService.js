@@ -25,7 +25,7 @@ try {
   safeStorage = electron.safeStorage || null;
 } catch (_) {}
 
-const PRODUCTION_AUTH_HOST = 'waveiosoftware.netlify.app';
+const PRODUCTION_AUTH_HOST = 'ocs-web-three.vercel.app';
 
 function assertProductionAuthUrl(customUrl, isPackagedOverride) {
   let isPackaged = false;
@@ -40,7 +40,7 @@ function assertProductionAuthUrl(customUrl, isPackagedOverride) {
   // dev/test: allow anything
   if (process.env.NODE_ENV !== 'production' && !isPackaged) return;
 
-  const configuredStr = customUrl || (appSettings ? appSettings.get('authLoginUrl') : null) || 'https://waveiosoftware.netlify.app';
+  const configuredStr = customUrl || (appSettings ? appSettings.get('authLoginUrl') : null) || 'https://ocs-web-three.vercel.app';
   let configured;
   try {
     configured = new URL(configuredStr);
@@ -87,9 +87,9 @@ class AuthService extends EventEmitter {
     this.guestDurationMs = guestDurationMs;
     this.machineId = getMachineId();
 
-    let host = defaultAuthHost || (appSettings ? appSettings.get("authLoginUrl") : null) || "https://waveiosoftware.netlify.app";
-    if (typeof host === "string" && host.includes("churchocs.com")) {
-      host = "https://waveiosoftware.netlify.app";
+    let host = defaultAuthHost || (appSettings ? appSettings.get("authLoginUrl") : null) || "https://ocs-web-three.vercel.app";
+    if (typeof host === "string" && !host.includes("ocs-web-three.vercel.app") && !host.includes("localhost")) {
+      host = "https://ocs-web-three.vercel.app";
     }
     this.defaultAuthHost = host;
 
@@ -587,7 +587,7 @@ class AuthService extends EventEmitter {
 
   getLoginUrl(customAuthHost) {
     const state = this.generateAuthState();
-    const host = (customAuthHost || this.defaultAuthHost || "https://waveiosoftware.netlify.app").replace(/\/+$/, "");
+    const host = (customAuthHost || this.defaultAuthHost || "https://ocs-web-three.vercel.app").replace(/\/+$/, "");
     const redirectUri = encodeURIComponent("ocs://auth/callback");
     return {
       url: `${host}/auth/desktop?state=${state}&platform=desktop&redirect_uri=${redirectUri}`,

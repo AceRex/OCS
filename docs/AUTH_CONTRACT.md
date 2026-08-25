@@ -1,6 +1,6 @@
 # OCS Authentication & Licensing Web-Redirect Protocol Contract (PRD v1.10 / FR-13.1–FR-13.8)
 
-This document specifies the interface contract between the **OCS Desktop Application** and the **Hosted OCS Authentication Web Portal** (`waveiosoftware.netlify.app`).
+This document specifies the interface contract between the **OCS Desktop Application** and the **Hosted OCS Authentication Web Portal** (`ocs-web-three.vercel.app`).
 
 ---
 
@@ -12,7 +12,7 @@ sequenceDiagram
     actor Operator
     participant Desktop as OCS Desktop (Electron)
     participant Browser as System Default Browser
-    participant WebAuth as Hosted Auth Portal (waveiosoftware.netlify.app)
+    participant WebAuth as Hosted Auth Portal (ocs-web-three.vercel.app)
 
     Note over Desktop: Splash screen checks for cached session. If none / expired:
     Desktop->>Desktop: Generate cryptographic state (24-byte hex)
@@ -38,7 +38,7 @@ When the operator clicks **"Log In via Browser"**, Desktop invokes the default s
 
 ### Request Format
 ```
-GET https://waveiosoftware.netlify.app/login?state={STATE}&app=desktop&redirect_uri={REDIRECT_URI}
+GET https://ocs-web-three.vercel.app/login?state={STATE}&app=desktop&redirect_uri={REDIRECT_URI}
 ```
 
 ### Query Parameters

@@ -155,7 +155,7 @@ exports.createTemplate = (electronApp, actions = {}) => {
         {
           label: "OCS Documentation & Setup Guide",
           click: async () => {
-            await shell.openExternal("https://waveiosoftware.netlify.app/docs");
+            await shell.openExternal("https://ocs-web-three.vercel.app/docs");
           },
         },
         {
