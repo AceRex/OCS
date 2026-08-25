@@ -7,24 +7,55 @@ export default function MobileVoiceNotification() {
 
   useEffect(() => {
     const AsrApi = window.electron?.Asr || window.electron?.Vosk;
-    if (!AsrApi?.onTranscript) return;
+    let unsubTranscript = null;
+    if (AsrApi?.onTranscript) {
+      unsubTranscript = AsrApi.onTranscript((payload) => {
+        if (payload?.source === "secondary" && payload?.text) {
+          setNotification({
+            status: "completed",
+            type: "voice",
+            deviceName: payload.deviceName || "Mobile Companion",
+            text: payload.text,
+            time: Date.now(),
+          });
+          setTimeout(() => {
+            setNotification((prev) => (prev && Date.now() - prev.time >= 4000 ? null : prev));
+          }, 4500);
+        }
+      });
+    }
 
-    const unsubTranscript = AsrApi.onTranscript((payload) => {
-      if (payload?.source === "secondary" && payload?.text) {
-        setNotification({
-          status: "completed",
-          deviceName: payload.deviceName || "Mobile Companion",
-          text: payload.text,
-          time: Date.now(),
-        });
-        setTimeout(() => {
-          setNotification((prev) => (prev && Date.now() - prev.time >= 4000 ? null : prev));
-        }, 4500);
-      }
-    });
+    let unsubIntercom = null;
+    if (window.electron?.Network?.onIntercomMessage) {
+      unsubIntercom = window.electron.Network.onIntercomMessage((msg) => {
+        if (msg?.audioBase64) {
+          try {
+            const fmt = (msg.format || "m4a").toLowerCase();
+            const mime = fmt === "wav" ? "audio/wav" : fmt === "mp3" ? "audio/mpeg" : fmt === "webm" ? "audio/webm" : fmt === "aac" ? "audio/aac" : "audio/mp4";
+            const audio = new Audio(`data:${mime};base64,${msg.audioBase64}`);
+            audio.volume = 1.0;
+            audio.play().catch((err) => console.warn("[Intercom] audio playback error:", err));
+          } catch (e) {
+            console.error("[Intercom] Failed to construct audio element:", e);
+          }
+
+          setNotification({
+            status: "completed",
+            type: "intercom",
+            deviceName: msg.fromName || "Mobile Companion",
+            text: "Intercom Voice Message",
+            time: Date.now(),
+          });
+          setTimeout(() => {
+            setNotification((prev) => (prev && Date.now() - prev.time >= 4000 ? null : prev));
+          }, 4500);
+        }
+      });
+    }
 
     return () => {
       unsubTranscript?.();
+      unsubIntercom?.();
     };
   }, []);
 
@@ -39,7 +70,7 @@ export default function MobileVoiceNotification() {
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-bold uppercase tracking-wider text-blue-400 flex items-center gap-1">
-              <PiSparkle size={13} /> Remote Voice Command
+              <PiSparkle size={13} /> {notification.type === "intercom" ? "Live Intercom Voice" : "Remote Voice Command"}
             </span>
             <button
               onClick={() => setNotification(null)}

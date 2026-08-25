@@ -20,10 +20,10 @@ function generatePairing() {
 
 /**
  * Build the QR payload string. Mobile app parses:
- *   ocs://pair?ip=...&port=4000&token=...&code=...
+ *   ocs://pair?ip=...&port=4000&token=...&code=...&api=...
  */
-function buildPairPayload({ ip, port, token, code }) {
-  return `ocs://pair?ip=${encodeURIComponent(ip)}&port=${port}&token=${encodeURIComponent(token)}&code=${encodeURIComponent(code)}`;
+function buildPairPayload({ ip, port, token, code, api = "https://ocs-backend-ten.vercel.app/api" }) {
+  return `ocs://pair?ip=${encodeURIComponent(ip)}&port=${port}&token=${encodeURIComponent(token)}&code=${encodeURIComponent(code)}&api=${encodeURIComponent(api)}`;
 }
 
 function clearPaired() {

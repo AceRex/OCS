@@ -331,7 +331,12 @@ contextBridge.exposeInMainWorld("electron", {
       const listener = (event, val) => callback(val);
       ipcRenderer.on('mobile-action', listener);
       return () => ipcRenderer.removeListener('mobile-action', listener);
-    }
+    },
+    onIntercomMessage: (callback) => {
+      const listener = (event, val) => callback(val);
+      ipcRenderer.on('intercom-message', listener);
+      return () => ipcRenderer.removeListener('intercom-message', listener);
+    },
   },
   Design: {
     analyzePoster: (imagePath) => ipcRenderer.invoke("design-analyze", imagePath),

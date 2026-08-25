@@ -294,11 +294,13 @@ const _pairingRateLimiter = new PairingRateLimiter();
 
 async function refreshPairingQr() {
   try {
+    const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-ten.vercel.app/api";
     const payload = buildPairPayload({
       ip: serverIp,
       port: PORT,
       token: pairing.token,
       code: pairing.code,
+      api: apiBase,
     });
     pairingQrDataUrl = await QRCode.toDataURL(payload, {
       errorCorrectionLevel: "M",
@@ -1137,6 +1139,8 @@ serverApp.get("/pair-info", (_req, res) => {
     ok: true,
     port: PORT,
     pairingRequired: true,
+    apiBaseUrl: (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-ten.vercel.app/api",
+    authLoginUrl: (appSettings ? appSettings.get("authLoginUrl") : null) || "https://ocs-web-three.vercel.app",
     // Never expose the live token/code over an unauthenticated HTTP GET
   });
 });
@@ -1393,8 +1397,10 @@ io.on("connection", (socket) => {
     device.status = "connected";
     device.name = socket.handshake.auth.deviceName || "Mobile";
     device.isAdmin = adminDeviceIds.has(device.id) || adminDeviceNames.has(device.name);
+    const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-ten.vercel.app/api";
+    const authUrl = (appSettings ? appSettings.get("authLoginUrl") : null) || "https://ocs-web-three.vercel.app";
     console.log("[Remote] paired via handshake:", socket.id, "isAdmin:", device.isAdmin);
-    socket.emit("pair-result", { ok: true, deviceName: device.name, isAdmin: device.isAdmin });
+    socket.emit("pair-result", { ok: true, deviceName: device.name, isAdmin: device.isAdmin, apiBaseUrl: apiBase, authLoginUrl: authUrl });
     notifyController("mobile-connected", device);
     broadcastDevicesUpdated();
   } else {
@@ -1461,7 +1467,9 @@ io.on("connection", (socket) => {
     device.status = "connected";
     device.name = payload.deviceName || device.name || "Mobile";
     device.isAdmin = adminDeviceIds.has(device.id) || adminDeviceNames.has(device.name);
-    socket.emit("pair-result", { ok: true, deviceName: device.name, isAdmin: device.isAdmin });
+    const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-ten.vercel.app/api";
+    const authUrl = (appSettings ? appSettings.get("authLoginUrl") : null) || "https://ocs-web-three.vercel.app";
+    socket.emit("pair-result", { ok: true, deviceName: device.name, isAdmin: device.isAdmin, apiBaseUrl: apiBase, authLoginUrl: authUrl });
     notifyController("mobile-connected", device);
     broadcastDevicesUpdated();
   });
@@ -1591,11 +1599,22 @@ io.on("connection", (socket) => {
       target: target || "all",
     };
 
-    if (target && target !== "all") {
+    // Forward to peer sockets
+    if (target && target !== "all" && target !== "controller") {
       io.to(target).emit("intercom-message", message);
     } else {
       socket.broadcast.emit("intercom-message", message);
     }
+
+    // Forward to all Desktop Controller windows for immediate live audio playback
+    if (!target || target === "all" || target === "controller") {
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) {
+          win.webContents.send("intercom-message", message);
+        }
+      }
+    }
+
     ack({ ok: true });
   });
 
