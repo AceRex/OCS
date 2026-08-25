@@ -93,6 +93,13 @@ class AuthService extends EventEmitter {
     }
     this.defaultAuthHost = host;
 
+    if (appSettings) {
+      const currentApi = appSettings.get("apiBaseUrl");
+      if (typeof currentApi === "string" && currentApi.includes("ocs-backend.netlify.app")) {
+        appSettings.set("apiBaseUrl", "https://ocs-backend-ten.vercel.app/api");
+      }
+    }
+
     // Initialize or restore unauthenticated guest session timer
     this._initGuestSession();
     this._startGuestTimerTicker();
@@ -171,7 +178,7 @@ class AuthService extends EventEmitter {
   async syncGuestWithCloud() {
     if (this.isAuthenticated()) return;
     try {
-      const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend.netlify.app/api";
+      const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-ten.vercel.app/api";
       const https = require("https");
       const http = require("http");
       const url = new URL(`${apiBase.replace(/\/+$/, "")}/auth/guest-check`);
@@ -382,7 +389,7 @@ class AuthService extends EventEmitter {
     const session = this.loadSession();
     if (!session || !session.token) return;
     try {
-      const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend.netlify.app/api";
+      const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-ten.vercel.app/api";
       const https = require("https");
       const http = require("http");
       const url = new URL(`${apiBase.replace(/\/+$/, "")}/auth/device/register`);
@@ -415,7 +422,7 @@ class AuthService extends EventEmitter {
 
   async validateTokenOnline(token) {
     try {
-      const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend.netlify.app/api";
+      const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-ten.vercel.app/api";
       const https = require("https");
       const http = require("http");
       const url = new URL(`${apiBase.replace(/\/+$/, "")}/auth/validate-token`);
