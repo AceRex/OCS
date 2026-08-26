@@ -32,6 +32,8 @@ const BOOK_ALIASES = [
   'college as', 'college is', 'justins as', 'justin as', 'justins',
   // Jeremiah ASR / spelling slips
   'jaymiah', 'jayemiah', 'jerimiah', 'jermiah', 'jeremyah', 'jeremy',
+  // Isaiah ASR / spelling slips
+  'aisayan', 'aisaya', 'asayan', 'isayan',
   // Philippians OOV stopgaps — country name is in-vocab; book name is not
   'philippines', 'philippine', 'philipians', 'phillipians', 'phillipines',
 ];

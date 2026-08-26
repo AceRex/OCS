@@ -204,8 +204,8 @@ export default function DisplayCanvas({
             className="w-full h-full relative z-10 flex flex-col items-center justify-center p-[4%] pointer-events-none select-none overflow-hidden bg-[#07060e]"
             style={{ containerType: "size" }}
           >
-            {/* Presentation return prompt chip when Bible is overlayed on presentation */}
-            {isPresentationOverlay && (
+            {/* Presentation return prompt chip when Bible is overlayed on presentation - Speaker confidence display only */}
+            {(mode === "speaker" || mode === "controller") && isPresentationOverlay && (
               <div className="absolute top-[2vw] right-[2.5vw] z-30 flex items-center gap-2 bg-slate-950/85 backdrop-blur-md border border-cyan-400/50 text-cyan-200 px-4 py-1.5 rounded-full text-[clamp(10px,1cqw,1.1vw)] font-semibold shadow-2xl tracking-wide animate-pulse">
                 <span>↩ {overlayPrompt || 'Say "return" to go back to presentation'}</span>
               </div>

@@ -453,6 +453,16 @@
       "expect": { "ref": "Philippians 2:10" },
       "notes": "Extra 'the' after book of; 'two'→'to'. Must not fuzzy to Ruth."
     },
+    {
+      "id": "C20",
+      "category": "C",
+      "spoken": "Isaiah six verse six to eight",
+      "heard": "Aisayan 6 6 to 8",
+      "asrRisk": "vocabulary_gap_realized",
+      "triggerArmed": false,
+      "expect": { "ref": "Isaiah 6:6-8" },
+      "notes": "Aisayan -> Isaiah verse range 6:6-8"
+    },
 
     {
       "id": "D01",

@@ -66,7 +66,7 @@ export const BOOK_ALIASES = {
     'sos': 'Song of Solomon',
 
     // Major Prophets
-    'isa': 'Isaiah', 'isaiah': 'Isaiah',
+    'isa': 'Isaiah', 'isaiah': 'Isaiah', 'aisayan': 'Isaiah', 'aisaya': 'Isaiah', 'asayan': 'Isaiah', 'isayan': 'Isaiah',
     'jer': 'Jeremiah', 'jeremiah': 'Jeremiah',
     'jaymiah': 'Jeremiah', 'jayemiah': 'Jeremiah',
     'jerimiah': 'Jeremiah', 'jermiah': 'Jeremiah', 'jeremyah': 'Jeremiah',

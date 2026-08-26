@@ -2421,6 +2421,8 @@ export default function BroadcastEngine() {
       [/\b(mattew|matthu|mathu|matyu)\b/gi, "Matthew"],
       // "Malachi" → molokai (common Vosk garble)
       [/\b(molokai|malakai|malakhi|molochi|molakai)\b/gi, "Malachi"],
+      // "Isaiah" ASR mishearings
+      [/\b(aisayan|aisaya|asayan|isayan)\b/gi, "Isaiah"],
       // "Jeremiah" spelling / ASR slips
       [
         /\b(jaymiah|jayemiah|jerimiah|jermiah|jeremyah|jeremia|jeremiya)\b/gi,

@@ -108,6 +108,7 @@ const VOSK_BOOK_ALIASES = [
   },
   { pattern: /\bbook\s+of\s+junk\b/gi, replacement: 'book of John' },
   { pattern: /\b(molokai|malakai|malakhi)\b/gi, replacement: 'Malachi' },
+  { pattern: /\b(aisayan|aisaya|asayan|isayan)\b/gi, replacement: 'Isaiah' },
   { pattern: /\b(jaymiah|jeremia|jeremiya)\b/gi, replacement: 'Jeremiah' },
   { pattern: /\b(colosians|collusions?|collations?)\b/gi, replacement: 'Colossians' },
   { pattern: /\b(philippine?s?)\b/gi, replacement: 'Philippians' },
