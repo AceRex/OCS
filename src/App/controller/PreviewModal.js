@@ -166,6 +166,12 @@ export default function PreviewModal({ isOpen, onClose, mode }) {
 
                 {(backgroundVideo || backgroundImage) && <div className="absolute inset-0 w-full h-full bg-black/40 z-1" />}
 
+                {presentationContent?.data?.isPresentationOverlay && (
+                    <div className="absolute top-4 right-4 z-30 flex items-center gap-1.5 bg-black/80 border border-cyan-400/50 text-cyan-200 px-3 py-1 rounded-full text-xs font-semibold shadow-lg animate-pulse">
+                        <span>↩ {presentationContent?.data?.overlayPrompt || 'Say "return" to resume presentation'}</span>
+                    </div>
+                )}
+
                 {title && (
                     <div className={`absolute z-10 flex items-center gap-2 ${refPosClass} text-sm font-bold opacity-90 uppercase tracking-widest drop-shadow-md text-[#38bdf8]`}>
                         {title}

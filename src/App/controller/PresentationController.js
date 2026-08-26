@@ -717,6 +717,8 @@ export default function PresentationController() {
                 const clamped = Math.max(0, Math.min(targetIdx, activeDeck.slides.length - 1));
                 handlePresentSlide(activeDeck, clamped);
                 setActiveSlideIndex(clamped);
+            } else if (command === "return_to_presentation" || command === "restore_slide") {
+                handlePresentSlide(activeDeck, activeSlideIndex);
             }
         };
 

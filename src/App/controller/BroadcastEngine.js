@@ -180,6 +180,19 @@ const OCS_COMMANDS = [
     label: "Jump to Slide",
     action: "jump_to_slide",
   },
+  {
+    patterns: [
+      /\breturn\s+(?:to\s+)?(?:the\s+)?presentation\b/i,
+      /\breturn\s+(?:to\s+)?(?:the\s+)?slides?\b/i,
+      /\breturn\b/i,
+      /\bback\s+to\s+presentation\b/i,
+      /\bback\s+to\s+slides?\b/i,
+      /\bresume\s+presentation\b/i,
+      /\bclose\s+bible\b/i,
+    ],
+    label: "Return to Presentation",
+    action: "return_to_presentation",
+  },
 ];
 
 function parseSlideNumber(str) {
@@ -681,14 +694,35 @@ export default function BroadcastEngine() {
 
   // Track active display context (FR-4.9: 'scripture' | 'presentation' | 'scene' | 'timer' | 'none')
   const activeDisplayContextRef = useRef("none");
+  const lastPresentationStateRef = useRef(null);
+  const isPresentationBibleOverlayRef = useRef(false);
+
   useEffect(() => {
     if (window.electron?.Presentation?.onSetContent) {
       const unsub = window.electron.Presentation.onSetContent((content) => {
         setLiveContentState(content);
         if (!content) {
           activeDisplayContextRef.current = "none";
+          isPresentationBibleOverlayRef.current = false;
         } else {
+          const prevContext = activeDisplayContextRef.current;
           activeDisplayContextRef.current = content.type || "none";
+
+          if (content.type === "presentation") {
+            lastPresentationStateRef.current = content;
+            isPresentationBibleOverlayRef.current = false;
+            // Stop and clear any stale scripture read-along when entering presentation
+            currentPassageRef.current = null;
+            currentVerseTitleRef.current = "";
+            currentVerseFullTextRef.current = "";
+            scriptureAlignerRef.current.stop();
+          } else if (content.type === "bible") {
+            if (prevContext === "presentation" || lastPresentationStateRef.current) {
+              isPresentationBibleOverlayRef.current = true;
+            }
+          } else {
+            isPresentationBibleOverlayRef.current = false;
+          }
         }
       });
       return () => {
@@ -1125,6 +1159,15 @@ export default function BroadcastEngine() {
       gateTranscript: null,
       advanceLockUntil: 0,
     };
+    const isOverPresentation =
+      activeDisplayContextRef.current === "presentation" ||
+      liveContentState?.type === "presentation" ||
+      isPresentationBibleOverlayRef.current;
+
+    if (isOverPresentation) {
+      isPresentationBibleOverlayRef.current = true;
+    }
+
     pushBibleContent(step.title, step.body, tokens, -1, step, currentVersion);
     window.dispatchEvent(
       new CustomEvent("voice-bible-sync", {
@@ -1170,6 +1213,11 @@ export default function BroadcastEngine() {
       currentVerse: meta?.currentVerse,
       version: version || currentBibleVersionRef.current || "kjv",
     });
+    // If bible is opened over an active presentation, flag it for return capability
+    if (isPresentationBibleOverlayRef.current) {
+      payload.data.isPresentationOverlay = true;
+      payload.data.overlayPrompt = 'Say "return" to go back to presentation';
+    }
     // Preserve operator amber highlights on body when cache exists
     const cache = highlightCacheRef.current[title];
     if (cache?.length) {
@@ -1321,6 +1369,9 @@ export default function BroadcastEngine() {
       return navigateRelative(1);
     }
     if (action === "prev_verse") {
+      if (isPresentationBibleOverlayRef.current) {
+        return executeCommand("return_to_presentation", rawText);
+      }
       if (activeDisplayContextRef.current === "presentation") {
         return executeCommand("prev_slide", rawText);
       }
@@ -1523,6 +1574,29 @@ export default function BroadcastEngine() {
         setCommandFeedback({ label: `Slide ${slideNumber}`, ok: true });
         setTimeout(() => setCommandFeedback(null), 2500);
       }
+    }
+    if (action === "return_to_presentation") {
+      // Clear active scripture & stop aligner
+      currentPassageRef.current = null;
+      currentVerseTitleRef.current = "";
+      currentVerseFullTextRef.current = "";
+      scriptureAlignerRef.current.stop();
+      isPresentationBibleOverlayRef.current = false;
+
+      // 1. Dispatch event to PresentationController to restore the active slide
+      window.dispatchEvent(
+        new CustomEvent("ocs-presentation-command", {
+          detail: { command: "return_to_presentation" },
+        }),
+      );
+
+      // 2. Direct fallback to IPC if cached presentation state exists
+      if (lastPresentationStateRef.current && window.electron?.Presentation?.setContent) {
+        window.electron.Presentation.setContent(lastPresentationStateRef.current);
+      }
+
+      setCommandFeedback({ label: "↩ Returned to Presentation", ok: true });
+      setTimeout(() => setCommandFeedback(null), 2500);
     }
   };
   executeCommandRef.current = executeCommand;
@@ -2002,6 +2076,28 @@ export default function BroadcastEngine() {
       shapeFallback.shortContext ||
       isShortContextJump(matchText) ||
       isShortContextJump(text);
+
+    // Presentation Mode strict gate:
+    // When a presentation is actively on screen, strictly ignore ambient speech.
+    // Only permit scripture resolution if the speaker explicitly cites a full scripture passage or explicit scripture command.
+    const isPresentationActive =
+      activeDisplayContextRef.current === "presentation" ||
+      liveContentState?.type === "presentation";
+
+    if (isPresentationActive) {
+      if (role === "probe") return;
+      const hasExplicitCue =
+        /\b(?:book\s+of|chapter|verse|verses|scripture|bible|read|turn\s+to|open)\b/i.test(text) ||
+        /\b(?:book\s+of|chapter|verse|verses|scripture|bible|read|turn\s+to|open)\b/i.test(matchText);
+      const isCompleteVerseRef =
+        shapeFallback.complete &&
+        shapeFallback.kind !== "chapter_only" &&
+        shapeFallback.kind !== "book_only";
+
+      if (!isCompleteVerseRef && !hasExplicitCue && !triggerArmed) {
+        return;
+      }
+    }
 
     // FR-3.57 ambient: COMPLETE shape is enough (no trigger). Pass 3 / context still gated.
     const allowScripture =

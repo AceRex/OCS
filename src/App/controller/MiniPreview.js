@@ -329,6 +329,12 @@ export default function MiniPreview({ mode }) {
                 ) : null}
                 {useCustomBg && <div className="absolute inset-0 bg-black/50 z-[1]" />}
 
+                {presentationContent?.data?.isPresentationOverlay && (
+                    <div className="absolute top-2 right-2 z-30 flex items-center gap-1 bg-black/80 border border-cyan-400/50 text-cyan-200 px-2 py-0.5 rounded-full text-[9px] font-bold shadow-lg animate-pulse">
+                        <span>↩ {presentationContent?.data?.overlayPrompt || 'Say "return" to resume presentation'}</span>
+                    </div>
+                )}
+
                 {title && (
                     <div className={`absolute z-20 flex items-center gap-1 ${refPosClass}`}>
                         <span style={{ fontFamily: '"JetBrains Mono", monospace', fontSize: '10px', fontWeight: 700, letterSpacing: '0.15em', color: '#67E8F9', textTransform: 'uppercase' }}>

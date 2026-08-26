@@ -241,6 +241,12 @@ function App({ mode: propMode }) {
           ) : null}
           {useCustomBg && <div className="absolute inset-0 bg-black/50 z-[1]" />}
 
+          {presentationContent?.data?.isPresentationOverlay && (
+            <div className="absolute top-[2.5vw] right-[3vw] z-30 flex items-center gap-[0.5vw] bg-black/80 backdrop-blur-md border border-cyan-400/50 text-cyan-200 px-[1.2vw] py-[0.6vw] rounded-full text-[1vw] font-semibold shadow-2xl tracking-wide animate-pulse">
+              <span>↩ {presentationContent?.data?.overlayPrompt || 'Say "return" to resume presentation'}</span>
+            </div>
+          )}
+
           {lowerThirdImage && (
             <div className="absolute bottom-12 left-12 w-[80%] h-[20%] z-30 pointer-events-none">
               <img src={lowerThirdImage} className="h-full w-auto object-contain drop-shadow-2xl" alt="lower third" />
