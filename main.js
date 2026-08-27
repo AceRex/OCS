@@ -1120,9 +1120,47 @@ const io = new Server(server, {
 
 // ------ BIBLE DATABASE HANDLERS ------
 const sqlite3 = require("sqlite3").verbose();
-const dbPath = path.join(__dirname, "src/Bible/bibles.db");
+
+function getBibleDbPath() {
+  const isPackaged = app ? app.isPackaged : false;
+  
+  // 1. Packaged Electron app (via asarUnpack)
+  if (isPackaged && process.resourcesPath) {
+    const unpackedPath = path.join(process.resourcesPath, "app.asar.unpacked", "src", "Bible", "bibles.db");
+    if (fs.existsSync(unpackedPath)) {
+      return unpackedPath;
+    }
+  }
+
+  // 2. If running inside app.asar, resolve sibling app.asar.unpacked directory
+  if (__dirname.includes("app.asar")) {
+    const unpackedPath = path.join(__dirname.replace("app.asar", "app.asar.unpacked"), "src", "Bible", "bibles.db");
+    if (fs.existsSync(unpackedPath)) {
+      return unpackedPath;
+    }
+  }
+
+  // 3. Fallback to direct resources directory
+  if (process.resourcesPath) {
+    const directPath = path.join(process.resourcesPath, "src", "Bible", "bibles.db");
+    if (fs.existsSync(directPath)) {
+      return directPath;
+    }
+  }
+
+  // 4. Development mode: src/Bible/bibles.db relative to __dirname
+  const devPath = path.join(__dirname, "src/Bible/bibles.db");
+  return devPath;
+}
+
+const dbPath = getBibleDbPath();
+console.log("[BibleDB] Resolved database path:", dbPath);
 const db = new sqlite3.Database(dbPath, (err) => {
-  if (err) console.error("Database opening error: ", err);
+  if (err) {
+    console.error("[BibleDB] Database opening error:", err, "at path:", dbPath);
+  } else {
+    console.log("[BibleDB] Successfully connected to SQLite database at:", dbPath);
+  }
 });
 
 const PORT = 4000;

@@ -24,6 +24,9 @@ files:
   - "!voice_server/**/*"
   - "!ocs_image_engine/**/*"
 
+asarUnpack:
+  - "src/Bible/**/*"
+
 publish:
   provider: github
   owner: AceRex
