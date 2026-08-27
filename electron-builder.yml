@@ -26,6 +26,9 @@ files:
 
 asarUnpack:
   - "src/Bible/**/*"
+  - "**/*.node"
+  - "node_modules/@img/**/*"
+  - "node_modules/sharp/**/*"
 
 publish:
   provider: github

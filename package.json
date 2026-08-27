@@ -11,9 +11,9 @@
     "build:renderers": "webpack --config webpack.view.js --mode production && webpack --config webpack.controller.js --mode production",
     "pack": "npm run build:renderers && electron-builder --dir",
     "dist": "npm run build:renderers && electron-builder",
-    "dist:mac": "npm run build:renderers && electron-builder --mac",
-    "dist:win": "npm run build:renderers && electron-builder --win && npx @electron/rebuild -f -w sqlite3",
-    "dist:all": "npm run build:renderers && electron-builder -mw && npx @electron/rebuild -f -w sqlite3",
+    "dist:mac": "npm run build:renderers && node scripts/prepare-cross-platform-deps.js && electron-builder --mac",
+    "dist:win": "npm run build:renderers && node scripts/prepare-cross-platform-deps.js && electron-builder --win && npx @electron/rebuild -f -w sqlite3",
+    "dist:all": "npm run build:renderers && node scripts/prepare-cross-platform-deps.js && electron-builder -mw && npx @electron/rebuild -f -w sqlite3",
     "test:updater": "node scripts/test-updater-pipeline.js",
     "setup:voice": "node scripts/setup-voice.js",
     "download:whisper": "node scripts/download-whisper-models.js",
@@ -101,5 +101,15 @@
       "**/*.pyc",
       "**/__pycache__/**"
     ]
+  },
+  "optionalDependencies": {
+    "@img/sharp-darwin-arm64": "^0.35.4",
+    "@img/sharp-darwin-x64": "^0.35.4",
+    "@img/sharp-libvips-darwin-arm64": "^1.3.3",
+    "@img/sharp-libvips-darwin-x64": "^1.3.3",
+    "@img/sharp-libvips-win32-ia32": "^1.3.3",
+    "@img/sharp-libvips-win32-x64": "^1.3.3",
+    "@img/sharp-win32-ia32": "^0.34.5",
+    "@img/sharp-win32-x64": "^0.35.4"
   }
 }
