@@ -3280,19 +3280,6 @@ ipcMain.handle("auth:simulate-callback", async (_event, customUrl) => {
 });
 ipcMain.handle("auth:logout", async () => {
   await authService.logout();
-  if (controllerWindow && !controllerWindow.isDestroyed()) {
-    controllerWindow.close();
-    controllerWindow = null;
-  }
-  if (speakerWindow && !speakerWindow.isDestroyed()) {
-    speakerWindow.close();
-    speakerWindow = null;
-  }
-  if (generalWindow && !generalWindow.isDestroyed()) {
-    generalWindow.close();
-    generalWindow = null;
-  }
-  showLoginWindow();
   broadcastAuthStatus();
   return { ok: true };
 });

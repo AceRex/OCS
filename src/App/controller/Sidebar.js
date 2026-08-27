@@ -43,7 +43,7 @@ function getPlanShortBadge(tier, days) {
   return { label, daysText };
 }
 
-function SidebarAccount({ isCollapsed }) {
+function SidebarAccount({ isCollapsed, onExpand }) {
   const {
     auth,
     isAuthenticated,
@@ -135,7 +135,13 @@ function SidebarAccount({ isCollapsed }) {
         ) : (
           // Log In button
           <button
-            onClick={login}
+            onClick={() => {
+              if (isCollapsed && onExpand) {
+                onExpand();
+              } else {
+                login();
+              }
+            }}
             title={guestExpired ? "Log in to unlock all features" : "Log In via Browser to activate 60-day trial"}
             className={`flex items-center w-full p-2.5 rounded-2xl transition-all duration-200 group
               ${isCollapsed ? "justify-center" : "gap-2.5"}
@@ -186,7 +192,14 @@ function SidebarAccount({ isCollapsed }) {
   return (
     <div className="relative">
       <button
-        onClick={() => setShowMenu((v) => !v)}
+        onClick={() => {
+          if (isCollapsed) {
+            if (onExpand) onExpand();
+            setShowMenu(true);
+          } else {
+            setShowMenu((v) => !v);
+          }
+        }}
         title={auth.orgName || auth.email || "Account"}
         className={`flex items-center w-full p-2 rounded-2xl transition-all duration-200 hover:bg-white/8 ${
           isCollapsed ? "justify-center" : "gap-3"
@@ -376,7 +389,10 @@ export default function Sidebar({ activeTab, onTabChange }) {
 
       {/* ── Account / Login Panel ── */}
       <div className="mt-auto w-full px-3 pt-4 border-t border-white/5">
-        <SidebarAccount isCollapsed={isCollapsed} />
+        <SidebarAccount
+          isCollapsed={isCollapsed}
+          onExpand={() => setIsCollapsed(false)}
+        />
       </div>
     </aside>
   );

@@ -161,24 +161,53 @@ export function AuthProvider({ children }) {
   const hasPermission = useCallback((permissionKey) => {
     if (!permissionKey) return true;
     const features = Array.isArray(auth?.features) ? auth.features : [];
+    if (features.includes('premium.full_access')) {
+      return true;
+    }
     if (features.length > 0) {
       return features.includes(permissionKey);
     }
-    const tier = (auth?.licenseTier || auth?.subscriptionPlan || (auth?.isGuest ? 'guest' : 'trial')).toLowerCase();
-    if (['premium', 'large', 'enterprise'].includes(tier)) {
+    const rawTier = (auth?.licenseTier || auth?.subscriptionPlan || (auth?.isGuest ? 'guest' : 'trial')).toLowerCase();
+    const tier = rawTier.replace(/_setup$/, '');
+    if (['premium', 'enterprise'].includes(tier)) {
       return true;
     }
-    if (tier === 'standard') {
+    if (tier === 'large') {
       return [
         'timer.basic',
+        'broadcast.basic',
+        'timer.start_time',
         'timer.interval',
         'timer.change_view',
         'session.recording',
         'session.bumper',
-        'broadcast.basic',
         'presentation.basic',
+        'presentation.multi_pptx',
+        'presentation.intro',
+        'presentation.outro',
         'pdf.view',
         'pdf.edit',
+        'slides.use',
+        'scene.basic',
+        'scene.animations',
+        'scene.transitions',
+        'song.basic',
+        'song.chorus_flow',
+        'song.repeat',
+        'sing_along',
+        'read_along',
+      ].includes(permissionKey);
+    }
+    if (tier === 'standard') {
+      return [
+        'timer.basic',
+        'broadcast.basic',
+        'timer.interval',
+        'timer.change_view',
+        'session.recording',
+        'session.bumper',
+        'presentation.basic',
+        'pdf.view',
         'slides.use',
         'scene.basic',
         'song.basic',

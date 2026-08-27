@@ -6,8 +6,9 @@ import {
     PiFloppyDisk, PiListBullets, PiListNumbers,
     PiArrowRight, PiArrowLeft, PiScissors,
     PiCaretDown, PiMusicNotes, PiImage, PiSparkle,
-    PiRepeat, PiCheck, PiUploadSimple, PiGlobe,
+    PiRepeat, PiCheck, PiUploadSimple, PiGlobe, PiLockKey,
 } from "react-icons/pi";
+import { useAuth } from "../context/AuthContext";
 import { LYRIC_ANIMATIONS, READ_ALONG_ANIMATIONS, renderAnimatedLyrics } from "./LyricAnimationEngine";
 
 /**
@@ -31,13 +32,20 @@ export default function SceneModal({
     onClose,
     onSave,
 }) {
+    const { hasPermission } = useAuth();
+    const canChorusFlow = hasPermission("song.chorus_flow");
+    const canRepeat = hasPermission("song.repeat");
+    const canSingAlong = hasPermission("sing_along");
+    const canReadAlong = hasPermission("read_along");
+    const canAnimate = hasPermission("scene.animations") || hasPermission("scene.transitions");
+
     if (!isOpen || !scene) return null;
 
     const [currentScene, setCurrentScene] = useState(() => ({
         ...scene,
         sceneType: scene.sceneType || "song",
-        autoChorus: scene.autoChorus !== false,
-        navMode: scene.navMode || "read_along",
+        autoChorus: canChorusFlow ? (scene.autoChorus !== false) : false,
+        navMode: scene.navMode || ((scene.sceneType === "song" ? canSingAlong : canReadAlong) ? "read_along" : "manual"),
         pages: Array.isArray(scene.pages) && scene.pages.length > 0
             ? scene.pages.map((p, idx) => ({
                 id: p.id || `pg-${Date.now()}-${idx}`,
@@ -615,23 +623,36 @@ export default function SceneModal({
 
                         {/* If Song: Chorus Flow Setting */}
                         {isSong && (
-                            <div className="bg-purple-500/10 border border-purple-500/20 rounded-2xl p-3 flex flex-col gap-2">
+                            <div className={`bg-purple-500/10 border border-purple-500/20 rounded-2xl p-3 flex flex-col gap-2 ${!canChorusFlow ? "opacity-70" : ""}`}>
                                 <div className="flex items-center justify-between">
                                     <span className="text-[10px] font-bold uppercase tracking-wider text-purple-300 flex items-center gap-1.5">
                                         <PiRepeat size={13} /> Chorus Flow
+                                        {!canChorusFlow && (
+                                            <span className="text-[8px] font-bold uppercase tracking-tight bg-purple-900/60 text-purple-200 border border-purple-400/30 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+                                                <PiLockKey size={9} /> Large/Premium
+                                            </span>
+                                        )}
                                     </span>
                                     <button
                                         type="button"
-                                        onClick={() => setCurrentScene(prev => ({ ...prev, autoChorus: !prev.autoChorus }))}
+                                        disabled={!canChorusFlow}
+                                        onClick={() => {
+                                            if (canChorusFlow) {
+                                                setCurrentScene(prev => ({ ...prev, autoChorus: !prev.autoChorus }));
+                                            }
+                                        }}
                                         className={`w-7 h-4 rounded-full p-0.5 transition-colors relative ${
-                                            currentScene.autoChorus ? "bg-purple-500" : "bg-white/10"
-                                        }`}
+                                            canChorusFlow && currentScene.autoChorus ? "bg-purple-500" : "bg-white/10"
+                                        } ${!canChorusFlow ? "cursor-not-allowed" : ""}`}
+                                        title={canChorusFlow ? "Toggle Chorus Flow" : "Chorus Flow requires Large Setup or Premium plan"}
                                     >
-                                        <div className={`w-3 h-3 rounded-full bg-white transition-transform ${currentScene.autoChorus ? "translate-x-3" : "translate-x-0"}`} />
+                                        <div className={`w-3 h-3 rounded-full bg-white transition-transform ${canChorusFlow && currentScene.autoChorus ? "translate-x-3" : "translate-x-0"}`} />
                                     </button>
                                 </div>
                                 <span className="text-[9px] text-white/40 leading-relaxed">
-                                    Automatically return to Chorus after every Verse during presentation
+                                    {canChorusFlow
+                                        ? "Automatically return to Chorus after every Verse during presentation"
+                                        : "Chorus Flow is locked (available on Large & Premium setups)"}
                                 </span>
                             </div>
                         )}
@@ -643,25 +664,44 @@ export default function SceneModal({
                             </label>
                             <div className="bg-[#1b1b22] border border-white/10 rounded-2xl p-1 flex gap-1">
                                 {[
-                                    { id: "read_along", icon: PiBookmarkSimple, label: isSong ? "Sing-Along" : "Read-Along" },
-                                    { id: "manual", icon: PiFileText, label: "Manual" },
-                                ].map(mode => (
-                                    <button
-                                        key={mode.id}
-                                        type="button"
-                                        onClick={() => setCurrentScene(prev => ({ ...prev, navMode: mode.id }))}
-                                        className={`flex-1 flex flex-col items-center justify-center py-2 px-1 rounded-xl transition-all ${
-                                            currentScene.navMode === mode.id
-                                                ? "bg-white text-black font-bold shadow-md"
-                                                : "text-white/40 hover:text-white/80 hover:bg-white/5"
-                                        }`}
-                                    >
-                                        <mode.icon size={15} />
-                                        <span className="text-[9px] font-bold tracking-tight mt-1 uppercase leading-none">
-                                            {mode.label}
-                                        </span>
-                                    </button>
-                                ))}
+                                    {
+                                        id: "read_along",
+                                        icon: PiBookmarkSimple,
+                                        label: isSong ? "Sing-Along" : "Read-Along",
+                                        isLocked: isSong ? !canSingAlong : !canReadAlong,
+                                    },
+                                    { id: "manual", icon: PiFileText, label: "Manual", isLocked: false },
+                                ].map(mode => {
+                                    const isSelected = currentScene.navMode === mode.id && !mode.isLocked;
+                                    return (
+                                        <button
+                                            key={mode.id}
+                                            type="button"
+                                            disabled={mode.isLocked}
+                                            onClick={() => {
+                                                if (!mode.isLocked) {
+                                                    setCurrentScene(prev => ({ ...prev, navMode: mode.id }));
+                                                }
+                                            }}
+                                            title={mode.isLocked ? `${mode.label} requires Large Setup or Premium plan` : mode.label}
+                                            className={`flex-1 flex flex-col items-center justify-center py-2 px-1 rounded-xl transition-all relative ${
+                                                mode.isLocked
+                                                    ? "opacity-40 cursor-not-allowed text-white/30"
+                                                    : isSelected
+                                                    ? "bg-white text-black font-bold shadow-md"
+                                                    : "text-white/40 hover:text-white/80 hover:bg-white/5"
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-1">
+                                                <mode.icon size={15} />
+                                                {mode.isLocked && <PiLockKey size={10} className="text-amber-400" />}
+                                            </div>
+                                            <span className="text-[9px] font-bold tracking-tight mt-1 uppercase leading-none">
+                                                {mode.label}
+                                            </span>
+                                        </button>
+                                    );
+                                })}
                             </div>
                         </div>
 
@@ -821,22 +861,36 @@ export default function SceneModal({
 
                             {/* Repeat Count (1x, 2x, 3x, 4x) */}
                             <div className="flex items-center bg-[#1b1b22] border border-white/10 rounded-xl p-0.5 text-xs">
-                                <span className="text-[9px] font-bold text-white/40 uppercase px-2">Repeat</span>
-                                {[1, 2, 3, 4].map(num => (
-                                    <button
-                                        key={num}
-                                        type="button"
-                                        onClick={() => handleRepeatCountChange(num)}
-                                        className={`px-2 py-1 rounded-lg font-bold text-[10px] tracking-wider transition-all ${
-                                            (activePage.repeatCount || 1) === num
-                                                ? "bg-orange-500 text-white shadow-sm font-extrabold"
-                                                : "text-white/40 hover:text-white"
-                                        }`}
-                                        title={`Sing/repeat this part ${num} time${num !== 1 ? 's' : ''}`}
-                                    >
-                                        {num}x
-                                    </button>
-                                ))}
+                                <span className="text-[9px] font-bold text-white/40 uppercase px-2 flex items-center gap-1">
+                                    Repeat
+                                    {!canRepeat && <PiLockKey size={9} className="text-amber-400" title="Song repeats require Large/Premium setup" />}
+                                </span>
+                                {[1, 2, 3, 4].map(num => {
+                                    const isRepeatLocked = num > 1 && !canRepeat;
+                                    const isSelected = (activePage.repeatCount || 1) === num;
+                                    return (
+                                        <button
+                                            key={num}
+                                            type="button"
+                                            disabled={isRepeatLocked}
+                                            onClick={() => {
+                                                if (!isRepeatLocked) {
+                                                    handleRepeatCountChange(num);
+                                                }
+                                            }}
+                                            className={`px-2 py-1 rounded-lg font-bold text-[10px] tracking-wider transition-all ${
+                                                isRepeatLocked
+                                                    ? "opacity-30 cursor-not-allowed text-white/20"
+                                                    : isSelected
+                                                    ? "bg-orange-500 text-white shadow-sm font-extrabold"
+                                                    : "text-white/40 hover:text-white"
+                                            }`}
+                                            title={isRepeatLocked ? `Repeat ${num}x requires Large Setup or Premium plan` : `Sing/repeat this part ${num} time${num !== 1 ? 's' : ''}`}
+                                        >
+                                            {num}x
+                                        </button>
+                                    );
+                                })}
                             </div>
 
                             <button
@@ -1177,19 +1231,31 @@ export default function SceneModal({
                             <div className="relative flex items-center">
                                 <button
                                     type="button"
-                                    onClick={() => setIsAnimMenuOpen(prev => !prev)}
+                                    disabled={!canAnimate}
+                                    onClick={() => {
+                                        if (canAnimate) {
+                                            setIsAnimMenuOpen(prev => !prev);
+                                        }
+                                    }}
                                     className={`text-xs font-semibold py-1.5 px-3 rounded-xl border transition-colors flex items-center gap-1.5 ${
-                                        isAnimMenuOpen
+                                        !canAnimate
+                                            ? "bg-[#18181c] text-white/40 border-white/5 opacity-60 cursor-not-allowed"
+                                            : isAnimMenuOpen
                                             ? "bg-purple-600 text-white border-purple-500 shadow-md"
                                             : "bg-[#24242a] text-white/90 border-white/10 hover:bg-[#2b2b33]"
                                     }`}
-                                    title={`Choose ${isSong ? 'Sing-Along' : 'Read-Along'} Animation`}
+                                    title={canAnimate ? `Choose ${isSong ? 'Sing-Along' : 'Read-Along'} Animation` : "Scene animations and transitions require Large Setup or Premium plan"}
                                 >
-                                    <PiSparkle size={13} className="text-amber-400" />
+                                    <PiSparkle size={13} className={canAnimate ? "text-amber-400" : "text-white/30"} />
+                                    {!canAnimate && <PiLockKey size={11} className="text-amber-400" />}
                                     <span>
-                                        {(isSong ? LYRIC_ANIMATIONS : READ_ALONG_ANIMATIONS).find(a => a.id === (currentScene.style.animation || (isSong ? "karaoke" : "word-highlight")))?.name || (isSong ? "Karaoke Highlight" : "Word Highlight")}
+                                        {!canAnimate
+                                            ? "Static (Animations Locked)"
+                                            : (isSong ? LYRIC_ANIMATIONS : READ_ALONG_ANIMATIONS).find(a => a.id === (currentScene.style.animation || (isSong ? "karaoke" : "word-highlight")))?.name || (isSong ? "Karaoke Highlight" : "Word Highlight")}
                                     </span>
-                                    <PiCaretDown size={12} className={`transition-transform duration-200 ${isAnimMenuOpen ? "rotate-180 text-white" : "text-white/40"}`} />
+                                    {canAnimate && (
+                                        <PiCaretDown size={12} className={`transition-transform duration-200 ${isAnimMenuOpen ? "rotate-180 text-white" : "text-white/40"}`} />
+                                    )}
                                 </button>
                             </div>
 

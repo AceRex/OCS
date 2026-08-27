@@ -18,6 +18,7 @@ import {
   PiScissors,
   PiEraser,
   PiClock,
+  PiLockKey,
 } from 'react-icons/pi';
 import SessionFolderCard, { formatBytes, formatDate } from './SessionFolderCard';
 import FileTypeBadge from './FileTypeBadge';
@@ -30,6 +31,7 @@ import mp4PngIcon from '../../../assets/text_line_mp4.png';
 export default function SessionsController() {
   const { hasPermission } = useAuth();
   const canAccessSessions = hasPermission('session.recording');
+  const canEditPdf = hasPermission('pdf.edit');
 
   const [sessions, setSessions] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -477,14 +479,20 @@ export default function SessionsController() {
                             <PiArrowSquareOut size={13} /> Open PDF
                           </button>
                         )}
-                        <button
-                          type="button"
-                          disabled={busy}
-                          onClick={saveTranscriptAndPdf}
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-[11px] font-bold shadow-md shadow-violet-950/50 transition-all"
-                        >
-                          <PiFloppyDisk size={14} /> Save & Rebuild PDF
-                        </button>
+                        {canEditPdf ? (
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={saveTranscriptAndPdf}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-600 hover:bg-violet-500 text-white text-[11px] font-bold shadow-md shadow-violet-950/50 transition-all"
+                          >
+                            <PiFloppyDisk size={14} /> Save & Rebuild PDF
+                          </button>
+                        ) : (
+                          <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[10px] font-bold">
+                            <PiLockKey size={12} /> PDF Editing (Large/Premium)
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -498,14 +506,17 @@ export default function SessionsController() {
                     <div className="flex-1 min-h-[260px] relative rounded-2xl border border-white/10 bg-black/40 overflow-hidden flex flex-col">
                       <textarea
                         value={editTranscript}
-                        onChange={(e) => setEditTranscript(e.target.value)}
-                        placeholder="Session transcript text... Type or paste text here to update the transcript and regenerate the PDF."
-                        className="w-full h-full p-3.5 bg-transparent text-xs font-mono leading-relaxed text-white/90 placeholder-white/20 outline-none resize-none overflow-y-auto"
+                        readOnly={!canEditPdf}
+                        onChange={(e) => {
+                          if (canEditPdf) setEditTranscript(e.target.value);
+                        }}
+                        placeholder={canEditPdf ? "Session transcript text... Type or paste text here to update the transcript and regenerate the PDF." : "Session transcript is read-only on Standard plan. Upgrade to Large or Premium setup to edit PDF."}
+                        className={`w-full h-full p-3.5 bg-transparent text-xs font-mono leading-relaxed text-white/90 placeholder-white/20 outline-none resize-none overflow-y-auto ${!canEditPdf ? 'cursor-default select-text opacity-80' : ''}`}
                         spellCheck={false}
                       />
                     </div>
                     <p className="text-[10px] text-white/30 mt-2">
-                      💡 Tip: Edit timestamps and preacher notes directly above. Click "Save & Rebuild PDF" to regenerate <span className="text-violet-300 font-mono">transcript.pdf</span>.
+                      💡 Tip: {canEditPdf ? <>Edit timestamps and preacher notes directly above. Click "Save & Rebuild PDF" to regenerate <span className="text-violet-300 font-mono">transcript.pdf</span>.</> : <>Transcript view only. PDF & Transcript editing is unlocked on <span className="text-purple-300 font-bold">Large Setup</span> and <span className="text-purple-300 font-bold">Premium Setup</span>.</>}
                     </p>
                   </div>
                 )}

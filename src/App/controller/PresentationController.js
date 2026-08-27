@@ -8,8 +8,9 @@ import {
     PiCaretDownBold, PiTextAlignLeft, PiTextAlignCenter, PiTextAlignRight,
     PiEye, PiPlay, PiPause, PiSkipBack, PiSkipForward, PiStop, PiSpeakerHigh, PiSpeakerSlash, PiCornersOut,
     PiStack, PiMusicNotes, PiRepeat, PiFileText, PiDotsThreeVertical,
-    PiPresentation, PiSlideshow, PiDotsSixVertical, PiSlidersHorizontal, PiArrowsDownUp, PiVideo, PiArrowClockwise,
+    PiPresentation, PiSlideshow, PiDotsSixVertical, PiSlidersHorizontal, PiArrowsDownUp, PiVideo, PiArrowClockwise, PiLockKey,
 } from "react-icons/pi";
+import { useAuth } from "../context/AuthContext";
 import SceneModal from "./SceneModal";
 import { PresentationImportProgressModal, PresentationFontAdvisoryModal } from "./PresentationImportModal";
 import { renderAnimatedLyrics } from "./LyricAnimationEngine";
@@ -461,6 +462,9 @@ function SceneTab({
 // ─── Main PresentationController ───────────────────────────────────────────
 
 export default function PresentationController() {
+    const { hasPermission } = useAuth();
+    const canMultiPptx = hasPermission("presentation.multi_pptx");
+
     const [mediaFiles, setMediaFiles] = useState([]);
     const [activeTab, setActiveTab] = useState('media');
     const [presentations, setPresentations] = useState([]);
@@ -960,6 +964,9 @@ export default function PresentationController() {
             importFn().then(deck => {
                 if (deck) {
                     setPresentations(prev => {
+                        if (!canMultiPptx) {
+                            return [deck];
+                        }
                         const idx = prev.findIndex(p => p.id === deck.id);
                         if (idx >= 0) {
                             const updated = [...prev];
@@ -968,6 +975,8 @@ export default function PresentationController() {
                         }
                         return [deck, ...prev];
                     });
+                    setSelectedPresentation(deck);
+                    setActiveSlideIndex(0);
                 }
             }).catch(err => {
                 console.error("Presentation import error:", err);
@@ -2642,14 +2651,21 @@ export default function PresentationController() {
                         {activeTab === 'presentation' && (
                             <div className="flex flex-col gap-3 p-3 h-full overflow-y-auto">
                                 <div className="flex justify-between items-center mb-1">
-                                    <span className="text-[10px] uppercase text-white/40 font-bold tracking-widest">
-                                        PowerPoint ({presentations.length})
-                                    </span>
+                                    <div className="flex items-center gap-1.5">
+                                        <span className="text-[10px] uppercase text-white/40 font-bold tracking-widest">
+                                            PowerPoint ({presentations.length}{!canMultiPptx ? "/1" : ""})
+                                        </span>
+                                        {!canMultiPptx && (
+                                            <span className="text-[9px] text-purple-300 bg-purple-500/15 border border-purple-500/20 px-1.5 py-0.2 rounded font-bold" title="1 PPTX Deck at a time on basic plan. Large & Premium plans allow unlimited decks.">
+                                                1 Deck Max
+                                            </span>
+                                        )}
+                                    </div>
                                     <button
                                         onClick={handleImportPresentation}
                                         className="flex items-center gap-1.5 px-2.5 py-1 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-lg text-xs font-bold uppercase tracking-wider border border-purple-500/30 transition-all shadow-sm active:scale-95"
                                     >
-                                        <PiPlus size={13} /> Import PPTX
+                                        <PiPlus size={13} /> {!canMultiPptx && presentations.length >= 1 ? "Replace PPTX" : "Import PPTX"}
                                     </button>
                                 </div>
 
