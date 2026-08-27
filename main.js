@@ -2417,6 +2417,10 @@ ipcMain.on("canvas-toggle-blackout", () => toggleBlackout());
 ipcMain.on("canvas-clear-content", () => clearContent());
 
 function createWindows() {
+  if (!app || !app.isReady()) {
+    console.warn("[App] createWindows() invoked before app is ready. Postponing.");
+    return;
+  }
   const displays = screen.getAllDisplays();
   const primaryDisplay = screen.getPrimaryDisplay();
   const secondaryDisplay = displays.length > 1 ? displays[1] : null;
@@ -3530,7 +3534,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
+  if (app.isReady() && BrowserWindow.getAllWindows().length === 0) {
     createWindows();
   }
 });
