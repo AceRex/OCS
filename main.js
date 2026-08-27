@@ -385,7 +385,7 @@ ipcMain.handle("media-import", async (event) => {
 });
 
 const { convertPptxToPng, collectUsedFonts } = require("pptx-glimpse");
-const { resolvePptxInheritance } = require("./src/App/utils/pptxInheritance");
+const { resolvePptxInheritance } = require("./src/main/pptxInheritance");
 const JSZip = require("jszip");
 
 // ── Presentations Store (FR-4.1 - FR-4.7) ──────────────────────────────────

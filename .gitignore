@@ -6,6 +6,10 @@ package-lock.json.bak
 dist/
 build/
 out/
+release/
+*.dmg
+*.exe
+*.blockmap
 *.bundle.js
 *.bundle.js.map
 

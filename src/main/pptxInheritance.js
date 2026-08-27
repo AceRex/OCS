@@ -1,4 +1,13 @@
-module.exports = require("../../main/pptxInheritance");
+/**
+ * pptxInheritance.js — Resolves OpenXML shape placeholder position and background inheritance (FR-4.2)
+ *
+ * Implements standard 3-level OOXML inheritance: slide -> slideLayout -> slideMaster.
+ * When an author creates a slide without manually resizing/moving a placeholder,
+ * PowerPoint omits <a:xfrm> and relies on the renderer to inherit position geometry.
+ */
+
+const path = require('path');
+const JSZip = require('jszip');
 
 /**
  * Extract all placeholder definitions (<p:ph>) and their transforms (<a:xfrm>) from an XML string.
