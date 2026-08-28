@@ -1826,10 +1826,9 @@ export default function SettingsController() {
                           Church Organization
                         </span>
                         <span className="text-white font-bold">
-                          {authContext.auth?.orgName ||
-                            (authContext.isAuthenticated
-                              ? "OCS Community Church"
-                              : "Unregistered Guest")}
+                          {authContext.auth?.orgName && authContext.auth?.orgName !== "OCS Community Church"
+                            ? authContext.auth.orgName
+                            : (authContext.auth?.name || (authContext.auth?.email ? `${authContext.auth.email.split('@')[0]}'s Sanctuary` : (authContext.isAuthenticated ? "Sanctuary" : "Unregistered Guest")))}
                         </span>
                       </div>
                       <div>

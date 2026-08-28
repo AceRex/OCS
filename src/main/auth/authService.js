@@ -290,10 +290,13 @@ class AuthService extends EventEmitter {
 
   async saveSession(sessionData) {
     if (!this.sessionFilePath) throw new Error('AuthService not initialized');
+    const userEmail = sessionData.email || 'operator@churchocs.com';
+    const fallbackOrg = (sessionData.name || sessionData.userName) ? `${sessionData.name || sessionData.userName}'s Sanctuary` : `${userEmail.split('@')[0]}'s Sanctuary`;
     const payload = {
       token: sessionData.token,
-      email: sessionData.email || 'operator@churchocs.com',
-      orgName: sessionData.orgName || 'OCS Community Church',
+      email: userEmail,
+      name: sessionData.name || sessionData.userName || userEmail.split('@')[0],
+      orgName: (sessionData.orgName && sessionData.orgName !== 'OCS Community Church') ? sessionData.orgName : (sessionData.churchName || fallbackOrg),
       licenseTier: sessionData.licenseTier || sessionData.subscriptionPlan || 'trial',
       subscriptionPlan: sessionData.subscriptionPlan || sessionData.licenseTier || 'trial',
       daysRemaining: sessionData.daysRemaining !== undefined ? Number(sessionData.daysRemaining) : 60,
@@ -311,10 +314,13 @@ class AuthService extends EventEmitter {
 
   saveSessionSync(sessionData) {
     if (!this.sessionFilePath) throw new Error('AuthService not initialized');
+    const userEmail = sessionData.email || 'operator@churchocs.com';
+    const fallbackOrg = (sessionData.name || sessionData.userName) ? `${sessionData.name || sessionData.userName}'s Sanctuary` : `${userEmail.split('@')[0]}'s Sanctuary`;
     const payload = {
       token: sessionData.token,
-      email: sessionData.email || 'operator@churchocs.com',
-      orgName: sessionData.orgName || 'OCS Community Church',
+      email: userEmail,
+      name: sessionData.name || sessionData.userName || userEmail.split('@')[0],
+      orgName: (sessionData.orgName && sessionData.orgName !== 'OCS Community Church') ? sessionData.orgName : (sessionData.churchName || fallbackOrg),
       licenseTier: sessionData.licenseTier || sessionData.subscriptionPlan || 'trial',
       subscriptionPlan: sessionData.subscriptionPlan || sessionData.licenseTier || 'trial',
       daysRemaining: sessionData.daysRemaining !== undefined ? Number(sessionData.daysRemaining) : 60,
@@ -659,10 +665,13 @@ class AuthService extends EventEmitter {
         if (parsed.features) parsedFeatures = typeof parsed.features === "string" ? JSON.parse(parsed.features) : parsed.features;
       } catch (_) {}
 
+      const userEmail = parsed.email || 'admin@churchocs.com';
+      const fallbackOrg = parsed.name ? `${parsed.name}'s Sanctuary` : `${userEmail.split('@')[0]}'s Sanctuary`;
       const session = this.saveSessionSync({
         token: parsed.token,
-        email: parsed.email || 'admin@churchocs.com',
-        orgName: parsed.org || 'OCS Community Church',
+        email: userEmail,
+        name: parsed.name || userEmail.split('@')[0],
+        orgName: (parsed.org && parsed.org !== 'OCS Community Church') ? parsed.org : fallbackOrg,
         licenseTier: parsed.tier || 'trial',
         subscriptionPlan: parsed.tier || 'trial',
         daysRemaining: parsed.daysRemaining ? Number(parsed.daysRemaining) : 60,

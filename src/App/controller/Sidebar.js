@@ -223,7 +223,7 @@ function SidebarAccount({ isCollapsed, onExpand }) {
             <div className="flex flex-col overflow-hidden flex-1 text-left">
               <div className="flex items-center gap-1.5">
                 <span className="text-xs font-bold text-white truncate">
-                  {auth.orgName || "OCS Community Church"}
+                  {auth.orgName && auth.orgName !== "OCS Community Church" ? auth.orgName : (auth.name || (auth.email ? `${auth.email.split('@')[0]}'s Sanctuary` : "Sanctuary"))}
                 </span>
                 <span className="text-[9px] font-black uppercase px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
                   {label}
