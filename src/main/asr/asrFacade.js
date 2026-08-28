@@ -29,6 +29,39 @@ const { resolveWhisperModel } = require('./whisperEngine');
 // ── Engine selection heuristic (FR-12.1 Step 1 lite) ────────────────────────
 
 function resolveVoskModelPath(rootDir) {
+  const searchDirs = [
+    path.join(rootDir, 'voice_server', 'models'),
+    path.join(rootDir, 'models'),
+  ];
+
+  if (process.resourcesPath) {
+    searchDirs.push(
+      path.join(process.resourcesPath, 'voice_server', 'models'),
+      path.join(process.resourcesPath, 'models'),
+      path.join(process.resourcesPath, 'app.asar.unpacked', 'voice_server', 'models')
+    );
+  }
+
+  try {
+    const electron = require('electron');
+    const app = electron.app || (electron.remote && electron.remote.app);
+    if (app && typeof app.getPath === 'function') {
+      const userData = app.getPath('userData');
+      searchDirs.push(
+        path.join(userData, 'voice_server', 'models'),
+        path.join(userData, 'voice_models'),
+        path.join(userData, 'models')
+      );
+    }
+  } catch (_) {}
+
+  for (const dir of searchDirs) {
+    const p = path.join(dir, 'vosk-model-small-en-us-0.15');
+    if (fs.existsSync(p)) return p;
+    const large = path.join(dir, 'vosk-model-en-us-0.22');
+    if (fs.existsSync(large)) return large;
+  }
+
   return path.join(rootDir, 'voice_server', 'models', 'vosk-model-small-en-us-0.15');
 }
 

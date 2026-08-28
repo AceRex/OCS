@@ -32,13 +32,98 @@ function shouldArmPassBForBookish(text) {
   return BOOK_TOKEN_RE.test(t) && NUMBERISH_RE.test(t);
 }
 
+function getCandidateSearchDirs(rootDir) {
+  const dirs = [
+    path.join(rootDir, 'voice_server', 'models'),
+    path.join(rootDir, 'models'),
+  ];
+
+  if (process.resourcesPath) {
+    dirs.push(
+      path.join(process.resourcesPath, 'voice_server', 'models'),
+      path.join(process.resourcesPath, 'models'),
+      path.join(process.resourcesPath, 'app.asar.unpacked', 'voice_server', 'models'),
+      path.join(process.resourcesPath, 'app.asar.unpacked', 'models')
+    );
+  }
+
+  try {
+    const electron = require('electron');
+    const app = electron.app || (electron.remote && electron.remote.app);
+    if (app && typeof app.getPath === 'function') {
+      const userData = app.getPath('userData');
+      dirs.push(
+        path.join(userData, 'voice_server', 'models'),
+        path.join(userData, 'voice_models'),
+        path.join(userData, 'models')
+      );
+    }
+  } catch (_) {}
+
+  return dirs;
+}
+
 function resolveModelPath(rootDir) {
-  const modelsDir = path.join(rootDir, 'voice_server', 'models');
-  const large = path.join(modelsDir, 'vosk-model-en-us-0.22');
-  const small = path.join(modelsDir, 'vosk-model-small-en-us-0.15');
-  if (fs.existsSync(large)) return { path: large, name: 'vosk-model-en-us-0.22', size: 'large' };
-  if (fs.existsSync(small)) return { path: small, name: 'vosk-model-small-en-us-0.15', size: 'small' };
+  const searchDirs = getCandidateSearchDirs(rootDir);
+  for (const modelsDir of searchDirs) {
+    if (!modelsDir) continue;
+    const large = path.join(modelsDir, 'vosk-model-en-us-0.22');
+    const small = path.join(modelsDir, 'vosk-model-small-en-us-0.15');
+    if (fs.existsSync(large)) return { path: large, name: 'vosk-model-en-us-0.22', size: 'large' };
+    if (fs.existsSync(small)) return { path: small, name: 'vosk-model-small-en-us-0.15', size: 'small' };
+  }
   return null;
+}
+
+async function downloadAndExtractModel(targetDir) {
+  const https = require('https');
+  const { exec } = require('child_process');
+  const util = require('util');
+  const execAsync = util.promisify(exec);
+
+  fs.mkdirSync(targetDir, { recursive: true });
+  const zipPath = path.join(targetDir, 'vosk-model-small-en-us-0.15.zip');
+  const url = 'https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip';
+
+  await new Promise((resolve, reject) => {
+    const fileStream = fs.createWriteStream(zipPath);
+    const getUrl = (u) => {
+      https.get(u, (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          return getUrl(res.headers.location);
+        }
+        if (res.statusCode !== 200) {
+          return reject(new Error(`Download failed with status ${res.statusCode}`));
+        }
+        res.pipe(fileStream);
+        fileStream.on('finish', () => {
+          fileStream.close(() => resolve());
+        });
+      }).on('error', (err) => {
+        try { fs.unlinkSync(zipPath); } catch (_) {}
+        reject(err);
+      });
+    };
+    getUrl(url);
+  });
+
+  try {
+    if (process.platform === 'win32') {
+      try {
+        await execAsync(`tar -xf "${zipPath}" -C "${targetDir}"`);
+      } catch (_) {
+        await execAsync(`powershell -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${targetDir}' -Force"`);
+      }
+    } else {
+      try {
+        await execAsync(`unzip -o "${zipPath}" -d "${targetDir}"`);
+      } catch (_) {
+        await execAsync(`tar -xf "${zipPath}" -C "${targetDir}"`);
+      }
+    }
+  } finally {
+    try { fs.unlinkSync(zipPath); } catch (_) {}
+  }
 }
 
 function averageWordConfidence(result) {
@@ -153,11 +238,32 @@ class VoskEngine extends EventEmitter {
     this.emit('status', this.getState());
 
     try {
-      const modelMeta = resolveModelPath(this.rootDir);
+      let modelMeta = resolveModelPath(this.rootDir);
+      if (!modelMeta) {
+        console.log('[Vosk] No local voice model found. Attempting automatic download...');
+        this.status = 'downloading';
+        this.emit('status', this.getState());
+
+        let targetDir = path.join(this.rootDir, 'voice_server', 'models');
+        try {
+          const electron = require('electron');
+          const app = electron.app || (electron.remote && electron.remote.app);
+          if (app && typeof app.getPath === 'function') {
+            targetDir = path.join(app.getPath('userData'), 'voice_models');
+          }
+        } catch (_) {}
+
+        try {
+          await downloadAndExtractModel(targetDir);
+          modelMeta = resolveModelPath(this.rootDir);
+        } catch (downloadErr) {
+          console.warn('[Vosk] Auto-download failed:', downloadErr.message);
+        }
+      }
+
       if (!modelMeta) {
         throw new Error(
-          'No Vosk model found. Run: npm run setup:voice\n' +
-          'Expected voice_server/models/vosk-model-small-en-us-0.15'
+          'Offline voice model (vosk-model-small-en-us-0.15) is not available. Please ensure voice models are downloaded or connected to the internet.'
         );
       }
 

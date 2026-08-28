@@ -30,6 +30,12 @@ asarUnpack:
   - "node_modules/@img/**/*"
   - "node_modules/sharp/**/*"
 
+extraResources:
+  - from: "voice_server/models/vosk-model-small-en-us-0.15"
+    to: "voice_server/models/vosk-model-small-en-us-0.15"
+    filter:
+      - "**/*"
+
 publish:
   provider: github
   owner: AceRex

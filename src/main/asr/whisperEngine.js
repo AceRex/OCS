@@ -41,7 +41,32 @@ const ENERGY_SPEECH = 0.012;
 const ENERGY_SILENCE = 0.006;
 
 function resolveWhisperModel(rootDir) {
-  const dir = path.join(rootDir, 'voice_server', 'models', 'whisper');
+  const searchDirs = [
+    path.join(rootDir, 'voice_server', 'models', 'whisper'),
+    path.join(rootDir, 'models', 'whisper'),
+  ];
+
+  if (process.resourcesPath) {
+    searchDirs.push(
+      path.join(process.resourcesPath, 'voice_server', 'models', 'whisper'),
+      path.join(process.resourcesPath, 'models', 'whisper'),
+      path.join(process.resourcesPath, 'app.asar.unpacked', 'voice_server', 'models', 'whisper')
+    );
+  }
+
+  try {
+    const electron = require('electron');
+    const app = electron.app || (electron.remote && electron.remote.app);
+    if (app && typeof app.getPath === 'function') {
+      const userData = app.getPath('userData');
+      searchDirs.push(
+        path.join(userData, 'voice_server', 'models', 'whisper'),
+        path.join(userData, 'voice_models', 'whisper'),
+        path.join(userData, 'models', 'whisper')
+      );
+    }
+  } catch (_) {}
+
   const candidates = [
     'ggml-distil-small.en-q5_1.bin',
     'ggml-distil-small.en.bin',
@@ -56,19 +81,23 @@ function resolveWhisperModel(rootDir) {
     'ggml-base.bin',
     'ggml-tiny.bin',
   ];
-  for (const name of candidates) {
-    const p = path.join(dir, name);
-    if (fs.existsSync(p)) {
-      const isDistilSmall = /distil-small/.test(name);
-      const isDistilMedium = /distil-medium|medium-32-2/.test(name);
-      const englishOnly = /\.en\./.test(name) || /\.en-/.test(name);
-      return {
-        path: p,
-        name,
-        size: isDistilMedium ? 'distil-medium' : isDistilSmall ? 'distil-small' : 'fallback',
-        dir,
-        englishOnly,
-      };
+
+  for (const dir of searchDirs) {
+    if (!dir) continue;
+    for (const name of candidates) {
+      const p = path.join(dir, name);
+      if (fs.existsSync(p)) {
+        const isDistilSmall = /distil-small/.test(name);
+        const isDistilMedium = /distil-medium|medium-32-2/.test(name);
+        const englishOnly = /\.en\./.test(name) || /\.en-/.test(name);
+        return {
+          path: p,
+          name,
+          size: isDistilMedium ? 'distil-medium' : isDistilSmall ? 'distil-small' : 'fallback',
+          dir,
+          englishOnly,
+        };
+      }
     }
   }
   return null;
