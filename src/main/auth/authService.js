@@ -403,7 +403,7 @@ class AuthService extends EventEmitter {
       const postData = JSON.stringify({
         platform: "desktop",
         deviceId: this.machineId || getMachineId(),
-        name: `${os.hostname()} Sanctuary Workstation`,
+        name: os.hostname() || "Desktop Workstation",
       });
 
       const req = client.request(
@@ -434,7 +434,7 @@ class AuthService extends EventEmitter {
       const url = new URL(`${apiBase.replace(/\/+$/, "")}/auth/validate-token`);
       const client = url.protocol === "http:" ? http : https;
       const deviceId = this.machineId || getMachineId();
-      const deviceName = `${os.hostname()} Sanctuary Workstation`;
+      const deviceName = os.hostname() || "Desktop Workstation";
       const postData = JSON.stringify({
         token: token || this.cachedSession?.token,
         platform: "desktop",
