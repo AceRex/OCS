@@ -936,6 +936,46 @@ The Scene feature's Read-Along mode (FR-4.29) is the fourth caller of the shared
 
 **FR-5.39 (New) — Manual Override Always Available:** Regardless of Read-Along state, `Space`/Controller click/Mobile Companion next (FR-4.29's Manual mode controls) remain active as an override in Read-Along mode too — an operator can always force-advance a stuck or mis-tracking page without switching the Scene's mode.
 
+#### 5.5.2 Teleprompter Camera Capture & Recording Quality (New in v1.11)
+
+**FR-5.40 (New) — Video Capture Bitrate:** The teleprompter recording pipeline shall request a minimum `videoBitsPerSecond` of 8,000,000 (8 Mbps) from `MediaRecorder` during desktop webcam capture, configurable via operator settings (`teleprompter.videoBitrateBps`). The default of 8 Mbps targets sharp 1080p broadcast-quality output. Operators with constrained hardware may reduce to 6 Mbps; operators with high-end hardware may increase to 10 Mbps.
+
+**FR-5.41 (New) — Raw Capture Isolation:** The live camera preview and the `MediaRecorder` recording path shall receive the raw, unfiltered `MediaStream` directly from `getUserMedia` or the WebRTC remote track. No CSS filter, canvas compositing, or real-time image processing shall be applied to the stream before or during capture. Preview-only transforms (mirror flip via CSS `scaleX(-1)`) do not affect the `MediaStream` and are permitted.
+
+**FR-5.42 (New) — Post-Processing Pipeline:** After a teleprompter recording session ends and the raw file is saved, the system shall spawn a non-blocking background ffmpeg post-processing pass applying: (a) unsharp mask sharpening (`unsharp=5:5:1.5:5:5:0.0`), (b) mild color correction (`eq=contrast=1.05:brightness=0.02:saturation=1.1`), producing a separate `session_polished.mp4` alongside the original `session_raw.webm`. The presenter is notified via a non-blocking status indicator when the polished file is ready. The background pass shall not delay or block any app operation.
+
+**FR-5.43 (New) — Dual File Retention:** Both the raw capture file (`session_raw.webm`) and the post-processed file (`session_polished.mp4`) shall be retained in the session folder. The Sessions view shall clearly distinguish which file is the polished output. Raw file cleanup may be offered to the operator after a configurable retention period (default: 7 days) but shall never be automatic without operator confirmation.
+
+**FR-5.44 (New) — Camera Test Mode:** A distinct "Test Camera" action shall activate the camera preview (including live mirroring state per FR-5.41) without initiating any audio capture, ASR ingestion, or video recording. The test mode UI must be unambiguously distinguishable from an active recording session with a clearly visible non-recording indicator. Operators must never be able to confuse camera test with a live recording session.
+
+**FR-5.45 (New) — Pre-Recording Countdown:** When "Start Recording" is initiated, a full-screen countdown from 5 to 0 shall be displayed, with each step advancing at 1-second intervals. Recording and ASR word tracking shall begin at the instant the countdown reaches 0. The countdown shall be cancelable at any point before it reaches 0; cancellation aborts the countdown without starting recording. Word tracking response is driven by detected speech and does not require any additional signal beyond the countdown reaching 0 and audio capture beginning.
+
+#### 5.5.3 Teleprompter Scroll Modes (New in v1.11)
+
+**FR-5.46 (New) — Per-Script Scroll Mode:** Each teleprompter script shall carry a `scrollMode` property: `'continuous'` or `'segmented'`. Scroll mode is set per script during authoring, not as a global app setting. The default for new scripts is `'continuous'`.
+
+**FR-5.47 (New) — Continuous Scroll Mode:** In continuous mode, the teleprompter scrolls word-by-word in real time, tracking live speech through the existing `referenceAligner.js` alignment engine (FR-5.31). This is the default behavior and is unchanged from the existing implementation.
+
+**FR-5.48 (New) — Segmented Scroll Mode:** In segmented mode, the teleprompter treats each script section (page) as a discrete chunk, using the existing `SceneAutoAdvanceManager` (FR-5.36–FR-5.39) as the underlying state machine — not a separate implementation. The teleprompter holds display at the end of each chunk rather than advancing automatically. Advance occurs when: (a) the presenter resumes speaking after a configurable minimum pause (default 600ms debounce), or (b) an explicit manual advance is triggered (per FR-5.39). The `SceneAutoAdvanceManager.startScene()`, `feed()`, and `manualAdvance()` methods are called directly.
+
+**FR-5.49 (New) — Segment Boundary Authoring:** The existing section/page tabs in the script authoring UI (`TeleprompterScriptModal`) serve as segment boundaries for segmented mode. No additional boundary markup syntax is required; section separation already exists as the authoring primitive.
+
+#### 5.5.4 Mobile Camera as Teleprompter Video Source (New in v1.11)
+
+**FR-5.50 (New) — Paired-Desktop Prerequisite:** Mobile-as-camera for teleprompter requires an already-paired, already-authenticated desktop running an active teleprompter session. A standalone mobile teleprompter operating without a desktop is explicitly out of scope for this feature and constitutes a separate, larger product decision.
+
+**FR-5.51 (New) — Mobile Video Source:** When a paired mobile device accepts a camera request from the desktop, it becomes the video source for the teleprompter recording session. The desktop's teleprompter preview and recording receive the mobile camera stream via WebRTC peer connection over the existing paired LAN connection, using the same Socket.IO relay in `main.js` already established for ICE/offer/answer signaling.
+
+**FR-5.52 (New) — Mobile Camera Component:** The mobile teleprompter camera feature uses hardware-accelerated camera capture (`CameraView`), providing camera flip between front and back sensors.
+
+**FR-5.53 (New) — Mobile Capture Bitrate Parity:** The mobile camera recording shall be configured for comparable bitrate and quality to the desktop capture path (FR-5.40) at the highest quality preset available on the device.
+
+**FR-5.54 (New) — Mobile Countdown Sync:** The mobile device shall display the same pre-recording countdown shown on the desktop (FR-5.45), received via a `teleprompter:countdown` socket event relayed through `main.js`. The person being filmed sees the same countdown the operator sees.
+
+**FR-5.55 (New) — Mobile Test Mode Indicator:** When the desktop is in camera test mode (FR-5.44), the mobile shall display a clear "NOT RECORDING — TEST MODE" indicator while streaming, consistent with the desktop test mode state.
+
+**FR-5.56 (New) — Word Tracking via Mobile Mic:** Word tracking for teleprompter scroll position during mobile-camera sessions shall be driven by the mobile device's microphone audio, streamed to the desktop over the existing continuous voice pipeline (FR-3.36, FR-3.41–FR-3.43). The desktop ASR engine performs transcription and alignment exactly as it does for all other continuous voice sessions. No on-device speech recognition is attempted on the mobile device for this feature.
+
 ---
 
 ## 6. Non-Functional Requirements
