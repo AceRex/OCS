@@ -32,7 +32,7 @@ interface SocketState {
     setVoiceActive: (active: boolean) => void;
     sendVoiceAudio: (audioData: { dataBase64: string; format?: string; durationMs?: number; role?: string }) => Promise<{ ok: boolean; error?: string; text?: string; confidence?: number }>;
     peers: Array<{ id: string; name: string; ip: string; isVoiceActive?: boolean }>;
-    incomingIntercom: { fromName: string; audioBase64: string; format: string; timestamp: number } | null;
+    incomingIntercom: { fromName: string; audioBase64: string; format: string; timestamp: number; msgId?: string } | null;
     fetchPeers: () => Promise<Array<{ id: string; name: string; ip: string; isVoiceActive?: boolean }>>;
     speakToPeer: (payload: { target: string; audioBase64: string; format?: string; durationMs?: number }) => Promise<{ ok: boolean; error?: string }>;
     streamMicChunk: (payload: { volume: number; active: boolean }) => void;
