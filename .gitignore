@@ -4,7 +4,8 @@ package-lock.json.bak
 
 # Build & Bundles
 dist/
-build/
+build/*
+!build/*.plist
 out/
 release/
 *.dmg

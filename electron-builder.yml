@@ -44,6 +44,11 @@ publish:
 
 mac:
   category: public.app-category.lifestyle
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.inherit.plist
+  extendInfo:
+    NSCameraUsageDescription: "This app needs access to your camera for teleprompter recording."
+    NSMicrophoneUsageDescription: "This app needs access to your microphone for live speech alignment."
   target:
     - target: dmg
       arch:
