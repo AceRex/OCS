@@ -443,24 +443,79 @@ export default function TeleprompterController() {
     }
   };
 
+  // Helper to reliably acquire webcam stream across various desktop camera drivers
+  const acquireDesktopCameraStream = async ({ withAudio = true } = {}) => {
+    let videoDevices = [];
+    try {
+      const allDevices = await navigator.mediaDevices.enumerateDevices();
+      videoDevices = allDevices.filter((d) => d.kind === "videoinput");
+      console.log("[Teleprompter] Detected videoinput devices:", videoDevices.map(d => ({ label: d.label, id: d.deviceId })));
+    } catch (_) {}
+
+    // Multi-tier fallback constraint candidates (no facingMode, which breaks desktop webcams)
+    const videoCandidates = [
+      { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
+      { width: { ideal: 1920 }, height: { ideal: 1080 } },
+      true, // unconstrained fallback
+    ];
+
+    let lastError = null;
+    for (const vConstraint of videoCandidates) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: vConstraint,
+          audio: withAudio
+            ? { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+            : false,
+        });
+        return stream;
+      } catch (err) {
+        lastError = err;
+        console.warn("[Teleprompter] Video constraint attempt failed:", vConstraint, err.name, err.message);
+        if (withAudio) {
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+              video: vConstraint,
+              audio: true,
+            });
+            return stream;
+          } catch (_) {}
+        }
+      }
+    }
+
+    if (withAudio) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+        console.warn("[Teleprompter] Acquired video-only stream (audio device unavailable or busy)");
+        return stream;
+      } catch (_) {}
+    }
+
+    throw lastError || new Error("No camera device accessible on this system");
+  };
+
+  const formatCameraErrorMessage = (err) => {
+    let errorMsg = err?.message || String(err);
+    if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError") {
+      errorMsg = "Camera access denied. Please enable Camera permissions in macOS System Settings > Privacy & Security > Camera.";
+    } else if (err?.name === "NotFoundError" || err?.name === "DevicesNotFoundError" || errorMsg.includes("Requested device not found")) {
+      errorMsg = "No webcam detected. If using a MacBook or external camera, please ensure Camera permission is granted in macOS System Settings > Privacy & Security > Camera.";
+    } else if (err?.name === "NotReadableError" || err?.name === "TrackStartError") {
+      errorMsg = "Camera is currently locked by another application (e.g. Zoom, Teams, FaceTime). Please close other camera apps and retry.";
+    }
+    return errorMsg;
+  };
+
   // Desktop Webcam & Microphone Capture
   const startDesktopCamera = async () => {
     try {
       setCameraError(null);
       sessionStartTimeRef.current = Date.now();
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          width: { ideal: 1280, max: 1920 },
-          height: { ideal: 720, max: 1080 },
-          frameRate: { ideal: 30, max: 60 },
-          facingMode: "user",
-        },
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
+      const stream = await acquireDesktopCameraStream({ withAudio: true });
 
       setVideoStream(stream);
       setIsCapturing(true);
@@ -472,13 +527,7 @@ export default function TeleprompterController() {
       startRecording(stream);
     } catch (err) {
       console.error("[Teleprompter] Camera capture error:", err);
-      let errorMsg = "Unable to access camera. Please check system permissions.";
-      if (err.name === "NotAllowedError" || err.name === "PermissionDeniedError") {
-        errorMsg = "Camera access denied. Please enable Camera permissions in macOS System Settings > Privacy & Security.";
-      } else if (err.name === "NotFoundError" || err.name === "DevicesNotFoundError") {
-        errorMsg = "No webcam detected on this device.";
-      }
-      setCameraError(errorMsg);
+      setCameraError(formatCameraErrorMessage(err));
       setIsCapturing(false);
     }
   };
@@ -639,15 +688,13 @@ export default function TeleprompterController() {
     if (isCapturing || isTestMode) return;
     try {
       setCameraError(null);
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 60 } },
-        audio: false,
-      });
+      const stream = await acquireDesktopCameraStream({ withAudio: false });
       setVideoStream(stream);
       setIsTestMode(true);
       setIsCapturing(true); // reuse preview logic — no recording started
     } catch (err) {
-      setCameraError("Camera test failed: " + err.message);
+      console.error("[Teleprompter] Camera test error:", err);
+      setCameraError("Camera test failed: " + formatCameraErrorMessage(err));
     }
   };
 

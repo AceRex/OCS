@@ -9,6 +9,7 @@ const {
   Notification,
   shell,
   globalShortcut,
+  systemPreferences,
 } = require("electron");
 
 // ── Custom Protocol Scheme for Authentication & Deep Links (FR-13.8, FR-13.3) ───
@@ -3444,7 +3445,7 @@ app.whenReady().then(async () => {
   // Show splash window immediately on startup (FR-13.2)
   showSplashWindow();
 
-  // GRANT MICROPHONE ACCESS AUTOMATICALLY
+  // GRANT MEDIA ACCESS (Camera & Microphone) AUTOMATICALLY
   session.defaultSession.setPermissionRequestHandler(
     (webContents, permission, callback) => {
       if (permission === "media") {
@@ -3454,6 +3455,18 @@ app.whenReady().then(async () => {
       }
     },
   );
+
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+    if (permission === "media") {
+      return true;
+    }
+    return false;
+  });
+
+  if (process.platform === "darwin" && systemPreferences.askForMediaAccess) {
+    systemPreferences.askForMediaAccess("camera").catch(() => {});
+    systemPreferences.askForMediaAccess("microphone").catch(() => {});
+  }
 
   const menuActions = {
     toggleBlackout: () => toggleBlackout(),
