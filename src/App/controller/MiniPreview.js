@@ -259,6 +259,7 @@ export default function MiniPreview({ mode }) {
             bibleTranslation = 'KJV',
             bibleServiceLabel = '',
             bibleShowOrbs = true,
+            bibleReadAlongTransition = 'text-glow',
         } = presentationStyle;
 
         let bookLabel = '';
@@ -359,7 +360,6 @@ export default function MiniPreview({ mode }) {
                         style={{
                             fontFamily: '"Outfit", "Space Grotesk", sans-serif',
                             fontWeight: useReadAlong ? 600 : 800,
-                            color: textColor,
                             lineHeight: 1.25,
                             maxWidth: '88%',
                             width: '100%',
@@ -375,21 +375,63 @@ export default function MiniPreview({ mode }) {
                             readAlong.tokens.map((tok, i) => {
                                 const isActive = i === activeIdx;
                                 const isPast = activeIdx >= 0 && i < activeIdx;
+                                const trans = bibleReadAlongTransition || 'text-glow';
+                                const isUnderline = trans === 'underline';
+                                const isPop = trans === 'text-pop' || trans === 'pop';
+
+                                let wordStyle = {
+                                    display: 'inline-block',
+                                    color: '#FFFFFF',
+                                    opacity: isPast ? 0.85 : 0.45,
+                                    fontWeight: isPast ? 600 : 500,
+                                    textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                                    transition: 'all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+                                };
+
+                                if (isActive) {
+                                    if (isUnderline) {
+                                        wordStyle = {
+                                            display: 'inline-block',
+                                            color: '#FFFFFF',
+                                            opacity: 1,
+                                            fontWeight: 800,
+                                            textDecoration: 'underline',
+                                            textDecorationColor: '#38bdf8',
+                                            textUnderlineOffset: '4px',
+                                            textDecorationThickness: '2px',
+                                            textShadow: '0 2px 10px rgba(0,0,0,0.6)',
+                                            transition: 'all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+                                        };
+                                    } else if (isPop) {
+                                        wordStyle = {
+                                            display: 'inline-block',
+                                            color: '#FFFFFF',
+                                            opacity: 1,
+                                            fontWeight: 800,
+                                            transform: 'scale(1.18) translateY(-2px)',
+                                            textShadow: '0 4px 14px rgba(0,0,0,0.8), 0 0 12px rgba(255,255,255,0.4)',
+                                            transition: 'all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+                                        };
+                                    } else {
+                                        // text-glow
+                                        wordStyle = {
+                                            display: 'inline-block',
+                                            color: '#FFFFFF',
+                                            opacity: 1,
+                                            fontWeight: 800,
+                                            transform: 'scale(1.05)',
+                                            textShadow: '0 0 16px rgba(56,189,248,0.95), 0 0 28px rgba(56,189,248,0.6), 0 2px 10px rgba(0,0,0,0.7)',
+                                            transition: 'all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+                                        };
+                                    }
+                                }
+
                                 return (
                                     <React.Fragment key={`${i}-${tok}`}>
                                         <span
                                             className="ocs-ra-word-mini"
                                             data-i={i}
-                                            style={{
-                                                display: 'inline',
-                                                fontWeight: 600,
-                                                color: isActive ? '#FFFFFF' : textColor,
-                                                opacity: isActive ? 1 : (isPast ? 0.42 : 0.58),
-                                                transition: 'color 180ms cubic-bezier(0.33, 1, 0.68, 1), opacity 180ms cubic-bezier(0.33, 1, 0.68, 1), text-shadow 180ms cubic-bezier(0.33, 1, 0.68, 1)',
-                                                textShadow: isActive
-                                                    ? '0 0 0.5px #fff, 0 0 0.5px #fff, 0 0 8px rgba(255,255,255,0.2), 0 2px 10px rgba(0,0,0,0.5)'
-                                                    : '0 2px 10px rgba(0,0,0,0.5)',
-                                            }}
+                                            style={wordStyle}
                                         >
                                             {tok}
                                         </span>

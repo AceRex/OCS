@@ -39,6 +39,12 @@ interface SocketState {
     clearIncomingIntercom: () => void;
     sendScene: (scene: any) => Promise<{ ok: boolean; error?: string; message?: string; scene?: any }>;
     sendStageControl: (command: string, payload?: any) => Promise<{ ok: boolean; error?: string }>;
+    teleprompterCameraRequest: { fromId: string; scriptTitle: string } | null;
+    isCameraStreaming: boolean;
+    teleprompterCountdown: { value: number | null; action?: string } | null;
+    acceptCameraRequest: () => void;
+    rejectCameraRequest: () => void;
+    stopCameraStream: () => void;
 }
 
 export const useSocketStore = create<SocketState>((set, get) => ({
@@ -55,6 +61,26 @@ export const useSocketStore = create<SocketState>((set, get) => ({
     connectionError: null,
     peers: [],
     incomingIntercom: null,
+    teleprompterCameraRequest: null,
+    isCameraStreaming: false,
+    teleprompterCountdown: null,
+    acceptCameraRequest: () => {
+        set({ isCameraStreaming: true, teleprompterCameraRequest: null });
+    },
+    rejectCameraRequest: () => {
+        const { socket, teleprompterCameraRequest } = get();
+        if (socket && teleprompterCameraRequest?.fromId) {
+            socket.emit('teleprompter:stop-camera', { targetId: teleprompterCameraRequest.fromId });
+        }
+        set({ teleprompterCameraRequest: null });
+    },
+    stopCameraStream: () => {
+        const { socket } = get();
+        if (socket) {
+            socket.emit('teleprompter:stop-camera', {});
+        }
+        set({ isCameraStreaming: false, teleprompterCountdown: null });
+    },
     clearIncomingIntercom: () => set({ incomingIntercom: null }),
     streamMicChunk: (payload: { volume: number; active: boolean }) => {
         const { socket } = get();
@@ -223,6 +249,26 @@ export const useSocketStore = create<SocketState>((set, get) => ({
         socket.on('intercom-message', (message: { fromName: string; audioBase64: string; format: string; timestamp: number }) => {
             console.log('[Intercom] Received audio message from:', message.fromName);
             set({ incomingIntercom: { ...message, timestamp: Date.now(), msgId: `${Date.now()}_${Math.random()}` } });
+        });
+
+        socket.on('teleprompter:camera-requested', (payload: { fromId: string; scriptTitle: string }) => {
+            console.log('[Teleprompter] Received camera request from desktop:', payload);
+            set({ teleprompterCameraRequest: payload });
+        });
+
+        socket.on('teleprompter:camera-stopped', () => {
+            console.log('[Teleprompter] Camera streaming stopped by desktop');
+            set({ isCameraStreaming: false, teleprompterCameraRequest: null, teleprompterCountdown: null });
+        });
+
+        // FR-5.54 [NEW]: Synced countdown from desktop
+        socket.on('teleprompter:countdown', (payload: { value: number | null; action?: string }) => {
+            console.log('[Teleprompter] Countdown event received:', payload);
+            if (payload?.action === 'cancel' || payload?.value === null) {
+                set({ teleprompterCountdown: null });
+            } else {
+                set({ teleprompterCountdown: payload });
+            }
         });
 
         socket.on('pair-required', (payload: { message?: string }) => {

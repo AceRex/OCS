@@ -122,7 +122,8 @@ export default function PreviewModal({ isOpen, onClose, mode }) {
             bibleRefPosition = 'top-center',
             bibleBodyPosition = 'center',
             bibleTranslation = 'KJV',
-            bibleServiceLabel = ''
+            bibleServiceLabel = '',
+            bibleReadAlongTransition = 'text-glow',
         } = presentationStyle;
 
         const activeVersion = (version || translation || bibleTranslation || 'KJV').toUpperCase();
@@ -184,20 +185,60 @@ export default function PreviewModal({ isOpen, onClose, mode }) {
                             readAlong.tokens.map((tok, i) => {
                                 const isActive = i === activeIdx;
                                 const isPast = activeIdx >= 0 && i < activeIdx;
+                                const trans = bibleReadAlongTransition || 'text-glow';
+                                const isUnderline = trans === 'underline';
+                                const isPop = trans === 'text-pop' || trans === 'pop';
+
+                                let wordStyle = {
+                                    display: 'inline-block',
+                                    color: '#FFFFFF',
+                                    opacity: isPast ? 0.85 : 0.45,
+                                    fontWeight: isPast ? 600 : 500,
+                                    textShadow: '0 2px 10px rgba(0,0,0,0.5)',
+                                    transition: 'all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+                                };
+
+                                if (isActive) {
+                                    if (isUnderline) {
+                                        wordStyle = {
+                                            display: 'inline-block',
+                                            color: '#FFFFFF',
+                                            opacity: 1,
+                                            fontWeight: 800,
+                                            textDecoration: 'underline',
+                                            textDecorationColor: '#38bdf8',
+                                            textUnderlineOffset: '5px',
+                                            textDecorationThickness: '3px',
+                                            textShadow: '0 2px 12px rgba(0,0,0,0.7)',
+                                            transition: 'all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+                                        };
+                                    } else if (isPop) {
+                                        wordStyle = {
+                                            display: 'inline-block',
+                                            color: '#FFFFFF',
+                                            opacity: 1,
+                                            fontWeight: 800,
+                                            transform: 'scale(1.18) translateY(-2px)',
+                                            textShadow: '0 4px 16px rgba(0,0,0,0.85), 0 0 12px rgba(255,255,255,0.4)',
+                                            transition: 'all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+                                        };
+                                    } else {
+                                        // text-glow
+                                        wordStyle = {
+                                            display: 'inline-block',
+                                            color: '#FFFFFF',
+                                            opacity: 1,
+                                            fontWeight: 800,
+                                            transform: 'scale(1.06) translateY(-1px)',
+                                            textShadow: '0 0 18px rgba(56,189,248,0.95), 0 0 32px rgba(56,189,248,0.6), 0 2px 10px rgba(0,0,0,0.7)',
+                                            transition: 'all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+                                        };
+                                    }
+                                }
+
                                 return (
                                     <React.Fragment key={`${i}-${tok}`}>
-                                        <span
-                                            style={{
-                                                display: 'inline',
-                                                fontWeight: 600,
-                                                color: isActive ? '#FFFFFF' : textColor,
-                                                opacity: isActive ? 1 : (isPast ? 0.42 : 0.58),
-                                                transition: 'color 180ms ease, opacity 180ms ease',
-                                                textShadow: isActive
-                                                    ? '0 0 10px rgba(255,255,255,0.4), 0 2px 10px rgba(0,0,0,0.6)'
-                                                    : '0 2px 10px rgba(0,0,0,0.5)',
-                                            }}
-                                        >
+                                        <span style={wordStyle}>
                                             {tok}
                                         </span>
                                         {i < readAlong.tokens.length - 1 ? ' ' : ''}

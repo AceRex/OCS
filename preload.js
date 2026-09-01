@@ -296,6 +296,8 @@ contextBridge.exposeInMainWorld("electron", {
   },
   Network: {
     getServerInfo: () => ipcRenderer.invoke('get-server-info'),
+    getPairedDevices: () => ipcRenderer.invoke('get-paired-devices'),
+    sendSocketMessage: (event, payload) => ipcRenderer.send('teleprompter-socket-send', { event, payload }),
     rotatePairing: () => ipcRenderer.invoke('pairing-rotate'),
     disconnectDevice: (deviceId) => ipcRenderer.send('mobile-disconnect-device', deviceId),
     removeDevice: (deviceId) => ipcRenderer.invoke('mobile-device-remove', deviceId),
@@ -382,6 +384,7 @@ contextBridge.exposeInMainWorld("electron", {
     retryPdf: (id) => ipcRenderer.invoke('session-retry-pdf', id),
     status: () => ipcRenderer.invoke('session-status'),
     showInFolder: (id) => ipcRenderer.invoke('session-show-in-folder', id),
+    saveVideoRecording: (data) => ipcRenderer.invoke('session-save-video', data),
     audioUrl: (id) => ipcRenderer.invoke('session-audio-url', id),
     pushTranscriptLine: (line) => ipcRenderer.send('session-transcript-line', line),
     setAudioMime: (mime) => ipcRenderer.send('session-audio-mime', mime),

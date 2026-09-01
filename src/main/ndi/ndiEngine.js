@@ -204,8 +204,11 @@ class NdiEngine extends EventEmitter {
     streamType = streamType || 'program';
 
     if (!this.config.enabled || !this.isRunning) {
-      res.writeHead(503, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' });
-      res.end('NDI Streaming is disabled. Enable under Settings → NDI & Broadcast.');
+      res.writeHead(403, {
+        'Content-Type': 'text/plain; charset=utf-8',
+        'Access-Control-Allow-Origin': '*',
+      });
+      res.end('NDI & Broadcast Streaming is disabled in OCS Settings (FR-4.42).\nEnable it under Settings -> NDI & Broadcast to stream over LAN.');
       return;
     }
 

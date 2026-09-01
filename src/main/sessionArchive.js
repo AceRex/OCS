@@ -767,6 +767,132 @@ class SessionArchiveService extends EventEmitter {
     await fsp.writeFile(metaPath, JSON.stringify(meta, null, 2));
     return meta;
   }
+
+  /**
+   * Save a teleprompter recorded video session directly to Session Folders.
+   * Supports background ffmpeg sharpening and color polish with dual file retention (FR-5.42, FR-5.43 [NEW]).
+   */
+  async saveRecordedVideoSession({
+    title = 'Teleprompter Session',
+    videoBase64 = null,
+    videoBuffer = null,
+    mime = 'video/webm',
+    speakerName = 'Speaker',
+    durationMs = 0,
+    transcript = '',
+    requestPostProcess = false,
+  }) {
+    await this.init();
+    const id = uuid();
+    const dir = path.join(this.root, id);
+    await fsp.mkdir(dir, { recursive: true });
+
+    const videoExt = mime && mime.includes('mp4') ? 'mp4' : 'webm';
+    // FR-5.43 [NEW]: Keep raw file as session_raw.webm (or session_raw.mp4)
+    const rawFileName = `session_raw.${videoExt}`;
+    const rawFilePath = path.join(dir, rawFileName);
+
+    let writtenBytes = 0;
+    if (videoBuffer && Buffer.isBuffer(videoBuffer)) {
+      await fsp.writeFile(rawFilePath, videoBuffer);
+      writtenBytes = videoBuffer.length;
+    } else if (typeof videoBase64 === 'string') {
+      const clean = videoBase64.includes('base64,') ? videoBase64.split('base64,')[1] : videoBase64;
+      const buf = Buffer.from(clean, 'base64');
+      await fsp.writeFile(rawFilePath, buf);
+      writtenBytes = buf.length;
+    }
+
+    // Also keep primary session.<ext> pointing to raw initially
+    const primaryFileName = `session.${videoExt}`;
+    const primaryPath = path.join(dir, primaryFileName);
+    try {
+      await fsp.copyFile(rawFilePath, primaryPath);
+    } catch (_) {}
+
+    const durationSec = Math.round(durationMs / 1000) || 1;
+    const durM = Math.floor(durationSec / 60);
+    const durS = durationSec % 60;
+    const durationStr = `${durM}:${String(durS).padStart(2, '0')}`;
+
+    // Write simple PDF transcript
+    const lines = transcript
+      ? transcript.split('\n').filter(Boolean).map((t, i) => ({ stamp: '00:00', text: t.trim() }))
+      : [{ stamp: '00:00', text: title }];
+
+    const pdfBuf = buildSimplePdf({
+      title,
+      speakerName,
+      dateStr: new Date().toLocaleString(),
+      durationStr,
+      lines,
+      cleanupNote: 'Recorded via Teleprompter Camera Capture (Video & Audio)',
+    });
+    await fsp.writeFile(path.join(dir, PDF_NAME), pdfBuf);
+    await fsp.writeFile(path.join(dir, RAW_TXT_NAME), transcript || title, 'utf8');
+
+    const meta = {
+      id,
+      title,
+      speakerName,
+      category: 'Sermon',
+      color: colorFromCategory(title, 'Sermon'),
+      status: 'ready',
+      createdAt: new Date().toISOString(),
+      durationSec,
+      files: {
+        audio: null,
+        video: primaryFileName,
+        videoRaw: rawFileName,
+        videoPolished: null,
+        pdf: PDF_NAME,
+        transcriptRaw: RAW_TXT_NAME,
+      },
+      scriptureRefs: [],
+      sizeBytes: writtenBytes + pdfBuf.length,
+    };
+
+    await this._recomputeSize(dir, meta);
+    await fsp.writeFile(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
+
+    console.log('[SessionArchive] Saved teleprompter video session:', id, title, formatBytes(meta.sizeBytes));
+    this.emit('session-finalized', meta);
+    this.emit('finalized', { sessionId: id, meta });
+
+    // FR-5.42 [NEW]: Non-blocking background post-processing pass
+    if (requestPostProcess) {
+      const polishedFileName = 'session_polished.mp4';
+      const polishedPath = path.join(dir, polishedFileName);
+      setImmediate(async () => {
+        try {
+          const { postProcessTeleprompterVideo } = require('./teleprompterPostProcess');
+          console.log('[SessionArchive] Starting background teleprompter post-processing for session:', id);
+          const result = await postProcessTeleprompterVideo({
+            inputPath: rawFilePath,
+            outputPath: polishedPath,
+            totalDurationSec: durationSec,
+            onProgress: (percent) => {
+              this.emit('teleprompter:postprocess-progress', { sessionId: id, percent });
+            },
+          });
+          if (result.ok && fs.existsSync(polishedPath)) {
+            meta.files.videoPolished = polishedFileName;
+            // Also promote polished to primary video for playback/sharing
+            meta.files.video = polishedFileName;
+            await this._recomputeSize(dir, meta);
+            await fsp.writeFile(path.join(dir, 'meta.json'), JSON.stringify(meta, null, 2));
+            console.log('[SessionArchive] Post-processing succeeded for session:', id);
+            this.emit('teleprompter:postprocess-complete', { sessionId: id, meta });
+            this.emit('session-updated', meta);
+          }
+        } catch (postErr) {
+          console.warn('[SessionArchive] Background post-processing notice:', postErr.message);
+        }
+      });
+    }
+
+    return meta;
+  }
 }
 
 module.exports = {

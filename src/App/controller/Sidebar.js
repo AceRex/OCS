@@ -21,6 +21,7 @@ import {
   PiSpinner,
   PiWarning,
   PiCheckCircle,
+  PiArticle,
 } from "react-icons/pi";
 import { useAuth } from "../context/AuthContext";
 
@@ -305,6 +306,12 @@ export default function Sidebar({ activeTab, onTabChange }) {
       id: "presentation",
       label: "Presentation",
       icon: PiMonitor,
+      isBlock: false,
+    },
+    {
+      id: "teleprompter",
+      label: "Teleprompter",
+      icon: PiArticle,
       isBlock: false,
     },
     { id: "songs", label: "Song Lyrics", icon: PiMusicNotes, isBlock: true },

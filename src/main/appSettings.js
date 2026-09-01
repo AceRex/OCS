@@ -23,6 +23,7 @@ const DEFAULT_STYLES = {
   bibleTranslation: 'KJV',
   bibleServiceLabel: '',
   bibleShowOrbs: true,
+  bibleReadAlongTransition: 'text-glow', // 'text-glow' | 'underline' | 'text-pop'
 };
 
 const DEFAULTS = {

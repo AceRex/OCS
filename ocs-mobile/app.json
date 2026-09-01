@@ -28,7 +28,11 @@
         "CAMERA",
         "RECORD_AUDIO",
         "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
+        "WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
       ],
       "predictiveBackGestureEnabled": false
     },
@@ -59,6 +63,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "ac2a55cb-dcfc-42e6-8569-08975a1d3f96"
+      }
+    },
+    "owner": "acerex"
   }
 }

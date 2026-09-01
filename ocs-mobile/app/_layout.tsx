@@ -6,6 +6,7 @@ import "../global.css";
 import IncomingIntercomPlayer from "../components/IncomingIntercomPlayer";
 import MobileSplash from "../components/MobileSplash";
 import GuestExpiredGate from "../components/GuestExpiredGate";
+import TeleprompterCameraPrompt from "../components/TeleprompterCameraPrompt";
 import { useAuthStore } from "../store/authStore";
 
 export const unstable_settings = {
@@ -27,6 +28,7 @@ export default function RootLayout() {
   return (
     <>
       <MobileSplash minDurationMs={1200} />
+      <TeleprompterCameraPrompt />
       <IncomingIntercomPlayer isBanner={true} />
       <GuestExpiredGate />
       <Stack screenOptions={{ headerShown: false }}>

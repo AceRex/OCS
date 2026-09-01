@@ -1686,6 +1686,72 @@ io.on("connection", (socket) => {
     broadcastDevicesUpdated();
   });
 
+  // ─── Teleprompter Phone Camera WebRTC Signaling ───
+  socket.on("teleprompter:request-camera", (payload = {}) => {
+    if (!isPaired(socket.id)) return;
+    const targetSocket = payload.targetId ? io.sockets.sockets.get(payload.targetId) : null;
+    if (targetSocket) {
+      targetSocket.emit("teleprompter:camera-requested", {
+        fromId: socket.id,
+        scriptTitle: payload.scriptTitle || "Teleprompter",
+      });
+    } else {
+      socket.broadcast.emit("teleprompter:camera-requested", {
+        fromId: socket.id,
+        scriptTitle: payload.scriptTitle || "Teleprompter",
+      });
+    }
+  });
+
+  socket.on("teleprompter:camera-offer", (payload = {}) => {
+    if (!isPaired(socket.id)) return;
+    socket.broadcast.emit("teleprompter:camera-offer", {
+      fromId: socket.id,
+      offer: payload.offer,
+    });
+  });
+
+  socket.on("teleprompter:camera-answer", (payload = {}) => {
+    if (!isPaired(socket.id)) return;
+    const targetSocket = payload.targetId ? io.sockets.sockets.get(payload.targetId) : null;
+    if (targetSocket) {
+      targetSocket.emit("teleprompter:camera-answer", {
+        answer: payload.answer,
+      });
+    } else {
+      socket.broadcast.emit("teleprompter:camera-answer", {
+        answer: payload.answer,
+      });
+    }
+  });
+
+  socket.on("teleprompter:camera-ice-candidate", (payload = {}) => {
+    if (!isPaired(socket.id)) return;
+    const targetSocket = payload.targetId ? io.sockets.sockets.get(payload.targetId) : null;
+    if (targetSocket) {
+      targetSocket.emit("teleprompter:camera-ice-candidate", {
+        candidate: payload.candidate,
+      });
+    } else {
+      socket.broadcast.emit("teleprompter:camera-ice-candidate", {
+        candidate: payload.candidate,
+      });
+    }
+  });
+
+  socket.on("teleprompter:stop-camera", (payload = {}) => {
+    if (!isPaired(socket.id)) return;
+    socket.broadcast.emit("teleprompter:camera-stopped", {
+      fromId: socket.id,
+    });
+  });
+
+  // FR-5.54 [NEW]: Teleprompter countdown sync (Desktop -> Paired Mobile)
+  socket.on("teleprompter:countdown", (payload = {}) => {
+    if (!isPaired(socket.id)) return;
+    socket.broadcast.emit("teleprompter:countdown", payload);
+  });
+
   // Mobile Companion Scene / Song Transfer & Creation
   socket.on("mobile-scene-transfer", async (payload = {}, ack = () => {}) => {
     if (!isPaired(socket.id)) {
@@ -2050,6 +2116,27 @@ ipcMain.handle("get-server-info", async () => {
     pairingCode: pairing.code,
     pairingQrDataUrl,
   };
+});
+
+ipcMain.handle("get-paired-devices", async () => {
+  return connectedDevices
+    .filter((d) => d.paired)
+    .map((d) => ({
+      id: d.id,
+      ip: d.ip,
+      name: d.name,
+      paired: true,
+      isAdmin: adminDeviceIds.has(d.id) || adminDeviceNames.has(d.name) || !!d.isAdmin,
+      deviceRole: d.deviceRole || (adminDeviceIds.has(d.id) ? "admin" : "speaker"),
+      isVoiceActive: !!d.isVoiceActive,
+      connectedAt: d.connectedAt,
+    }));
+});
+
+ipcMain.on("teleprompter-socket-send", (_e, { event, payload }) => {
+  if (io && event) {
+    io.emit(event, payload || {});
+  }
 });
 
 ipcMain.handle("pairing-rotate", async () => {
@@ -3010,6 +3097,11 @@ ipcMain.handle("session-retry-pdf", async (_e, id) => {
 
 ipcMain.handle("session-status", async () => {
   return sessionArchive ? sessionArchive.getStatus() : { recording: false };
+});
+
+ipcMain.handle("session-save-video", async (_e, data) => {
+  if (!sessionArchive) throw new Error("Session archive not ready");
+  return sessionArchive.saveRecordedVideoSession(data || {});
 });
 
 ipcMain.on("session-transcript-line", (_e, line) => {

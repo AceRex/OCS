@@ -78,6 +78,7 @@ function App({ mode: propMode }) {
       bibleTranslation = 'KJV',
       bibleServiceLabel = '',
       bibleShowOrbs = true,
+      bibleReadAlongTransition = 'text-glow',
       lowerThirdImage = null
     } = presentationStyle || {};
     const hasContent = presentationContent && presentationContent.data;
@@ -298,22 +299,63 @@ function App({ mode: propMode }) {
                 readAlong.tokens.map((tok, i) => {
                   const isActive = activeIdx >= 0 && i === activeIdx;
                   const isPast = activeIdx >= 0 && i < activeIdx;
+                  const trans = bibleReadAlongTransition || 'text-glow';
+                  const isUnderline = trans === 'underline';
+                  const isPop = trans === 'text-pop' || trans === 'pop';
+
+                  let wordStyle = {
+                    display: 'inline-block',
+                    color: '#FFFFFF',
+                    opacity: isPast ? 0.85 : 0.45,
+                    fontWeight: isPast ? 600 : 500,
+                    textShadow: '0 2px 30px rgba(0,0,0,0.6)',
+                    transition: 'all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+                  };
+
+                  if (isActive) {
+                    if (isUnderline) {
+                      wordStyle = {
+                        display: 'inline-block',
+                        color: '#FFFFFF',
+                        opacity: 1,
+                        fontWeight: 800,
+                        textDecoration: 'underline',
+                        textDecorationColor: '#38bdf8',
+                        textUnderlineOffset: '6px',
+                        textDecorationThickness: '3px',
+                        textShadow: '0 2px 14px rgba(0,0,0,0.7)',
+                        transition: 'all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+                      };
+                    } else if (isPop) {
+                      wordStyle = {
+                        display: 'inline-block',
+                        color: '#FFFFFF',
+                        opacity: 1,
+                        fontWeight: 800,
+                        transform: 'scale(1.18) translateY(-2px)',
+                        textShadow: '0 4px 18px rgba(0,0,0,0.85), 0 0 12px rgba(255,255,255,0.4)',
+                        transition: 'all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+                      };
+                    } else {
+                      // text-glow
+                      wordStyle = {
+                        display: 'inline-block',
+                        color: '#FFFFFF',
+                        opacity: 1,
+                        fontWeight: 800,
+                        transform: 'scale(1.06) translateY(-1px)',
+                        textShadow: '0 0 16px rgba(56,189,248,0.9), 0 2px 30px rgba(0,0,0,0.6)',
+                        transition: 'all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)',
+                      };
+                    }
+                  }
+
                   return (
                     <React.Fragment key={`${i}-${tok}`}>
                       <span
                         className="ocs-ra-word"
                         data-i={i}
-                        style={{
-                          display: 'inline-block',
-                          fontWeight: isActive ? 800 : (isPast ? 600 : 500),
-                          color: isActive ? '#38bdf8' : (isPast ? '#FFFFFF' : baseColor),
-                          opacity: isActive ? 1 : (isPast ? 0.9 : 0.45),
-                          transform: isActive ? 'scale(1.06) translateY(-1px)' : 'scale(1)',
-                          transition: 'all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)',
-                          textShadow: isActive
-                            ? '0 0 16px rgba(56,189,248,0.9), 0 2px 30px rgba(0,0,0,0.6)'
-                            : '0 2px 30px rgba(0,0,0,0.6)',
-                        }}
+                        style={wordStyle}
                       >
                         {tok}
                       </span>
@@ -703,6 +745,7 @@ function App({ mode: propMode }) {
       bibleRefPosition: presentationStyle.bibleRefPosition || 'top-center',
       bibleBodyPosition: presentationStyle.bibleBodyPosition || 'center',
       bibleShowOrbs: presentationStyle.bibleShowOrbs !== false,
+      bibleReadAlongTransition: presentationStyle.bibleReadAlongTransition || 'text-glow',
       textColor: presentationStyle.textColor || '#FFFFFF',
       fontFamily: presentationStyle.fontFamily || 'Outfit',
     };

@@ -179,6 +179,7 @@ export default function DisplayCanvas({
         const refPosition = canvasState?.bibleRefPosition || data?.bibleRefPosition || "top-center";
         const bodyPosition = canvasState?.bibleBodyPosition || data?.bibleBodyPosition || "center";
         const showOrbs = canvasState?.bibleShowOrbs !== false && data?.bibleShowOrbs !== false;
+        const bibleReadAlongTransition = canvasState?.bibleReadAlongTransition || data?.bibleReadAlongTransition || "text-glow";
 
         const refPositionMap = {
           'top-center': 'top-[3.5vw] left-1/2 -translate-x-1/2 justify-center',
@@ -255,21 +256,60 @@ export default function DisplayCanvas({
                   ? readAlong.tokens.map((tok, i) => {
                       const isCurrent = activeIdx >= 0 && i === activeIdx;
                       const isPast = activeIdx >= 0 && i < activeIdx;
+                      const trans = bibleReadAlongTransition || "text-glow";
+                      const isUnderline = trans === "underline";
+                      const isPop = trans === "text-pop" || trans === "pop";
+
+                      let wordStyle = {
+                        color: "#FFFFFF",
+                        opacity: isPast ? 0.85 : 0.45,
+                        fontWeight: isPast ? 700 : 500,
+                        textShadow: "0 2px 10px rgba(0,0,0,0.5)",
+                        transition: "all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+                        display: "inline-block",
+                      };
+
+                      if (isCurrent) {
+                        if (isUnderline) {
+                          wordStyle = {
+                            color: "#FFFFFF",
+                            opacity: 1,
+                            fontWeight: 900,
+                            textDecoration: "underline",
+                            textDecorationColor: "#38bdf8",
+                            textUnderlineOffset: "6px",
+                            textDecorationThickness: "3px",
+                            textShadow: "0 2px 14px rgba(0,0,0,0.7)",
+                            display: "inline-block",
+                            transition: "all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+                          };
+                        } else if (isPop) {
+                          wordStyle = {
+                            color: "#FFFFFF",
+                            opacity: 1,
+                            fontWeight: 900,
+                            transform: "scale(1.18) translateY(-2px)",
+                            textShadow: "0 4px 18px rgba(0,0,0,0.85), 0 0 12px rgba(255,255,255,0.4)",
+                            display: "inline-block",
+                            transition: "all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+                          };
+                        } else {
+                          // text-glow
+                          wordStyle = {
+                            color: "#FFFFFF",
+                            opacity: 1,
+                            fontWeight: 900,
+                            transform: "scale(1.06) translateY(-1px)",
+                            textShadow: "0 0 18px rgba(56,189,248,0.95), 0 0 32px rgba(56,189,248,0.6), 0 2px 10px rgba(0,0,0,0.7)",
+                            display: "inline-block",
+                            transition: "all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+                          };
+                        }
+                      }
+
                       return (
                         <React.Fragment key={i}>
-                          <span
-                            style={{
-                              transition: "all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)",
-                              willChange: "transform, opacity, color",
-                            }}
-                            className={`inline-block origin-center ${
-                              isCurrent
-                                ? "text-cyan-200 font-black underline decoration-cyan-400 decoration-2 underline-offset-8 scale-[1.08] drop-shadow-[0_0_16px_rgba(34,211,238,0.95)]"
-                                : isPast
-                                  ? "text-white font-extrabold opacity-95"
-                                  : "text-white/40 font-semibold opacity-45"
-                            }`}
-                          >
+                          <span style={wordStyle}>
                             {tok}
                           </span>
                           {i < readAlong.tokens.length - 1 ? " " : ""}

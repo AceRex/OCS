@@ -741,6 +741,106 @@ function parseChapterVerse(text, options = {}) {
     return null;
 }
 
+/**
+ * Tokenized parser for in-context scripture jumps (FR-3.14 / Defect 3).
+ * Matches single verse jumps, multi-verse ranges, chapter jumps, and compound chapter+verse jumps.
+ * Operates over normalized token streams instead of brittle regexes.
+ *
+ * @param {string} rawText
+ * @returns {{
+ *   type: 'verse'|'verse-range'|'chapter'|'chapter-verse'|'chapter-verse-range',
+ *   chapter?: number,
+ *   startVerse: number,
+ *   endVerse: number,
+ * }|null}
+ */
+export function parseContextJump(rawText) {
+    if (!rawText || !String(rawText).trim()) return null;
+
+    let t = String(rawText).toLowerCase().trim();
+    // Strip wake words
+    t = t.replace(/\b(ocs|oh see ess|oh-see-ess|o s c|osc|oasis|ocean|osiris|obvious|media|meter|medium|median|please)\b/gi, ' ');
+
+    // Normalize spoken numbers to digits
+    t = wordNumbersToDigits(t);
+
+    // Normalize colons and hyphens into standard tokens
+    t = t.replace(/(\d+)\s*:\s*(\d+)/g, ' chapter $1 verse $2 ');
+    t = t.replace(/(\d+)\s*-\s*(\d+)/g, ' $1 to $2 ');
+    t = t.replace(/[,;.]/g, ' ');
+
+    // Strip leading action prefixes
+    t = t.replace(/^(?:go\s+to|jump\s+to|skip\s+to|turn\s+to|move\s+to|look\s+at|let'?s\s+look\s+at|what\s+about|show|open|read|back\s+to|from|good\s+to\s+us|go\s+to\s+us)\s+/i, '');
+    t = t.replace(/\s+/g, ' ').trim();
+
+    const tokens = t.split(/\s+/).filter(Boolean);
+    if (tokens.length === 0) return null;
+
+    const isChKw = (w) => /^(?:chapter|chapters|chatper|chaptor|chaper)$/i.test(w);
+    // Note: "was", "worse", "voice", "vass", "vas" are intentional ASR homophone mishearings for "verse" in in-context jumps
+    const isVsKw = (w) => /^(?:verse|verses|vs\.?|v\.?|vass|vasses|vas|was|worse|voice|vers|virs)$/i.test(w);
+    const isRangeKw = (w) => /^(?:to|through|thru|-)$/i.test(w);
+    const isNum = (w) => /^\d+$/.test(w);
+
+    // 1. Compound: [chapter-kw] <chNum> ([and]? [verse-kw] <vNum> ([range-kw] <endVNum>)?)?
+    if (isChKw(tokens[0]) && isNum(tokens[1])) {
+        const chapter = parseInt(tokens[1], 10);
+        if (tokens.length === 2) {
+            return { type: 'chapter', chapter, startVerse: 1, endVerse: 1 };
+        }
+        let idx = 2;
+        if (tokens[idx] === 'and') idx++;
+        if (idx < tokens.length && isVsKw(tokens[idx])) idx++;
+        if (idx < tokens.length && isNum(tokens[idx])) {
+            const startVerse = parseInt(tokens[idx], 10);
+            idx++;
+            if (idx < tokens.length && isRangeKw(tokens[idx])) {
+                idx++;
+                if (idx < tokens.length && isVsKw(tokens[idx])) idx++;
+                if (idx < tokens.length && isNum(tokens[idx])) {
+                    const endVerse = parseInt(tokens[idx], 10);
+                    return { type: 'chapter-verse-range', chapter, startVerse, endVerse };
+                }
+            }
+            return { type: 'chapter-verse', chapter, startVerse, endVerse: startVerse };
+        }
+        return { type: 'chapter', chapter, startVerse: 1, endVerse: 1 };
+    }
+
+    // 2. Verse / Verses: [verse-kw] <vNum> ([range-kw] [verse-kw]? <endVNum>)?
+    if (isVsKw(tokens[0]) && isNum(tokens[1])) {
+        const startVerse = parseInt(tokens[1], 10);
+        if (tokens.length === 2) {
+            return { type: 'verse', startVerse, endVerse: startVerse };
+        }
+        let idx = 2;
+        if (idx < tokens.length && isRangeKw(tokens[idx])) {
+            idx++;
+            if (idx < tokens.length && isVsKw(tokens[idx])) idx++;
+            if (idx < tokens.length && isNum(tokens[idx])) {
+                const endVerse = parseInt(tokens[idx], 10);
+                return { type: 'verse-range', startVerse, endVerse };
+            }
+        }
+        return { type: 'verse', startVerse, endVerse: startVerse };
+    }
+
+    // 3. Bare verse range: <vNum> [range-kw] <endVNum>
+    if (isNum(tokens[0]) && isRangeKw(tokens[1]) && isNum(tokens[2]) && tokens.length === 3) {
+        const startVerse = parseInt(tokens[0], 10);
+        const endVerse = parseInt(tokens[2], 10);
+        return { type: 'verse-range', startVerse, endVerse };
+    }
+
+    // 4. Bare direct numeric jump: <vNum>
+    if (isNum(tokens[0]) && tokens.length === 1) {
+        const startVerse = parseInt(tokens[0], 10);
+        return { type: 'verse', startVerse, endVerse: startVerse };
+    }
+
+    return null;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Main export — smartBibleMatch
 // ─────────────────────────────────────────────────────────────────────────────
@@ -904,60 +1004,20 @@ export async function smartBibleMatch(rawCommand, books, bibleElectron, currentC
 
     // ─────────────────────────────────────────────────────────────────────────
     // PASS 4 — Context-only jump (chapter X / verse X, no book name mentioned)
-    // Use cases: "go to vass 20", "good to us 20", "jump to 20", "go to 20", "verse 20"
+    // Use cases: "verse 5", "verses 10 to 12", "chapter 10 verse 2", "go to 20"
     // Placed after Pass 1 so "1 John 4 verse 8" isn't hijacked by the "verse 8" part.
     // ─────────────────────────────────────────────────────────────────────────
-    const contextJumpMatch = numberTranslated.match(
-        /\b(?:(?:go to|jump to|skip to|turn to|move to|show|open|read|let'?s look at|what about|back to)\s+)?(?:chapter\s+(\d+)(?:\s*(?:and\s+)?(?:verse|verses|vs\.?|v\.?|vass|vasses|vas)\s+(\d+))?|(?:verse|verses|vs\.?|v\.?|vass|vasses|vas)\s+(\d+))\b/i
-    );
-
-    // Direct numeric jumps: "go to 20", "jump to 20", "skip to 20", "move to 20", "turn to 20", "good to us 20", "go to us 20"
-    const directNumJump = numberTranslated.trim().match(
-        /^(?:(?:go to|jump to|skip to|turn to|move to|show|read|open|back to|good to us|go to us)\s+)(\d+)$/i
-    );
-
-    // Short ASR mishearing of "verse N" alone: "was 20" / "voice twenty" / "vass 20" / "vas 20"
-    const shortWasJump = numberTranslated.trim().match(
-        /^(?:(?:go to|jump to|skip to|turn to|move to|show|read)\s+)?(?:was|worse|voice|vers|virs|vas|vass)\s+(\d+)$/i
-    );
-
-    if (currentContext && Number.isInteger(currentContext.bookIndex)) {
+    const ctxJump = parseContextJump(rawCommand) || parseContextJump(numberTranslated);
+    if (ctxJump && currentContext && Number.isInteger(currentContext.bookIndex)) {
         const { bookIndex, chapter } = currentContext;
-
-        if (contextJumpMatch) {
-            const jumpChapter = contextJumpMatch[1] ? parseInt(contextJumpMatch[1], 10) : chapter;
-            const verseString = contextJumpMatch[2] || contextJumpMatch[3];
-            const jumpVerse = verseString ? parseInt(verseString, 10) : 1;
-            return {
-                bookIndex,
-                chapter: jumpChapter,
-                startVerse: jumpVerse,
-                endVerse: jumpVerse,
-                matchType: verseString ? 'context_verse' : 'context_chapter',
-            };
-        }
-
-        if (directNumJump) {
-            const jumpVerse = parseInt(directNumJump[1], 10);
-            return {
-                bookIndex,
-                chapter,
-                startVerse: jumpVerse,
-                endVerse: jumpVerse,
-                matchType: 'context_verse',
-            };
-        }
-
-        if (shortWasJump) {
-            const jumpVerse = parseInt(shortWasJump[1], 10);
-            return {
-                bookIndex,
-                chapter,
-                startVerse: jumpVerse,
-                endVerse: jumpVerse,
-                matchType: 'context_verse',
-            };
-        }
+        const targetChapter = ctxJump.chapter != null ? ctxJump.chapter : chapter;
+        return {
+            bookIndex,
+            chapter: targetChapter,
+            startVerse: ctxJump.startVerse,
+            endVerse: ctxJump.endVerse,
+            matchType: ctxJump.type === 'chapter' ? 'context_chapter' : 'context_verse',
+        };
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -1241,29 +1301,8 @@ export function isLikelyBibleReference(rawText) {
     t = repairReferenceConnectors(t);
     t = t.replace(TRIGGER_STRIP_RE, ' ').trim();
     
-    // Check if it's a direct context jump (e.g. "verse 5" or "chapter 3" or "go to 20")
-    // Also accept repaired mishearings already normalized to "verse"
-    if (
-        /\b(?:chapter|verse|verses|vs|v|vass|vas|was|voice)\s*\d+\b/i.test(t) ||
-        /\b(?:go to|jump to|skip to|turn to|move to|back to)\s+\d+\b/i.test(t) ||
-        /\b(?:good\s+to\s+us|go\s+to\s+us)\s+\d+\b/i.test(t)
-    ) {
-        return true;
-    }
-    // Digits flanking a verse-like connector still unrepaired: "1 was 1" / "6 first 4"
-    if (/\b\d+\s+(?:was|worse|voice|virs|vers|vas|vass|versus|first)\s+\d+\b/i.test(t)) {
-        return true;
-    }
-    // "6 first war" — connector + misheard digit word
-    if (/\b\d+\s+(?:was|worse|voice|virs|vers|vas|vass|versus|first)\s+(?:war|fore|floor|ford|tree|free|tee|won|wan|fife|sex|sicks|ate|hate|nigh|mine)\b/i.test(t)) {
-        return true;
-    }
-    // Short whole-utterance "was 20" / "voice sixteen" (verse mishearing)
-    if (
-        /^(?:(?:go to|jump to|skip to|turn to|move to|show|read|open|back to)\s+)?(?:was|worse|voice|vers|virs|vas|vass)\s+\d+$/i.test(t) ||
-        /^(?:go to|jump to|skip to|turn to|move to|back to)\s+\d+$/i.test(t) ||
-        /^(?:good\s+to\s+us|go\s+to\s+us)\s+\d+$/i.test(t)
-    ) {
+    // Check if it's a direct context jump (e.g. "verse 5" or "chapter 3" or "verses 10 to 12" or "go to 20")
+    if (parseContextJump(rawText) || parseContextJump(t)) {
         return true;
     }
 
@@ -1280,11 +1319,48 @@ export function isLikelyBibleReference(rawText) {
 }
 
 /**
+ * Detect whether raw, pre-repair speech contains an explicit structural marker
+ * (chapter/verse keywords, colon, range punctuation, or pre-repair dual numbers).
+ * @param {string} rawText
+ * @param {Object|null} shape
+ * @returns {boolean}
+ */
+export function detectExplicitMarker(rawText, shape = null) {
+    if (!rawText || !String(rawText).trim()) return false;
+    const lower = String(rawText).toLowerCase();
+
+    // 1. Literal structural keywords (e.g. "chapter 3", "verse 5", "vs 1")
+    if (/\b(?:chapter|chapters|chatper|chaptor|chaper)\s+\d+\b/i.test(wordNumbersToDigits(lower)) ||
+        (/\b(?:chapter|chapters|chatper|chaptor|chaper)\b/i.test(lower) && !/\b\d+\s+chapters\b/i.test(wordNumbersToDigits(lower)))) {
+        return true;
+    }
+    if (/\b(?:verse|verses|vs\.?|v\.?|vass|vasses)\b/i.test(lower)) return true;
+
+    // 2. Structural "book of" cue
+    if (/\b(?:the\s+)?book\s+of\b/i.test(lower)) return true;
+
+    // 3. Colon-separated reference or range punctuation
+    if (/\b\d+\s*:\s*\d+\b/.test(lower)) return true;
+    if (/\b\d+\s*-\s*\d+\b/.test(lower)) return true;
+
+    // 4. Pre-repair dual numbers (book + chapter + verse, e.g. "1 Corinthians 13 4" / "John 3 16")
+    if (shape && shape.kind === 'full' && shape.chapter != null && shape.verse != null) {
+        const tDigits = wordNumbersToDigits(lower);
+        if (!/\b(?:is|was|has|had)\s+\d+\b/i.test(tDigits)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+/**
  * Structural pre-check before any fuzzy/keyword Bible matching (FR-3.58 / ambient SM).
  * Ordered adjacency: BOOK → NUMBER → optional VERSE — not “book anywhere + number anywhere”.
  *
  * @returns {{
  *   complete: boolean,
+ *   hasExplicitMarker: boolean,
  *   shortContext: boolean,
  *   kind: 'full'|'chapter'|'book_of'|null,
  *   span: string|null,
@@ -1295,6 +1371,7 @@ export function isLikelyBibleReference(rawText) {
 export function matchReferenceShape(rawText) {
     const empty = {
         complete: false,
+        hasExplicitMarker: false,
         shortContext: false,
         kind: null,
         span: null,
@@ -1304,6 +1381,7 @@ export function matchReferenceShape(rawText) {
     if (!rawText || !String(rawText).trim()) return empty;
 
     const lower = String(rawText).toLowerCase();
+    const hasExplicitPreRepair = detectExplicitMarker(rawText);
     let t = wordNumbersToDigits(lower).replace(/[,;.:]/g, ' ');
     // Normalize "2:1-8" / "1-8" ranges into tokens the scanner can consume
     t = t.replace(/(\d+)\s*-\s*(\d+)/g, '$1 to $2');
@@ -1335,13 +1413,9 @@ export function matchReferenceShape(rawText) {
     t = repairReferenceConnectors(t);
 
     // Short context jump — NOT ambient-complete (Pass 4 / trigger path only)
-    if (
-        /^(?:(?:go to|jump to|skip to|turn to|move to|show|read|open|back to)\s+)?(?:chapter|verse|verses|vs|v|was|worse|voice|vers|virs|vas|vass)\s+\d+$/i.test(t) ||
-        /^(?:go to|jump to|skip to|turn to|move to|back to)\s+\d+$/i.test(t) ||
-        /^(?:good\s+to\s+us|go\s+to\s+us)\s+\d+$/i.test(t) ||
-        /^(?:verse|vass|vas)\s+\d+$/i.test(t)
-    ) {
-        return { ...empty, shortContext: true, span: t };
+    const ctxJump = parseContextJump(rawText) || parseContextJump(t);
+    if (ctxJump) {
+        return { ...empty, shortContext: true, hasExplicitMarker: hasExplicitPreRepair, span: t };
     }
 
     // Strip wake words only — keep "book of" (structural cue)
@@ -1558,8 +1632,18 @@ export function matchReferenceShape(rawText) {
         const spanEnd = verse != null ? k : j;
         const span = tokens.slice(spanStart, spanEnd).join(' ');
         const kind = verse != null ? 'full' : (book.bookOf ? 'book_of' : 'chapter');
+        const candidateShape = {
+            complete: true,
+            kind,
+            span,
+            chapter,
+            verse,
+            endVerse,
+        };
+        const isExplicit = hasExplicitPreRepair || detectExplicitMarker(rawText, candidateShape);
         return {
             complete: true,
+            hasExplicitMarker: isExplicit,
             shortContext: false,
             kind,
             span,

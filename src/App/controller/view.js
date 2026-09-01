@@ -11,6 +11,7 @@ import NdiController from "./NdiController";
 import BroadcastEngine from "./BroadcastEngine";
 import SessionsController from "./SessionsController";
 import SessionSaveProgress from "./SessionSaveProgress";
+import TeleprompterController from "./TeleprompterController";
 
 import Dashboard from "./Dashboard";
 import PreviewModal from "./PreviewModal";
@@ -208,6 +209,11 @@ function App() {
               className={`w-full h-full ${activeTab === "presentation" ? "block" : "hidden"}`}
             >
               <PresentationController />
+            </div>
+            <div
+              className={`w-full h-full ${activeTab === "teleprompter" ? "block" : "hidden"}`}
+            >
+              <TeleprompterController />
             </div>
             <div
               className={`w-full h-full ${activeTab === "mobile" ? "block" : "hidden"}`}

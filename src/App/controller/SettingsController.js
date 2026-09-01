@@ -146,6 +146,12 @@ const BODY_POSITIONS = [
   { value: "bottom-right", label: "Bottom Right" },
 ];
 
+const BIBLE_READ_ALONG_TRANSITIONS = [
+  { value: "text-glow", label: "Text Glow", desc: "Radiant atmospheric glow aura on active word", icon: "✨" },
+  { value: "underline", label: "Underline", desc: "Dynamic cyan underline bar below active word", icon: "✍️" },
+  { value: "text-pop", label: "Text Pop", desc: "Elevated scaling bounce and weight pop", icon: "⚡" },
+];
+
 const FONT_OPTIONS = [
   { id: "Outfit", label: "Outfit (Modern Sans)" },
   { id: "Space Grotesk", label: "Space Grotesk" },
@@ -229,6 +235,7 @@ export default function SettingsController() {
     bibleTranslation: "KJV",
     bibleServiceLabel: "",
     bibleShowOrbs: true,
+    bibleReadAlongTransition: "text-glow", // 'text-glow' | 'underline' | 'text-pop'
   });
 
   // App Preferences state
@@ -259,6 +266,15 @@ export default function SettingsController() {
 
   // Sample verse index for preview swatch
   const [previewVerseIdx, setPreviewVerseIdx] = useState(0);
+  const [previewWordIdx, setPreviewWordIdx] = useState(2);
+
+  // Animate sample verse word preview to demonstrate active transition
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setPreviewWordIdx((prev) => prev + 1);
+    }, 1100);
+    return () => clearInterval(timer);
+  }, []);
 
   // Reset confirmation modal
   const [showResetModal, setShowResetModal] = useState(false);
@@ -955,7 +971,7 @@ export default function SettingsController() {
                 </span>
               </div>
 
-              {/* Body Text Position */}
+              {/* Body Text Position with Live Read-Along Word Transition */}
               <div
                 className={`absolute inset-0 flex p-12 ${
                   styles.bibleBodyPosition === "bottom-left"
@@ -969,16 +985,79 @@ export default function SettingsController() {
                   style={{
                     fontFamily: styles.fontFamily || "Outfit",
                     fontSize: "2.1vw",
-                    fontWeight: 800,
-                    color: styles.textColor || "#F5F2FA",
-                    lineHeight: 1.25,
-                    maxWidth: "85%",
+                    lineHeight: 1.3,
+                    maxWidth: "88%",
                     textShadow: styles.textShadow
                       ? "0 4px 24px rgba(0,0,0,0.9)"
                       : "none",
                   }}
                 >
-                  "{currentVerse.text}"
+                  "{(() => {
+                    const sampleTokens = (currentVerse.text || "").split(/\s+/);
+                    const activeIndex = sampleTokens.length > 0 ? previewWordIdx % sampleTokens.length : -1;
+                    const trans = styles.bibleReadAlongTransition || "text-glow";
+                    const isUnderline = trans === "underline";
+                    const isPop = trans === "text-pop" || trans === "pop";
+
+                    return sampleTokens.map((tok, i) => {
+                      const isCurrent = i === activeIndex;
+                      const isPast = activeIndex >= 0 && i < activeIndex;
+
+                      let wordStyle = {
+                        color: "#FFFFFF",
+                        opacity: isPast ? 0.85 : 0.45,
+                        fontWeight: isPast ? 600 : 500,
+                        textShadow: "0 2px 10px rgba(0,0,0,0.5)",
+                        transition: "all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+                        display: "inline-block",
+                      };
+
+                      if (isCurrent) {
+                        if (isUnderline) {
+                          wordStyle = {
+                            color: "#FFFFFF",
+                            opacity: 1,
+                            fontWeight: 800,
+                            textDecoration: "underline",
+                            textDecorationColor: "#38bdf8",
+                            textUnderlineOffset: "6px",
+                            textDecorationThickness: "3px",
+                            textShadow: "0 2px 12px rgba(0,0,0,0.7)",
+                            display: "inline-block",
+                            transition: "all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+                          };
+                        } else if (isPop) {
+                          wordStyle = {
+                            color: "#FFFFFF",
+                            opacity: 1,
+                            fontWeight: 800,
+                            transform: "scale(1.18) translateY(-2px)",
+                            textShadow: "0 4px 16px rgba(0,0,0,0.85), 0 0 12px rgba(255,255,255,0.4)",
+                            display: "inline-block",
+                            transition: "all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+                          };
+                        } else {
+                          // text-glow
+                          wordStyle = {
+                            color: "#FFFFFF",
+                            opacity: 1,
+                            fontWeight: 800,
+                            transform: "scale(1.06) translateY(-1px)",
+                            textShadow: "0 0 18px rgba(56,189,248,0.95), 0 0 32px rgba(56,189,248,0.6), 0 2px 10px rgba(0,0,0,0.7)",
+                            display: "inline-block",
+                            transition: "all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)",
+                          };
+                        }
+                      }
+
+                      return (
+                        <React.Fragment key={i}>
+                          <span style={wordStyle}>{tok}</span>
+                          {i < sampleTokens.length - 1 ? " " : ""}
+                        </React.Fragment>
+                      );
+                    });
+                  })()}"
                 </p>
               </div>
 
@@ -1135,6 +1214,50 @@ export default function SettingsController() {
                     />
                   </button>
                 </div>
+              </div>
+            </div>
+
+            {/* Scripture Read-Along Word Transition Selector */}
+            <div className="bg-[#1A1428] border border-[#2E2542] p-5 rounded-3xl space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest flex items-center gap-2">
+                  <PiSparkle className="text-[#67E8F9]" /> Scripture Read-Along Transition
+                </label>
+                <span className="text-[9px] font-mono text-[#67E8F9] bg-[#67E8F9]/10 border border-[#67E8F9]/20 px-2.5 py-0.5 rounded-full uppercase tracking-wider font-bold">
+                  Active: {styles.bibleReadAlongTransition === "underline" ? "Underline" : styles.bibleReadAlongTransition === "text-pop" || styles.bibleReadAlongTransition === "pop" ? "Text Pop" : "Text Glow"}
+                </span>
+              </div>
+              <p className="text-[10px] text-[#8882A4]">
+                Choose the animation transition applied to the active reading word. Unread words remain clean white while only the active word animates.
+              </p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+                {BIBLE_READ_ALONG_TRANSITIONS.map((trans) => {
+                  const isSelected = (styles.bibleReadAlongTransition || "text-glow") === trans.value;
+                  return (
+                    <button
+                      key={trans.value}
+                      onClick={() => updateStyle("bibleReadAlongTransition", trans.value)}
+                      className={`flex flex-col items-start p-4 rounded-2xl border transition-all text-left relative overflow-hidden group ${
+                        isSelected
+                          ? "bg-[#67E8F9]/15 border-[#67E8F9] text-white shadow-lg shadow-[#67E8F9]/10 scale-[1.02]"
+                          : "bg-[#0B0814]/70 border-[#2E2542] text-[#8882A4] hover:border-white/20 hover:text-white hover:bg-[#0B0814]"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <span className="text-lg">{trans.icon}</span>
+                        <span className={`text-xs font-bold ${isSelected ? "text-[#67E8F9]" : "text-[#F5F2FA]"}`}>
+                          {trans.label}
+                        </span>
+                      </div>
+                      <span className="text-[10px] text-[#8882A4] leading-relaxed">
+                        {trans.desc}
+                      </span>
+                      {isSelected && (
+                        <div className="absolute top-3 right-3 w-2.5 h-2.5 rounded-full bg-[#67E8F9] shadow-[0_0_10px_#67E8F9]" />
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </div>

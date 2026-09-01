@@ -10,10 +10,18 @@ import {
   PiBroadcast,
   PiGear,
   PiHouse,
+  PiArticle,
 } from "react-icons/pi";
 
 export default function Dashboard({ onNavigate }) {
   const cards = [
+    {
+      id: "teleprompter",
+      label: "Teleprompter",
+      icon: PiArticle,
+      gradient: "from-[#8B5CF6] to-[#6366F1]",
+      description: "Camera capture, fullscreen overlay & ASR tracking",
+    },
     {
       id: "timer",
       label: "Timer Sync",

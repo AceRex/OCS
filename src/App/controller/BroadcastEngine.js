@@ -25,11 +25,13 @@ import {
   wordNumbersToDigits,
   repairReferenceConnectors,
   extractScriptureCore,
+  parseContextJump,
 } from "./smartBibleMatch";
 import { emitPipelineTrace } from "./voicePipelineTrace";
 import { utilAction } from "../../Redux/state.jsx";
 import MiniPreview from "./MiniPreview";
 import { Button, DisabledContainer } from "../../../components";
+import { createAudioDownsamplerNode } from "./audioWorkletDownsampler";
 
 // CJS corrector (JSON vocab) — display-only Tier 1
 const { correctLiveTranscript } = require("./liveTranscriptCorrector");
@@ -486,19 +488,7 @@ function stripTriggerWords(text) {
 
 function isShortContextJump(text) {
   if (!text) return false;
-  let t = wordNumbersToDigits(String(text || "").toLowerCase()).replace(
-    /[,.;:]/g,
-    " ",
-  );
-  t = repairReferenceConnectors(t).replace(/\s+/g, " ").trim();
-  return (
-    /^(?:(?:go to|jump to|skip to|turn to|move to|show|read|open|back to)\s+)?(?:chapter|verse|verses|vs|v|was|worse|voice|vers|virs|vas|vass)\s+\d+$/i.test(
-      t,
-    ) ||
-    /^(?:go to|jump to|skip to|turn to|move to|back to)\s+\d+$/i.test(t) ||
-    /^(?:good\s+to\s+us|go\s+to\s+us)\s+\d+$/i.test(t) ||
-    /^(?:verse|vass|vas)\s+\d+$/i.test(t)
-  );
+  return parseContextJump(text) !== null;
 }
 
 export default function BroadcastEngine() {
@@ -2071,7 +2061,8 @@ export default function BroadcastEngine() {
     const fromPassB = pass === "B";
     const shape = shapeHint || matchReferenceShape(matchText);
     const shapeFallback = shape.complete ? shape : matchReferenceShape(text);
-    const ambientShaped = shapeFallback.complete;
+    const tierAEligible = shapeFallback.complete && shapeFallback.hasExplicitMarker;
+    const ambientShaped = tierAEligible;
     const shortJump =
       shapeFallback.shortContext ||
       isShortContextJump(matchText) ||
@@ -2099,11 +2090,12 @@ export default function BroadcastEngine() {
       }
     }
 
-    // FR-3.57 ambient: COMPLETE shape is enough (no trigger). Pass 3 / context still gated.
+    // FR-3.57 ambient: Tier A (complete && hasExplicitMarker) auto-fires without trigger.
+    // Tier B / unshaped speech requires triggerArmed, fromPassB, or loose sensitivity.
     const allowScripture =
       fromPassB ||
       triggerArmed ||
-      ambientShaped ||
+      tierAEligible ||
       (shortJump &&
         (triggerArmed || fromPassB || currentRefStateRef.current)) ||
       sensitivity === "loose";
@@ -2770,6 +2762,7 @@ export default function BroadcastEngine() {
       const allowShaped =
         (pass === "A" || pass === "W") &&
         maybeShape.complete &&
+        maybeShape.hasExplicitMarker &&
         (res.confidence == null || res.confidence >= CONF_TIER_A_SHAPE * 0.7);
       if (!allowShaped) {
         emitPipelineTrace({
@@ -2878,13 +2871,15 @@ export default function BroadcastEngine() {
         if (!shape.complete && !shape.shortContext)
           shape = matchReferenceShape(commandText);
 
-        // Ambient & Continuous Mic Mode (FR-3.43): COMPLETE structural shape is required. Short jumps need context or trigger.
+        const tierAEligible = shape.complete && shape.hasExplicitMarker;
+
+        // Ambient & Continuous Mic Mode (FR-3.43): Tier A structural shape auto-fires. Tier B requires trigger/Pass B.
         const shouldTryScripture =
           isSecondaryPtt ||
           pass === "B" ||
           triggerArmed ||
           sensitivity === "loose" ||
-          shape.complete ||
+          tierAEligible ||
           (shape.shortContext && !!currentRefStateRef.current) ||
           isShortContextJump(commandText);
 
@@ -2995,13 +2990,14 @@ export default function BroadcastEngine() {
         return newLines;
       });
 
-      // Ambient scripture: fire as soon as ordered shape is COMPLETE on partials
+      // Ambient scripture: fire as soon as ordered shape is COMPLETE and has an EXPLICIT marker on partials
       // (faster than FR-3.8 1.5s probe). Commands still wait for final.
       if ((pass === "A" || pass === "W") && handleTranscriptionRef.current) {
         const core = extractScriptureCore(commandText) || commandText;
         let shape = matchReferenceShape(core);
         if (!shape.complete) shape = matchReferenceShape(commandText);
-        if (shape.complete && shape.span) {
+        const tierAEligible = shape.complete && shape.hasExplicitMarker;
+        if (tierAEligible && shape.span) {
           const spanKey = `${utteranceId ?? "x"}|${shape.span}|${shape.kind}`;
           const amb = ambientShapeRef.current;
           if (amb.firedKey === spanKey) {
@@ -3148,66 +3144,40 @@ export default function BroadcastEngine() {
       const preamp = audioCtx.createGain();
       preamp.gain.value = 2.2;
 
-      // ScriptProcessor must stay in an active graph. Zero-gain → destination
-      // can be optimized away by Chromium; MediaStreamDestination always pulls.
       const sink = audioCtx.createMediaStreamDestination();
-      const processor = audioCtx.createScriptProcessor(4096, 1, 1);
+
+      let rmsSmooth = 0;
+      let lastSpeakState = false;
+      let lastCheckAt = 0;
+
+      const { node: processor } = await createAudioDownsamplerNode(audioCtx, (uint8Pcm, rms) => {
+        if (!isTranscribingRef.current) return;
+
+        // RMS & Speaking detection
+        if (typeof rms === "number" && rms > 0) {
+          rmsSmooth = rmsSmooth * 0.8 + rms * 0.2;
+          const now = Date.now();
+          if (now - lastCheckAt > 100) {
+            lastCheckAt = now;
+            const speaking = rmsSmooth > 0.008;
+            if (speaking !== lastSpeakState) {
+              lastSpeakState = speaking;
+              setIsSpeakingNow(speaking);
+            }
+            setMicLevel(Math.min(1, rmsSmooth * 12));
+          }
+        }
+
+        // Send downsampled PCM to ASR engine via IPC
+        if (AsrApi?.sendAudio) {
+          AsrApi.sendAudio(uint8Pcm);
+        }
+      }, 16000);
       processorRef.current = processor;
 
       source.connect(highpass);
       highpass.connect(vocalPeaking);
       vocalPeaking.connect(preamp);
-      preamp.connect(processor);
-      processor.connect(sink);
-
-      let rmsSmooth = 0;
-      let lastSpeakState = false;
-      let speakCheckAt = 0;
-      processor.onaudioprocess = (e) => {
-        if (!isTranscribingRef.current) return;
-        const input = e.inputBuffer.getChannelData(0);
-
-        // RMS for speaking indicator (throttled — do not setState every audio quantum)
-        let sum = 0;
-        for (let i = 0; i < input.length; i++) sum += input[i] * input[i];
-        const rms = Math.sqrt(sum / input.length);
-        rmsSmooth = rmsSmooth * 0.8 + rms * 0.2;
-        const now = e.playbackTime;
-        if (now - speakCheckAt > 0.1) {
-          speakCheckAt = now;
-          const speaking = rmsSmooth > 0.008;
-          if (speaking !== lastSpeakState) {
-            lastSpeakState = speaking;
-            setIsSpeakingNow(speaking);
-          }
-          // Mic meter for operator (0–100%)
-          setMicLevel(Math.min(1, rmsSmooth * 12));
-        }
-
-        // Downsample to 16 kHz mono Float32 → Int16 (box average anti-alias)
-        const ratio = inputRate / 16000;
-        const outLen = Math.max(1, Math.floor(input.length / ratio));
-        const int16 = new Int16Array(outLen);
-        for (let i = 0; i < outLen; i++) {
-          const start = Math.floor(i * ratio);
-          const end = Math.min(
-            input.length,
-            Math.floor((i + 1) * ratio) || start + 1,
-          );
-          let acc = 0;
-          const count = Math.max(1, end - start);
-          for (let j = start; j < end; j++) acc += input[j];
-          const s = Math.max(-1, Math.min(1, acc / count));
-          int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-        }
-        // FR-3.65 — send audio via Asr.sendAudio (Vosk shim also provides this)
-        AsrApi.sendAudio(
-          new Uint8Array(int16.buffer, int16.byteOffset, int16.byteLength),
-        );
-      };
-
-      source.connect(highpass);
-      highpass.connect(preamp);
       preamp.connect(processor);
       processor.connect(sink);
 
