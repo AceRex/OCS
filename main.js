@@ -948,12 +948,49 @@ ipcMain.handle("open-external-url", async (_event, url) => {
   if (
     url &&
     typeof url === "string" &&
-    (url.startsWith("https://") || url.startsWith("http://"))
+    (url.startsWith("https://") || url.startsWith("http://") || url.startsWith("x-apple.systempreferences:"))
   ) {
     await shell.openExternal(url);
     return true;
   }
   return false;
+});
+
+ipcMain.handle("media-request-camera-permission", async () => {
+  if (process.platform === "darwin" && systemPreferences.askForMediaAccess) {
+    try {
+      const granted = await systemPreferences.askForMediaAccess("camera");
+      return { granted };
+    } catch (e) {
+      console.warn("[Media] askForMediaAccess error:", e);
+      return { granted: false, error: e.message };
+    }
+  }
+  return { granted: true };
+});
+
+ipcMain.handle("media-get-camera-status", async () => {
+  if (process.platform === "darwin" && systemPreferences.getMediaAccessStatus) {
+    try {
+      const status = systemPreferences.getMediaAccessStatus("camera");
+      return { status };
+    } catch (e) {
+      return { status: "unknown" };
+    }
+  }
+  return { status: "granted" };
+});
+
+ipcMain.handle("media-open-camera-settings", async () => {
+  if (process.platform === "darwin") {
+    try {
+      await shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_Camera");
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  }
+  return { ok: true };
 });
 
 ipcMain.handle("media-list", async () => {

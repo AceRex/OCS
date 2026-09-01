@@ -445,6 +445,16 @@ export default function TeleprompterController() {
 
   // Helper to reliably acquire webcam stream across various desktop camera drivers
   const acquireDesktopCameraStream = async ({ withAudio = true } = {}) => {
+    // Explicitly ask for macOS system camera permission via Electron IPC first
+    if (window.electron?.Camera?.requestPermission) {
+      try {
+        const perm = await window.electron.Camera.requestPermission();
+        console.log("[Teleprompter] Electron camera permission request result:", perm);
+      } catch (pErr) {
+        console.warn("[Teleprompter] Electron camera permission notice:", pErr);
+      }
+    }
+
     let videoDevices = [];
     try {
       const allDevices = await navigator.mediaDevices.enumerateDevices();
@@ -496,6 +506,33 @@ export default function TeleprompterController() {
     }
 
     throw lastError || new Error("No camera device accessible on this system");
+  };
+
+  const handleRequestCameraPermission = async () => {
+    try {
+      setCameraError(null);
+      if (window.electron?.Camera?.requestPermission) {
+        const res = await window.electron.Camera.requestPermission();
+        console.log("[Teleprompter] Manual permission response:", res);
+      }
+      // Re-trigger test camera to check if stream is now accessible
+      await handleTestCamera();
+    } catch (err) {
+      console.error("[Teleprompter] Manual permission request error:", err);
+      setCameraError("Camera permission request failed: " + (err.message || String(err)));
+    }
+  };
+
+  const handleOpenCameraSettings = async () => {
+    try {
+      if (window.electron?.Camera?.openSettings) {
+        await window.electron.Camera.openSettings();
+      } else if (window.electron?.openExternal) {
+        await window.electron.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_Camera");
+      }
+    } catch (err) {
+      console.warn("[Teleprompter] Failed to open System Settings:", err);
+    }
   };
 
   const formatCameraErrorMessage = (err) => {
@@ -902,11 +939,27 @@ export default function TeleprompterController() {
               </div>
             )}
 
-            {/* Error Banner */}
+            {/* Error Banner with Interactive Permission Actions */}
             {cameraError && (
-              <div className="absolute inset-x-3 bottom-3 bg-red-950/90 border border-red-500/50 text-red-200 p-3 rounded-xl text-xs flex items-start gap-2 backdrop-blur-md shadow-xl z-10">
-                <PiWarning size={16} className="shrink-0 mt-0.5 text-red-400" />
-                <span className="flex-1 text-[11px] leading-relaxed">{cameraError}</span>
+              <div className="absolute inset-x-3 bottom-3 bg-red-950/90 border border-red-500/50 text-red-200 p-3 rounded-xl text-xs flex flex-col gap-2 backdrop-blur-md shadow-xl z-10">
+                <div className="flex items-start gap-2">
+                  <PiWarning size={16} className="shrink-0 mt-0.5 text-red-400" />
+                  <span className="flex-1 text-[11px] leading-relaxed">{cameraError}</span>
+                </div>
+                <div className="flex items-center gap-2 pl-6 pt-1 border-t border-red-500/20">
+                  <button
+                    onClick={handleRequestCameraPermission}
+                    className="px-2.5 py-1 rounded-lg bg-red-500/20 hover:bg-red-500/30 border border-red-500/40 text-red-100 text-[10px] font-bold transition-all flex items-center gap-1 active:scale-95"
+                  >
+                    <span>Ask for Permission</span>
+                  </button>
+                  <button
+                    onClick={handleOpenCameraSettings}
+                    className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-white/90 text-[10px] font-bold transition-all flex items-center gap-1 active:scale-95"
+                  >
+                    <span>Open macOS Camera Settings ↗</span>
+                  </button>
+                </div>
               </div>
             )}
           </div>

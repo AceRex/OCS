@@ -65,6 +65,11 @@ contextBridge.exposeInMainWorld("electron", {
     searchVerses: (query, version, limit) => ipcRenderer.invoke('bible-search-verses', { query, version: version || 'kjv', limit: limit || 5 }),
   },
   openExternal: (url) => ipcRenderer.invoke('open-external-url', url),
+  Camera: {
+    requestPermission: () => ipcRenderer.invoke('media-request-camera-permission'),
+    getStatus: () => ipcRenderer.invoke('media-get-camera-status'),
+    openSettings: () => ipcRenderer.invoke('media-open-camera-settings'),
+  },
   Voice: {
     /** @deprecated use Asr.getStatus — kept for older debug UI */
     getSidecarStatus: () => ipcRenderer.invoke('voice-sidecar-status'),
