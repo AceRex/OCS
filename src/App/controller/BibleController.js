@@ -4,17 +4,53 @@ import { PiCaretDown, PiMagnifyingGlass, PiCheck } from "react-icons/pi";
 import { filterBooksFuzzy, resolveBookName } from "./smartBibleMatch";
 
 const versions = {
-  kjv: "King James Version (KJV)",
-  amp: "Amplified Bible (AMP)",
-  net: "New English Translation (NET / NIV)",
-  asv: "American Standard Version (ASV / ESV)",
-  bbe: "Bible in Basic English (BBE / NLT)",
-  web: "World English Bible (WEB)",
-  geneva: "Geneva Bible",
-  tyndale: "Tyndale Bible",
+  // ── Most Popular Modern ──────────────────────────────────────────────────
+  niv:       "New International Version (NIV)",
+  esv:       "English Standard Version (ESV)",
+  nlt:       "New Living Translation (NLT)",
+  nkjv:      "New King James Version (NKJV)",
+  nasb:      "New American Standard Bible (NASB)",
+  nasb1995:  "New American Standard Bible 1995 (NASB1995)",
+  csb:       "Christian Standard Bible (CSB)",
+  net:       "New English Translation (NET)",
+  amp:       "Amplified Bible (AMP)",
+  // ── Contemporary / Readable ──────────────────────────────────────────────
+  gw:        "GOD'S WORD Translation (GW)",
+  nlv:       "New Life Version (NLV)",
+  nog:       "Names of God Bible (NOG)",
+  isv:       "International Standard Version (ISV)",
+  ehv:       "Evangelical Heritage Version (EHV)",
+  mev:       "Modern English Version (MEV)",
+  // ── Revision Traditions ──────────────────────────────────────────────────
+  rsv:       "Revised Standard Version (RSV)",
+  nrsv:      "New Revised Standard Version (NRSV)",
+  nrsvue:    "New Revised Standard Version Updated Edition (NRSVue)",
+  asv:       "American Standard Version (ASV)",
+  // ── King James Family ────────────────────────────────────────────────────
+  kjv:       "King James Version (KJV)",
+  akjv:      "American King James Version (AKJV)",
+  kj21:      "21st Century King James Version (KJ21)",
+  kjv_strongs: "KJV with Strong's Numbers",
+  brg:       "BRG Bible (BRG)",
+  // ── UK / International Editions ──────────────────────────────────────────
+  nivuk:     "New International Version UK (NIVUK)",
+  esvuk:     "English Standard Version UK (ESVUK)",
+  // ── Scholarly / Literal ──────────────────────────────────────────────────
+  leb:       "Lexham English Bible (LEB)",
+  lsb:       "Legacy Standard Bible (LSB)",
+  ylt:       "Young's Literal Translation (YLT)",
+  // ── Historical ───────────────────────────────────────────────────────────
+  gnv:       "Geneva Bible 1599 (GNV)",
+  jub:       "Jubilee Bible 2000 (JUB)",
+  web:       "World English Bible (WEB)",
+  geneva:    "Geneva Bible (Original)",
+  tyndale:   "Tyndale Bible",
   coverdale: "Coverdale Bible",
-  bishops: "Bishops' Bible",
-  kjv_strongs: "KJV w/ Strong's",
+  bishops:   "Bishops' Bible",
+  // ── Other ────────────────────────────────────────────────────────────────
+  bbe:       "Bible in Basic English (BBE)",
+  asvs:      "ASV with Strong's Numbers",
+  kjvpce:    "KJV Pure Cambridge Edition",
 };
 
 // Custom Searchable Dropdown Component

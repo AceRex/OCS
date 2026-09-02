@@ -18,7 +18,8 @@ const fs = require('fs');
 const { TeleprompterSegmentedMode } = require('../src/main/aligner/teleprompterSegmentedMode');
 const { SceneAutoAdvanceManager } = require('../src/main/aligner/sceneAutoAdvance');
 const { ReferenceAligner } = require('../src/main/aligner/referenceAligner');
-const { postProcessTeleprompterVideo } = require('../src/main/teleprompterPostProcess');
+const { postProcessTeleprompterVideo, buildFfmpegVideoFilters } = require('../src/main/teleprompterPostProcess');
+const { parseFfmpegTimeSec } = require('../src/main/sessionAudio');
 const { SessionArchiveService } = require('../src/main/sessionArchive');
 
 async function runTests() {
@@ -83,16 +84,57 @@ async function runTests() {
   assert.ok(feedResult.activeWordIndex >= 0 || feedResult.wordIndex >= 0, 'Should return active word index');
   console.log('  ✓ Continuous mode ReferenceAligner feeds and returns word tracking position');
 
-  // Test 5: Post-processing pipeline interface
-  console.log('\n[TEST 5] Post-processing pipeline interface:');
+  // Test 5: Post-processing pipeline interface, parseFfmpegTimeSec, and buildFfmpegVideoFilters
+  console.log('\n[TEST 5] Post-processing pipeline interface, parseFfmpegTimeSec & buildFfmpegVideoFilters:');
+  assert.strictEqual(typeof parseFfmpegTimeSec, 'function', 'parseFfmpegTimeSec must be exported as a function');
+  const sampleStderr = 'frame=  120 fps= 60 q=18.0 size=    1024kB time=00:01:23.45 bitrate=4194.3kbits/s speed=4.0x';
+  const parsedSec = parseFfmpegTimeSec(sampleStderr);
+  assert.strictEqual(Math.round(parsedSec * 100) / 100, 83.45, 'parseFfmpegTimeSec must accurately parse 00:01:23.45 to 83.45 seconds');
+  console.log('  ✓ parseFfmpegTimeSec exported and parsed stderr progress chunk cleanly');
+
+  // Test buildFfmpegVideoFilters with sharpener, color grading, and color balancing
+  assert.strictEqual(typeof buildFfmpegVideoFilters, 'function', 'buildFfmpegVideoFilters must be exported as a function');
+  const defaultFilters = buildFfmpegVideoFilters({ isMirrored: false, filterState: null });
+  assert.ok(defaultFilters.includes('unsharp='), 'Default filter must include unsharp video sharpener');
+  assert.ok(defaultFilters.includes('eq='), 'Default filter must include eq color grading');
+
+  const customFilterStr = buildFfmpegVideoFilters({
+    isMirrored: true,
+    filterState: {
+      custom: {
+        sharpness: 50,
+        brightness: 110,
+        contrast: 120,
+        saturation: 130,
+        warmth: 20,
+        tint: -10,
+      }
+    }
+  });
+  assert.ok(customFilterStr.startsWith('hflip,'), 'Mirrored filter must start with hflip');
+  assert.ok(customFilterStr.includes('unsharp=5:5:1.40:5:5:0.0'), 'Must include calculated unsharp amount');
+  assert.ok(customFilterStr.includes('eq=contrast=1.20:brightness=0.050:saturation=1.30'), 'Must include contrast/brightness/saturation eq');
+  assert.ok(customFilterStr.includes('colorbalance='), 'Must include colorbalance filter for warmth and tint');
+  console.log('  ✓ buildFfmpegVideoFilters successfully generated sharpener, grading, and balancing filters');
+
   assert.strictEqual(typeof postProcessTeleprompterVideo, 'function', 'postProcessTeleprompterVideo must be exported as a function');
-  // Non-existent file should reject or return error gracefully
-  const dryRunResult = await postProcessTeleprompterVideo({
+  // Non-existent file should reject or return error gracefully with isMirrored false and true
+  const dryRunNormal = await postProcessTeleprompterVideo({
     inputPath: '/tmp/nonexistent_test_input.webm',
     outputPath: '/tmp/nonexistent_test_output.mp4',
+    isMirrored: false,
+    filterState: { presetId: 'warm-studio' },
   });
-  assert.strictEqual(dryRunResult.ok, false, 'Should return ok: false for missing input file');
-  console.log('  ✓ postProcessTeleprompterVideo handles missing input gracefully without crashing');
+  assert.strictEqual(dryRunNormal.ok, false, 'Should return ok: false for missing input file (normal)');
+
+  const dryRunMirrored = await postProcessTeleprompterVideo({
+    inputPath: '/tmp/nonexistent_test_input.webm',
+    outputPath: '/tmp/nonexistent_test_output.mp4',
+    isMirrored: true,
+    filterState: { presetId: 'vivid-broadcast' },
+  });
+  assert.strictEqual(dryRunMirrored.ok, false, 'Should return ok: false for missing input file (mirrored)');
+  console.log('  ✓ postProcessTeleprompterVideo handles missing input gracefully with both normal and mirrored modes');
 
   // Test 6: Dual File Retention in SessionArchiveService
   console.log('\n[TEST 6] SessionArchiveService teleprompter video saving with dual file metadata:');

@@ -5,7 +5,13 @@ import {
   PiPlay,
   PiPause,
   PiSparkle,
+  PiArrowClockwise,
 } from "react-icons/pi";
+import {
+  getFilterStyleString,
+  TeleprompterSharpenerSvgDef,
+  PRO_FILTER_PRESETS,
+} from "./TeleprompterFilterModal";
 
 /**
  * TeleprompterFullscreenOverlay
@@ -23,7 +29,10 @@ export default function TeleprompterFullscreenOverlay({
   activeWordIndex = 0,
   cameraOpacity = 15,
   fontSize = 42,
-  isMirrored = true,
+  isMirrored = false,
+  onToggleMirror = null,
+  filterState = null,
+  onOpenFilterModal = null,
   sceneBreakStyle = "scroll-out",
   wordTransitionStyle = "text-glow",
   currentSegmentIndex = 0,
@@ -202,6 +211,14 @@ export default function TeleprompterFullscreenOverlay({
       onMouseMove={handleMouseMove}
       className="fixed inset-0 z-[300] bg-black overflow-hidden flex flex-col font-outfit select-none"
     >
+      {/* SVG Sharpener Definition */}
+      <TeleprompterSharpenerSvgDef
+        sharpness={
+          filterState?.custom?.sharpness ??
+          (filterState?.presetId ? PRO_FILTER_PRESETS.find((p) => p.id === filterState.presetId)?.settings?.sharpness : 25)
+        }
+      />
+
       {/* ─── LAYER 1: Background Camera Feed ─── */}
       <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none flex items-center justify-center">
         {videoStream ? (
@@ -214,7 +231,8 @@ export default function TeleprompterFullscreenOverlay({
             style={{
               opacity: localOpacity / 100,
               transform: isMirrored ? "scaleX(-1) translateZ(0)" : "translateZ(0)",
-              willChange: "transform",
+              filter: getFilterStyleString(filterState),
+              willChange: "transform, filter",
               backfaceVisibility: "hidden",
             }}
           />
@@ -264,6 +282,48 @@ export default function TeleprompterFullscreenOverlay({
               className="w-20 accent-purple-500 cursor-pointer"
             />
           </div>
+
+          {/* Camera Mirror Quick Toggle */}
+          {videoStream && onToggleMirror && (
+            <>
+              <div className="w-[1px] h-4 bg-white/15" />
+              <button
+                onClick={onToggleMirror}
+                className={`px-2.5 py-1 rounded-xl text-[10px] font-bold border transition-all flex items-center gap-1 ${
+                  isMirrored
+                    ? "bg-purple-600/30 border-purple-500/50 text-purple-200"
+                    : "bg-white/5 border-white/10 text-white/60 hover:text-white"
+                }`}
+                title={isMirrored ? "Camera is mirrored (selfie view). Click for standard view." : "Camera is standard (unmirrored). Click to mirror."}
+              >
+                <PiArrowClockwise size={12} />
+                <span>{isMirrored ? "Mirrored" : "Normal"}</span>
+              </button>
+            </>
+          )}
+
+          {/* Camera Effects Quick Trigger */}
+          {onOpenFilterModal && (
+            <>
+              <div className="w-[1px] h-4 bg-white/15" />
+              <button
+                onClick={onOpenFilterModal}
+                className={`px-2.5 py-1 rounded-xl text-[10px] font-bold border transition-all flex items-center gap-1 ${
+                  filterState?.presetId && filterState.presetId !== "normal"
+                    ? "bg-purple-600/30 border-purple-500/50 text-purple-200"
+                    : "bg-white/5 border-white/10 text-white/60 hover:text-white"
+                }`}
+                title="Camera video sharpener, color grading & balancing effects"
+              >
+                <PiSparkle size={12} className={filterState?.presetId && filterState.presetId !== "normal" ? "text-purple-300 animate-pulse" : ""} />
+                <span>
+                  {filterState?.presetId && filterState.presetId !== "normal"
+                    ? (PRO_FILTER_PRESETS.find((p) => p.id === filterState.presetId)?.label || "Graded")
+                    : "Effects"}
+                </span>
+              </button>
+            </>
+          )}
 
           <div className="w-[1px] h-4 bg-white/15" />
 
@@ -375,9 +435,7 @@ export default function TeleprompterFullscreenOverlay({
 
               {/* Lines in Scene */}
               <div
-                className={`max-w-4xl mx-auto font-sans font-bold leading-snug tracking-normal space-y-6 transition-all ${
-                  isMirrored ? "scale-x-[-1]" : ""
-                }`}
+                className="max-w-4xl mx-auto font-sans font-bold leading-snug tracking-normal space-y-6 transition-all"
                 style={{
                   fontSize: `${localFontSize}px`,
                   lineHeight: 1.5,

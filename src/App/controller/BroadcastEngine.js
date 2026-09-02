@@ -252,53 +252,41 @@ function parseSlideNumber(str) {
 }
 
 const TRANSLATION_DEFINITIONS = [
+  // ── Most Popular Modern ──────────────────────────────────────────────────
   {
-    keys: [
-      "niv",
-      "n i v",
-      "new international version",
-      "new international",
-      "an eye vee",
-    ],
-    dbVersion: "net",
+    keys: ["niv", "n i v", "new international version", "new international", "an eye vee"],
+    dbVersion: "niv",
     label: "NIV",
   },
   {
-    keys: [
-      "amp",
-      "a m p",
-      "amplified bible",
-      "amplified version",
-      "amplified",
-      "amped",
-    ],
-    dbVersion: "amp",
-    label: "AMP",
-  },
-  {
-    keys: ["kjv", "k j v", "king james version", "king james"],
-    dbVersion: "kjv",
-    label: "KJV",
-  },
-  {
-    keys: ["nkjv", "n k j v", "new king james version", "new king james"],
-    dbVersion: "kjvpce",
-    label: "NKJV",
-  },
-  {
     keys: ["esv", "e s v", "english standard version", "english standard"],
-    dbVersion: "asv",
+    dbVersion: "esv",
     label: "ESV",
   },
   {
     keys: ["nlt", "n l t", "new living translation", "new living"],
-    dbVersion: "bbe",
+    dbVersion: "nlt",
     label: "NLT",
   },
   {
-    keys: ["asv", "a s v", "american standard version", "american standard"],
-    dbVersion: "asv",
-    label: "ASV",
+    keys: ["nkjv", "n k j v", "new king james version", "new king james"],
+    dbVersion: "nkjv",
+    label: "NKJV",
+  },
+  {
+    keys: ["nasb", "new american standard bible", "new american standard"],
+    dbVersion: "nasb",
+    label: "NASB",
+  },
+  {
+    keys: ["nasb 1995", "nasb1995", "nasb ninety five", "new american standard 1995"],
+    dbVersion: "nasb1995",
+    label: "NASB1995",
+  },
+  {
+    keys: ["csb", "christian standard bible", "christian standard"],
+    dbVersion: "csb",
+    label: "CSB",
   },
   {
     keys: ["net", "n e t", "new english translation", "net bible"],
@@ -306,50 +294,140 @@ const TRANSLATION_DEFINITIONS = [
     label: "NET",
   },
   {
-    keys: ["bbe", "b b e", "basic english", "bible in basic english"],
-    dbVersion: "bbe",
-    label: "BBE",
+    keys: ["amp", "a m p", "amplified bible", "amplified version", "amplified", "amped"],
+    dbVersion: "amp",
+    label: "AMP",
+  },
+  // ── Contemporary / Readable ──────────────────────────────────────────────
+  {
+    keys: ["gw", "god's word", "gods word translation"],
+    dbVersion: "gw",
+    label: "GW",
+  },
+  {
+    keys: ["nlv", "new life version", "new life"],
+    dbVersion: "nlv",
+    label: "NLV",
+  },
+  {
+    keys: ["nog", "names of god", "names of god bible"],
+    dbVersion: "nog",
+    label: "NOG",
+  },
+  {
+    keys: ["isv", "international standard version", "international standard"],
+    dbVersion: "isv",
+    label: "ISV",
+  },
+  {
+    keys: ["ehv", "evangelical heritage version", "evangelical heritage"],
+    dbVersion: "ehv",
+    label: "EHV",
+  },
+  {
+    keys: ["mev", "modern english version", "modern english"],
+    dbVersion: "mev",
+    label: "MEV",
+  },
+  // ── Revision Traditions ──────────────────────────────────────────────────
+  {
+    keys: ["rsv", "revised standard version", "revised standard"],
+    dbVersion: "rsv",
+    label: "RSV",
+  },
+  {
+    keys: ["nrsv", "new revised standard version", "new revised standard"],
+    dbVersion: "nrsv",
+    label: "NRSV",
+  },
+  {
+    keys: ["nrsvue", "nrsv updated edition", "updated nrsv"],
+    dbVersion: "nrsvue",
+    label: "NRSVue",
+  },
+  {
+    keys: ["asv", "a s v", "american standard version", "american standard"],
+    dbVersion: "asv",
+    label: "ASV",
+  },
+  // ── King James Family ────────────────────────────────────────────────────
+  {
+    keys: ["kjv", "k j v", "king james version", "king james"],
+    dbVersion: "kjv",
+    label: "KJV",
+  },
+  {
+    keys: ["akjv", "american king james", "american kjv"],
+    dbVersion: "akjv",
+    label: "AKJV",
+  },
+  {
+    keys: ["kj21", "21st century king james", "twenty first century king james"],
+    dbVersion: "kj21",
+    label: "KJ21",
+  },
+  {
+    keys: ["kjv strongs", "king james strongs", "kjv with strongs"],
+    dbVersion: "kjv_strongs",
+    label: "KJV+Strongs",
+  },
+  {
+    keys: ["brg", "brg bible"],
+    dbVersion: "brg",
+    label: "BRG",
+  },
+  // ── UK / International Editions ──────────────────────────────────────────
+  {
+    keys: ["nivuk", "niv uk", "new international version uk"],
+    dbVersion: "nivuk",
+    label: "NIVUK",
+  },
+  {
+    keys: ["esvuk", "esv uk", "english standard version uk"],
+    dbVersion: "esvuk",
+    label: "ESVUK",
+  },
+  // ── Scholarly / Literal ──────────────────────────────────────────────────
+  {
+    keys: ["leb", "lexham english bible", "lexham"],
+    dbVersion: "leb",
+    label: "LEB",
+  },
+  {
+    keys: ["lsb", "legacy standard bible", "legacy standard"],
+    dbVersion: "lsb",
+    label: "LSB",
+  },
+  {
+    keys: ["ylt", "young's literal translation", "youngs literal", "young's"],
+    dbVersion: "ylt",
+    label: "YLT",
+  },
+  // ── Historical ───────────────────────────────────────────────────────────
+  {
+    keys: ["gnv", "geneva 1599", "geneva bible 1599"],
+    dbVersion: "gnv",
+    label: "GNV",
+  },
+  {
+    keys: ["jub", "jubilee bible", "jubilee"],
+    dbVersion: "jub",
+    label: "JUB",
   },
   {
     keys: ["web", "world english bible", "world english"],
     dbVersion: "web",
     label: "WEB",
   },
-  {
-    keys: ["msg", "the message", "message version", "message bible", "message"],
-    dbVersion: "web",
-    label: "MSG",
-  },
-  {
-    keys: ["csb", "christian standard bible", "christian standard"],
-    dbVersion: "net",
-    label: "CSB",
-  },
-  {
-    keys: ["nasb", "new american standard bible", "new american standard"],
-    dbVersion: "asv",
-    label: "NASB",
-  },
-  {
-    keys: ["rsv", "revised standard version", "revised standard"],
-    dbVersion: "asv",
-    label: "RSV",
-  },
   { keys: ["geneva", "geneva bible"], dbVersion: "geneva", label: "Geneva" },
+  { keys: ["tyndale", "tyndale bible"], dbVersion: "tyndale", label: "Tyndale" },
+  { keys: ["coverdale", "coverdale bible"], dbVersion: "coverdale", label: "Coverdale" },
+  { keys: ["bishops", "bishops bible"], dbVersion: "bishops", label: "Bishops" },
+  // ── Other ────────────────────────────────────────────────────────────────
   {
-    keys: ["tyndale", "tyndale bible"],
-    dbVersion: "tyndale",
-    label: "Tyndale",
-  },
-  {
-    keys: ["coverdale", "coverdale bible"],
-    dbVersion: "coverdale",
-    label: "Coverdale",
-  },
-  {
-    keys: ["bishops", "bishops bible"],
-    dbVersion: "bishops",
-    label: "Bishops",
+    keys: ["bbe", "b b e", "basic english", "bible in basic english"],
+    dbVersion: "bbe",
+    label: "BBE",
   },
 ];
 

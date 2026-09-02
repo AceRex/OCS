@@ -22,6 +22,11 @@ import {
 import TeleprompterScriptModal from "./TeleprompterScriptModal";
 import TeleprompterFullscreenOverlay from "./TeleprompterFullscreenOverlay";
 import TeleprompterConsentModal from "./TeleprompterConsentModal";
+import TeleprompterFilterModal, {
+  getFilterStyleString,
+  TeleprompterSharpenerSvgDef,
+  PRO_FILTER_PRESETS,
+} from "./TeleprompterFilterModal";
 import { createAudioDownsamplerNode } from "./audioWorkletDownsampler";
 const { TeleprompterSegmentedMode } = require("../../main/aligner/teleprompterSegmentedMode");
 
@@ -78,7 +83,41 @@ export default function TeleprompterController() {
   const [isCapturing, setIsCapturing] = useState(false);
   const [videoStream, setVideoStream] = useState(null);
   const [cameraError, setCameraError] = useState(null);
-  const [isMirrored, setIsMirrored] = useState(true);
+  const [isMirrored, setIsMirrored] = useState(() => {
+    try {
+      return localStorage.getItem("tp_camera_mirrored") === "true";
+    } catch (_) {
+      return false;
+    }
+  });
+
+  const handleToggleMirror = () => {
+    setIsMirrored((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem("tp_camera_mirrored", String(next));
+      } catch (_) {}
+      return next;
+    });
+  };
+
+  // ─── Camera Color Grading, Sharpener & Balancing State ───
+  const [filterState, setFilterState] = useState(() => {
+    try {
+      const saved = localStorage.getItem("tp_camera_filter");
+      return saved ? JSON.parse(saved) : { presetId: "normal" };
+    } catch (_) {
+      return { presetId: "normal" };
+    }
+  });
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+
+  const handleApplyFilter = (newFilter) => {
+    setFilterState(newFilter);
+    try {
+      localStorage.setItem("tp_camera_filter", JSON.stringify(newFilter));
+    } catch (_) {}
+  };
   const [pairedDevices, setPairedDevices] = useState([]);
   const [selectedMobileDeviceId, setSelectedMobileDeviceId] = useState(null);
 
@@ -538,11 +577,11 @@ export default function TeleprompterController() {
   const formatCameraErrorMessage = (err) => {
     let errorMsg = err?.message || String(err);
     if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError") {
-      errorMsg = "Camera access denied. Please enable Camera permissions in macOS System Settings > Privacy & Security > Camera.";
+      errorMsg = "Camera access denied. In macOS System Settings > Privacy & Security > Camera, ensure permission is granted to 'Electron' (or OCS), not just your IDE/Terminal.";
     } else if (err?.name === "NotFoundError" || err?.name === "DevicesNotFoundError" || errorMsg.includes("Requested device not found")) {
-      errorMsg = "No webcam detected. If using a MacBook or external camera, please ensure Camera permission is granted in macOS System Settings > Privacy & Security > Camera.";
+      errorMsg = "No webcam detected. If permission is already granted in macOS System Settings, the camera daemon may be suspended or locked by another app (WhatsApp, Teams, Zoom). Run 'sudo killall appleh13camerad cameracaptured' in Terminal or restart your Mac to reset the camera.";
     } else if (err?.name === "NotReadableError" || err?.name === "TrackStartError") {
-      errorMsg = "Camera is currently locked by another application (e.g. Zoom, Teams, FaceTime). Please close other camera apps and retry.";
+      errorMsg = "Camera is currently locked by another application (e.g. Zoom, Teams, FaceTime, WhatsApp). Please close other camera apps and retry.";
     }
     return errorMsg;
   };
@@ -685,6 +724,8 @@ export default function TeleprompterController() {
                 durationMs: duration,
                 transcript: scriptFullText,
                 requestPostProcess: true, // FR-5.42 [NEW]: trigger background polish pass
+                isMirrored,
+                filterState,
               });
               console.log("[Teleprompter] saveVideoRecording response:", res);
               setSessionSaveToast(`Saved (${(blob.size / 1024 / 1024).toFixed(2)} MB) — polishing in background...`);
@@ -861,8 +902,26 @@ export default function TeleprompterController() {
               </div>
             </div>
 
-            {/* Quick Actions (Mirror + Test Camera) */}
+            {/* Quick Actions (Mirror + Effects + Test Camera) */}
             <div className="flex items-center gap-1.5">
+              {/* Effects & Color Grading Modal Trigger */}
+              <button
+                onClick={() => setIsFilterModalOpen(true)}
+                className={`px-2.5 py-1 rounded-xl text-[10px] font-bold border transition-all flex items-center gap-1 ${
+                  filterState?.presetId && filterState.presetId !== "normal"
+                    ? "bg-purple-600/30 border-purple-500/50 text-purple-200 shadow-sm shadow-purple-500/20"
+                    : "bg-white/5 border-white/10 text-white/60 hover:text-white"
+                }`}
+                title="Camera video sharpener, color grading & balancing effects"
+              >
+                <PiSparkle size={12} className={filterState?.presetId && filterState.presetId !== "normal" ? "text-purple-300 animate-pulse" : ""} />
+                <span>
+                  {filterState?.presetId && filterState.presetId !== "normal"
+                    ? (PRO_FILTER_PRESETS.find((p) => p.id === filterState.presetId)?.label || "Graded")
+                    : "Effects"}
+                </span>
+              </button>
+
               {/* FR-5.44 [NEW]: Test Camera — clearly distinct from recording */}
               {!isCapturing && !isTestMode && countdownValue === null && (
                 <button
@@ -885,22 +944,30 @@ export default function TeleprompterController() {
                   <span>Stop Test</span>
                 </button>
               )}
-              {isCapturing && !isTestMode && (
+              {isCapturing && (
                 <button
-                  onClick={() => setIsMirrored((prev) => !prev)}
+                  onClick={handleToggleMirror}
                   className={`px-2.5 py-1 rounded-xl text-[10px] font-bold border transition-all ${
                     isMirrored
                       ? "bg-purple-600/30 border-purple-500/50 text-purple-200"
                       : "bg-white/5 border-white/10 text-white/60 hover:text-white"
                   }`}
-                  title="Mirror video horizontally"
+                  title={isMirrored ? "Camera is mirrored (selfie view). Click for standard view." : "Camera is standard (unmirrored). Click to mirror."}
                 >
                   <PiArrowClockwise size={12} className="inline mr-1" />
-                  Mirror
+                  {isMirrored ? "Mirrored" : "Normal"}
                 </button>
               )}
             </div>
           </div>
+
+          {/* SVG Definition for Video Sharpening */}
+          <TeleprompterSharpenerSvgDef
+            sharpness={
+              filterState?.custom?.sharpness ??
+              (filterState?.presetId ? PRO_FILTER_PRESETS.find((p) => p.id === filterState.presetId)?.settings?.sharpness : 25)
+            }
+          />
 
           {/* Video Container */}
           <div className="flex-1 flex items-center justify-center bg-black/60 rounded-xl overflow-hidden mt-3 relative border border-white/5">
@@ -910,9 +977,9 @@ export default function TeleprompterController() {
               playsInline
               muted
               style={{
-                // FR-5.41 [NEW]: Raw camera feed — no CSS filter applied
                 transform: isMirrored ? "scaleX(-1) translateZ(0)" : "translateZ(0)",
-                willChange: "transform",
+                filter: getFilterStyleString(filterState),
+                willChange: "transform, filter",
                 backfaceVisibility: "hidden",
               }}
               className={`w-full h-full object-cover transition-transform duration-200 ${
@@ -1416,9 +1483,21 @@ export default function TeleprompterController() {
         cameraOpacity={cameraOpacity}
         fontSize={fontSize}
         isMirrored={isMirrored}
+        onToggleMirror={handleToggleMirror}
+        filterState={filterState}
+        onOpenFilterModal={() => setIsFilterModalOpen(true)}
         sceneBreakStyle={sceneBreakStyle}
         wordTransitionStyle={wordTransitionStyle}
         currentSegmentIndex={currentSegmentIndex}
+      />
+
+      {/* ─── Camera Filter / Effects Modal ─── */}
+      <TeleprompterFilterModal
+        isOpen={isFilterModalOpen}
+        onClose={() => setIsFilterModalOpen(false)}
+        currentFilter={filterState}
+        onApplyFilter={handleApplyFilter}
+        videoStream={videoStream}
       />
 
       {/* ─── Privacy Consent Modal ─── */}

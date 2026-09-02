@@ -781,6 +781,8 @@ class SessionArchiveService extends EventEmitter {
     durationMs = 0,
     transcript = '',
     requestPostProcess = false,
+    isMirrored = false,
+    filterState = null,
   }) {
     await this.init();
     const id = uuid();
@@ -871,6 +873,8 @@ class SessionArchiveService extends EventEmitter {
             inputPath: rawFilePath,
             outputPath: polishedPath,
             totalDurationSec: durationSec,
+            isMirrored: Boolean(isMirrored),
+            filterState,
             onProgress: (percent) => {
               this.emit('teleprompter:postprocess-progress', { sessionId: id, percent });
             },

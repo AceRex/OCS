@@ -447,5 +447,7 @@ module.exports = {
   convertWebmToMp4,
   probeMediaInfo,
   mergeBumpersToRecording,
+  parseFfmpegTimeSec,
 };
+
 

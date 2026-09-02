@@ -19,6 +19,86 @@ const fsp = fs.promises;
 const path = require('path');
 const { getFfmpegPath, parseFfmpegTimeSec } = require('./sessionAudio');
 
+function parseFfmpegTimeSecFallback(stderrChunk) {
+  const m = String(stderrChunk).match(/time=(\d+):(\d+):(\d+(?:\.\d+)?)/);
+  if (!m) return null;
+  return (parseInt(m[1], 10) * 3600) + (parseInt(m[2], 10) * 60) + parseFloat(m[3]);
+}
+
+const parseTimeSec = typeof parseFfmpegTimeSec === 'function' ? parseFfmpegTimeSec : parseFfmpegTimeSecFallback;
+
+const PRESET_FILTER_DEFAULTS = {
+  normal: { brightness: 100, contrast: 102, saturation: 100, warmth: 0, tint: 0, sharpness: 25, grayscale: 0 },
+  'warm-studio': { brightness: 104, contrast: 110, saturation: 115, warmth: 22, tint: 4, sharpness: 40, grayscale: 0 },
+  'cool-film': { brightness: 102, contrast: 115, saturation: 95, warmth: -20, tint: -6, sharpness: 50, grayscale: 0 },
+  'vivid-broadcast': { brightness: 106, contrast: 120, saturation: 135, warmth: 0, tint: 0, sharpness: 60, grayscale: 0 },
+  'golden-hour': { brightness: 105, contrast: 108, saturation: 120, warmth: 35, tint: 10, sharpness: 30, grayscale: 0 },
+  'cinematic-bw': { brightness: 105, contrast: 130, saturation: 0, warmth: 0, tint: 0, sharpness: 45, grayscale: 100 },
+  'vintage-noir': { brightness: 96, contrast: 160, saturation: 0, warmth: 0, tint: 0, sharpness: 55, grayscale: 100 },
+};
+
+/**
+ * Builds an ffmpeg -vf filter string combining mirror (hflip), video sharpener (unsharp),
+ * color grading (eq: contrast/brightness/saturation), and color balance (warmth/tint).
+ */
+function buildFfmpegVideoFilters({ isMirrored = false, filterState = null }) {
+  const filterParts = [];
+
+  // 1. Mirror
+  if (isMirrored) {
+    filterParts.push('hflip');
+  }
+
+  // Resolve active filter settings
+  let settings = null;
+  if (filterState) {
+    if (filterState.custom) {
+      settings = { ...filterState.custom };
+    } else if (filterState.presetId && PRESET_FILTER_DEFAULTS[filterState.presetId]) {
+      settings = { ...PRESET_FILTER_DEFAULTS[filterState.presetId] };
+    }
+  }
+
+  // Default to clean broadcast enhancement if no custom profile provided
+  if (!settings) {
+    settings = PRESET_FILTER_DEFAULTS.normal;
+  }
+
+  const {
+    sharpness = 25,
+    brightness = 100,
+    contrast = 100,
+    saturation = 100,
+    warmth = 0,
+    tint = 0,
+    grayscale = 0,
+  } = settings;
+
+  // 2. Video Sharpener (unsharp filter: luma matrix 5x5, amount 0.2 - 2.8)
+  if (sharpness > 0) {
+    const lumaAmount = Math.max(0.2, (sharpness / 100) * 2.8).toFixed(2);
+    filterParts.push(`unsharp=5:5:${lumaAmount}:5:5:0.0`);
+  }
+
+  // 3. Color Grading (eq filter)
+  const bVal = ((brightness - 100) / 200).toFixed(3);
+  const cVal = (contrast / 100).toFixed(2);
+  const sVal = grayscale > 0 ? '0' : (saturation / 100).toFixed(2);
+  filterParts.push(`eq=contrast=${cVal}:brightness=${bVal}:saturation=${sVal}`);
+
+  // 4. Color Balancing (warmth/temperature & tint via colorbalance filter)
+  if (warmth !== 0 || tint !== 0) {
+    const wNorm = (warmth / 100) * 0.4;
+    const tNorm = (tint / 100) * 0.3;
+    const rShift = Math.max(-1, Math.min(1, (wNorm + tNorm))).toFixed(3);
+    const gShift = Math.max(-1, Math.min(1, (-tNorm))).toFixed(3);
+    const bShift = Math.max(-1, Math.min(1, (-wNorm + tNorm))).toFixed(3);
+    filterParts.push(`colorbalance=rs=${rShift}:gs=${gShift}:bs=${bShift}:rm=${rShift}:gm=${gShift}:bm=${bShift}`);
+  }
+
+  return filterParts.join(',');
+}
+
 /**
  * Spawns an ffmpeg post-processing pass on a raw teleprompter recording.
  *
@@ -26,6 +106,8 @@ const { getFfmpegPath, parseFfmpegTimeSec } = require('./sessionAudio');
  * @param {string} options.inputPath - Absolute path to raw recording (e.g. session_raw.webm)
  * @param {string} options.outputPath - Absolute path to target polished file (e.g. session_polished.mp4)
  * @param {number} [options.totalDurationSec] - Recording duration in seconds for progress calculation
+ * @param {boolean} [options.isMirrored] - Whether recording should be flipped horizontally to match mirror preview
+ * @param {object} [options.filterState] - Active color grading, sharpener & balancing state
  * @param {function} [options.onProgress] - Callback (progressPercent: number 0-100)
  * @returns {Promise<{ ok: boolean, outputPath?: string, error?: string }>}
  */
@@ -33,6 +115,8 @@ async function postProcessTeleprompterVideo({
   inputPath,
   outputPath,
   totalDurationSec = 0,
+  isMirrored = false,
+  filterState = null,
   onProgress = null,
 }) {
   const ffmpeg = getFfmpegPath();
@@ -46,9 +130,7 @@ async function postProcessTeleprompterVideo({
   }
 
   return new Promise((resolve) => {
-    // Unsharp mask: luma matrix 5x5, amount 1.5, chroma neutral
-    // eq: 1.05 contrast, +0.02 brightness, 1.1 saturation for broadcast vibrancy
-    const videoFilter = 'unsharp=5:5:1.5:5:5:0.0,eq=contrast=1.05:brightness=0.02:saturation=1.1';
+    const videoFilter = buildFfmpegVideoFilters({ isMirrored, filterState });
 
     const args = [
       '-y',
@@ -72,7 +154,7 @@ async function postProcessTeleprompterVideo({
       stderrAcc += text;
 
       if (typeof onProgress === 'function' && totalDurationSec > 0) {
-        const currentSec = parseFfmpegTimeSec(text);
+        const currentSec = parseTimeSec(text);
         if (typeof currentSec === 'number' && currentSec >= 0) {
           const percent = Math.min(99, Math.round((currentSec / totalDurationSec) * 100));
           onProgress(percent);
@@ -101,4 +183,7 @@ async function postProcessTeleprompterVideo({
 
 module.exports = {
   postProcessTeleprompterVideo,
+  buildFfmpegVideoFilters,
+  PRESET_FILTER_DEFAULTS,
 };
+
