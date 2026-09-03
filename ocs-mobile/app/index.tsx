@@ -35,6 +35,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSocketStore } from "../store/socketStore";
 import { useAuthStore } from "../store/authStore";
+import GuestExpiredGate from "../components/GuestExpiredGate";
 
 export default function Dashboard() {
   const router = useRouter();
@@ -502,6 +503,7 @@ export default function Dashboard() {
           ))}
         </View>
       </ScrollView>
+      <GuestExpiredGate />
     </SafeAreaView>
   );
 }

@@ -7,7 +7,6 @@ import "react-native-reanimated";
 import "../global.css";
 import IncomingIntercomPlayer from "../components/IncomingIntercomPlayer";
 import MobileSplash from "../components/MobileSplash";
-import GuestExpiredGate from "../components/GuestExpiredGate";
 import TeleprompterCameraPrompt from "../components/TeleprompterCameraPrompt";
 import { useAuthStore } from "../store/authStore";
 
@@ -140,7 +139,6 @@ export default function RootLayout() {
             <Stack.Screen name="teleprompter" />
             <Stack.Screen name="modal" options={{ presentation: "modal", title: "Modal" }} />
           </Stack>
-          <GuestExpiredGate />
           <StatusBar style="auto" />
         </>
       </CrashReporter>
