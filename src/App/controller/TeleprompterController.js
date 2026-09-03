@@ -151,8 +151,6 @@ export default function TeleprompterController() {
 
   // ─── Reading & Alignment State ───
   const [activeWordIndex, setActiveWordIndex] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [scrollSpeed, setScrollSpeed] = useState(1); // 0.5 to 2.5
   const alignerRef = useRef(new ReferenceAligner());
 
   // ─── Modals State ───
