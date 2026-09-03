@@ -984,6 +984,13 @@ export default function BibleController() {
                 setActiveSuggestionIndex(0);
                 e.target.select();
               }}
+              onClick={(e) => {
+                // If the field already has a value, select all on click
+                // so user can immediately type a new book name
+                if (e.target.value) {
+                  e.target.select();
+                }
+              }}
               onKeyDown={handleBookKeyDown}
               placeholder="Book"
               className="p-0 m-0 font-bold text-2xl text-white bg-transparent border-none outline-none placeholder:text-gray-500 cursor-text hover:text-white/80 focus:text-white transition-colors"

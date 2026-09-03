@@ -42,6 +42,12 @@ interface SocketState {
     teleprompterCameraRequest: { fromId: string; scriptTitle: string } | null;
     isCameraStreaming: boolean;
     teleprompterCountdown: { value: number | null; action?: string } | null;
+    overlayContent: any | null;
+    overlayTimer: any | null;
+    shareContentToDesktop: (title: string, content: string) => Promise<{ ok: boolean; error?: string }>;
+    sendCameraFrame: (base64Data: string) => void;
+    startCameraSync: () => void;
+    stopCameraSync: () => void;
     acceptCameraRequest: () => void;
     rejectCameraRequest: () => void;
     stopCameraStream: () => void;
@@ -64,6 +70,42 @@ export const useSocketStore = create<SocketState>((set, get) => ({
     teleprompterCameraRequest: null,
     isCameraStreaming: false,
     teleprompterCountdown: null,
+    overlayContent: null,
+    overlayTimer: null,
+    shareContentToDesktop: (title: string, content: string): Promise<{ ok: boolean; error?: string }> => {
+        return new Promise((resolve) => {
+            const { socket, isPaired } = get();
+            if (!socket || !socket.connected || !isPaired) {
+                resolve({ ok: false, error: 'Must be connected and paired with workstation' });
+                return;
+            }
+            socket.emit('teleprompter:share-content', { title: title || 'Mobile Content', content: content || '' }, (res: any) => {
+                if (res?.ok !== false) resolve({ ok: true });
+                else resolve({ ok: false, error: res?.error || 'Failed to share content' });
+            });
+        });
+    },
+    sendCameraFrame: (base64Data: string) => {
+        const { socket, isPaired } = get();
+        if (socket && socket.connected && isPaired && base64Data) {
+            socket.emit('teleprompter:camera-frame', { data: base64Data, timestamp: Date.now() });
+        }
+    },
+    startCameraSync: () => {
+        const { socket } = get();
+        if (socket && socket.connected) {
+            socket.emit('teleprompter:mobile-camera-start', {});
+        }
+        set({ isCameraStreaming: true });
+    },
+    stopCameraSync: () => {
+        const { socket } = get();
+        if (socket && socket.connected) {
+            socket.emit('teleprompter:mobile-camera-stop', {});
+            socket.emit('teleprompter:stop-camera', {});
+        }
+        set({ isCameraStreaming: false });
+    },
     acceptCameraRequest: () => {
         set({ isCameraStreaming: true, teleprompterCameraRequest: null });
     },
@@ -77,6 +119,7 @@ export const useSocketStore = create<SocketState>((set, get) => ({
     stopCameraStream: () => {
         const { socket } = get();
         if (socket) {
+            socket.emit('teleprompter:mobile-camera-stop', {});
             socket.emit('teleprompter:stop-camera', {});
         }
         set({ isCameraStreaming: false, teleprompterCountdown: null });
@@ -149,11 +192,11 @@ export const useSocketStore = create<SocketState>((set, get) => ({
             return;
         }
 
-        let host = rawHost.replace(/^https?:\/\//, '');
+        let host = rawHost.trim().replace(/^https?:\/\//, '').replace(/\/.*$/, '');
         let targetPort = customPort || get().lastPort || 4000;
         if (host.includes(':')) {
             const [h, p] = host.split(':');
-            host = h;
+            host = h.trim();
             targetPort = parseInt(p, 10) || targetPort;
         }
 
@@ -170,12 +213,14 @@ export const useSocketStore = create<SocketState>((set, get) => ({
         const currentDeviceName = get().deviceName || 'Mobile Companion';
 
         const socket = io(`http://${host}:${targetPort}`, {
-            transports: ['websocket', 'polling'],
+            transports: ['polling', 'websocket'],
+            upgrade: true,
             reconnection: true,
             reconnectionAttempts: Infinity,
             reconnectionDelay: 1000,
             reconnectionDelayMax: 5000,
-            timeout: 15000,
+            timeout: 20000,
+            forceNew: true,
             auth: {
                 code,
                 token: code, // desktop accepts either code or opaque token
@@ -271,6 +316,14 @@ export const useSocketStore = create<SocketState>((set, get) => ({
             }
         });
 
+        socket.on('overlay-content', (content: any) => {
+            set({ overlayContent: content });
+        });
+
+        socket.on('overlay-timer', (timer: any) => {
+            set({ overlayTimer: timer });
+        });
+
         socket.on('pair-required', (payload: { message?: string }) => {
             set({
                 isPaired: false,
@@ -280,13 +333,17 @@ export const useSocketStore = create<SocketState>((set, get) => ({
 
         socket.on('disconnect', () => {
             console.log('Disconnected from server');
-            set({ isConnected: false, isPaired: false });
+            set({ isConnected: false, isPaired: false, overlayContent: null, overlayTimer: null });
         });
 
         socket.on('connect_error', (err) => {
             console.warn('[Remote Socket] Connection notice:', err.message);
             if (!get().isPaired) {
-                set({ connectionError: `Connection failed: ${err.message}` });
+                const isTimeout = err.message?.toLowerCase().includes('timeout');
+                const msg = isTimeout
+                    ? `Connection timed out. Ensure phone & PC are on the same Wi-Fi (${host}:${targetPort})`
+                    : `Connection failed: ${err.message}. Check desktop IP (${host}:${targetPort})`;
+                set({ connectionError: msg });
             }
         });
 

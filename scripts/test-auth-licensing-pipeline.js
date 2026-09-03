@@ -35,7 +35,7 @@ async function runTests() {
     const systemAnchorPath = path.join(tmpDir, '.ocs_sys_anchor');
     auth.init(tmpDir, {
       gracePeriodHours: 72,
-      defaultAuthHost: 'https://ocs-web-three.vercel.app',
+      defaultAuthHost: 'https://waveio-git-main-acerexs-projects.vercel.app',
       systemAnchorPath,
     });
 
@@ -93,7 +93,7 @@ async function runTests() {
     console.log('\n--- 2. Web-Redirect Flow & CSRF Validation (FR-13.3) ---');
     const loginInfo = auth.getLoginUrl();
     ok(typeof loginInfo.url === 'string', 'T2.1: Generated browser login URL');
-    ok(loginInfo.url.includes('https://ocs-web-three.vercel.app'), 'T2.2: Login URL targets hosted auth endpoint');
+    ok(loginInfo.url.includes('https://waveio-git-main-acerexs-projects.vercel.app'), 'T2.2: Login URL targets hosted auth endpoint');
     ok(loginInfo.url.includes(`state=${loginInfo.state}`), 'T2.3: Login URL contains cryptographic state query param');
     ok(loginInfo.url.includes('redirect_uri=ocs%3A%2F%2Fauth%2Fcallback'), 'T2.4: Redirect URI is encoded ocs://auth/callback');
     ok(auth.pendingAuthState.state === loginInfo.state, 'T2.5: Pending auth state saved in memory');
@@ -187,11 +187,11 @@ async function runTests() {
     // Case 7.2: Packaged production build with correct production host MUST NOT throw
     let prodValidThrew = false;
     try {
-      assertProductionAuthUrl('https://ocs-web-three.vercel.app', true); // isPackaged = true
+      assertProductionAuthUrl('https://waveio-git-main-acerexs-projects.vercel.app', true); // isPackaged = true
     } catch (err) {
       prodValidThrew = true;
     }
-    ok(prodValidThrew === false, 'T7.3: Packaged build with official ocs-web-three.vercel.app launches cleanly');
+    ok(prodValidThrew === false, 'T7.3: Packaged build with official waveio-git-main-acerexs-projects.vercel.app launches cleanly');
 
     // Case 7.3: Dev mode (isPackaged = false, NODE_ENV != 'production') MUST NOT throw regardless of URL
     let devCustomThrew = false;

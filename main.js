@@ -1,3 +1,5 @@
+require("./src/main/koffiPatch");
+
 const {
   app,
   BrowserWindow,
@@ -295,7 +297,7 @@ const _pairingRateLimiter = new PairingRateLimiter();
 
 async function refreshPairingQr() {
   try {
-    const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-ten.vercel.app/api";
+    const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-git-main-acerexs-projects.vercel.app/api";
     const payload = buildPairPayload({
       ip: serverIp,
       port: PORT,
@@ -1215,8 +1217,8 @@ serverApp.get("/pair-info", (_req, res) => {
     ok: true,
     port: PORT,
     pairingRequired: true,
-    apiBaseUrl: (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-ten.vercel.app/api",
-    authLoginUrl: (appSettings ? appSettings.get("authLoginUrl") : null) || "https://ocs-web-three.vercel.app",
+    apiBaseUrl: (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-git-main-acerexs-projects.vercel.app/api",
+    authLoginUrl: (appSettings ? appSettings.get("authLoginUrl") : null) || "https://waveio-git-main-acerexs-projects.vercel.app",
     // Never expose the live token/code over an unauthenticated HTTP GET
   });
 });
@@ -1426,8 +1428,7 @@ io.on("connection", (socket) => {
 
   // Send current active overlay state to newly connected client (OBS Browser Source / Web View)
   try {
-    if (latestOverlayContent)
-      socket.emit("overlay-content", latestOverlayContent);
+    socket.emit("overlay-content", latestOverlayContent);
     if (latestOverlayStyle) socket.emit("overlay-style", latestOverlayStyle);
     if (latestOverlayTimer != null)
       socket.emit("overlay-timer", latestOverlayTimer);
@@ -1475,10 +1476,12 @@ io.on("connection", (socket) => {
     device.name = socket.handshake.auth.deviceName || "Mobile";
     device.isAdmin = adminDeviceIds.has(device.id) || adminDeviceNames.has(device.name);
     if (!device.deviceRole) device.deviceRole = device.isAdmin ? "admin" : "speaker";
-    const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-ten.vercel.app/api";
-    const authUrl = (appSettings ? appSettings.get("authLoginUrl") : null) || "https://ocs-web-three.vercel.app";
+    const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-git-main-acerexs-projects.vercel.app/api";
+    const authUrl = (appSettings ? appSettings.get("authLoginUrl") : null) || "https://waveio-git-main-acerexs-projects.vercel.app";
     console.log("[Remote] paired via handshake:", socket.id, "isAdmin:", device.isAdmin, "role:", device.deviceRole);
     socket.emit("pair-result", { ok: true, deviceName: device.name, isAdmin: device.isAdmin, deviceRole: device.deviceRole, apiBaseUrl: apiBase, authLoginUrl: authUrl });
+    socket.emit("overlay-content", latestOverlayContent);
+    if (latestOverlayTimer != null) socket.emit("overlay-timer", latestOverlayTimer);
     notifyController("mobile-connected", device);
     broadcastDevicesUpdated();
   } else {
@@ -1547,9 +1550,11 @@ io.on("connection", (socket) => {
     device.name = payload.deviceName || device.name || "Mobile";
     device.isAdmin = adminDeviceIds.has(device.id) || adminDeviceNames.has(device.name);
     if (!device.deviceRole) device.deviceRole = device.isAdmin ? "admin" : "speaker";
-    const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-ten.vercel.app/api";
-    const authUrl = (appSettings ? appSettings.get("authLoginUrl") : null) || "https://ocs-web-three.vercel.app";
+    const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-git-main-acerexs-projects.vercel.app/api";
+    const authUrl = (appSettings ? appSettings.get("authLoginUrl") : null) || "https://waveio-git-main-acerexs-projects.vercel.app";
     socket.emit("pair-result", { ok: true, deviceName: device.name, isAdmin: device.isAdmin, deviceRole: device.deviceRole, apiBaseUrl: apiBase, authLoginUrl: authUrl });
+    socket.emit("overlay-content", latestOverlayContent);
+    if (latestOverlayTimer != null) socket.emit("overlay-timer", latestOverlayTimer);
     notifyController("mobile-connected", device);
     broadcastDevicesUpdated();
   });
@@ -1788,6 +1793,60 @@ io.on("connection", (socket) => {
   socket.on("teleprompter:countdown", (payload = {}) => {
     if (!isPaired(socket.id)) return;
     socket.broadcast.emit("teleprompter:countdown", payload);
+  });
+
+  // Teleprompter Content Sharing (Mobile -> Desktop Workstation)
+  socket.on("teleprompter:share-content", (payload = {}, ack = () => {}) => {
+    if (!isPaired(socket.id)) {
+      if (typeof ack === "function") ack({ ok: false, error: "Pairing required before sharing content" });
+      return;
+    }
+    const dev = connectedDevices.find((d) => d.id === socket.id);
+    const contentPayload = {
+      title: payload.title || "Shared Content",
+      content: payload.content || "",
+      fromDevice: dev ? dev.name : "Mobile Phone",
+      timestamp: Date.now(),
+    };
+    console.log("[Teleprompter] Received content from mobile:", contentPayload.title, "length:", contentPayload.content.length);
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send("teleprompter-content-shared", contentPayload);
+      }
+    }
+    if (typeof ack === "function") ack({ ok: true, message: "Content received on workstation" });
+  });
+
+  // Teleprompter Mobile Camera Frame Streaming (Mobile -> Desktop Workstation)
+  socket.on("teleprompter:camera-frame", (payload = {}) => {
+    if (!isPaired(socket.id)) return;
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send("teleprompter-mobile-frame", {
+          data: payload.data,
+          fromId: socket.id,
+          timestamp: payload.timestamp || Date.now(),
+        });
+      }
+    }
+  });
+
+  socket.on("teleprompter:mobile-camera-start", (payload = {}) => {
+    if (!isPaired(socket.id)) return;
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send("teleprompter-mobile-camera-start", { fromId: socket.id });
+      }
+    }
+  });
+
+  socket.on("teleprompter:mobile-camera-stop", (payload = {}) => {
+    if (!isPaired(socket.id)) return;
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send("teleprompter-mobile-camera-stop", { fromId: socket.id });
+      }
+    }
   });
 
   // Mobile Companion Scene / Song Transfer & Creation
@@ -2559,6 +2618,7 @@ function createWindows() {
     y: secondaryDisplay ? secondaryDisplay.bounds.y : 50,
     title: "OCS Speaker View",
     backgroundColor: "black",
+    autoHideMenuBar: true,
     show: false,
     webPreferences: {
       nodeIntegration: false,
@@ -2567,6 +2627,8 @@ function createWindows() {
       preload: path.join(__dirname, "preload.js"),
     },
   });
+  // Remove menu bar from preview/projection windows entirely (Windows fix)
+  speakerWindow.setMenu(null);
 
   // 2. General Window (Projector) - Shows Bible ONLY
   generalWindow = new BrowserWindow({
@@ -2592,6 +2654,7 @@ function createWindows() {
         : 100,
     title: "OCS General View",
     backgroundColor: "black",
+    autoHideMenuBar: true,
     show: false,
     webPreferences: {
       nodeIntegration: false,
@@ -2600,6 +2663,8 @@ function createWindows() {
       preload: path.join(__dirname, "preload.js"),
     },
   });
+  // Remove menu bar from preview/projection windows entirely (Windows fix)
+  generalWindow.setMenu(null);
 
   // 3. Controller Window
   controllerWindow = new BrowserWindow({

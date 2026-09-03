@@ -25,6 +25,7 @@ export default function TeleprompterFullscreenOverlay({
   isOpen,
   onClose,
   videoStream,
+  phoneFrame = null,
   script,
   activeWordIndex = 0,
   cameraOpacity = 15,
@@ -36,6 +37,10 @@ export default function TeleprompterFullscreenOverlay({
   sceneBreakStyle = "scroll-out",
   wordTransitionStyle = "text-glow",
   currentSegmentIndex = 0,
+  isAutoScrolling = false,
+  onToggleAutoScroll = null,
+  scrollSpeed = 1.5,
+  onChangeScrollSpeed = null,
 }) {
   const containerRef = useRef(null);
   const textContainerRef = useRef(null);
@@ -47,6 +52,23 @@ export default function TeleprompterFullscreenOverlay({
   const [isPaused, setIsPaused] = useState(false);
   const [showControls, setShowControls] = useState(true);
   const hideControlsTimerRef = useRef(null);
+
+  // Continuous auto-scroll loop matching mobile experience
+  useEffect(() => {
+    let animFrame = null;
+    if (isOpen && isAutoScrolling && !isPaused) {
+      const step = () => {
+        if (textContainerRef.current) {
+          textContainerRef.current.scrollTop += (scrollSpeed || 1.5) * 0.8;
+        }
+        animFrame = requestAnimationFrame(step);
+      };
+      animFrame = requestAnimationFrame(step);
+    }
+    return () => {
+      if (animFrame) cancelAnimationFrame(animFrame);
+    };
+  }, [isOpen, isAutoScrolling, isPaused, scrollSpeed]);
 
   // Sync props
   useEffect(() => {
@@ -219,7 +241,7 @@ export default function TeleprompterFullscreenOverlay({
         }
       />
 
-      {/* ─── LAYER 1: Background Camera Feed ─── */}
+      {/* ─── LAYER 1: Background Camera Feed (System Webcam or Mobile Phone) ─── */}
       <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none flex items-center justify-center">
         {videoStream ? (
           <video
@@ -234,6 +256,17 @@ export default function TeleprompterFullscreenOverlay({
               filter: getFilterStyleString(filterState),
               willChange: "transform, filter",
               backfaceVisibility: "hidden",
+            }}
+          />
+        ) : phoneFrame ? (
+          <img
+            src={phoneFrame}
+            alt="Phone Camera Live"
+            className="w-full h-full object-cover transition-opacity duration-300"
+            style={{
+              opacity: localOpacity / 100,
+              transform: isMirrored ? "scaleX(-1) translateZ(0)" : "translateZ(0)",
+              filter: getFilterStyleString(filterState),
             }}
           />
         ) : (
@@ -266,8 +299,39 @@ export default function TeleprompterFullscreenOverlay({
           </span>
         </div>
 
-        {/* Center: Live Quick Adjustments */}
+        {/* Center: Live Quick Adjustments & Playback Deck */}
         <div className="flex items-center gap-3 bg-black/75 backdrop-blur-xl border border-white/15 rounded-2xl px-4 py-2 text-xs text-white flex-wrap">
+          {/* Play / Pause Auto-Scroll */}
+          <button
+            onClick={() => onToggleAutoScroll && onToggleAutoScroll()}
+            className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all shadow-md active:scale-95 ${
+              isAutoScrolling
+                ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-500/20"
+                : "bg-white/10 hover:bg-white/20 text-white/80 hover:text-white"
+            }`}
+            title="Toggle Continuous Auto-Scroll (Spacebar)"
+          >
+            {isAutoScrolling ? <PiPause size={13} /> : <PiPlay size={13} />}
+            <span>{isAutoScrolling ? "Scrolling" : "Play"}</span>
+          </button>
+
+          {/* Speed Selector */}
+          <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-xl p-0.5">
+            {[0.5, 1, 1.5, 2, 3].map((spd) => (
+              <button
+                key={spd}
+                onClick={() => onChangeScrollSpeed && onChangeScrollSpeed(spd)}
+                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all ${
+                  scrollSpeed === spd
+                    ? "bg-purple-600 text-white"
+                    : "text-white/50 hover:text-white"
+                }`}
+              >
+                {spd}x
+              </button>
+            ))}
+          </div>
+
           {/* Opacity Slider */}
           <div className="flex items-center gap-2">
             <span className="text-white/40 uppercase font-bold text-[10px]">

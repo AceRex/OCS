@@ -39,7 +39,7 @@ export default function TeleprompterScriptModal({
   useEffect(() => {
     if (isOpen) {
       if (initialScript) {
-        setScriptTitle(initialScript.title || "Untitled Script");
+        setScriptTitle(initialScript.title || "Untitled Content");
         setPages(
           initialScript.pages && initialScript.pages.length > 0
             ? initialScript.pages
@@ -48,23 +48,13 @@ export default function TeleprompterScriptModal({
         setScrollMode(initialScript.scrollMode || "continuous");
         setActivePageIndex(0);
       } else {
-        setScriptTitle("Sunday Sermon");
+        setScriptTitle("");
         setScrollMode("continuous");
         setPages([
           {
             id: `page-${Date.now()}-1`,
-            label: "Introduction",
-            text: "Welcome church! Today we are looking at faith and perseverance in times of trial.",
-          },
-          {
-            id: `page-${Date.now()}-2`,
-            label: "Main Message",
-            text: "When we walk through the valley, we are never alone. God's grace sustains us every single day.",
-          },
-          {
-            id: `page-${Date.now()}-3`,
-            label: "Closing & Call",
-            text: "Let us open our hearts and surrender our worries to Him. Let us pray together.",
+            label: "Section 1",
+            text: "",
           },
         ]);
         setActivePageIndex(0);
@@ -197,10 +187,10 @@ export default function TeleprompterScriptModal({
             </div>
             <div>
               <h2 className="text-base font-bold text-white tracking-wide">
-                Teleprompter Script Editor
+                Teleprompter Content Editor
               </h2>
               <span className="text-xs text-white/40">
-                Author multi-section reading scripts with word-tracking alignment
+                Author and organize multi-section reading content with word-tracking alignment
               </span>
             </div>
           </div>
@@ -226,7 +216,7 @@ export default function TeleprompterScriptModal({
                     ? "bg-cyan-600 text-white shadow-inner"
                     : "text-white/50 hover:text-white/80"
                 }`}
-                title="Segmented: holds at each section end, advances on pause or manual tap"
+                title="Segmented: section-by-section paging with vocal cue triggers"
               >
                 <PiSquaresFour size={13} /> Segmented
               </button>
@@ -245,7 +235,7 @@ export default function TeleprompterScriptModal({
             </button>
             <button
               onClick={onClose}
-              className="w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 text-white/50 hover:text-white flex items-center justify-center transition-colors"
+              className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/50 hover:text-white transition-colors"
             >
               <PiX size={18} />
             </button>
@@ -257,16 +247,16 @@ export default function TeleprompterScriptModal({
           
           {/* Left Sidebar: Sections List */}
           <div className="w-80 bg-[#12111a] border-r border-white/10 flex flex-col p-4 shrink-0 overflow-hidden">
-            {/* Script Title */}
+            {/* Content Title */}
             <div className="mb-4">
               <label className="text-[10px] font-bold uppercase tracking-wider text-white/40 block mb-1.5">
-                Script Title
+                Content Title
               </label>
               <input
                 type="text"
                 value={scriptTitle}
                 onChange={(e) => setScriptTitle(e.target.value)}
-                placeholder="e.g. Sunday Sermon / Opening Remarks"
+                placeholder="e.g. Opening Remarks / Keynote / Announcements"
                 className="w-full bg-[#1b1926] text-xs font-semibold text-white px-3 py-2 rounded-xl border border-white/10 outline-none focus:border-purple-500/50 transition-colors placeholder:text-white/20"
               />
             </div>

@@ -7,6 +7,7 @@
  *     refs are re-decoded when free-vocab ASR garbles domain phrases
  * Utterance IDs: one ID per speech window so probe/final can reconcile (FR-3.8a)
  */
+require('../koffiPatch');
 const path = require('path');
 const fs = require('fs');
 const { EventEmitter } = require('events');

@@ -155,13 +155,54 @@ export default function BibleScreen() {
     label: (i + 1).toString(),
   }));
 
-  const versions = {
-    kjv: "KJV",
-    bbe: "BBE",
-    asv: "ASV",
-    web: "WEB",
-    net: "NET",
-    kjv_strongs: "KJV+",
+  const versions: Record<string, { name: string; abbrev: string }> = {
+    // Most Popular Modern
+    niv: { name: "New International Version (NIV)", abbrev: "NIV" },
+    esv: { name: "English Standard Version (ESV)", abbrev: "ESV" },
+    nlt: { name: "New Living Translation (NLT)", abbrev: "NLT" },
+    nkjv: { name: "New King James Version (NKJV)", abbrev: "NKJV" },
+    nasb: { name: "New American Standard Bible (NASB)", abbrev: "NASB" },
+    nasb1995: { name: "New American Standard Bible 1995 (NASB1995)", abbrev: "NASB95" },
+    csb: { name: "Christian Standard Bible (CSB)", abbrev: "CSB" },
+    net: { name: "New English Translation (NET)", abbrev: "NET" },
+    amp: { name: "Amplified Bible (AMP)", abbrev: "AMP" },
+    // Contemporary / Readable
+    gw: { name: "GOD'S WORD Translation (GW)", abbrev: "GW" },
+    nlv: { name: "New Life Version (NLV)", abbrev: "NLV" },
+    nog: { name: "Names of God Bible (NOG)", abbrev: "NOG" },
+    isv: { name: "International Standard Version (ISV)", abbrev: "ISV" },
+    ehv: { name: "Evangelical Heritage Version (EHV)", abbrev: "EHV" },
+    mev: { name: "Modern English Version (MEV)", abbrev: "MEV" },
+    // Revision Traditions
+    rsv: { name: "Revised Standard Version (RSV)", abbrev: "RSV" },
+    nrsv: { name: "New Revised Standard Version (NRSV)", abbrev: "NRSV" },
+    nrsvue: { name: "New Revised Standard Version Updated Edition (NRSVue)", abbrev: "NRSVue" },
+    asv: { name: "American Standard Version (ASV)", abbrev: "ASV" },
+    // King James Family
+    kjv: { name: "King James Version (KJV)", abbrev: "KJV" },
+    akjv: { name: "American King James Version (AKJV)", abbrev: "AKJV" },
+    kj21: { name: "21st Century King James Version (KJ21)", abbrev: "KJ21" },
+    kjv_strongs: { name: "KJV with Strong's Numbers", abbrev: "KJV+" },
+    brg: { name: "BRG Bible (BRG)", abbrev: "BRG" },
+    // UK / International Editions
+    nivuk: { name: "New International Version UK (NIVUK)", abbrev: "NIVUK" },
+    esvuk: { name: "English Standard Version UK (ESVUK)", abbrev: "ESVUK" },
+    // Scholarly / Literal
+    leb: { name: "Lexham English Bible (LEB)", abbrev: "LEB" },
+    lsb: { name: "Legacy Standard Bible (LSB)", abbrev: "LSB" },
+    ylt: { name: "Young's Literal Translation (YLT)", abbrev: "YLT" },
+    // Historical
+    gnv: { name: "Geneva Bible 1599 (GNV)", abbrev: "GNV" },
+    jub: { name: "Jubilee Bible 2000 (JUB)", abbrev: "JUB" },
+    web: { name: "World English Bible (WEB)", abbrev: "WEB" },
+    geneva: { name: "Geneva Bible (Original)", abbrev: "GENEVA" },
+    tyndale: { name: "Tyndale Bible", abbrev: "TYNDALE" },
+    coverdale: { name: "Coverdale Bible", abbrev: "COVERDALE" },
+    bishops: { name: "Bishops' Bible", abbrev: "BISHOPS" },
+    // Other
+    bbe: { name: "Bible in Basic English (BBE)", abbrev: "BBE" },
+    asvs: { name: "ASV with Strong's Numbers", abbrev: "ASV+" },
+    kjvpce: { name: "KJV Pure Cambridge Edition", abbrev: "KJVPCE" },
   };
 
   return (
@@ -208,8 +249,7 @@ export default function BibleScreen() {
               className="text-white font-bold uppercase text-[10px]"
               numberOfLines={1}
             >
-              {versions[selectedVersion as keyof typeof versions] ||
-                selectedVersion}
+              {versions[selectedVersion]?.abbrev || selectedVersion.toUpperCase()}
             </Text>
             <CaretDown color="white" size={10} />
           </TouchableOpacity>
@@ -434,21 +474,28 @@ export default function BibleScreen() {
         visible={showVersions}
         onClose={() => setShowVersions(false)}
         title="Select Version"
-        data={Object.entries(versions).map(([k, v]) => ({ key: k, name: v }))}
+        data={Object.entries(versions).map(([k, v]) => ({ key: k, name: v.name, abbrev: v.abbrev }))}
         keyExtractor={(item: any) => item.key}
         filterBy={(item: any, query: string) =>
-          item.name.toLowerCase().includes(query.toLowerCase())
+          item.name.toLowerCase().includes(query.toLowerCase()) ||
+          item.key.toLowerCase().includes(query.toLowerCase()) ||
+          item.abbrev.toLowerCase().includes(query.toLowerCase())
         }
         renderItem={({ item }: any) => (
           <TouchableOpacity
             onPress={() => handleVersionSelect(item.key)}
-            className={`p-4 border-b border-white/5 flex-row justify-between ${item.key === selectedVersion ? "bg-white/10" : ""}`}
+            className={`p-4 border-b border-white/5 flex-row justify-between items-center ${item.key === selectedVersion ? "bg-white/10" : ""}`}
           >
-            <Text
-              className={`text-lg ${item.key === selectedVersion ? "text-[#38ef7d] font-bold" : "text-white"}`}
-            >
-              {item.name}
-            </Text>
+            <View className="flex-1 mr-3">
+              <Text
+                className={`text-base ${item.key === selectedVersion ? "text-[#38ef7d] font-bold" : "text-white"}`}
+              >
+                {item.name}
+              </Text>
+            </View>
+            <View className="bg-white/10 px-2.5 py-1 rounded-md">
+              <Text className="text-white/60 font-mono text-xs font-bold">{item.abbrev}</Text>
+            </View>
           </TouchableOpacity>
         )}
       />

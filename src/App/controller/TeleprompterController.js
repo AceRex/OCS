@@ -37,23 +37,13 @@ const STORAGE_ACTIVE_SCRIPT_ID_KEY = "ocs_teleprompter_active_script_id";
 
 const DEFAULT_SCRIPTS = [
   {
-    id: "script-sample-1",
-    title: "Sunday Sermon: Walking by Faith",
+    id: "content-sample-1",
+    title: "Welcome & Announcements",
     pages: [
       {
         id: "p1",
-        label: "Introduction",
-        text: "Good morning everyone. Today we are looking at faith and perseverance in times of trial and uncertainty.",
-      },
-      {
-        id: "p2",
-        label: "Core Scripture",
-        text: "For we walk by faith, not by sight. When the road ahead seems clouded, God's promise remains our guiding light.",
-      },
-      {
-        id: "p3",
-        label: "Application & Close",
-        text: "Whatever challenges you face this week, know that His grace is sufficient and His love endures forever. Amen.",
+        label: "Section 1",
+        text: "Welcome to today's service! Please take your seats as we prepare to begin.",
       },
     ],
     updatedAt: Date.now(),
@@ -61,13 +51,13 @@ const DEFAULT_SCRIPTS = [
 ];
 
 export default function TeleprompterController() {
-  // ─── Script Library State ───
+  // ─── Content Library State ───
   const [scripts, setScripts] = useState(() => {
     try {
       const saved = localStorage.getItem(STORAGE_SCRIPTS_KEY);
       if (saved) return JSON.parse(saved);
     } catch (e) {
-      console.warn("Failed to load teleprompter scripts:", e);
+      console.warn("Failed to load teleprompter content:", e);
     }
     return DEFAULT_SCRIPTS;
   });
@@ -83,6 +73,17 @@ export default function TeleprompterController() {
   const [isCapturing, setIsCapturing] = useState(false);
   const [videoStream, setVideoStream] = useState(null);
   const [cameraError, setCameraError] = useState(null);
+
+  // ─── Mobile Phone Camera Streaming State ───
+  const [phoneFrame, setPhoneFrame] = useState(null);
+  const [isPhoneCameraStreaming, setIsPhoneCameraStreaming] = useState(false);
+
+  // ─── Continuous Auto-Scroll Playback State (Matching Mobile) ───
+  const [isAutoScrolling, setIsAutoScrolling] = useState(false);
+  const [scrollSpeed, setScrollSpeed] = useState(1.5); // 0.5 to 4.0
+
+  // ─── Mobile Content Sync Toast ───
+  const [contentReceivedToast, setContentReceivedToast] = useState(null);
   const [isMirrored, setIsMirrored] = useState(() => {
     try {
       return localStorage.getItem("tp_camera_mirrored") === "true";
@@ -203,6 +204,109 @@ export default function TeleprompterController() {
       localStorage.setItem("tp_word_transition_style", wordTransitionStyle);
     } catch (_) {}
   }, [wordTransitionStyle]);
+
+  // ─── Continuous Auto-Scroll Playback Loop (Matching Mobile) ───
+  useEffect(() => {
+    let animFrame = null;
+    if (isAutoScrolling) {
+      const step = () => {
+        if (textPreviewContainerRef.current) {
+          textPreviewContainerRef.current.scrollTop += (scrollSpeed || 1.5) * 0.8;
+        }
+        animFrame = requestAnimationFrame(step);
+      };
+      animFrame = requestAnimationFrame(step);
+    }
+    return () => {
+      if (animFrame) cancelAnimationFrame(animFrame);
+    };
+  }, [isAutoScrolling, scrollSpeed]);
+
+  // ─── Spacebar Play/Pause Shortcut for Auto-Scroll ───
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Don't intercept spacebar if typing in an input/textarea
+      const tag = e.target?.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea") return;
+      if (e.key === " " && !isFullscreenOpen && !isScriptModalOpen) {
+        e.preventDefault();
+        setIsAutoScrolling((prev) => !prev);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isFullscreenOpen, isScriptModalOpen]);
+
+  // ─── Listen for Content Shared from Mobile Workstation ───
+  useEffect(() => {
+    if (window.electron?.Network?.onContentShared) {
+      const cleanup = window.electron.Network.onContentShared((data) => {
+        if (!data || !data.title) return;
+        const newContent = {
+          id: `content-${Date.now()}`,
+          title: data.title,
+          pages: [
+            {
+              id: `p-${Date.now()}`,
+              label: "Section 1",
+              text: data.content || "",
+            },
+          ],
+          rawText: data.content || "",
+          fromDevice: data.fromDevice || "Mobile Phone",
+          updatedAt: Date.now(),
+        };
+        setScripts((prev) => {
+          const updated = [newContent, ...prev];
+          try {
+            localStorage.setItem(STORAGE_SCRIPTS_KEY, JSON.stringify(updated));
+          } catch (_) {}
+          return updated;
+        });
+        setActiveScriptId(newContent.id);
+        try {
+          localStorage.setItem(STORAGE_ACTIVE_SCRIPT_ID_KEY, newContent.id);
+        } catch (_) {}
+        setContentReceivedToast(`Received "${data.title}" from ${data.fromDevice || "mobile"}`);
+        setTimeout(() => setContentReceivedToast(null), 4500);
+      });
+      return () => cleanup && cleanup();
+    }
+  }, []);
+
+  // ─── Listen for Mobile Camera Stream Frames ───
+  useEffect(() => {
+    if (window.electron?.Network?.onMobileFrame) {
+      const cleanup = window.electron.Network.onMobileFrame((payload) => {
+        if (payload?.data) {
+          const src = payload.data.startsWith("data:") ? payload.data : `data:image/jpeg;base64,${payload.data}`;
+          setPhoneFrame(src);
+          setIsPhoneCameraStreaming(true);
+        }
+      });
+      return () => cleanup && cleanup();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (window.electron?.Network?.onMobileCameraStart) {
+      const cleanup = window.electron.Network.onMobileCameraStart(() => {
+        setIsPhoneCameraStreaming(true);
+        setCameraSource("phone");
+      });
+      return () => cleanup && cleanup();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (window.electron?.Network?.onMobileCameraStop) {
+      const cleanup = window.electron.Network.onMobileCameraStop(() => {
+        setIsPhoneCameraStreaming(false);
+        setPhoneFrame(null);
+      });
+      return () => cleanup && cleanup();
+    }
+  }, []);
 
   // Sync script tokens to ReferenceAligner
   const scriptFullText = React.useMemo(() => {
@@ -969,39 +1073,71 @@ export default function TeleprompterController() {
             }
           />
 
-          {/* Video Container */}
+          {/* Video Container (System Webcam or Phone Camera) */}
           <div className="flex-1 flex items-center justify-center bg-black/60 rounded-xl overflow-hidden mt-3 relative border border-white/5">
-            <video
-              ref={videoPreviewRef}
-              autoPlay
-              playsInline
-              muted
-              style={{
-                transform: isMirrored ? "scaleX(-1) translateZ(0)" : "translateZ(0)",
-                filter: getFilterStyleString(filterState),
-                willChange: "transform, filter",
-                backfaceVisibility: "hidden",
-              }}
-              className={`w-full h-full object-cover transition-transform duration-200 ${
-                isCapturing ? "block" : "hidden"
-              }`}
-            />
+            {cameraSource === "phone" && phoneFrame ? (
+              <div className="relative w-full h-full flex items-center justify-center bg-black">
+                <img
+                  src={phoneFrame}
+                  alt="Live Phone Camera"
+                  style={{
+                    transform: isMirrored ? "scaleX(-1) translateZ(0)" : "translateZ(0)",
+                    filter: getFilterStyleString(filterState),
+                    willChange: "transform, filter",
+                  }}
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute top-2 left-2 bg-purple-600/90 text-white text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-md">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
+                  <span>PHONE CAMERA LIVE</span>
+                </div>
+              </div>
+            ) : cameraSource === "phone" && !phoneFrame ? (
+              <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
+                <div className="w-12 h-12 rounded-2xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-300">
+                  <PiDeviceMobile size={26} />
+                </div>
+                <span className="text-xs font-semibold text-white/70">
+                  Phone Camera Selected
+                </span>
+                <span className="text-[11px] text-white/40 max-w-xs leading-relaxed">
+                  Open the <strong>Stage Teleprompter</strong> on your phone and tap <strong>Camera Sync</strong> to stream live video to this workstation.
+                </span>
+              </div>
+            ) : (
+              <video
+                ref={videoPreviewRef}
+                autoPlay
+                playsInline
+                muted
+                style={{
+                  transform: isMirrored ? "scaleX(-1) translateZ(0)" : "translateZ(0)",
+                  filter: getFilterStyleString(filterState),
+                  willChange: "transform, filter",
+                  backfaceVisibility: "hidden",
+                }}
+                className={`w-full h-full object-cover transition-transform duration-200 ${
+                  isCapturing ? "block" : "hidden"
+                }`}
+              />
+            )}
+
             {/* FR-5.44 [NEW]: Test mode banner — unambiguously NOT recording */}
             {isTestMode && isCapturing && (
               <div className="absolute top-2 left-2 right-2 bg-amber-500/90 text-black text-[10px] font-black uppercase tracking-widest text-center py-1.5 rounded-lg shadow-lg z-10">
                 📷 CAMERA TEST — NOT RECORDING
               </div>
             )}
-            {!isCapturing && (
+            {!isCapturing && cameraSource === "laptop" && (
               <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
                 <div className="w-12 h-12 rounded-2xl bg-white/5 border border-white/10 flex items-center justify-center text-white/20">
                   <PiVideoCamera size={26} />
                 </div>
                 <span className="text-xs font-semibold text-white/50">
-                  Camera feed is stopped
+                  System Camera is stopped
                 </span>
                 <span className="text-[10px] text-white/30 max-w-xs">
-                  Select a camera source below and click "Start Capture" to view live video
+                  Click "Start Recording" or "Test" below to view live video
                 </span>
               </div>
             )}
@@ -1275,6 +1411,66 @@ export default function TeleprompterController() {
             <span>Word {activeWordIndex + 1} of {scriptTokens.length}</span>
           </div>
 
+          {/* ─── Continuous Auto-Scroll & Text Playback Control Deck (Matching Mobile) ─── */}
+          <div className="py-2 px-3 bg-[#181624] border border-white/10 rounded-xl mt-2 mb-1 flex items-center justify-between shrink-0 flex-wrap gap-2">
+            <div className="flex items-center gap-2.5">
+              {/* Play / Pause Toggle Button */}
+              <button
+                onClick={() => setIsAutoScrolling((prev) => !prev)}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md active:scale-95 ${
+                  isAutoScrolling
+                    ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30 animate-pulse"
+                    : "bg-purple-600 hover:bg-purple-500 text-white shadow-purple-600/30"
+                }`}
+                title="Toggle Continuous Auto-Scroll (Spacebar)"
+              >
+                {isAutoScrolling ? <PiPause size={14} /> : <PiPlay size={14} />}
+                <span>{isAutoScrolling ? "Scrolling" : "Auto-Scroll"}</span>
+              </button>
+
+              {/* Status Pill */}
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-black/40 border border-white/5 text-[10px] font-mono">
+                <span className={`w-2 h-2 rounded-full ${isAutoScrolling ? "bg-emerald-400 animate-ping" : "bg-white/30"}`} />
+                <span className={isAutoScrolling ? "text-emerald-300 font-semibold" : "text-white/40"}>
+                  {isAutoScrolling ? "PLAYING" : "PAUSED"}
+                </span>
+              </div>
+            </div>
+
+            {/* Speed Selector Buttons */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] uppercase font-bold text-white/40 mr-0.5">Speed:</span>
+              <div className="flex items-center bg-black/40 border border-white/10 rounded-xl p-0.5">
+                {[0.5, 1, 1.5, 2, 3, 4].map((spd) => (
+                  <button
+                    key={spd}
+                    onClick={() => setScrollSpeed(spd)}
+                    className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition-all ${
+                      scrollSpeed === spd
+                        ? "bg-purple-600 text-white shadow-sm"
+                        : "text-white/50 hover:text-white"
+                    }`}
+                  >
+                    {spd}x
+                  </button>
+                ))}
+              </div>
+
+              {/* Reset to Top Button */}
+              <button
+                onClick={() => {
+                  if (textPreviewContainerRef.current) {
+                    textPreviewContainerRef.current.scrollTo({ top: 0, behavior: "smooth" });
+                  }
+                }}
+                className="px-2 py-1 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-white/60 hover:text-white text-[11px] font-semibold transition-all ml-1"
+                title="Scroll back to the top of the content"
+              >
+                Top
+              </button>
+            </div>
+          </div>
+
           {/* Segmented Mode Toolbar (FR-5.48 [NEW]) */}
           {activeScript?.scrollMode === "segmented" && (
             <div className="py-2 px-3 bg-cyan-950/40 border border-cyan-500/30 rounded-xl mt-2 flex items-center justify-between shrink-0">
@@ -1478,6 +1674,7 @@ export default function TeleprompterController() {
         isOpen={isFullscreenOpen}
         onClose={() => setIsFullscreenOpen(false)}
         videoStream={videoStream}
+        phoneFrame={phoneFrame}
         script={activeScript}
         activeWordIndex={activeWordIndex}
         cameraOpacity={cameraOpacity}
@@ -1489,7 +1686,24 @@ export default function TeleprompterController() {
         sceneBreakStyle={sceneBreakStyle}
         wordTransitionStyle={wordTransitionStyle}
         currentSegmentIndex={currentSegmentIndex}
+        isAutoScrolling={isAutoScrolling}
+        onToggleAutoScroll={() => setIsAutoScrolling((prev) => !prev)}
+        scrollSpeed={scrollSpeed}
+        onChangeScrollSpeed={setScrollSpeed}
       />
+
+      {/* ─── Toast Notification: Content Shared from Mobile ─── */}
+      {contentReceivedToast && (
+        <div className="fixed top-6 right-6 z-[999] bg-gradient-to-r from-purple-950/95 to-[#131024]/95 border border-purple-500/50 text-white px-5 py-3.5 rounded-2xl shadow-2xl backdrop-blur-xl flex items-center gap-3 animate-in slide-in-from-top-4 duration-300">
+          <div className="w-8 h-8 rounded-xl bg-purple-500/30 border border-purple-400/40 flex items-center justify-center text-purple-200">
+            <PiArticle size={18} />
+          </div>
+          <div>
+            <div className="text-[10px] font-black uppercase tracking-wider text-purple-300">New Content Received</div>
+            <div className="text-xs font-bold text-white">{contentReceivedToast}</div>
+          </div>
+        </div>
+      )}
 
       {/* ─── Camera Filter / Effects Modal ─── */}
       <TeleprompterFilterModal
@@ -1505,7 +1719,7 @@ export default function TeleprompterController() {
         isOpen={isConsentModalOpen}
         onClose={() => setIsConsentModalOpen(false)}
         onConfirmConsent={handleConfirmedConsentStart}
-        cameraSource={cameraSource === "laptop" ? "Laptop Camera" : "Phone Camera"}
+        cameraSource={cameraSource === "laptop" ? "System Camera" : "Phone Camera"}
       />
 
     </div>

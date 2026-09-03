@@ -329,6 +329,26 @@ contextBridge.exposeInMainWorld("electron", {
       ipcRenderer.on('mobile-devices-updated', listener);
       return () => ipcRenderer.removeListener('mobile-devices-updated', listener);
     },
+    onContentShared: (callback) => {
+      const listener = (event, val) => callback(val);
+      ipcRenderer.on('teleprompter-content-shared', listener);
+      return () => ipcRenderer.removeListener('teleprompter-content-shared', listener);
+    },
+    onMobileFrame: (callback) => {
+      const listener = (event, val) => callback(val);
+      ipcRenderer.on('teleprompter-mobile-frame', listener);
+      return () => ipcRenderer.removeListener('teleprompter-mobile-frame', listener);
+    },
+    onMobileCameraStart: (callback) => {
+      const listener = (event, val) => callback(val);
+      ipcRenderer.on('teleprompter-mobile-camera-start', listener);
+      return () => ipcRenderer.removeListener('teleprompter-mobile-camera-start', listener);
+    },
+    onMobileCameraStop: (callback) => {
+      const listener = (event, val) => callback(val);
+      ipcRenderer.on('teleprompter-mobile-camera-stop', listener);
+      return () => ipcRenderer.removeListener('teleprompter-mobile-camera-stop', listener);
+    },
     onAssetRequest: (callback) => {
       const listener = (event, val) => callback(val);
       ipcRenderer.on('mobile-asset-request', listener);

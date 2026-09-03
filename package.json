@@ -92,6 +92,8 @@
       "dist/**",
       "build/**",
       "node_modules/**",
+      "ocs-mobile/**",
+      ".expo/**",
       "ocs_image_engine/**",
       "voice_server/**",
       "temp_output/**",

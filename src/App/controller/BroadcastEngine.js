@@ -1498,9 +1498,46 @@ export default function BroadcastEngine() {
           p?.tokens || tokenizePassage(currentVerseFullTextRef.current),
           p?.activeIndex ?? -1,
         );
+      } else if (lastPresentationStateRef.current && window.electron?.Presentation?.setContent) {
+        window.electron.Presentation.setContent(lastPresentationStateRef.current);
       }
       setCommandFeedback({ label: "Screen On", ok: true });
       setTimeout(() => setCommandFeedback(null), 3000);
+      return;
+    }
+    if (action === "timer_clear" || action === "stop_timer") {
+      window.electron?.Session?.emitTimerLifecycle?.({
+        type: "timer:stopped",
+        timerId: null,
+        elapsedSec: 0,
+      });
+      dispatch(utilAction.setTime(0));
+      dispatch(utilAction.setPaused(false));
+      dispatch(utilAction.setActiveId(null));
+      setCommandFeedback({ label: "Timer Cleared", ok: true });
+      setTimeout(() => setCommandFeedback(null), 3000);
+      return;
+    }
+    const stageTimerMatch = action.match(/^timer_(\d+)m$/);
+    if (stageTimerMatch) {
+      const mins = parseInt(stageTimerMatch[1], 10);
+      const seconds = mins * 60;
+      dispatch(utilAction.setEventMode(false));
+      dispatch(utilAction.setTime(seconds));
+      dispatch(utilAction.setPaused(false));
+      dispatch(utilAction.setActiveId(null));
+      const activeItem = agenda?.find?.((a) => a._id === activeId);
+      window.electron?.Session?.emitTimerLifecycle?.({
+        type: "timer:started",
+        timerId: activeId || null,
+        title: activeItem?.agenda || `Stage Timer ${mins}m`,
+        durationSec: seconds,
+        category: activeItem?.agenda || "custom",
+        speakerName:
+          (activeItem?.anchor && String(activeItem.anchor).trim()) || "Speaker",
+      });
+      setCommandFeedback({ label: `Stage Timer: ${mins}m`, ok: true });
+      setTimeout(() => setCommandFeedback(null), 3500);
       return;
     }
     if (action === "set_timer") {
@@ -1535,18 +1572,6 @@ export default function BroadcastEngine() {
       setCommandFeedback({ label: `Timer set: ${label}`, ok: true });
       setTimeout(() => setCommandFeedback(null), 3500);
       return;
-    }
-    if (action === "stop_timer") {
-      window.electron?.Session?.emitTimerLifecycle?.({
-        type: "timer:stopped",
-        timerId: null,
-        elapsedSec: 0,
-      });
-      dispatch(utilAction.setTime(0));
-      dispatch(utilAction.setPaused(false));
-      dispatch(utilAction.setActiveId(null));
-      setCommandFeedback({ label: "Timer stopped", ok: true });
-      setTimeout(() => setCommandFeedback(null), 3000);
     }
     // FR-4.31 Scene commands — dispatched as CustomEvents so SceneController can handle them
     // without creating a prop-drilling dependency from BroadcastEngine into PresentationController.

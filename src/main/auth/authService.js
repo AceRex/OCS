@@ -25,7 +25,7 @@ try {
   safeStorage = electron.safeStorage || null;
 } catch (_) {}
 
-const PRODUCTION_AUTH_HOST = 'ocs-web-three.vercel.app';
+const PRODUCTION_AUTH_HOST = 'waveio-git-main-acerexs-projects.vercel.app';
 
 function assertProductionAuthUrl(customUrl, isPackagedOverride) {
   let isPackaged = false;
@@ -40,7 +40,7 @@ function assertProductionAuthUrl(customUrl, isPackagedOverride) {
   // dev/test: allow anything
   if (process.env.NODE_ENV !== 'production' && !isPackaged) return;
 
-  const configuredStr = customUrl || (appSettings ? appSettings.get('authLoginUrl') : null) || 'https://ocs-web-three.vercel.app';
+  const configuredStr = customUrl || (appSettings ? appSettings.get('authLoginUrl') : null) || 'https://waveio-git-main-acerexs-projects.vercel.app';
   let configured;
   try {
     configured = new URL(configuredStr);
@@ -87,16 +87,24 @@ class AuthService extends EventEmitter {
     this.guestDurationMs = guestDurationMs;
     this.machineId = getMachineId();
 
-    let host = defaultAuthHost || (appSettings ? appSettings.get("authLoginUrl") : null) || "https://ocs-web-three.vercel.app";
-    if (typeof host === "string" && !host.includes("ocs-web-three.vercel.app") && !host.includes("localhost")) {
-      host = "https://ocs-web-three.vercel.app";
+    let host = defaultAuthHost || (appSettings ? appSettings.get("authLoginUrl") : null) || "https://waveio-git-main-acerexs-projects.vercel.app";
+    if (typeof host === "string" && !host.includes("waveio-git-main-acerexs-projects.vercel.app") && !host.includes("localhost")) {
+      host = "https://waveio-git-main-acerexs-projects.vercel.app";
     }
     this.defaultAuthHost = host;
 
     if (appSettings) {
-      const currentApi = appSettings.get("apiBaseUrl");
-      if (typeof currentApi === "string" && currentApi.includes("ocs-backend.netlify.app")) {
-        appSettings.set("apiBaseUrl", "https://ocs-backend-ten.vercel.app/api");
+      try {
+        const currentApi = appSettings.get("apiBaseUrl");
+        if (typeof currentApi === "string" && (currentApi.includes("ocs-backend.netlify.app") || currentApi.includes("ocs-backend-ten.vercel.app"))) {
+          appSettings.set("apiBaseUrl", "https://ocs-backend-git-main-acerexs-projects.vercel.app/api");
+        }
+        const currentAuth = appSettings.get("authLoginUrl");
+        if (typeof currentAuth === "string" && (currentAuth.includes("ocs-web-three.vercel.app") || currentAuth.includes("waveiosoftware.netlify.app"))) {
+          appSettings.set("authLoginUrl", "https://waveio-git-main-acerexs-projects.vercel.app");
+        }
+      } catch (err) {
+        console.warn("[Auth] Settings migration notice:", err.message);
       }
     }
 
@@ -178,7 +186,7 @@ class AuthService extends EventEmitter {
   async syncGuestWithCloud() {
     if (this.isAuthenticated()) return;
     try {
-      const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-ten.vercel.app/api";
+      const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-git-main-acerexs-projects.vercel.app/api";
       const https = require("https");
       const http = require("http");
       const url = new URL(`${apiBase.replace(/\/+$/, "")}/auth/guest-check`);
@@ -395,7 +403,7 @@ class AuthService extends EventEmitter {
     const session = this.loadSession();
     if (!session || !session.token) return;
     try {
-      const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-ten.vercel.app/api";
+      const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-git-main-acerexs-projects.vercel.app/api";
       const https = require("https");
       const http = require("http");
       const url = new URL(`${apiBase.replace(/\/+$/, "")}/auth/device/register`);
@@ -428,7 +436,7 @@ class AuthService extends EventEmitter {
 
   async validateTokenOnline(token) {
     try {
-      const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-ten.vercel.app/api";
+      const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-git-main-acerexs-projects.vercel.app/api";
       const https = require("https");
       const http = require("http");
       const url = new URL(`${apiBase.replace(/\/+$/, "")}/auth/validate-token`);
@@ -600,7 +608,7 @@ class AuthService extends EventEmitter {
 
   getLoginUrl(customAuthHost) {
     const state = this.generateAuthState();
-    const host = (customAuthHost || this.defaultAuthHost || "https://ocs-web-three.vercel.app").replace(/\/+$/, "");
+    const host = (customAuthHost || this.defaultAuthHost || "https://waveio-git-main-acerexs-projects.vercel.app").replace(/\/+$/, "");
     const redirectUri = encodeURIComponent("ocs://auth/callback");
     return {
       url: `${host}/auth/desktop?state=${state}&platform=desktop&redirect_uri=${redirectUri}`,

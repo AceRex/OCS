@@ -22,7 +22,7 @@ function generatePairing() {
  * Build the QR payload string. Mobile app parses:
  *   ocs://pair?ip=...&port=4000&token=...&code=...&api=...
  */
-function buildPairPayload({ ip, port, token, code, api = "https://ocs-backend-ten.vercel.app/api" }) {
+function buildPairPayload({ ip, port, token, code, api = "https://ocs-backend-git-main-acerexs-projects.vercel.app/api" }) {
   return `ocs://pair?ip=${encodeURIComponent(ip)}&port=${port}&token=${encodeURIComponent(token)}&code=${encodeURIComponent(code)}&api=${encodeURIComponent(api)}`;
 }
 
