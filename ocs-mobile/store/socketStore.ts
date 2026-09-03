@@ -296,10 +296,12 @@ export const useSocketStore = create<SocketState>((set, get) => ({
             set({ incomingIntercom: { ...message, timestamp: Date.now(), msgId: `${Date.now()}_${Math.random()}` } });
         });
 
-        socket.on('teleprompter:camera-requested', (payload: { fromId: string; scriptTitle: string }) => {
+        const handleCamReq = (payload: { fromId?: string; scriptTitle?: string }) => {
             console.log('[Teleprompter] Received camera request from desktop:', payload);
-            set({ teleprompterCameraRequest: payload });
-        });
+            set({ teleprompterCameraRequest: { fromId: payload?.fromId || '', scriptTitle: payload?.scriptTitle || 'Teleprompter' } });
+        };
+        socket.on('teleprompter:camera-requested', handleCamReq);
+        socket.on('teleprompter:request-camera', handleCamReq);
 
         socket.on('teleprompter:camera-stopped', () => {
             console.log('[Teleprompter] Camera streaming stopped by desktop');
@@ -336,8 +338,13 @@ export const useSocketStore = create<SocketState>((set, get) => ({
             set({ isConnected: false, isPaired: false, overlayContent: null, overlayTimer: null });
         });
 
+        let lastConnWarnTime = 0;
         socket.on('connect_error', (err) => {
-            console.warn('[Remote Socket] Connection notice:', err.message);
+            const now = Date.now();
+            if (now - lastConnWarnTime > 6000) {
+                console.warn('[Remote Socket] Connection notice:', err.message);
+                lastConnWarnTime = now;
+            }
             if (!get().isPaired) {
                 const isTimeout = err.message?.toLowerCase().includes('timeout');
                 const msg = isTimeout

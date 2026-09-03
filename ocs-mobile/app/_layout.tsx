@@ -1,7 +1,8 @@
 import React, { useEffect, Component } from "react";
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
-import { View, Text, ScrollView, StyleSheet } from "react-native";
+import { View, Text, ScrollView, StyleSheet, LogBox } from "react-native";
+import { SafeAreaProvider } from "react-native-safe-area-context";
 import "react-native-reanimated";
 import "../global.css";
 import IncomingIntercomPlayer from "../components/IncomingIntercomPlayer";
@@ -9,6 +10,17 @@ import MobileSplash from "../components/MobileSplash";
 import GuestExpiredGate from "../components/GuestExpiredGate";
 import TeleprompterCameraPrompt from "../components/TeleprompterCameraPrompt";
 import { useAuthStore } from "../store/authStore";
+
+LogBox.ignoreLogs(["SafeAreaView has been deprecated"]);
+
+// Suppress deprecated SafeAreaView warning from third-party library getters
+const _origWarn = console.warn;
+console.warn = (...args: any[]) => {
+  if (typeof args[0] === "string" && args[0].includes("SafeAreaView has been deprecated")) {
+    return;
+  }
+  _origWarn(...args);
+};
 
 // ─── Global JS Error Handler ────────────────────────────────────────────────
 // Catches unhandled JS errors that would otherwise silently close the app
@@ -108,28 +120,30 @@ export default function RootLayout() {
   }, []);
 
   return (
-    <CrashReporter>
-      <>
-        <MobileSplash minDurationMs={1200} />
-        <TeleprompterCameraPrompt />
-        <IncomingIntercomPlayer isBanner={true} />
-        <GuestExpiredGate />
-        <Stack screenOptions={{ headerShown: false }}>
-          <Stack.Screen name="index" />
-          <Stack.Screen name="login" options={{ presentation: "modal" }} />
-          <Stack.Screen name="connect" />
-          <Stack.Screen name="bible" />
-          <Stack.Screen name="timer" />
-          <Stack.Screen name="assets" />
-          <Stack.Screen name="scenes" />
-          <Stack.Screen name="intercom" />
-          <Stack.Screen name="stage-control" />
-          <Stack.Screen name="presentation" />
-          <Stack.Screen name="teleprompter" />
-          <Stack.Screen name="modal" options={{ presentation: "modal", title: "Modal" }} />
-        </Stack>
-        <StatusBar style="auto" />
-      </>
-    </CrashReporter>
+    <SafeAreaProvider>
+      <CrashReporter>
+        <>
+          <MobileSplash minDurationMs={1200} />
+          <TeleprompterCameraPrompt />
+          <IncomingIntercomPlayer isBanner={true} />
+          <GuestExpiredGate />
+          <Stack screenOptions={{ headerShown: false }}>
+            <Stack.Screen name="index" />
+            <Stack.Screen name="login" options={{ presentation: "modal" }} />
+            <Stack.Screen name="connect" />
+            <Stack.Screen name="bible" />
+            <Stack.Screen name="timer" />
+            <Stack.Screen name="assets" />
+            <Stack.Screen name="scenes" />
+            <Stack.Screen name="intercom" />
+            <Stack.Screen name="stage-control" />
+            <Stack.Screen name="presentation" />
+            <Stack.Screen name="teleprompter" />
+            <Stack.Screen name="modal" options={{ presentation: "modal", title: "Modal" }} />
+          </Stack>
+          <StatusBar style="auto" />
+        </>
+      </CrashReporter>
+    </SafeAreaProvider>
   );
 }

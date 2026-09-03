@@ -2232,7 +2232,12 @@ ipcMain.handle("get-paired-devices", async () => {
 
 ipcMain.on("teleprompter-socket-send", (_e, { event, payload }) => {
   if (io && event) {
-    io.emit(event, payload || {});
+    if (event === "teleprompter:request-camera") {
+      io.emit("teleprompter:camera-requested", payload || {});
+      io.emit("teleprompter:request-camera", payload || {});
+    } else {
+      io.emit(event, payload || {});
+    }
   }
 });
 

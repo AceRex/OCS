@@ -3,6 +3,7 @@ import {
   PiVideoCamera,
   PiDeviceMobile,
   PiPlay,
+  PiPause,
   PiStop,
   PiArrowsOut,
   PiWarning,
@@ -280,6 +281,7 @@ export default function TeleprompterController() {
           const src = payload.data.startsWith("data:") ? payload.data : `data:image/jpeg;base64,${payload.data}`;
           setPhoneFrame(src);
           setIsPhoneCameraStreaming(true);
+          setCameraSource((prev) => (prev === "phone" ? prev : "phone"));
         }
       });
       return () => cleanup && cleanup();
@@ -868,6 +870,18 @@ export default function TeleprompterController() {
     if (isCapturing || isTestMode) return;
     try {
       setCameraError(null);
+      if (cameraSource === "phone") {
+        setIsTestMode(true);
+        setIsCapturing(true);
+        if (window.electron?.Network?.sendSocketMessage) {
+          const targetDevice = pairedDevices.find((d) => d.id === selectedMobileDeviceId) || pairedDevices[0];
+          window.electron.Network.sendSocketMessage("teleprompter:request-camera", {
+            targetId: targetDevice?.id,
+            scriptTitle: activeScript?.title || "Teleprompter",
+          });
+        }
+        return;
+      }
       const stream = await acquireDesktopCameraStream({ withAudio: false });
       setVideoStream(stream);
       setIsTestMode(true);
@@ -881,6 +895,13 @@ export default function TeleprompterController() {
   const handleStopTest = () => {
     if (videoStream) videoStream.getTracks().forEach((t) => t.stop());
     setVideoStream(null);
+    if (cameraSource === "phone") {
+      setPhoneFrame(null);
+      setIsPhoneCameraStreaming(false);
+      if (window.electron?.Network?.sendSocketMessage) {
+        window.electron.Network.sendSocketMessage("teleprompter:stop-camera", {});
+      }
+    }
     setIsTestMode(false);
     setIsCapturing(false);
   };
@@ -1099,8 +1120,25 @@ export default function TeleprompterController() {
                   Phone Camera Selected
                 </span>
                 <span className="text-[11px] text-white/40 max-w-xs leading-relaxed">
-                  Open the <strong>Stage Teleprompter</strong> on your phone and tap <strong>Camera Sync</strong> to stream live video to this workstation.
+                  Open the <strong>Stage Teleprompter</strong> on your phone and tap <strong>Camera Sync</strong>, or tap below to request stream.
                 </span>
+                {pairedDevices.length > 0 && (
+                  <button
+                    onClick={() => {
+                      if (window.electron?.Network?.sendSocketMessage) {
+                        const targetDevice = pairedDevices.find((d) => d.id === selectedMobileDeviceId) || pairedDevices[0];
+                        window.electron.Network.sendSocketMessage("teleprompter:request-camera", {
+                          targetId: targetDevice?.id,
+                          scriptTitle: activeScript?.title || "Teleprompter",
+                        });
+                      }
+                    }}
+                    className="mt-1 px-3.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md flex items-center gap-1.5"
+                  >
+                    <PiDeviceMobile size={14} />
+                    <span>Request Phone Stream</span>
+                  </button>
+                )}
               </div>
             ) : (
               <video
