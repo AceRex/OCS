@@ -128,7 +128,7 @@ export default function RootLayout() {
           <IncomingIntercomPlayer isBanner={true} />
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="index" />
-            <Stack.Screen name="login" options={{ presentation: "modal" }} />
+            <Stack.Screen name="login" options={{ presentation: "card" }} />
             <Stack.Screen name="connect" />
             <Stack.Screen name="bible" />
             <Stack.Screen name="timer" />
