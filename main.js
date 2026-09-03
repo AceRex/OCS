@@ -1380,6 +1380,9 @@ serverApp.get("/overlay/program", (_req, res) => {
 serverApp.get("/overlay/stage", (_req, res) => {
   res.redirect("/view.html?mode=speaker&alpha=1");
 });
+serverApp.get("/studio-camera", (_req, res) => {
+  res.sendFile(path.join(__dirname, "src", "studio-camera", "index.html"));
+});
 serverApp.get("/stream/program.mjpg", (req, res) => {
   ndiEngine.handleMjpegRequest(req, res, "program");
 });
@@ -1453,7 +1456,13 @@ io.on("connection", (socket) => {
     if (controller && !controller.isDestroyed()) {
       controller.webContents.send(channel, payload);
     }
-  };
+  if (socket.handshake.query && socket.handshake.query.isStudioCamera === "true") {
+    markPaired(socket.id);
+    device.paired = true;
+    device.name = "WebRTC Studio Camera";
+    console.log("[Remote] Auto-paired Studio Camera client:", socket.id);
+    notifyController("mobile-connected", device);
+  }
 
   // Auth attempt via handshake auth (preferred) or explicit pair event
   const handshakeCred =

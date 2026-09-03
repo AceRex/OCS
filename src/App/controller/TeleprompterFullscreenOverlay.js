@@ -1,4 +1,5 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
+import StudioPhoneRenderer from "./StudioPhoneRenderer";
 import {
   PiX,
   PiTextAa,
@@ -26,6 +27,8 @@ export default function TeleprompterFullscreenOverlay({
   onClose,
   videoStream,
   phoneFrame = null,
+  isPhoneCameraStreaming = false,
+  isRecordingActive = false,
   script,
   activeWordIndex = 0,
   cameraOpacity = 15,
@@ -258,17 +261,17 @@ export default function TeleprompterFullscreenOverlay({
               backfaceVisibility: "hidden",
             }}
           />
-        ) : phoneFrame ? (
-          <img
-            src={phoneFrame}
-            alt="Phone Camera Live"
-            className="w-full h-full object-cover transition-opacity duration-300"
-            style={{
-              opacity: localOpacity / 100,
-              transform: isMirrored ? "scaleX(-1) translateZ(0)" : "translateZ(0)",
-              filter: getFilterStyleString(filterState),
-            }}
-          />
+        ) : isPhoneCameraStreaming || phoneFrame ? (
+          <div
+            className="w-full h-full transition-opacity duration-300"
+            style={{ opacity: localOpacity / 100 }}
+          >
+            <StudioPhoneRenderer
+              isMirrored={isMirrored}
+              filterStyle={getFilterStyleString(filterState)}
+              isRecording={isRecordingActive}
+            />
+          </div>
         ) : (
           <div className="w-full h-full bg-[#08080c]" />
         )}

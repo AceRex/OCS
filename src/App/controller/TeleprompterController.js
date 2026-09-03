@@ -22,6 +22,7 @@ import {
 } from "react-icons/pi";
 import TeleprompterScriptModal from "./TeleprompterScriptModal";
 import TeleprompterFullscreenOverlay from "./TeleprompterFullscreenOverlay";
+import StudioPhoneRenderer from "./StudioPhoneRenderer";
 import TeleprompterConsentModal from "./TeleprompterConsentModal";
 import TeleprompterFilterModal, {
   getFilterStyleString,
@@ -276,10 +277,10 @@ export default function TeleprompterController() {
   // ─── Listen for Mobile Camera Stream Frames ───
   useEffect(() => {
     if (window.electron?.Network?.onMobileFrame) {
+      let isStreamingFlag = false;
       const cleanup = window.electron.Network.onMobileFrame((payload) => {
-        if (payload?.data) {
-          const src = payload.data.startsWith("data:") ? payload.data : `data:image/jpeg;base64,${payload.data}`;
-          setPhoneFrame(src);
+        if (payload?.data && !isStreamingFlag) {
+          isStreamingFlag = true;
           setIsPhoneCameraStreaming(true);
           setCameraSource((prev) => (prev === "phone" ? prev : "phone"));
         }
@@ -1094,50 +1095,32 @@ export default function TeleprompterController() {
 
           {/* Video Container (System Webcam or Phone Camera) */}
           <div className="flex-1 flex items-center justify-center bg-black/60 rounded-xl overflow-hidden mt-3 relative border border-white/5">
-            {cameraSource === "phone" && phoneFrame ? (
-              <div className="relative w-full h-full flex items-center justify-center bg-black">
-                <img
-                  src={phoneFrame}
-                  alt="Live Phone Camera"
-                  style={{
-                    transform: isMirrored ? "scaleX(-1) translateZ(0)" : "translateZ(0)",
-                    filter: getFilterStyleString(filterState),
-                    willChange: "transform, filter",
-                  }}
-                  className="w-full h-full object-cover"
+            {cameraSource === "phone" ? (
+              <div className="relative w-full h-full">
+                <StudioPhoneRenderer
+                  isMirrored={isMirrored}
+                  filterStyle={getFilterStyleString(filterState)}
+                  isRecording={isRecordingActive}
+                  onStreamActiveChange={(active) => setIsPhoneCameraStreaming(active)}
                 />
-                <div className="absolute top-2 left-2 bg-purple-600/90 text-white text-[9px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-md">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" />
-                  <span>PHONE CAMERA LIVE</span>
-                </div>
-              </div>
-            ) : cameraSource === "phone" && !phoneFrame ? (
-              <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
-                <div className="w-12 h-12 rounded-2xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-300">
-                  <PiDeviceMobile size={26} />
-                </div>
-                <span className="text-xs font-semibold text-white/70">
-                  Phone Camera Selected
-                </span>
-                <span className="text-[11px] text-white/40 max-w-xs leading-relaxed">
-                  Open the <strong>Stage Teleprompter</strong> on your phone and tap <strong>Camera Sync</strong>, or tap below to request stream.
-                </span>
-                {pairedDevices.length > 0 && (
-                  <button
-                    onClick={() => {
-                      if (window.electron?.Network?.sendSocketMessage) {
-                        const targetDevice = pairedDevices.find((d) => d.id === selectedMobileDeviceId) || pairedDevices[0];
-                        window.electron.Network.sendSocketMessage("teleprompter:request-camera", {
-                          targetId: targetDevice?.id,
-                          scriptTitle: activeScript?.title || "Teleprompter",
-                        });
-                      }
-                    }}
-                    className="mt-1 px-3.5 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md flex items-center gap-1.5"
-                  >
-                    <PiDeviceMobile size={14} />
-                    <span>Request Phone Stream</span>
-                  </button>
+                {!isPhoneCameraStreaming && pairedDevices.length > 0 && (
+                  <div className="absolute bottom-3 left-0 right-0 flex justify-center z-10">
+                    <button
+                      onClick={() => {
+                        if (window.electron?.Network?.sendSocketMessage) {
+                          const targetDevice = pairedDevices.find((d) => d.id === selectedMobileDeviceId) || pairedDevices[0];
+                          window.electron.Network.sendSocketMessage("teleprompter:request-camera", {
+                            targetId: targetDevice?.id,
+                            scriptTitle: activeScript?.title || "Teleprompter",
+                          });
+                        }
+                      }}
+                      className="px-4 py-2 rounded-xl bg-purple-600/90 hover:bg-purple-600 text-white text-xs font-bold transition-all shadow-lg backdrop-blur-sm flex items-center gap-2 border border-purple-400/30"
+                    >
+                      <PiDeviceMobile size={15} />
+                      <span>Request Phone Stream</span>
+                    </button>
+                  </div>
                 )}
               </div>
             ) : (
@@ -1711,6 +1694,8 @@ export default function TeleprompterController() {
         onClose={() => setIsFullscreenOpen(false)}
         videoStream={videoStream}
         phoneFrame={phoneFrame}
+        isPhoneCameraStreaming={isPhoneCameraStreaming}
+        isRecordingActive={isRecordingActive}
         script={activeScript}
         activeWordIndex={activeWordIndex}
         cameraOpacity={cameraOpacity}
