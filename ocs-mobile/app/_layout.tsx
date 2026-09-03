@@ -126,7 +126,6 @@ export default function RootLayout() {
           <MobileSplash minDurationMs={1200} />
           <TeleprompterCameraPrompt />
           <IncomingIntercomPlayer isBanner={true} />
-          <GuestExpiredGate />
           <Stack screenOptions={{ headerShown: false }}>
             <Stack.Screen name="index" />
             <Stack.Screen name="login" options={{ presentation: "modal" }} />
@@ -141,6 +140,7 @@ export default function RootLayout() {
             <Stack.Screen name="teleprompter" />
             <Stack.Screen name="modal" options={{ presentation: "modal", title: "Modal" }} />
           </Stack>
+          <GuestExpiredGate />
           <StatusBar style="auto" />
         </>
       </CrashReporter>
