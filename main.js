@@ -1456,6 +1456,8 @@ io.on("connection", (socket) => {
     if (controller && !controller.isDestroyed()) {
       controller.webContents.send(channel, payload);
     }
+  };
+
   if (socket.handshake.query && socket.handshake.query.isStudioCamera === "true") {
     markPaired(socket.id);
     device.paired = true;
