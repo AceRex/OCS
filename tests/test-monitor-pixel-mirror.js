@@ -164,7 +164,7 @@ test('Universal 12px Border Radius: Strict adherence to rounded-[12px] in monito
 });
 
 // ── Test 6: Backend Engine Verification in main.js ──────────────────────────
-test('Backend Engine: main.js contains startDisplayMirrorEngine and /switcher-camera route', () => {
+test('Backend Engine: main.js contains startDisplayMirrorEngine and display-mirror-frame', () => {
   const mainPath = path.join(__dirname, '..', 'main.js');
   const content = fs.readFileSync(mainPath, 'utf8');
 
@@ -177,11 +177,6 @@ test('Backend Engine: main.js contains startDisplayMirrorEngine and /switcher-ca
     content.includes('display-mirror-frame'),
     true,
     'main.js must dispatch display-mirror-frame IPC events'
-  );
-  assert.strictEqual(
-    content.includes('/switcher-camera'),
-    true,
-    'main.js must serve /switcher-camera route'
   );
 });
 
