@@ -3594,7 +3594,7 @@ export default function BroadcastEngine() {
           <div className="py-[8px] px-[12px] flex items-center justify-between border-b border-white/5 bg-white/[0.02]">
             <div className="flex items-center gap-3">
               <div
-                className={`w-[30px] h-[30px] rounded-[10px] flex items-center justify-center ${isTranscribing ? "bg-red-500/20 text-red-500" : "bg-white/5 text-white/30"}`}
+                className={`w-[30px] h-[30px] rounded-[12px] flex items-center justify-center ${isTranscribing ? "bg-red-500/20 text-red-500" : "bg-white/5 text-white/30"}`}
               >
                 <PiQuotesFill size={20} />
               </div>
@@ -3774,7 +3774,7 @@ export default function BroadcastEngine() {
             <div className="border-t border-white/5 p-3 space-y-2 bg-black/20">
               {commandFeedback && (
                 <div
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-[8px] border animate-in slide-in-from-bottom-2 duration-300 ${commandFeedback.ok ? "bg-emerald-500/10 border-emerald-500/30" : "bg-red-500/10 border-red-500/30"}`}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-[12px] border animate-in slide-in-from-bottom-2 duration-300 ${commandFeedback.ok ? "bg-emerald-500/10 border-emerald-500/30" : "bg-red-500/10 border-red-500/30"}`}
                 >
                   <span
                     className={`w-2 h-2 rounded-full ${commandFeedback.ok ? "bg-emerald-400" : "bg-red-400"}`}
@@ -3866,11 +3866,11 @@ export default function BroadcastEngine() {
 
         {/* Active Schedule Panel */}
         <div
-          className="shrink-0 bg-[#121212] border border-white/5 rounded-[16px] flex flex-col overflow-hidden shadow-2xl"
+          className="shrink-0 bg-[#121212] border border-white/5 rounded-[12px] flex flex-col overflow-hidden shadow-2xl"
           style={{ maxHeight: "30%" }}
         >
           <div className="py-[8px] px-[12px] border-b border-white/5 bg-white/[0.02] flex items-center gap-3 shrink-0">
-            <div className="w-[30px] h-[30px] flex items-center justify-center bg-white/5 rounded-[10px] text-white/30">
+            <div className="w-[30px] h-[30px] flex items-center justify-center bg-white/5 rounded-[12px] text-white/30">
               <PiCalendarBlankFill size={20} />
             </div>
             <h3 className="text-[10px] font-semibold uppercase tracking-widest">
@@ -3884,7 +3884,7 @@ export default function BroadcastEngine() {
                 return (
                   <div
                     key={item._id}
-                    className={`group flex items-center gap-3 px-4 py-3 rounded-[10px] transition-all border ${
+                    className={`group flex items-center gap-3 px-4 py-3 rounded-[12px] transition-all border ${
                       isActive
                         ? "bg-white/10 border-white/10 shadow-xl"
                         : "bg-transparent border-transparent hover:bg-white/[0.02]"

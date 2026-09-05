@@ -16,6 +16,8 @@ import {
   PiWifiHigh,
   PiLockKey,
   PiLink,
+  PiVideoCamera,
+  PiArrowCounterClockwise,
 } from "react-icons/pi";
 import DisabledContainer from "../components/DisabledContainer";
 
@@ -117,6 +119,22 @@ function MobileConnectPanel() {
     if (window.electron?.Network?.removeDevice) {
       await window.electron.Network.removeDevice(deviceId);
       setConnectedDevices((prev) => prev.filter((d) => d.id !== deviceId));
+    }
+  };
+
+  const handleGrantSwitcherControl = async (deviceId) => {
+    setActiveMenuDeviceId(null);
+    try {
+      const res = await window.electron?.Switcher?.grantControl?.(deviceId);
+      if (res?.ok) {
+        const dev = connectedDevices.find((d) => d.id === deviceId);
+        // UI feedback (no local state needed; switcher-state-update will sync)
+        console.log('[MobileConnect] Switcher control granted to:', dev?.name || deviceId);
+      } else {
+        console.warn('[MobileConnect] Grant switcher control failed:', res?.error);
+      }
+    } catch (e) {
+      console.error('[MobileConnect] Grant switcher control IPC error:', e);
     }
   };
 
@@ -467,6 +485,19 @@ function MobileConnectPanel() {
                                   );
                                 })}
                               </div>
+                              <div className="mx-3 border-t border-white/[0.08] my-1" />
+                              {/* Grant Switcher Control */}
+                              {device.paired && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleGrantSwitcherControl(device.id)}
+                                  className="w-full px-3.5 py-2 text-left text-xs font-semibold flex items-center gap-2.5 hover:bg-red-500/10 text-red-300/70 hover:text-red-300 transition-colors"
+                                  title="Grant this device switcher controller permission (separate from admin role)"
+                                >
+                                  <PiVideoCamera size={14} className="text-red-400" />
+                                  Grant Switcher Control
+                                </button>
+                              )}
                               <div className="mx-3 border-t border-white/[0.08] my-1" />
                               <button
                                 type="button"

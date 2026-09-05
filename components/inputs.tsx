@@ -21,7 +21,7 @@ export const Input = ({
       value={value}
       onChange={onChange}
       placeholder={placeholder}
-      className={`w-full h-[40px] bg-primary border border-light/30 rounded-[10px] px-3 py-2 text-light focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-offset-primary/50 placeholder:text-[12px] placeholder:text-light/50 !${className}`}
+      className={`w-full h-[40px] bg-primary border border-light/30 rounded-[12px] px-3 py-2 text-light focus:outline-none focus:ring-2 focus:ring-offset-1 focus:ring-offset-primary/50 placeholder:text-[12px] placeholder:text-light/50 !${className}`}
       {...props}
     />
   );

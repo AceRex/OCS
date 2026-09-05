@@ -338,25 +338,33 @@ function NdiPanel() {
             </div>
 
             {/* Config Controls */}
-            <div className="grid grid-cols-2 gap-3 pt-3 border-t border-[#2E2542]">
+            <div className="grid grid-cols-2 gap-4 pt-3.5 border-t border-[#2E2542]">
               <div>
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-300 block mb-1.5">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-2">
                   Resolution
                 </label>
-                <div className="flex gap-1.5 bg-[#0B0814] p-1 rounded-xl border border-[#2E2542]">
+                <div className="grid grid-cols-2 gap-2">
                   {["1080p", "720p"].map((res) => {
                     const isSelected = (status.resolution || "1080p").toLowerCase() === res.toLowerCase();
                     return (
                       <button
                         key={res}
+                        type="button"
                         onClick={() => handleUpdateConfig({ resolution: res })}
-                        className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                           isSelected
-                            ? "bg-cyan-400 text-slate-950 font-black shadow-md shadow-cyan-400/20"
-                            : "text-slate-200 hover:text-white hover:bg-[#1A1428]"
+                            ? "border border-cyan-400 text-cyan-300 bg-cyan-500/10 shadow-[0_0_10px_rgba(34,211,238,0.12)] font-black"
+                            : "border border-[#2E2542] text-slate-300 hover:text-white hover:border-slate-500 bg-transparent hover:bg-white/[0.03]"
                         }`}
                       >
-                        {res}
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full transition-all ${
+                            isSelected
+                              ? "bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.9)]"
+                              : "bg-slate-600"
+                          }`}
+                        />
+                        <span>{res}</span>
                       </button>
                     );
                   })}
@@ -364,23 +372,31 @@ function NdiPanel() {
               </div>
 
               <div>
-                <label className="text-[10px] font-black uppercase tracking-wider text-slate-300 block mb-1.5">
+                <label className="text-[10px] font-black uppercase tracking-wider text-slate-400 block mb-2">
                   Frame Rate
                 </label>
-                <div className="flex gap-1.5 bg-[#0B0814] p-1 rounded-xl border border-[#2E2542]">
+                <div className="grid grid-cols-2 gap-2">
                   {[30, 60].map((fps) => {
-                    const isSelected = Number(status.fps) === fps;
+                    const isSelected = Number(status.fps || 30) === fps;
                     return (
                       <button
                         key={fps}
+                        type="button"
                         onClick={() => handleUpdateConfig({ fps })}
-                        className={`flex-1 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        className={`flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
                           isSelected
-                            ? "bg-cyan-400 text-slate-950 font-black shadow-md shadow-cyan-400/20"
-                            : "text-slate-200 hover:text-white hover:bg-[#1A1428]"
+                            ? "border border-cyan-400 text-cyan-300 bg-cyan-500/10 shadow-[0_0_10px_rgba(34,211,238,0.12)] font-black"
+                            : "border border-[#2E2542] text-slate-300 hover:text-white hover:border-slate-500 bg-transparent hover:bg-white/[0.03]"
                         }`}
                       >
-                        {fps} FPS
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full transition-all ${
+                            isSelected
+                              ? "bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.9)]"
+                              : "bg-slate-600"
+                          }`}
+                        />
+                        <span>{fps} FPS</span>
                       </button>
                     );
                   })}

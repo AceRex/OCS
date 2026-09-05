@@ -316,7 +316,7 @@ export default function Sidebar({ activeTab, onTabChange }) {
     },
     { id: "songs", label: "Song Lyrics", icon: PiMusicNotes, isBlock: true },
     { id: "intercom", label: "Inapp Comm", icon: PiMicrophone, isBlock: true },
-    { id: "camera", label: "Cameras", icon: PiCamera, isBlock: true },
+    { id: "camera", label: "Live Switcher", icon: PiCamera, isBlock: false },
     { id: "ndi", label: "NDI & Stream", icon: PiBroadcast, isBlock: false },
     { id: "mobile", label: "Remote", icon: PiDeviceMobile, isBlock: false },
     { id: "design", label: "Design Lab", icon: PiSparkle, isBlock: true },

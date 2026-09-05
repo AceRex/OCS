@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <title>OCS Switcher Studio Camera</title>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body, html {
+      width: 100%; height: 100%;
+      background: #000;
+      color: #fff;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      overflow: hidden;
+      user-select: none;
+    }
+    #viewport {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #050508;
+    }
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    /* Studio Tally Border: Universal 12px border radius standard */
+    #tally-border {
+      position: absolute;
+      inset: 0;
+      border: 6px solid rgba(16, 185, 129, 0.75);
+      pointer-events: none;
+      z-index: 20;
+      transition: border-color 0.3s ease;
+    }
+    #tally-border.program {
+      border-color: #ef4444;
+      animation: pulse-border 1.2s infinite;
+    }
+    @keyframes pulse-border {
+      0%, 100% { border-color: rgba(239, 68, 68, 0.95); }
+      50% { border-color: rgba(239, 68, 68, 0.35); }
+    }
+    /* Top HUD Bar */
+    .hud-top {
+      position: absolute;
+      top: max(16px, env(safe-area-inset-top));
+      left: 16px;
+      right: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 30;
+      pointer-events: none;
+    }
+    .badge {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(0,0,0,0.8);
+      backdrop-filter: blur(12px);
+      padding: 6px 14px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.15);
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+    }
+    .badge.program {
+      background: rgba(239, 68, 68, 0.9);
+      border-color: rgba(254, 202, 202, 0.4);
+      color: #fff;
+    }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; }
+    .dot.program { background: #fff; animation: ping 1s infinite; }
+    @keyframes ping { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(1.4); } }
+    .stats {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10px;
+      color: rgba(255,255,255,0.9);
+      background: rgba(0,0,0,0.8);
+      backdrop-filter: blur(12px);
+      padding: 6px 12px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+    /* Bottom Control Bar */
+    .control-deck {
+      position: absolute;
+      bottom: max(24px, env(safe-area-inset-bottom));
+      left: 16px;
+      right: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      z-index: 30;
+    }
+    .controls-row {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 10px;
+    }
+    .zoom-slider-container {
+      background: rgba(0,0,0,0.8);
+      backdrop-filter: blur(12px);
+      padding: 8px 18px;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,0.15);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+      max-width: 380px;
+      margin: 0 auto;
+    }
+    .zoom-slider-container input[type=range] {
+      flex: 1;
+      accent-color: #ef4444;
+      cursor: pointer;
+    }
+    .btn {
+      background: rgba(255,255,255,0.15);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.2);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 12px 18px;
+      border-radius: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+    .btn:active { transform: scale(0.96); background: rgba(255,255,255,0.25); }
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.25);
+      border-color: rgba(239, 68, 68, 0.4);
+      color: #fca5a5;
+    }
+    .btn-danger:active { background: rgba(239, 68, 68, 0.4); }
+    /* Start Overlay */
+    #start-overlay {
+      position: absolute;
+      inset: 0;
+      background: #090a0f;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 50;
+      padding: 24px;
+      text-align: center;
+    }
+    #start-overlay h1 { font-size: 24px; margin-bottom: 8px; font-weight: 900; letter-spacing: -0.5px; }
+    #start-overlay p { font-size: 13px; color: rgba(255,255,255,0.6); max-width: 320px; line-height: 1.5; margin-bottom: 24px; }
+    .start-btn {
+      background: #ef4444;
+      color: #fff;
+      font-size: 15px;
+      font-weight: 800;
+      padding: 16px 36px;
+      border-radius: 12px;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 10px 25px rgba(239, 68, 68, 0.4);
+      transition: all 0.2s ease;
+    }
+    .start-btn:active { transform: scale(0.96); }
+  </style>
+</head>
+<body>
+  <div id="viewport">
+    <video id="localVideo" autoplay playsinline muted></video>
+    <div id="tally-border"></div>
+
+    <!-- Top Status -->
+    <div class="hud-top">
+      <div class="badge" id="tally-badge">
+        <div class="dot" id="tally-dot"></div>
+        <span id="tally-text">CONNECTING…</span>
+      </div>
+      <div class="stats" id="stats-hud">WebRTC • 0 FPS</div>
+    </div>
+
+    <!-- Control Deck -->
+    <div class="control-deck">
+      <div class="controls-row zoom-slider-container" id="zoom-control" style="display:none;">
+        <span style="font-size: 11px; font-weight: bold;">🔍 ZOOM</span>
+        <input type="range" id="zoomRange" min="1" max="5" step="0.1" value="1" />
+        <span id="zoomVal" style="font-size: 11px; font-family: monospace;">1.0x</span>
+      </div>
+
+      <div class="controls-row">
+        <button class="btn" id="torchBtn" style="display:none;">💡 Torch</button>
+        <button class="btn" id="flipBtn">🔄 Flip Lens</button>
+        <button class="btn btn-danger" id="disconnectBtn">Disconnect</button>
+      </div>
+    </div>
+
+    <!-- Permission/Launch Screen -->
+    <div id="start-overlay">
+      <div style="font-size: 44px; margin-bottom: 16px;">📹</div>
+      <h1>OCS Switcher Camera</h1>
+      <p>Stream your phone camera directly into the Live Switcher with hardware-accelerated continuous WebRTC video.</p>
+      <button class="start-btn" id="startBtn">START CAMERA STREAM</button>
+    </div>
+  </div>
+
+  <script>
+    let localStream = null;
+    let videoTrack = null;
+    let facingMode = "environment";
+    let socket = null;
+    let peerConnection = null;
+    let mySlotIndex = null;
+    let isProgram = false;
+    let isTorchOn = false;
+
+    const video = document.getElementById("localVideo");
+    const tallyBorder = document.getElementById("tally-border");
+    const tallyBadge = document.getElementById("tally-badge");
+    const tallyDot = document.getElementById("tally-dot");
+    const tallyText = document.getElementById("tally-text");
+    const statsHud = document.getElementById("stats-hud");
+    const torchBtn = document.getElementById("torchBtn");
+    const flipBtn = document.getElementById("flipBtn");
+    const zoomControl = document.getElementById("zoom-control");
+    const zoomRange = document.getElementById("zoomRange");
+    const zoomVal = document.getElementById("zoomVal");
+    const startOverlay = document.getElementById("start-overlay");
+    const startBtn = document.getElementById("startBtn");
+
+    async function initCamera() {
+      if (localStream) {
+        localStream.getTracks().forEach(t => t.stop());
+      }
+      try {
+        const constraints = {
+          video: {
+            facingMode: facingMode,
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 30, max: 60 }
+          },
+          audio: false
+        };
+        localStream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = localStream;
+        await video.play();
+
+        videoTrack = localStream.getVideoTracks()[0];
+        checkCapabilities();
+        setupWebRTC();
+        startOverlay.style.display = "none";
+      } catch (err) {
+        alert("Camera error: " + err.message);
+      }
+    }
+
+    function checkCapabilities() {
+      if (!videoTrack) return;
+      const caps = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+      if (caps.torch) {
+        torchBtn.style.display = "flex";
+      } else {
+        torchBtn.style.display = "none";
+      }
+      if (caps.zoom) {
+        zoomControl.style.display = "flex";
+        zoomRange.min = caps.zoom.min || 1;
+        zoomRange.max = Math.min(caps.zoom.max || 5, 5);
+        zoomRange.step = caps.zoom.step || 0.1;
+      } else {
+        zoomControl.style.display = "none";
+      }
+    }
+
+    function connectSocket() {
+      const urlParams = new URLSearchParams(window.location.search);
+      const customName = urlParams.get("name") || "Studio Phone";
+      socket = io({
+        query: { isSwitcherCamera: "true", deviceName: customName },
+        transports: ["websocket", "polling"]
+      });
+
+      socket.on("connect", () => {
+        console.log("[Switcher Camera] Socket connected:", socket.id);
+        socket.emit("switcher:opt-in-camera", { name: customName }, (res) => {
+          if (res?.ok) {
+            mySlotIndex = res.slotIndex;
+            updateTallyUI();
+            // Re-negotiate WebRTC offer with slot assignment
+            if (localStream) setupWebRTC();
+          } else {
+            alert(res?.error || "Failed to join switcher camera slot (max 6 cameras).");
+          }
+        });
+      });
+
+      // Switcher state update
+      socket.on("switcher:state", (state) => {
+        if (!socket) return;
+        const amIProgram = state.programSourceId === socket.id;
+        if (amIProgram !== isProgram) {
+          isProgram = amIProgram;
+          updateTallyUI();
+        }
+      });
+
+      // Explicit notification when chosen as Program
+      socket.on("switcher:you-are-program", ({ active }) => {
+        isProgram = !!active;
+        updateTallyUI();
+      });
+
+      // WebRTC Answer from desktop
+      socket.on("switcher:webrtc-answer", async ({ answer }) => {
+        if (!peerConnection) return;
+        try {
+          console.log("[Switcher Camera] Received WebRTC answer from desktop");
+          await peerConnection.setRemoteDescription(new RTCSessionDescription(answer));
+        } catch (e) {
+          console.error("[Switcher Camera] Error setting remote answer:", e);
+        }
+      });
+
+      // WebRTC ICE Candidate from desktop
+      socket.on("switcher:webrtc-ice-candidate", async ({ candidate }) => {
+        if (!peerConnection) return;
+        try {
+          await peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (e) {
+          console.error("[Switcher Camera] Error adding ICE candidate:", e);
+        }
+      });
+    }
+
+    async function setupWebRTC() {
+      if (!localStream || !socket || !socket.connected) return;
+      if (peerConnection) {
+        try { peerConnection.close(); } catch(_) {}
+      }
+
+      console.log("[Switcher Camera] Initializing WebRTC PeerConnection for Slot", mySlotIndex);
+      peerConnection = new RTCPeerConnection({
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }]
+      });
+
+      // Add local continuous video track
+      localStream.getTracks().forEach(track => {
+        peerConnection.addTrack(track, localStream);
+      });
+
+      peerConnection.onicecandidate = (event) => {
+        if (event.candidate && socket && socket.connected) {
+          socket.emit("switcher:webrtc-ice-candidate", { candidate: event.candidate });
+        }
+      };
+
+      peerConnection.onconnectionstatechange = () => {
+        console.log("[Switcher Camera] Connection state:", peerConnection.connectionState);
+        if (peerConnection.connectionState === "connected") {
+          statsHud.innerText = `WebRTC • 30 FPS HD`;
+        }
+      };
+
+      // Create and dispatch SDP offer
+      try {
+        const offer = await peerConnection.createOffer({
+          offerToReceiveVideo: false,
+          offerToReceiveAudio: false
+        });
+        await peerConnection.setLocalDescription(offer);
+        socket.emit("switcher:webrtc-offer", {
+          slotIndex: mySlotIndex || 1,
+          offer: offer
+        });
+        console.log("[Switcher Camera] Dispatched WebRTC offer to desktop");
+      } catch (err) {
+        console.error("[Switcher Camera] Failed to create WebRTC offer:", err);
+      }
+    }
+
+    function updateTallyUI() {
+      const slotLabel = mySlotIndex ? `CAM ${mySlotIndex}` : "CAMERA";
+      if (isProgram) {
+        tallyBorder.classList.add("program");
+        tallyBadge.classList.add("program");
+        tallyDot.classList.add("program");
+        tallyText.innerText = `${slotLabel} • ON AIR (LIVE)`;
+      } else {
+        tallyBorder.classList.remove("program");
+        tallyBadge.classList.remove("program");
+        tallyDot.classList.remove("program");
+        tallyText.innerText = `${slotLabel} • STANDBY`;
+      }
+    }
+
+    startBtn.onclick = () => {
+      connectSocket();
+      initCamera();
+    };
+
+    flipBtn.onclick = () => {
+      facingMode = facingMode === "environment" ? "user" : "environment";
+      initCamera();
+    };
+
+    torchBtn.onclick = async () => {
+      if (!videoTrack) return;
+      isTorchOn = !isTorchOn;
+      try {
+        await videoTrack.applyConstraints({ advanced: [{ torch: isTorchOn }] });
+        torchBtn.style.background = isTorchOn ? "rgba(251, 191, 36, 0.4)" : "rgba(255,255,255,0.15)";
+      } catch (_) {}
+    };
+
+    zoomRange.oninput = async (e) => {
+      const z = parseFloat(e.target.value);
+      zoomVal.innerText = z.toFixed(1) + "x";
+      if (!videoTrack) return;
+      try {
+        await videoTrack.applyConstraints({ advanced: [{ zoom: z }] });
+      } catch (_) {}
+    };
+
+    document.getElementById("disconnectBtn").onclick = () => {
+      if (localStream) localStream.getTracks().forEach(t => t.stop());
+      if (peerConnection) peerConnection.close();
+      if (socket) {
+        socket.emit("switcher:opt-out-camera");
+        socket.disconnect();
+      }
+      startOverlay.style.display = "flex";
+    };
+  </script>
+</body>
+</html>

@@ -3,9 +3,30 @@
 ## Product Requirements Document (PRD)
 
 **Author:** Are Oluwasegun Johnson
-**Version:** 1.15
-**Last Updated:** August 2026
+**Version:** 1.16
+**Last Updated:** September 2026
 **Status:** Active Development
+
+---
+
+## Changelog from v1.15 → v1.16 (Live Control Multi-Camera Switcher, Teleprompter Mobile Camera & Universal 12px Design Standard)
+
+**Section 4.22 (Live Control — Multi-Camera Switcher Phase A):**
+- **6-Slot Mobile Camera Source Role Management (FR-24.1):** Up to 6 mobile devices can pair and stream camera feeds into the multiview grid (`switcher:opt-in-camera`). Enforces a strict 6-slot limit on the server (`MAX_CAMERA_SLOTS = 6`), immediately rejecting any 7th device opt-in attempt. Disconnect and opt-out events (`switcher:opt-out-camera`) cleanly recycle slots.
+- **Controller Permission Authority & Server-Side Enforcement (FR-24.2):** Exactly one controller holds switching authority (`switcherControllerSocketId`), defaulting to Desktop. Desktop operators can grant switching authority to any paired mobile companion phone (`switcher:grant-control`) or reclaim it at any moment (`switcher:reclaim-control`). Server-side checks strictly reject any `switcher:set-program` or `switcher:route-destination` requests from non-controller devices with `403/Permission denied`.
+- **8-Tile Multiview Grid (`LiveSwitcherController.js`) (FR-24.3):** 6 camera preview tiles (`SwitcherCameraTile.js`) with live tally borders (red for program/live, standby otherwise), device labels, and instant hard-cut switching buttons; plus 2 dedicated live display monitor tiles (`SwitcherMonitorTile.js`) for General View and Speaker View.
+- **Dynamic Live Monitor Mirroring (`SwitcherMonitorTile.js`) (FR-24.4):** Real-time canvas draw loop at grid-tier resolution mirroring the active program stream sent to sanctuary outputs. Dynamically re-binds to new program cameras without needing destination re-toggle, and clears immediately (`ctx.clearRect`) when toggled off to eliminate frozen/ghost frames.
+- **High-Resolution Program Canvas (`SwitcherProgramCanvas.js`) (FR-24.5):** Dedicated Program Out viewer with live tally border and HUD FPS counter.
+- **Destination Routing & 'live-camera' Content Slot (FR-24.6):** Implemented `'live-camera'` Content Slot in `DisplayCanvas.js`, allowing desktop and mobile controllers to independently route Program video to General View and Speaker View.
+- **Mobile Companion Switcher UI (`live-switcher.tsx`) (FR-24.7):** Dual-mode mobile UI supporting camera preview/high-res streaming when opted in, and multiview switching / destination routing when holding controller authority.
+
+**Section 4.23 (Teleprompter Mobile Camera Integration):**
+- **Teleprompter Mobile Camera Stream (FR-25.1):** Integrates mobile camera video streaming directly into the desktop teleprompter presentation overlay view (`teleprompter:request-camera`, `teleprompter:mobile-camera-start`, `teleprompter:mobile-camera-frame`, `teleprompter:mobile-camera-stop`).
+
+**Section 4.24 (Universal 12px Border-Radius Design Standard):**
+- **Unified 12px Border Radius (FR-26.1):** Every container, card, dialog, modal, input, button, and multiview grid tile across both Desktop and Mobile applications is standardized to exactly `12px` (`rounded-xl` / `12px`).
+- **Tailwind Configuration Radius Scales (FR-26.2):** All Tailwind border-radius scales (`xs`, `sm`, `DEFAULT`, `md`, `lg`, `xl`, `2xl`, `3xl`, `4xl`) are locked to `12px` in both desktop (`tailwind.config.js`) and mobile (`ocs-mobile/tailwind.config.js`), and CSS variable `--radius: 12px` in `src/index.css`.
+- **Agent Rule Enforcement (FR-26.3):** Formalized design system rule in `AGENTS.md` and `.agents/rules/border-radius.md` requiring all subsequent agent implementations to preserve this 12px standard.
 
 ---
 
@@ -887,6 +908,84 @@ Editable at runtime by `super_admin` via a dedicated admin console (FR-13.14).
 - Strict server-side and client-side access control isolating the administrative management portal.
 - Dedicated `POST /api/auth/admin/login` endpoint rejects customer accounts (`church_admin`, `user`, `pastor`, `operator`, `viewer`) with `403 Forbidden` (`"Access denied. Customer accounts are not authorized to log into the Admin Console."`).
 - Frontend route guards in `AdminLayout.tsx` and `AdminLoginPage.tsx` actively inspect authenticated roles, preventing customer token entry and automatically redirecting non-administrative sessions back to `/profile`.
+
+---
+
+## 4.22 Live Control — Multi-Camera Switcher (New in v1.16)
+
+**FR-24.1 (New) — 6-Slot Mobile Camera Role Management & Strict Server-Side Cap (`switcher:opt-in-camera`, `switcher:opt-out-camera`):**
+- Up to 6 paired mobile companion devices (`ocs-mobile`) can opt-in to stream camera feeds over the local network into the multiview grid.
+- Devices are allocated 1-indexed slot positions (`slotIndex` 1 through 6).
+- Server-side slot cap is strictly enforced (`MAX_CAMERA_SLOTS = 6`). Any 7th device opt-in attempt is unconditionally rejected with `{ ok: false, error: "Maximum of 6 cameras already connected" }`.
+- When a device disconnects or explicitly calls `switcher:opt-out-camera`, its slot is freed and recycled cleanly for subsequent devices. If the opted-out camera was active on Program, Program source is automatically cleared.
+
+**FR-24.2 (New) — Controller Permission Authority & Server-Side Enforcement (`switcher:grant-control`, `switcher:reclaim-control`, `switcher:set-program`, `switcher:route-destination`):**
+- Exactly one device holds switching authority at any given time (`switcherControllerSocketId`), defaulting to Desktop (`'desktop'`).
+- Control handoff: Desktop operator can delegate switching control to any paired mobile companion phone (`switcher:grant-control`).
+- Controller reclaim: Desktop operator can unconditionally reclaim switching authority at any time (`switcher:reclaim-control`), or authority automatically reverts to desktop if the controlling phone disconnects.
+- **Server-Side Enforcement**: All switching commands (`switcher:set-program`) and destination routing toggles (`switcher:route-destination`) are verified on the server against `switcherControllerSocketId`. Any request originating from a non-controller device is strictly rejected with `{ ok: false, error: "Permission denied — you are not the current switcher controller" }`.
+
+**FR-24.3 (New) — 8-Tile Multiview Grid (`LiveSwitcherController.js`):**
+- Desktop Controller view provides a broadcast-grade 8-tile multiview grid:
+  - 6 Camera Source Preview Tiles (`SwitcherCameraTile.js`) showing real-time camera streams (`onCameraFrame`), slot indices (CAM 1–6), device labels, FPS telemetry, and red live tally borders when active on Program.
+  - 2 Dedicated Sanctuary Output Monitor Tiles (`SwitcherMonitorTile.js`) for General View and Speaker View.
+- One-touch hard-cut switching: clicking any available camera tile immediately cuts that source to Program.
+
+**FR-24.4 (New) — True Live Display Monitor Mirroring (`SwitcherMonitorTile.js`):**
+- Each monitor tile provides an authentic, real-time pixel mirror of what is actively showing on that sanctuary display (General View or Speaker View), not a text label or static badge:
+  - **Pixel Capture Architecture**: Instead of re-rendering DOM elements (which causes layout distortion and overlapping fonts), the monitor tile displays the actual raster captured from Electron's `webContents.capturePage()` on `generalWindow` and `speakerWindow` at ~3.3 FPS (300ms intervals).
+  - **Uniform Proportional Scaling**: Raster is resized to 480×270 JPEG and rendered with `object-contain`, ensuring scriptures, chapter/verse badges, presentation slides, lyric scenes, countdown timers, and live camera feeds are proportional miniatures of the real screens with zero text collisions.
+  - **Dynamic Program Tracking**: Switching Program cameras updates the monitor tile immediately without requiring a destination re-toggle.
+  - **Zero Ghost Frames on Toggle Off**: Toggling a destination off immediately clears the canvas context within one animation frame.
+
+**FR-24.5 (New) — High-Resolution Program Canvas (`SwitcherProgramCanvas.js`):**
+- Dedicated high-definition Program Out viewer rendering the active live stream with an illuminated red tally ring, device label, and live FPS telemetry.
+- Binds directly to continuous WebRTC `MediaStream` tracks for smooth 30–60 FPS video playback with fallback to the high-res program frame channel.
+
+**FR-24.6 (New) — Local Destination Routing & 'live-camera' Content Slot (`DisplayCanvas.js`):**
+- Integrates `'live-camera'` into the 4-band compositor architecture (`DisplayCanvas.js:case 'live-camera'`).
+- The controller can independently route Program output to General View, Speaker View, or both simultaneously.
+- When routed, the sanctuary display renders the live camera stream at full projection resolution with a subtle `LIVE` indicator.
+
+**FR-24.7 (New) — Mobile Companion Switcher Screen (`live-switcher.tsx`):**
+- Dual-mode mobile interface:
+  - **Camera Source Mode**: Allows any paired phone to opt-in as a camera source. Launches the dedicated hardware-accelerated WebRTC camera studio client in-app via `WebBrowser.openBrowserAsync`, streaming continuous 30–60 FPS video via `navigator.mediaDevices.getUserMedia` and `RTCPeerConnection` with zero snapshot polling or camera HAL shutter locks.
+  - **Controller Mode**: When granted switching authority, the mobile UI exposes the camera switching grid, destination routing toggles for General and Speaker displays, and a button to return control to desktop.
+
+**FR-24.8 (New) — Monitor Tile Pixel-Mirror Architecture via Electron `webContents.capturePage()`:**
+- Architectural decoupling: `SwitcherMonitorTile.js` is strictly a "dumb" pixel viewer with zero content-type specific typography or layout rendering logic.
+- Background capture engine in `main.js` samples `generalWindow` and `speakerWindow` every 300ms, resizes to 480×270 JPEG thumbnails (taking < 0.1ms per frame, < 0.5% CPU), and streams to `controllerWindow` over IPC channel `display-mirror-frame`.
+
+**FR-24.9 (New) — Continuous Hardware-Accelerated WebRTC Video Camera Sources:**
+- All camera-source phones stream continuous video using standard HTML5 `getUserMedia({ video: { ideal: 1280x720, 30-60fps } })` connected via peer-to-peer WebRTC `RTCPeerConnection` over the local church LAN.
+- Desktop controller manages active `RTCPeerConnection`s per camera slot, binding the incoming `MediaStreamTrack` directly to HTML5 `<video autoPlay playsInline muted />` elements in `SwitcherCameraTile.js` and `SwitcherProgramCanvas.js`.
+- Bidirectional Socket.IO signaling relays SDP offers, answers, and ICE candidates with sub-second connection times.
+
+---
+
+## 4.23 Teleprompter Mobile Camera Integration (New in v1.16)
+
+**FR-25.1 (New) — Mobile Presenter Camera Streaming for Teleprompter View:**
+- Allows a paired mobile phone to stream video directly into the desktop teleprompter view as a live presenter camera feed.
+- Orchestrated via `teleprompter:request-camera`, `teleprompter:mobile-camera-start`, `teleprompter:camera-frame` (`teleprompter-mobile-frame`), and `teleprompter:mobile-camera-stop`.
+- Shares the high-efficiency JPEG base64 streaming pipeline with the Live Switcher preview engine.
+
+---
+
+## 4.24 Universal 12px Border-Radius Design System Standard (New in v1.16)
+
+**FR-26.1 (New) — Strict 12px Border Radius Invariant Across Desktop and Mobile:**
+- Every structural element, card, container, multiview grid tile, dialog, modal, drawer, input field, and button across the entire OCS ecosystem (Desktop and Mobile) is standardized to exactly **12px** (`rounded-xl` or `rounded-[12px]`).
+- Arbitrary border-radius values (e.g. 4px, 6px, 8px, 10px, 14px, 16px, 20px, 50px) are deprecated and prohibited.
+- Circular indicator pills and dots may use `rounded-full` (for 50% circular geometry), but all non-circular structural elements must strictly use `12px`.
+
+**FR-26.2 (New) — Centralized Tailwind CSS Scale Locking & CSS Variables:**
+- In desktop (`tailwind.config.js`) and mobile (`ocs-mobile/tailwind.config.js`), all standard radius keys (`xs`, `sm`, `DEFAULT`, `md`, `lg`, `xl`, `2xl`, `3xl`, `4xl`) are locked to `12px`.
+- CSS variable `--radius: 12px` in `src/index.css`.
+- Core reusable components (`Button`, `Input`) updated to default to `12px`.
+
+**FR-26.3 (New) — Agent Invariant Enforcement (`AGENTS.md`, `.agents/rules/border-radius.md`):**
+- Codified into repository agent guidelines (`AGENTS.md`) and `.agents/rules/border-radius.md` ensuring all subsequent agent and automated implementations preserve this design standard.
 
 ---
 

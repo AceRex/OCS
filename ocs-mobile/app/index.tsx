@@ -31,6 +31,7 @@ import {
   SignOut,
   LockSimple,
   Sparkle,
+  VideoCamera,
 } from "phosphor-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSocketStore } from "../store/socketStore";
@@ -133,6 +134,13 @@ export default function Dashboard() {
       icon: Microphone,
       gradient: ["#f12711", "#f5af19"],
       description: "Push-to-Talk",
+    },
+    {
+      id: "live-switcher",
+      label: "Live Switcher",
+      icon: VideoCamera,
+      gradient: ["#e52d27", "#b31217"],
+      description: "Multi-Camera",
     },
   ];
 

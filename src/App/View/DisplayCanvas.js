@@ -1,6 +1,11 @@
 import React, { useRef, useEffect, useState } from "react";
 import { renderAnimatedLyrics } from "../controller/LyricAnimationEngine";
 
+// ─── Live Camera canvas ref (shared across renderContentSlot calls) ────────────
+// Allocated once per DisplayCanvas instance so the painting useEffect below
+// can always target the same canvas element even when the component re-renders.
+const _liveCameraImgCache = {}; // keyed by deviceId
+
 /**
  * Render text with real-time word tracking — ONE WORD AHEAD model.
  *
@@ -108,6 +113,72 @@ export default function DisplayCanvas({
   useEffect(() => {
     setAlignProgress({ wordIndex: -1, totalTokens: 0 });
   }, [contentSlot?.data?.pageIndex, contentSlot?.data?.sceneId]);
+
+  // ── Live-camera canvas ref for 'live-camera' Content Slot ───────────────────
+  const liveCameraCanvasRef = useRef(null);
+  const liveCameraIsDirtyRef = useRef(false);
+  const liveCameraAnimRef = useRef(null);
+
+  // ── Live-camera render loop + socket-frame listener ──────────────────────────
+  useEffect(() => {
+    if (contentSlot?.type !== 'live-camera') return;
+
+    // Render loop
+    const renderLoop = () => {
+      if (liveCameraIsDirtyRef.current && liveCameraCanvasRef.current) {
+        const img = _liveCameraImgCache[contentSlot?.data?.deviceId || 'default'];
+        if (img && img.complete && img.naturalWidth > 0) {
+          const canvas = liveCameraCanvasRef.current;
+          const ctx = canvas.getContext('2d', { alpha: false });
+          if (ctx) {
+            if (canvas.width !== img.naturalWidth || canvas.height !== img.naturalHeight) {
+              canvas.width = img.naturalWidth;
+              canvas.height = img.naturalHeight;
+            }
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            liveCameraIsDirtyRef.current = false;
+          }
+        }
+      }
+      liveCameraAnimRef.current = requestAnimationFrame(renderLoop);
+    };
+    liveCameraAnimRef.current = requestAnimationFrame(renderLoop);
+
+    // Subscribe to live frames — uses the program-frame channel when available
+    // (view windows receive frames via socket.io switcher:live-frame)
+    const deviceId = contentSlot?.data?.deviceId;
+    let cleanup = null;
+    if (window.electron?.Switcher?.onProgramFrame) {
+      // Renderer windows (controller) get the dedicated program-frame IPC channel
+      cleanup = window.electron.Switcher.onProgramFrame((payload) => {
+        if (!payload?.data) return;
+        const img = _liveCameraImgCache[deviceId || 'default'] || new Image();
+        _liveCameraImgCache[deviceId || 'default'] = img;
+        const src = payload.data.startsWith('data:') ? payload.data : `data:image/jpeg;base64,${payload.data}`;
+        img.onload = () => { liveCameraIsDirtyRef.current = true; };
+        img.src = src;
+      });
+    }
+    // Also listen for low-res preview frames as fallback (keyed to deviceId)
+    let cleanupFallback = null;
+    if (window.electron?.Switcher?.onCameraFrame) {
+      cleanupFallback = window.electron.Switcher.onCameraFrame((payload) => {
+        if (payload?.fromId !== deviceId) return;
+        if (!payload?.data) return;
+        const img = _liveCameraImgCache[deviceId || 'default'] || new Image();
+        _liveCameraImgCache[deviceId || 'default'] = img;
+        const src = payload.data.startsWith('data:') ? payload.data : `data:image/jpeg;base64,${payload.data}`;
+        img.onload = () => { liveCameraIsDirtyRef.current = true; };
+        img.src = src;
+      });
+    }
+
+    return () => {
+      if (liveCameraAnimRef.current) cancelAnimationFrame(liveCameraAnimRef.current);
+      if (cleanup) cleanup();
+      if (cleanupFallback) cleanupFallback();
+    };
+  }, [contentSlot?.type, contentSlot?.data?.deviceId]);
 
   // Auto-play / reload background video when URL changes
   useEffect(() => {
@@ -625,7 +696,7 @@ export default function DisplayCanvas({
                       }}
                       className="w-full h-auto select-none pointer-events-none transition-all"
                       style={{
-                        borderRadius: `${layer.style?.borderRadius ?? 8}px`,
+                        borderRadius: `${layer.style?.borderRadius ?? 12}px`,
                         opacity: layer.style?.opacity ?? 1,
                         objectFit: layer.style?.aspectRatio === 'fill' ? 'cover' : (layer.style?.aspectRatio === 'fit' ? 'contain' : (layer.style?.objectFit || "contain")),
                         boxShadow: layer.style?.shadow
@@ -638,7 +709,7 @@ export default function DisplayCanvas({
                       src={layer.content}
                       className="w-full h-auto select-none pointer-events-none transition-all"
                       style={{
-                        borderRadius: `${layer.style?.borderRadius ?? 8}px`,
+                        borderRadius: `${layer.style?.borderRadius ?? 12}px`,
                         opacity: layer.style?.opacity ?? 1,
                         objectFit: layer.style?.objectFit || "contain",
                         boxShadow: layer.style?.shadow
@@ -671,6 +742,33 @@ export default function DisplayCanvas({
             >
               {displayTime || "00:00"}
             </span>
+          </div>
+        );
+      }
+
+      // ── live-camera: renders the program stream on a canvas ────────────────────
+      // FR-4.14: Only Band 2 (Content Slot) is touched here. Background (Band 1)
+      // and Pinned Layers (Band 3) are rendered in completely separate branches
+      // and are entirely unaffected by this case.
+      case 'live-camera': {
+        const { deviceId } = data || {};
+        return (
+          <div
+            className="w-full h-full relative z-10 bg-black overflow-hidden"
+            style={{ containerType: 'size' }}
+          >
+            <canvas
+              ref={liveCameraCanvasRef}
+              className="w-full h-full object-cover"
+              style={{ display: 'block' }}
+            />
+            {/* PROGRAM tally indicator — shown in speaker/general view */}
+            {(mode === 'speaker' || mode === 'general') && (
+              <div className="absolute top-3 left-3 bg-red-600/90 text-white text-[clamp(10px,1.2cqw,1.4vw)] font-black px-3 py-1 rounded-full flex items-center gap-1.5 shadow-lg pointer-events-none select-none">
+                <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+                LIVE
+              </div>
+            )}
           </div>
         );
       }

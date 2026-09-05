@@ -12,6 +12,20 @@ interface AssetPayload {
     dataBase64?: string;
 }
 
+interface CameraSlot {
+    socketId: string;
+    name: string;
+    slotIndex: number;
+}
+
+interface SwitcherState {
+    cameraSlots: CameraSlot[];
+    controllerSocketId: string | null;
+    programSourceId: string | null;
+    routeGeneral: boolean;
+    routeSpeaker: boolean;
+}
+
 interface SocketState {
     socket: Socket | null;
     isConnected: boolean;
@@ -24,6 +38,23 @@ interface SocketState {
     lastPort: number;
     deviceName: string;
     connectionError: string | null;
+
+    // ─ Switcher state (Phase A) ────────────────────────────────────────────────
+    isCameraSource: boolean;        // This device is a camera source
+    cameraSlotIndex: number | null; // Which slot (1–6) this device holds
+    isSwitcherController: boolean;  // This device holds controller permission
+    switcherCameraSlots: CameraSlot[];       // All current camera sources
+    switcherProgramSourceId: string | null;  // Current program source socketId
+    switcherControllerSocketId: string | null; // Current controller
+    switcherRouteGeneral: boolean;
+    switcherRouteSpeaker: boolean;
+    optInAsCamera: () => Promise<{ ok: boolean; error?: string; slotIndex?: number }>;
+    optOutAsCamera: () => Promise<{ ok: boolean; error?: string }>;
+    setSwitcherProgram: (deviceId: string) => Promise<{ ok: boolean; error?: string }>;
+    setSwitcherRoute: (destination: 'general' | 'speaker', active: boolean) => Promise<{ ok: boolean; error?: string }>;
+    requestControlReclaim: () => void;
+    sendProgramFrame: (base64Data: string) => void;
+
     setDeviceName: (name: string) => void;
     connect: (ip: string, pairingCode?: string, customPort?: number) => void;
     reconnectLastSession: () => void;
@@ -72,6 +103,96 @@ export const useSocketStore = create<SocketState>((set, get) => ({
     teleprompterCountdown: null,
     overlayContent: null,
     overlayTimer: null,
+
+    // ─ Switcher initial state ──────────────────────────────────────────────────
+    isCameraSource: false,
+    cameraSlotIndex: null,
+    isSwitcherController: false,
+    switcherCameraSlots: [],
+    switcherProgramSourceId: null,
+    switcherControllerSocketId: null,
+    switcherRouteGeneral: false,
+    switcherRouteSpeaker: false,
+    // ─ Switcher actions ───────────────────────────────────────────────────────
+    optInAsCamera: (): Promise<{ ok: boolean; error?: string; slotIndex?: number }> => {
+        return new Promise((resolve) => {
+            const { socket, isPaired, deviceName } = get();
+            if (!socket || !socket.connected || !isPaired) {
+                resolve({ ok: false, error: 'Must be connected and paired' });
+                return;
+            }
+            socket.emit('switcher:opt-in-camera', { name: deviceName }, (res: any) => {
+                if (res?.ok) {
+                    set({ isCameraSource: true, cameraSlotIndex: res.slotIndex });
+                    resolve({ ok: true, slotIndex: res.slotIndex });
+                } else {
+                    resolve({ ok: false, error: res?.error || 'Failed to join as camera source' });
+                }
+            });
+        });
+    },
+    optOutAsCamera: (): Promise<{ ok: boolean; error?: string }> => {
+        return new Promise((resolve) => {
+            const { socket, isPaired } = get();
+            if (!socket || !socket.connected || !isPaired) {
+                resolve({ ok: false, error: 'Must be connected and paired' });
+                return;
+            }
+            socket.emit('switcher:opt-out-camera', {}, (res: any) => {
+                set({ isCameraSource: false, cameraSlotIndex: null });
+                resolve(res?.ok ? { ok: true } : { ok: false, error: res?.error });
+            });
+        });
+    },
+    setSwitcherProgram: (deviceId: string): Promise<{ ok: boolean; error?: string }> => {
+        return new Promise((resolve) => {
+            const { socket, isPaired } = get();
+            if (!socket || !socket.connected || !isPaired) {
+                resolve({ ok: false, error: 'Must be connected and paired' });
+                return;
+            }
+            socket.emit('switcher:set-program', { deviceId }, (res: any) => {
+                if (res?.ok) {
+                    set({ switcherProgramSourceId: deviceId });
+                    resolve({ ok: true });
+                } else {
+                    resolve({ ok: false, error: res?.error || 'Switch rejected by server' });
+                }
+            });
+        });
+    },
+    setSwitcherRoute: (destination: 'general' | 'speaker', active: boolean): Promise<{ ok: boolean; error?: string }> => {
+        return new Promise((resolve) => {
+            const { socket, isPaired } = get();
+            if (!socket || !socket.connected || !isPaired) {
+                resolve({ ok: false, error: 'Must be connected and paired' });
+                return;
+            }
+            socket.emit('switcher:route-destination', { destination, active }, (res: any) => {
+                if (res?.ok) {
+                    if (destination === 'general') set({ switcherRouteGeneral: active });
+                    else set({ switcherRouteSpeaker: active });
+                    resolve({ ok: true });
+                } else {
+                    resolve({ ok: false, error: res?.error || 'Route rejected by server' });
+                }
+            });
+        });
+    },
+    requestControlReclaim: () => {
+        const { socket } = get();
+        if (socket && socket.connected) {
+            socket.emit('switcher:request-control-reclaim', {});
+        }
+    },
+    sendProgramFrame: (base64Data: string) => {
+        const { socket, isPaired, isSwitcherController } = get();
+        if (socket && socket.connected && isPaired && base64Data) {
+            // Send at full resolution via dedicated program-frame channel
+            socket.emit('switcher:program-frame', { data: base64Data, timestamp: Date.now() });
+        }
+    },
+
     shareContentToDesktop: (title: string, content: string): Promise<{ ok: boolean; error?: string }> => {
         return new Promise((resolve) => {
             const { socket, isPaired } = get();
@@ -324,6 +445,68 @@ export const useSocketStore = create<SocketState>((set, get) => ({
 
         socket.on('overlay-timer', (timer: any) => {
             set({ overlayTimer: timer });
+        });
+
+        // \u2500 Switcher event listeners (Phase A) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+
+        // Full switcher state sync (on connect and after any change)
+        socket.on('switcher:state', (state: any) => {
+            if (!state) return;
+            const myId = socket.id;
+            const mySlot = Array.isArray(state.cameraSlots)
+                ? state.cameraSlots.find((s: any) => s.socketId === myId)
+                : null;
+            set({
+                switcherCameraSlots: state.cameraSlots || [],
+                switcherControllerSocketId: state.controllerSocketId || null,
+                switcherProgramSourceId: state.programSourceId || null,
+                switcherRouteGeneral: !!state.routeGeneral,
+                switcherRouteSpeaker: !!state.routeSpeaker,
+                isCameraSource: !!mySlot,
+                cameraSlotIndex: mySlot ? mySlot.slotIndex : null,
+                isSwitcherController: state.controllerSocketId === myId,
+            });
+        });
+
+        // Controller permission granted to this device
+        socket.on('switcher:control-granted', (payload: any) => {
+            console.log('[Switcher] Controller permission granted to this device');
+            set({ isSwitcherController: true, switcherControllerSocketId: socket.id });
+        });
+
+        // Controller permission revoked from this device
+        socket.on('switcher:control-revoked', (payload: any) => {
+            console.log('[Switcher] Controller permission revoked, new controller:', payload?.newControllerSocketId);
+            set({ isSwitcherController: false, switcherControllerSocketId: payload?.newControllerSocketId || null });
+        });
+
+        // This device is now the program source \u2014 switch to high-quality streaming
+        socket.on('switcher:you-are-program', (payload: any) => {
+            console.log('[Switcher] This device is now the program source, active:', payload?.active);
+            // The mobile camera screen listens for isCameraSource + this flag to upgrade quality
+            if (payload?.active) {
+                set({ switcherProgramSourceId: socket.id });
+            }
+        });
+
+        // Request initial state from server after pairing
+        socket.emit('switcher:get-state', (res: any) => {
+            if (res?.ok) {
+                const myId = socket.id;
+                const mySlot = Array.isArray(res.cameraSlots)
+                    ? res.cameraSlots.find((s: any) => s.socketId === myId)
+                    : null;
+                set({
+                    switcherCameraSlots: res.cameraSlots || [],
+                    switcherControllerSocketId: res.controllerSocketId || null,
+                    switcherProgramSourceId: res.programSourceId || null,
+                    switcherRouteGeneral: !!res.routeGeneral,
+                    switcherRouteSpeaker: !!res.routeSpeaker,
+                    isCameraSource: !!mySlot,
+                    cameraSlotIndex: mySlot ? mySlot.slotIndex : null,
+                    isSwitcherController: res.controllerSocketId === myId,
+                });
+            }
         });
 
         socket.on('pair-required', (payload: { message?: string }) => {

@@ -529,4 +529,74 @@ contextBridge.exposeInMainWorld("electron", {
       return () => ipcRenderer.removeListener('updater:error', listener);
     },
   },
+
+  // ─── Live Switcher IPC Bridge (Phase A) ─────────────────────────────────────
+  Switcher: {
+    /** Get current full switcher state (camera slots, controller, program source, routes) */
+    getState: () => ipcRenderer.invoke('switcher:get-state-desktop'),
+
+    /** Desktop: grant switcher controller permission to a paired device */
+    grantControl: (deviceId) => ipcRenderer.invoke('switcher:grant-control', deviceId),
+
+    /** Desktop: reclaim switcher controller permission (safety valve — unconditional) */
+    reclaimControl: () => ipcRenderer.invoke('switcher:reclaim-control'),
+
+    /** Desktop: hard cut to a specific camera (when desktop holds controller permission) */
+    setProgramSource: (deviceId) => ipcRenderer.invoke('switcher:set-program-desktop', deviceId),
+
+    /** Desktop: toggle destination routing (General View or Speaker View) */
+    routeDestination: (destination, active) =>
+      ipcRenderer.invoke('switcher:route-destination-desktop', { destination, active }),
+
+    /** Subscribe to full switcher state updates (camera slots, controller, program, routes) */
+    onStateUpdate: (callback) => {
+      const listener = (_e, payload) => callback(payload);
+      ipcRenderer.on('switcher-state-update', listener);
+      return () => ipcRenderer.removeListener('switcher-state-update', listener);
+    },
+
+    /** Subscribe to program-quality video frames from the current program source */
+    onProgramFrame: (callback) => {
+      const listener = (_e, payload) => callback(payload);
+      ipcRenderer.on('switcher-program-frame', listener);
+      return () => ipcRenderer.removeListener('switcher-program-frame', listener);
+    },
+
+    /** Subscribe to all camera preview frames (includes fromId and isProgramSource) */
+    onCameraFrame: (callback) => {
+      const listener = (_e, payload) => callback(payload);
+      ipcRenderer.on('teleprompter-mobile-frame', listener);
+      return () => ipcRenderer.removeListener('teleprompter-mobile-frame', listener);
+    },
+
+    /** Subscribe to controller-reclaimed events (phone disconnected / desktop forcibly reclaimed) */
+    onControllerReclaimed: (callback) => {
+      const listener = (_e, payload) => callback(payload);
+      ipcRenderer.on('switcher-controller-reclaimed', listener);
+      return () => ipcRenderer.removeListener('switcher-controller-reclaimed', listener);
+    },
+
+    /** Subscribe to genuine pixel-captured raster frames for General View and Speaker View mirrors */
+    onDisplayMirrorFrame: (callback) => {
+      const listener = (_e, payload) => callback(payload);
+      ipcRenderer.on('display-mirror-frame', listener);
+      return () => ipcRenderer.removeListener('display-mirror-frame', listener);
+    },
+
+    /** WebRTC Signaling for continuous camera video */
+    sendWebRtcAnswer: (payload) => ipcRenderer.send('switcher:webrtc-answer', payload),
+    sendWebRtcIceCandidate: (payload) => ipcRenderer.send('switcher:webrtc-ice-candidate', payload),
+
+    onWebRtcOffer: (callback) => {
+      const listener = (_e, payload) => callback(payload);
+      ipcRenderer.on('switcher-webrtc-offer', listener);
+      return () => ipcRenderer.removeListener('switcher-webrtc-offer', listener);
+    },
+
+    onWebRtcIceCandidate: (callback) => {
+      const listener = (_e, payload) => callback(payload);
+      ipcRenderer.on('switcher-webrtc-ice-candidate', listener);
+      return () => ipcRenderer.removeListener('switcher-webrtc-ice-candidate', listener);
+    },
+  },
 });

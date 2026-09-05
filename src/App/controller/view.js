@@ -18,6 +18,7 @@ import PreviewModal from "./PreviewModal";
 import UpdateModal from "../components/updater/UpdateModal";
 
 import MobileConnectController from "./MobileConnectController";
+import LiveSwitcherController from "./LiveSwitcherController";
 
 /** Floating pill banner — "NEXT TIMER STARTS IN …" */
 function NextTimerBanner() {
@@ -239,6 +240,11 @@ function App() {
               className={`w-full h-full ${activeTab === "apps" ? "block" : "hidden"}`}
             >
               <Dashboard onNavigate={setActiveTab} />
+            </div>
+            <div
+              className={`w-full h-full ${activeTab === "camera" ? "block" : "hidden"}`}
+            >
+              <LiveSwitcherController />
             </div>
           </div>
         </div>

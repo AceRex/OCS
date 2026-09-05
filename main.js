@@ -1383,6 +1383,9 @@ serverApp.get("/overlay/stage", (_req, res) => {
 serverApp.get("/studio-camera", (_req, res) => {
   res.sendFile(path.join(__dirname, "src", "studio-camera", "index.html"));
 });
+serverApp.get("/switcher-camera", (_req, res) => {
+  res.sendFile(path.join(__dirname, "src", "switcher-camera", "index.html"));
+});
 serverApp.get("/stream/program.mjpg", (req, res) => {
   ndiEngine.handleMjpegRequest(req, res, "program");
 });
@@ -1403,6 +1406,65 @@ let latestOverlayTimer = null;
 const adminDeviceIds = new Set();
 const adminDeviceNames = new Set();
 
+// ─── Live Switcher State (Phase A) ───────────────────────────────────────────
+// Camera-source role: up to 6 concurrent phone cameras, keyed by socketId
+// Each entry: { socketId, deviceId (same as socketId), name, slotIndex (1–6) }
+const switcherCameraSlots = new Map(); // socketId -> { name, slotIndex }
+const MAX_CAMERA_SLOTS = 6;
+
+// Controller-permission: exactly one holder at a time.
+// 'desktop' = the desktop Electron window; a socketId = a paired phone.
+let switcherControllerSocketId = 'desktop';
+
+// Currently-selected Program source socketId (null = none)
+let switcherProgramSourceId = null;
+
+// Destination routing state
+let switcherRouteGeneral = false;
+let switcherRouteSpeaker = false;
+
+// Assign the next available slot index (1–6)
+function _nextSwitcherSlot() {
+  const used = new Set([...switcherCameraSlots.values()].map((v) => v.slotIndex));
+  for (let i = 1; i <= MAX_CAMERA_SLOTS; i++) {
+    if (!used.has(i)) return i;
+  }
+  return null;
+}
+
+// Serialise camera slots for broadcast
+function _switcherSlotsPayload() {
+  const slots = [];
+  for (const [sockId, info] of switcherCameraSlots) {
+    slots.push({ socketId: sockId, name: info.name, slotIndex: info.slotIndex });
+  }
+  return slots;
+}
+
+function broadcastSwitcherState() {
+  const state = {
+    cameraSlots: _switcherSlotsPayload(),
+    controllerSocketId: switcherControllerSocketId,
+    programSourceId: switcherProgramSourceId,
+    routeGeneral: switcherRouteGeneral,
+    routeSpeaker: switcherRouteSpeaker,
+  };
+  // To all paired mobile clients
+  if (io) {
+    for (const [id, sock] of io.sockets.sockets) {
+      if (isPaired(id)) {
+        sock.emit('switcher:state', state);
+      }
+    }
+  }
+  // To controller window
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send('switcher-state-update', state);
+    }
+  }
+}
+
 function broadcastDevicesUpdated() {
   const devicesList = connectedDevices.map((d) => ({
     id: d.id,
@@ -1413,6 +1475,9 @@ function broadcastDevicesUpdated() {
     isAdmin: adminDeviceIds.has(d.id) || adminDeviceNames.has(d.name) || !!d.isAdmin,
     isVoiceActive: !!d.isVoiceActive,
     connectedAt: d.connectedAt,
+    isCameraSource: switcherCameraSlots.has(d.id),
+    cameraSlotIndex: switcherCameraSlots.has(d.id) ? switcherCameraSlots.get(d.id).slotIndex : null,
+    isSwitcherController: d.id === switcherControllerSocketId,
   }));
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed()) {
@@ -1458,11 +1523,11 @@ io.on("connection", (socket) => {
     }
   };
 
-  if (socket.handshake.query && socket.handshake.query.isStudioCamera === "true") {
+  if (socket.handshake.query && (socket.handshake.query.isStudioCamera === "true" || socket.handshake.query.isSwitcherCamera === "true")) {
     markPaired(socket.id);
     device.paired = true;
-    device.name = "WebRTC Studio Camera";
-    console.log("[Remote] Auto-paired Studio Camera client:", socket.id);
+    device.name = socket.handshake.query.deviceName || (socket.handshake.query.isSwitcherCamera === "true" ? "WebRTC Switcher Camera" : "WebRTC Studio Camera");
+    console.log("[Remote] Auto-paired Camera client:", socket.id, device.name);
     notifyController("mobile-connected", device);
   }
 
@@ -1737,6 +1802,30 @@ io.on("connection", (socket) => {
     unmarkPaired(socket.id);
     connectedDevices = connectedDevices.filter((d) => d.id !== socket.id);
     notifyController("mobile-disconnected", { id: socket.id });
+
+    // ── Switcher cleanup on disconnect ──────────────────────────────────────
+    let switcherChanged = false;
+    if (switcherCameraSlots.has(socket.id)) {
+      const info = switcherCameraSlots.get(socket.id);
+      switcherCameraSlots.delete(socket.id);
+      console.log(`[Switcher] Camera slot ${info.slotIndex} freed (device disconnected: ${socket.id})`);
+      if (switcherProgramSourceId === socket.id) {
+        switcherProgramSourceId = null;
+        console.log('[Switcher] Program source cleared (camera disconnected)');
+      }
+      switcherChanged = true;
+    }
+    if (switcherControllerSocketId === socket.id) {
+      switcherControllerSocketId = 'desktop';
+      console.log('[Switcher] Controller reclaimed by desktop (phone disconnected)');
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) {
+          win.webContents.send('switcher-controller-reclaimed', { reason: 'disconnect' });
+        }
+      }
+      switcherChanged = true;
+    }
+    if (switcherChanged) broadcastSwitcherState();
     broadcastDevicesUpdated();
   });
 
@@ -1829,16 +1918,39 @@ io.on("connection", (socket) => {
   });
 
   // Teleprompter Mobile Camera Frame Streaming (Mobile -> Desktop Workstation)
+  // Now also serves as switcher preview frames — payload includes isProgramSource flag
   socket.on("teleprompter:camera-frame", (payload = {}) => {
     if (!isPaired(socket.id)) return;
+    const isProgramSource = socket.id === switcherProgramSourceId;
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
         win.webContents.send("teleprompter-mobile-frame", {
           data: payload.data,
           fromId: socket.id,
           timestamp: payload.timestamp || Date.now(),
+          isProgramSource,
         });
       }
+    }
+  });
+
+  // Switcher Program-quality frame (higher-res, separate IPC channel)
+  socket.on("switcher:program-frame", (payload = {}) => {
+    if (!isPaired(socket.id)) return;
+    if (socket.id !== switcherProgramSourceId) return; // Only accept from current program source
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send("switcher-program-frame", {
+          data: payload.data,
+          fromId: socket.id,
+          timestamp: payload.timestamp || Date.now(),
+        });
+      }
+    }
+    // Also forward to view windows as live-camera content via Socket.IO
+    if (io && (switcherRouteGeneral || switcherRouteSpeaker)) {
+      // The view windows (General/Speaker) receive it via their own Socket.IO connection
+      io.emit('switcher:live-frame', { data: payload.data, timestamp: payload.timestamp || Date.now() });
     }
   });
 
@@ -1856,6 +1968,164 @@ io.on("connection", (socket) => {
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
         win.webContents.send("teleprompter-mobile-camera-stop", { fromId: socket.id });
+      }
+    }
+  });
+
+  // ─── Live Switcher Socket Handlers (Phase A) ─────────────────────────────
+
+  // Camera-source opt-in (mobile device wants to be a camera source)
+  socket.on("switcher:opt-in-camera", (payload = {}, ack = () => {}) => {
+    if (!isPaired(socket.id)) {
+      if (typeof ack === 'function') ack({ ok: false, error: 'Pairing required' });
+      return;
+    }
+    if (switcherCameraSlots.has(socket.id)) {
+      // Already opted in — return current slot
+      const info = switcherCameraSlots.get(socket.id);
+      if (typeof ack === 'function') ack({ ok: true, slotIndex: info.slotIndex });
+      return;
+    }
+    if (switcherCameraSlots.size >= MAX_CAMERA_SLOTS) {
+      console.log(`[Switcher] Camera opt-in rejected for ${socket.id}: max ${MAX_CAMERA_SLOTS} cameras already connected`);
+      if (typeof ack === 'function') ack({ ok: false, error: `Maximum of ${MAX_CAMERA_SLOTS} cameras already connected` });
+      return;
+    }
+    const slotIndex = _nextSwitcherSlot();
+    const devName = connectedDevices.find((d) => d.id === socket.id)?.name || payload.name || 'Camera';
+    switcherCameraSlots.set(socket.id, { name: devName, slotIndex });
+    console.log(`[Switcher] Camera opted in: ${devName} -> slot ${slotIndex}`);
+    broadcastSwitcherState();
+    broadcastDevicesUpdated();
+    if (typeof ack === 'function') ack({ ok: true, slotIndex });
+  });
+
+  // Camera-source opt-out
+  socket.on("switcher:opt-out-camera", (payload = {}, ack = () => {}) => {
+    if (!isPaired(socket.id)) {
+      if (typeof ack === 'function') ack({ ok: false, error: 'Pairing required' });
+      return;
+    }
+    if (!switcherCameraSlots.has(socket.id)) {
+      if (typeof ack === 'function') ack({ ok: true }); // Not in a slot — no-op
+      return;
+    }
+    const info = switcherCameraSlots.get(socket.id);
+    switcherCameraSlots.delete(socket.id);
+    if (switcherProgramSourceId === socket.id) {
+      switcherProgramSourceId = null;
+    }
+    console.log(`[Switcher] Camera opted out: slot ${info.slotIndex}`);
+    broadcastSwitcherState();
+    broadcastDevicesUpdated();
+    if (typeof ack === 'function') ack({ ok: true });
+  });
+
+  // Hard-cut program source switch — ENFORCED SERVER-SIDE
+  socket.on("switcher:set-program", (payload = {}, ack = () => {}) => {
+    if (!isPaired(socket.id)) {
+      if (typeof ack === 'function') ack({ ok: false, error: 'Pairing required' });
+      return;
+    }
+    // Server-side controller-permission check — not just UI gating
+    if (switcherControllerSocketId !== socket.id) {
+      console.warn(`[Switcher] REJECTED switcher:set-program from non-controller ${socket.id} (controller: ${switcherControllerSocketId})`);
+      if (typeof ack === 'function') ack({ ok: false, error: 'Permission denied — you are not the current switcher controller' });
+      return;
+    }
+    const targetId = payload.deviceId;
+    if (!targetId || (!switcherCameraSlots.has(targetId) && targetId !== null)) {
+      if (typeof ack === 'function') ack({ ok: false, error: 'Invalid camera source' });
+      return;
+    }
+    switcherProgramSourceId = targetId;
+    console.log(`[Switcher] Program source set to: ${targetId}`);
+    // Notify the new program source to upgrade its stream quality
+    const targetSock = targetId ? io.sockets.sockets.get(targetId) : null;
+    if (targetSock) targetSock.emit('switcher:you-are-program', { active: true });
+    // Notify previous program source (if different) to drop back to preview quality
+    // (handled implicitly — phone uses isProgramSource flag on ack)
+    broadcastSwitcherState();
+    if (typeof ack === 'function') ack({ ok: true, programSourceId: targetId });
+  });
+
+  // Destination routing (General View / Speaker View)
+  socket.on("switcher:route-destination", (payload = {}, ack = () => {}) => {
+    if (!isPaired(socket.id)) {
+      if (typeof ack === 'function') ack({ ok: false, error: 'Pairing required' });
+      return;
+    }
+    if (switcherControllerSocketId !== socket.id) {
+      console.warn(`[Switcher] REJECTED switcher:route-destination from non-controller ${socket.id}`);
+      if (typeof ack === 'function') ack({ ok: false, error: 'Permission denied — you are not the current switcher controller' });
+      return;
+    }
+    const { destination, active } = payload;
+    if (destination !== 'general' && destination !== 'speaker') {
+      if (typeof ack === 'function') ack({ ok: false, error: 'Invalid destination' });
+      return;
+    }
+    if (destination === 'general') switcherRouteGeneral = !!active;
+    if (destination === 'speaker') switcherRouteSpeaker = !!active;
+    console.log(`[Switcher] Route ${destination} -> ${active}`);
+    // Update the content slot on that display window
+    const contentValue = active && switcherProgramSourceId
+      ? { type: 'live-camera', data: { deviceId: switcherProgramSourceId }, target: [destination] }
+      : { type: 'none', data: null, target: [destination] };
+    // Trigger the existing canvas state machinery
+    if (active && switcherProgramSourceId) {
+      currentCanvasState.contentSlot = { type: 'live-camera', data: { deviceId: switcherProgramSourceId } };
+    } else {
+      // Only clear if the slot was live-camera for that target
+      // (don't clobber if the other destination is still using a different type)
+    }
+    broadcastCanvasState(currentCanvasState, [destination]);
+    broadcastSwitcherState();
+    if (typeof ack === 'function') ack({ ok: true });
+  });
+
+  // Request initial switcher state sync
+  socket.on("switcher:get-state", (ack = () => {}) => {
+    if (!isPaired(socket.id)) {
+      if (typeof ack === 'function') ack({ ok: false, error: 'Pairing required' });
+      return;
+    }
+    const state = {
+      ok: true,
+      cameraSlots: _switcherSlotsPayload(),
+      controllerSocketId: switcherControllerSocketId,
+      programSourceId: switcherProgramSourceId,
+      routeGeneral: switcherRouteGeneral,
+      routeSpeaker: switcherRouteSpeaker,
+    };
+    if (typeof ack === 'function') ack(state);
+  });
+
+  // WebRTC Continuous Camera Signaling: Offer from camera source -> Desktop
+  socket.on("switcher:webrtc-offer", (payload = {}) => {
+    if (!isPaired(socket.id)) return;
+    const slotInfo = switcherCameraSlots.get(socket.id);
+    const slotIndex = slotInfo ? slotInfo.slotIndex : payload.slotIndex || 1;
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send("switcher-webrtc-offer", {
+          socketId: socket.id,
+          slotIndex,
+          offer: payload.offer,
+        });
+      }
+    }
+  });
+
+  // WebRTC Continuous Camera Signaling: ICE Candidate from camera source -> Desktop
+  socket.on("switcher:webrtc-ice-candidate", (payload = {}) => {
+    if (!isPaired(socket.id)) return;
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send("switcher-webrtc-ice-candidate", {
+          socketId: socket.id,
+          candidate: payload.candidate,
+        });
       }
     }
   });
@@ -2616,6 +2886,112 @@ ipcMain.on("canvas-set-chrome", (event, chrome) => {
 ipcMain.on("canvas-toggle-blackout", () => toggleBlackout());
 ipcMain.on("canvas-clear-content", () => clearContent());
 
+// ─── Live Switcher IPC Handlers (desktop → server, Phase A) ─────────────────
+
+// Grant switcher controller permission to a paired device
+ipcMain.handle("switcher:grant-control", (_event, deviceId) => {
+  if (!deviceId || typeof deviceId !== 'string') {
+    return { ok: false, error: 'Invalid deviceId' };
+  }
+  const prevHolder = switcherControllerSocketId;
+  switcherControllerSocketId = deviceId;
+  console.log(`[Switcher] Control granted to: ${deviceId} (was: ${prevHolder})`);
+  // Notify new holder
+  const targetSock = io && io.sockets.sockets.get(deviceId);
+  if (targetSock) {
+    targetSock.emit('switcher:control-granted', { controllerSocketId: deviceId });
+  }
+  // Notify previous holder (if it was a phone)
+  if (prevHolder && prevHolder !== 'desktop') {
+    const prevSock = io && io.sockets.sockets.get(prevHolder);
+    if (prevSock) prevSock.emit('switcher:control-revoked', { newControllerSocketId: deviceId });
+  }
+  broadcastSwitcherState();
+  broadcastDevicesUpdated();
+  return { ok: true, controllerSocketId: deviceId };
+});
+
+// Reclaim switcher controller permission back to desktop (safety valve — unconditional)
+ipcMain.handle("switcher:reclaim-control", () => {
+  const prevHolder = switcherControllerSocketId;
+  switcherControllerSocketId = 'desktop';
+  console.log(`[Switcher] Control reclaimed by desktop (was: ${prevHolder})`);
+  if (prevHolder && prevHolder !== 'desktop') {
+    const prevSock = io && io.sockets.sockets.get(prevHolder);
+    if (prevSock) prevSock.emit('switcher:control-revoked', { newControllerSocketId: 'desktop' });
+  }
+  broadcastSwitcherState();
+  broadcastDevicesUpdated();
+  return { ok: true };
+});
+
+// Desktop-initiated hard cut (desktop is always allowed when it holds controller permission)
+ipcMain.handle("switcher:set-program-desktop", (_event, deviceId) => {
+  if (switcherControllerSocketId !== 'desktop') {
+    return { ok: false, error: 'Desktop does not hold controller permission' };
+  }
+  if (deviceId && !switcherCameraSlots.has(deviceId)) {
+    return { ok: false, error: 'Device is not a camera source' };
+  }
+  switcherProgramSourceId = deviceId || null;
+  console.log(`[Switcher] Desktop set program source: ${deviceId}`);
+  if (deviceId) {
+    const sock = io && io.sockets.sockets.get(deviceId);
+    if (sock) sock.emit('switcher:you-are-program', { active: true });
+  }
+  broadcastSwitcherState();
+  return { ok: true, programSourceId: deviceId };
+});
+
+// Desktop-initiated destination routing
+ipcMain.handle("switcher:route-destination-desktop", (_event, { destination, active }) => {
+  if (switcherControllerSocketId !== 'desktop') {
+    return { ok: false, error: 'Desktop does not hold controller permission' };
+  }
+  if (destination !== 'general' && destination !== 'speaker') {
+    return { ok: false, error: 'Invalid destination' };
+  }
+  if (destination === 'general') switcherRouteGeneral = !!active;
+  if (destination === 'speaker') switcherRouteSpeaker = !!active;
+  console.log(`[Switcher] Desktop route ${destination} -> ${active}`);
+  if (active && switcherProgramSourceId) {
+    currentCanvasState.contentSlot = { type: 'live-camera', data: { deviceId: switcherProgramSourceId } };
+  }
+  broadcastCanvasState(currentCanvasState, [destination]);
+  broadcastSwitcherState();
+  return { ok: true };
+});
+
+// Get current switcher state (for desktop UI hydration)
+ipcMain.handle("switcher:get-state-desktop", () => {
+  return {
+    ok: true,
+    cameraSlots: _switcherSlotsPayload(),
+    controllerSocketId: switcherControllerSocketId,
+    programSourceId: switcherProgramSourceId,
+    routeGeneral: switcherRouteGeneral,
+    routeSpeaker: switcherRouteSpeaker,
+  };
+});
+
+// Desktop sends WebRTC answer back to specific camera source
+ipcMain.on("switcher:webrtc-answer", (_event, payload = {}) => {
+  if (!io || !payload.targetId) return;
+  const targetSock = io.sockets.sockets.get(payload.targetId);
+  if (targetSock) {
+    targetSock.emit("switcher:webrtc-answer", { answer: payload.answer });
+  }
+});
+
+// Desktop sends WebRTC ICE candidate back to specific camera source
+ipcMain.on("switcher:webrtc-ice-candidate", (_event, payload = {}) => {
+  if (!io || !payload.targetId) return;
+  const targetSock = io.sockets.sockets.get(payload.targetId);
+  if (targetSock) {
+    targetSock.emit("switcher:webrtc-ice-candidate", { candidate: payload.candidate });
+  }
+});
+
 function createWindows() {
   if (!app || !app.isReady()) {
     console.warn("[App] createWindows() invoked before app is ready. Postponing.");
@@ -3003,10 +3379,66 @@ function createWindows() {
   generalWindow.show();
   controllerWindow.show();
 
+  // ─── Display Mirror Engine (True Pixel Mirror via Electron capturePage) ──────
+  startDisplayMirrorEngine();
+
   // Close app when controller closes
   controllerWindow.on("closed", () => {
+    if (displayMirrorInterval) clearInterval(displayMirrorInterval);
     app.quit();
   });
+}
+
+let displayMirrorInterval = null;
+let isCapturingGeneral = false;
+let isCapturingSpeaker = false;
+
+function startDisplayMirrorEngine() {
+  if (displayMirrorInterval) clearInterval(displayMirrorInterval);
+  // Confidence monitor pixel mirror updating at ~3.3 FPS (300ms)
+  displayMirrorInterval = setInterval(() => {
+    if (!controllerWindow || controllerWindow.isDestroyed()) return;
+
+    // General View window raster capture
+    if (generalWindow && !generalWindow.isDestroyed() && !isCapturingGeneral) {
+      isCapturingGeneral = true;
+      generalWindow.webContents
+        .capturePage()
+        .then((img) => {
+          if (img && !img.isEmpty() && controllerWindow && !controllerWindow.isDestroyed()) {
+            const thumb = img.resize({ width: 480, height: 270, quality: "good" });
+            controllerWindow.webContents.send("display-mirror-frame", {
+              destination: "general",
+              data: thumb.toDataURL(),
+            });
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          isCapturingGeneral = false;
+        });
+    }
+
+    // Speaker View window raster capture
+    if (speakerWindow && !speakerWindow.isDestroyed() && !isCapturingSpeaker) {
+      isCapturingSpeaker = true;
+      speakerWindow.webContents
+        .capturePage()
+        .then((img) => {
+          if (img && !img.isEmpty() && controllerWindow && !controllerWindow.isDestroyed()) {
+            const thumb = img.resize({ width: 480, height: 270, quality: "good" });
+            controllerWindow.webContents.send("display-mirror-frame", {
+              destination: "speaker",
+              data: thumb.toDataURL(),
+            });
+          }
+        })
+        .catch(() => {})
+        .finally(() => {
+          isCapturingSpeaker = false;
+        });
+    }
+  }, 300);
 }
 
 ipcMain.handle("bible-get-books", async (event) => {

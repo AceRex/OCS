@@ -1130,7 +1130,7 @@ export default function PresentationController() {
                 color: type === 'text' ? '#ffffff' : undefined,
                 fontFamily: 'sans',
                 width: (type === 'image' || type === 'video') ? 30 : 0,
-                borderRadius: 8,
+                borderRadius: 12,
                 opacity: 1,
                 ...options.style
             }
@@ -1844,7 +1844,7 @@ export default function PresentationController() {
                                                     playsInline
                                                     className="w-full h-auto relative z-10 pointer-events-none select-none transition-all"
                                                     style={{
-                                                        borderRadius: `${layer.style?.borderRadius ?? 8}px`,
+                                                        borderRadius: `${layer.style?.borderRadius ?? 12}px`,
                                                         opacity: layer.style?.opacity ?? 1,
                                                         objectFit: videoAspectRatio === 'fill' ? 'cover' : (videoAspectRatio === 'fit' ? 'contain' : (layer.style?.objectFit || 'contain')),
                                                         boxShadow: layer.style?.shadow ? `${layer.style.shadow.x||0}px ${layer.style.shadow.y||0}px ${layer.style.shadow.blur||14}px ${layer.style.shadow.color||'rgba(0,0,0,0.6)'}` : 'none',
@@ -1862,7 +1862,7 @@ export default function PresentationController() {
                                                     src={layer.content}
                                                     className="w-full h-auto relative z-10 pointer-events-none select-none transition-all"
                                                     style={{
-                                                        borderRadius: `${layer.style?.borderRadius ?? 8}px`,
+                                                        borderRadius: `${layer.style?.borderRadius ?? 12}px`,
                                                         opacity: layer.style?.opacity ?? 1,
                                                         objectFit: layer.style?.objectFit || 'contain',
                                                         boxShadow: layer.style?.shadow ? `${layer.style.shadow.x||0}px ${layer.style.shadow.y||0}px ${layer.style.shadow.blur||14}px ${layer.style.shadow.color||'rgba(0,0,0,0.6)'}` : 'none',
