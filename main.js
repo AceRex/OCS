@@ -1486,7 +1486,14 @@ function _nextSwitcherSlot() {
 function _switcherSlotsPayload() {
   const slots = [];
   for (const [sockId, info] of switcherCameraSlots) {
-    slots.push({ socketId: sockId, name: info.name, slotIndex: info.slotIndex });
+    slots.push({
+      socketId: sockId,
+      name: info.name,
+      slotIndex: info.slotIndex,
+      type: info.type || 'camera',
+      isLocal: !!info.isLocal,
+      deviceId: info.deviceId || null,
+    });
   }
   return slots;
 }
@@ -2162,6 +2169,7 @@ io.on("connection", (socket) => {
       fromId: socket.id,
       timestamp: payload.timestamp || Date.now(),
       isProgramSource,
+      isMirrored: !!payload.isMirrored,
     };
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
@@ -2188,6 +2196,7 @@ io.on("connection", (socket) => {
       fromId: socket.id,
       timestamp: payload.timestamp || Date.now(),
       isProgramSource,
+      isMirrored: !!payload.isMirrored,
     };
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
@@ -3430,6 +3439,63 @@ ipcMain.handle("switcher:get-state-desktop", () => {
     display1Source: switcherDisplay1Source,
     display2Source: switcherDisplay2Source,
   };
+});
+
+// Desktop assigns camera slot (for physical camcorders or manually assigned devices)
+ipcMain.handle("switcher:assign-slot-desktop", (_event, { socketId, name, slotIndex, type, deviceId, isLocal }) => {
+  if (switcherControllerSocketId !== 'desktop') {
+    return { ok: false, error: 'Desktop does not hold controller permission' };
+  }
+  if (!socketId || !slotIndex) {
+    return { ok: false, error: 'Missing socketId or slotIndex' };
+  }
+  const id = socketId;
+  const devName = name || (type === 'camcorder' ? `Camcorder ${slotIndex}` : `Camera ${slotIndex}`);
+  switcherCameraSlots.set(id, {
+    name: devName,
+    slotIndex: Number(slotIndex),
+    type: type || 'camcorder',
+    deviceId: deviceId || null,
+    isLocal: isLocal !== undefined ? !!isLocal : id.startsWith('local:'),
+  });
+
+  // Auto-assign to switcherDisplay2Source if empty or defaulted to speaker
+  if (!switcherDisplay2Source || switcherDisplay2Source === 'speaker' || !switcherCameraSlots.has(switcherDisplay2Source)) {
+    switcherDisplay2Source = id;
+  }
+
+  broadcastSwitcherState();
+  broadcastDevicesUpdated();
+  return { ok: true, slotIndex, socketId: id };
+});
+
+// Desktop removes/releases camera slot
+ipcMain.handle("switcher:remove-slot-desktop", (_event, { socketId, slotIndex }) => {
+  if (switcherControllerSocketId !== 'desktop') {
+    return { ok: false, error: 'Desktop does not hold controller permission' };
+  }
+  let id = socketId;
+  if (!id && slotIndex) {
+    for (const [sid, info] of switcherCameraSlots.entries()) {
+      if (info.slotIndex === Number(slotIndex)) {
+        id = sid;
+        break;
+      }
+    }
+  }
+  if (!id || !switcherCameraSlots.has(id)) {
+    return { ok: true };
+  }
+  switcherCameraSlots.delete(id);
+  if (switcherProgramSourceId === id) switcherProgramSourceId = null;
+  if (switcherDisplay1Source === id) switcherDisplay1Source = 'general';
+  if (switcherDisplay2Source === id) {
+    const remaining = Array.from(switcherCameraSlots.keys());
+    switcherDisplay2Source = remaining.length > 0 ? remaining[0] : 'speaker';
+  }
+  broadcastSwitcherState();
+  broadcastDevicesUpdated();
+  return { ok: true };
 });
 
 // Desktop sends WebRTC answer back to specific camera source

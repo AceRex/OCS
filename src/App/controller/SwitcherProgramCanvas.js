@@ -24,6 +24,7 @@ export default function SwitcherProgramCanvas({
   mixProgress = null,
   transitionSetting,
   isSharingActive = false,
+  isMirrored = false,
 }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -209,7 +210,15 @@ export default function SwitcherProgramCanvas({
             }
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = "high";
-            ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+            if (isMirrored) {
+              ctx.save();
+              ctx.translate(canvas.width, 0);
+              ctx.scale(-1, 1);
+              ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+              ctx.restore();
+            } else {
+              ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+            }
             maybeEmitLiveOutputFrame(canvas);
           }
         }
@@ -227,7 +236,15 @@ export default function SwitcherProgramCanvas({
             }
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = "high";
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            if (isMirrored) {
+              ctx.save();
+              ctx.translate(canvas.width, 0);
+              ctx.scale(-1, 1);
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              ctx.restore();
+            } else {
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            }
             maybeEmitLiveOutputFrame(canvas);
             isDirtyRef.current = false;
           }
@@ -350,11 +367,13 @@ export default function SwitcherProgramCanvas({
           autoPlay
           playsInline
           muted
+          style={{ transform: isMirrored ? "scaleX(-1) translateZ(0)" : "translateZ(0)" }}
           className="w-full h-full object-cover"
         />
       ) : (
         <canvas
           ref={canvasRef}
+          style={{ transform: isMirrored ? "scaleX(-1) translateZ(0)" : "translateZ(0)" }}
           className={`w-full h-full object-cover transition-opacity duration-300 ${
             isTransitioning || hasFrame ? "opacity-100" : "opacity-0"
           }`}
@@ -388,6 +407,11 @@ export default function SwitcherProgramCanvas({
               <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
               {isManualMixing ? `T-BAR: ${Math.round(mixProgress * 100)}%` : isTransitioning ? "TRANSITION" : "LIVE OUTPUT"}
             </div>
+            {isMirrored && (
+              <div className="bg-purple-600/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-[12px] shadow-sm">
+                MIRRORED
+              </div>
+            )}
             {isManualMixing && (
               <span className="text-[9px] font-bold uppercase tracking-wider text-amber-300 bg-black/60 px-1.5 py-0.5 rounded-[12px] border border-amber-500/30">
                 {transitionSetting?.type?.toUpperCase() || "FADE"} ({Math.round(mixProgress * 100)}%)

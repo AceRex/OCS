@@ -121,6 +121,7 @@ export default function DisplayCanvas({
   const liveCameraAnimRef = useRef(null);
   const liveCameraTransitionRef = useRef(null);
   const [hasLiveFrame, setHasLiveFrame] = useState(false);
+  const [isCameraMirrored, setIsCameraMirrored] = useState(false);
 
   // Sync transition from contentSlot if provided by canvas state broadcast
   useEffect(() => {
@@ -193,8 +194,11 @@ export default function DisplayCanvas({
     };
     liveCameraAnimRef.current = requestAnimationFrame(renderLoop);
 
-    const handleFrame = (fromId, data) => {
+    const handleFrame = (fromId, data, isMirrored) => {
       if (!data) return;
+      if (isMirrored !== undefined) {
+        setIsCameraMirrored(!!isMirrored);
+      }
       const key = fromId || deviceId || 'default';
       const img = _liveCameraImgCache[key] || new Image();
       _liveCameraImgCache[key] = img;
@@ -212,8 +216,8 @@ export default function DisplayCanvas({
       cleanupLiveOutput = window.electron.Switcher.onLiveOutputFrame((payload) => {
         const frameData = payload?.data || payload;
         if (frameData) {
-          handleFrame('live-output', frameData);
-          handleFrame(deviceId, frameData);
+          handleFrame('live-output', frameData, payload?.isMirrored);
+          handleFrame(deviceId, frameData, payload?.isMirrored);
         }
       });
     }
@@ -222,14 +226,14 @@ export default function DisplayCanvas({
     let cleanupProgram = null;
     if (window.electron?.Switcher?.onProgramFrame) {
       cleanupProgram = window.electron.Switcher.onProgramFrame((payload) => {
-        handleFrame(payload?.fromId || deviceId, payload?.data);
+        handleFrame(payload?.fromId || deviceId, payload?.data, payload?.isMirrored);
       });
     }
 
     let cleanupCamera = null;
     if (window.electron?.Switcher?.onCameraFrame) {
       cleanupCamera = window.electron.Switcher.onCameraFrame((payload) => {
-        handleFrame(payload?.fromId, payload?.data);
+        handleFrame(payload?.fromId, payload?.data, payload?.isMirrored);
       });
     }
 
@@ -852,7 +856,10 @@ export default function DisplayCanvas({
             <canvas
               ref={liveCameraCanvasRef}
               className="w-full h-full object-cover absolute inset-0"
-              style={{ display: 'block' }}
+              style={{
+                display: 'block',
+                transform: (data?.isMirrored || isCameraMirrored) ? 'scaleX(-1)' : 'none',
+              }}
             />
             {/* Standby HUD overlay when no live frames have arrived yet */}
             {!hasLiveFrame && (

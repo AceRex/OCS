@@ -555,6 +555,14 @@ contextBridge.exposeInMainWorld("electron", {
     routeDestination: (destination, active) =>
       ipcRenderer.invoke('switcher:route-destination-desktop', { destination, active }),
 
+    /** Desktop: assign a hardware camcorder or mobile companion to a specific camera slot */
+    assignCameraSlot: (slotData) =>
+      ipcRenderer.invoke('switcher:assign-slot-desktop', slotData),
+
+    /** Desktop: remove / release a camera slot */
+    removeCameraSlot: (slotData) =>
+      ipcRenderer.invoke('switcher:remove-slot-desktop', slotData),
+
     /** Subscribe to full switcher state updates (camera slots, controller, program, routes) */
     onStateUpdate: (callback) => {
       const listener = (_e, payload) => callback(payload);

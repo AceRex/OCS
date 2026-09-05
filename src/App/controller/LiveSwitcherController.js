@@ -20,17 +20,23 @@ import {
   PiArrowsLeftRight,
   PiPlay,
   PiRadio,
+  PiDeviceMobile,
+  PiX,
+  PiArrowsClockwise,
+  PiPlus,
+  PiTrash,
 } from "react-icons/pi";
 import SwitcherCameraTile from "./SwitcherCameraTile";
 import SwitcherMonitorTile from "./SwitcherMonitorTile";
 import SwitcherProgramCanvas from "./SwitcherProgramCanvas";
+import localCameraManager from "./LocalCameraManager";
 
 /** Total camera slots in the multiview grid (always rendered, even if empty) */
 const TOTAL_SLOTS = 6;
 
 export default function LiveSwitcherController() {
   // ── Switcher state ───────────────────────────────────────────────────────────
-  const [cameraSlots, setCameraSlots] = useState([]); // [{ socketId, name, slotIndex }]
+  const [cameraSlots, setCameraSlots] = useState([]); // [{ socketId, name, slotIndex, type, deviceId }]
   const [activeDisplay, setActiveDisplay] = useState("display1"); // "display1" | "display2"
   const [display1Source, setDisplay1Source] = useState("general"); // "general" | "speaker" | socketId
   const [display2Source, setDisplay2Source] = useState(null); // "general" | "speaker" | socketId | null
@@ -48,6 +54,14 @@ export default function LiveSwitcherController() {
     direction: "left-to-right",
   });
   const [activeTransition, setActiveTransition] = useState(null);
+
+  // ── Mirroring & Physical Camcorder Ingestion state ──────────────────────────
+  const [slotMirrorStates, setSlotMirrorStates] = useState({}); // slotIndex -> boolean
+  const [localVideoDevices, setLocalVideoDevices] = useState([]); // [{ deviceId, label, type, isCamcorder }]
+  const [isScanningDevices, setIsScanningDevices] = useState(false);
+  const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
+  const [selectedAssignSlotIndex, setSelectedAssignSlotIndex] = useState(null);
+  const [activeAssignTab, setActiveAssignTab] = useState("camcorder"); // "camcorder" | "mobile"
 
   // ── UI state ─────────────────────────────────────────────────────────────────
   const [feedback, setFeedback] = useState(null); // { text, ok }
@@ -72,6 +86,18 @@ export default function LiveSwitcherController() {
   const previewSourceId = effectivePreviewSourceId;
 
   // ── Hydrate on mount ─────────────────────────────────────────────────────────
+  const refreshLocalDevices = useCallback(async () => {
+    setIsScanningDevices(true);
+    try {
+      const devs = await localCameraManager.enumerateVideoDevices();
+      setLocalVideoDevices(devs);
+    } catch (e) {
+      console.error("[SwitcherController] Failed to enumerate local video devices:", e);
+    } finally {
+      setIsScanningDevices(false);
+    }
+  }, []);
+
   useEffect(() => {
     const hydrate = async () => {
       try {
@@ -88,6 +114,7 @@ export default function LiveSwitcherController() {
       }
     };
     hydrate();
+    refreshLocalDevices();
 
     // Live state updates
     const unsubState = window.electron?.Switcher?.onStateUpdate?.((newState) => {
@@ -101,6 +128,23 @@ export default function LiveSwitcherController() {
     const unsubReclaim = window.electron?.Switcher?.onControllerReclaimed?.((payload) => {
       setControllerSocketId("desktop");
       showFeedback(`Switcher control reclaimed by desktop (${payload?.reason || "phone disconnected"})`, true);
+    });
+
+    // Hardware camera device change listener
+    const unsubLocalDevs = localCameraManager.subscribe((devs) => {
+      setLocalVideoDevices(devs);
+    });
+
+    // Camera frame mirror listener
+    const unsubCamFrame = window.electron?.Switcher?.onCameraFrame?.((payload) => {
+      if (payload && payload.slotIndex && payload.isMirrored !== undefined) {
+        setSlotMirrorStates((prev) => {
+          if (prev[payload.slotIndex] === undefined) {
+            return { ...prev, [payload.slotIndex]: payload.isMirrored };
+          }
+          return prev;
+        });
+      }
     });
 
     // Transition start / complete / setting updates
@@ -183,6 +227,8 @@ export default function LiveSwitcherController() {
       if (typeof unsubState === "function") unsubState();
       if (typeof unsubDevices === "function") unsubDevices();
       if (typeof unsubReclaim === "function") unsubReclaim();
+      if (typeof unsubLocalDevs === "function") unsubLocalDevs();
+      if (typeof unsubCamFrame === "function") unsubCamFrame();
       if (typeof unsubTransStart === "function") unsubTransStart();
       if (typeof unsubTransComplete === "function") unsubTransComplete();
       if (typeof unsubTransSetting === "function") unsubTransSetting();
@@ -192,8 +238,9 @@ export default function LiveSwitcherController() {
         try { pc.close(); } catch (_) {}
       });
       peerConnectionsRef.current.clear();
+      localCameraManager.cleanupAll();
     };
-  }, []);
+  }, [refreshLocalDevices]);
 
   const applyState = (state) => {
     if (Array.isArray(state.cameraSlots)) {
@@ -354,6 +401,126 @@ export default function LiveSwitcherController() {
   const handleCameraSelect = (socketId) => handleTileSelect(socketId);
   const handleDisplaySelect = (type) => handleTileSelect(type);
 
+  // ── Hardware Camcorder & Mobile Assignment Modal Handlers ──────────────────
+  const handleOpenAssignModal = useCallback((slotIndex) => {
+    setSelectedAssignSlotIndex(slotIndex);
+    setIsAssignModalOpen(true);
+    refreshLocalDevices();
+  }, [refreshLocalDevices]);
+
+  const handleCloseAssignModal = useCallback(() => {
+    setIsAssignModalOpen(false);
+    setSelectedAssignSlotIndex(null);
+  }, []);
+
+  const handleToggleMirror = useCallback((slotIndex) => {
+    setSlotMirrorStates((prev) => ({
+      ...prev,
+      [slotIndex]: !prev[slotIndex],
+    }));
+    showFeedback(`Slot ${slotIndex} mirror toggled`, true);
+  }, []);
+
+  const handleAssignCamcorder = useCallback(async (slotIndex, deviceId, deviceLabel) => {
+    try {
+      showFeedback(`Connecting to ${deviceLabel || "Camcorder"}...`, true);
+      const stream = await localCameraManager.startStream(deviceId, { width: 1920, height: 1080, frameRate: 60 });
+      const localSockId = `local:${deviceId}`;
+
+      setCameraStreams((prev) => {
+        const next = new Map(prev);
+        next.set(localSockId, stream);
+        return next;
+      });
+
+      const res = await window.electron?.Switcher?.assignCameraSlot?.({
+        socketId: localSockId,
+        name: deviceLabel || `Camcorder ${slotIndex}`,
+        slotIndex: slotIndex,
+        type: "camcorder",
+        deviceId: deviceId,
+        isLocal: true,
+      });
+
+      if (!res || !res.ok) {
+        setCameraSlots((prev) => {
+          const next = prev.filter((s) => s.slotIndex !== slotIndex && s.socketId !== localSockId);
+          next.push({
+            socketId: localSockId,
+            name: deviceLabel || `Camcorder ${slotIndex}`,
+            slotIndex: slotIndex,
+            type: "camcorder",
+            deviceId: deviceId,
+            isLocal: true,
+          });
+          return next;
+        });
+      }
+
+      showFeedback(`Assigned ${deviceLabel || "Camcorder"} to Slot ${slotIndex}`, true);
+      setIsAssignModalOpen(false);
+    } catch (err) {
+      showFeedback(`Failed to connect camcorder: ${err.message}`, false);
+    }
+  }, []);
+
+  const handleAssignMobile = useCallback(async (slotIndex, mobileDev) => {
+    try {
+      const res = await window.electron?.Switcher?.assignCameraSlot?.({
+        socketId: mobileDev.id,
+        name: mobileDev.name || `Mobile Cam ${slotIndex}`,
+        slotIndex: slotIndex,
+        type: "mobile",
+        isLocal: false,
+      });
+
+      if (!res || !res.ok) {
+        setCameraSlots((prev) => {
+          const next = prev.filter((s) => s.slotIndex !== slotIndex && s.socketId !== mobileDev.id);
+          next.push({
+            socketId: mobileDev.id,
+            name: mobileDev.name || `Mobile Cam ${slotIndex}`,
+            slotIndex: slotIndex,
+            type: "mobile",
+            isLocal: false,
+          });
+          return next;
+        });
+      }
+
+      showFeedback(`Assigned ${mobileDev.name || "Mobile"} to Slot ${slotIndex}`, true);
+      setIsAssignModalOpen(false);
+    } catch (err) {
+      showFeedback(`Failed to assign mobile: ${err.message}`, false);
+    }
+  }, []);
+
+  const handleRemoveSlot = useCallback(async (slotIndex, socketId) => {
+    try {
+      if (socketId && socketId.startsWith("local:")) {
+        const deviceId = socketId.replace("local:", "");
+        localCameraManager.stopStream(deviceId);
+        setCameraStreams((prev) => {
+          const next = new Map(prev);
+          next.delete(socketId);
+          return next;
+        });
+      }
+
+      await window.electron?.Switcher?.removeCameraSlot?.({ slotIndex, socketId });
+      setCameraSlots((prev) => prev.filter((s) => s.slotIndex !== slotIndex));
+      setSlotMirrorStates((prev) => {
+        const next = { ...prev };
+        delete next[slotIndex];
+        return next;
+      });
+
+      showFeedback(`Released Slot ${slotIndex}`, true);
+    } catch (err) {
+      showFeedback(`Failed to remove slot: ${err.message}`, false);
+    }
+  }, []);
+
   // ── Non-destructive Live Output Destination Sharing ──────────────────────────
   const handleRouteToggle = async (destination) => {
     if (!isDesktopController) {
@@ -452,6 +619,8 @@ export default function LiveSwitcherController() {
         controllerSocketId;
 
   const isSharingActive = routeGeneral || routeSpeaker;
+  const currentProgramSlot = cameraSlots.find((s) => s.socketId === effectiveProgramSourceId);
+  const isProgramMirrored = currentProgramSlot ? !!slotMirrorStates[currentProgramSlot.slotIndex] : false;
 
   // Helper for camera slot assigned display numbers
   const getCameraAssignedDisplay = (socketId) => {
@@ -553,8 +722,12 @@ export default function LiveSwitcherController() {
                   isPreview={isPreview}
                   assignedDisplayNumber={assignedDisp}
                   canSwitch={isDesktopController}
+                  isMirrored={!!slotMirrorStates[slotIndex]}
                   onSelect={handleCameraSelect}
                   onSetDisplay={(sockId, num) => handleSetDisplaySource(num === 1 ? "display1" : "display2", sockId)}
+                  onToggleMirror={handleToggleMirror}
+                  onAssignSlot={handleOpenAssignModal}
+                  onRemoveSlot={handleRemoveSlot}
                 />
               );
             })}
@@ -739,6 +912,7 @@ export default function LiveSwitcherController() {
               mixProgress={mixProgress}
               transitionSetting={transitionSetting}
               isSharingActive={isSharingActive}
+              isMirrored={isProgramMirrored}
             />
           </div>
 
@@ -1042,6 +1216,202 @@ export default function LiveSwitcherController() {
           </div>
         </div>
       </div>
+
+      {/* ── Camera / Video Input Assignment Modal ─────────────────────────────── */}
+      {isAssignModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-in fade-in duration-200">
+          <div className="bg-[#13141f] border border-white/15 rounded-[12px] shadow-2xl w-full max-w-xl flex flex-col overflow-hidden">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/[0.02]">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-[12px] bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-400">
+                  <PiVideoCamera size={20} />
+                </div>
+                <div>
+                  <h2 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
+                    Assign Input to Slot {selectedAssignSlotIndex}
+                    <span className="text-[9px] font-bold px-2 py-0.5 rounded-[12px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                      1080P/720P 60FPS
+                    </span>
+                  </h2>
+                  <p className="text-[11px] text-white/50">
+                    Select a physical HDMI camcorder, USB capture card, or mobile companion.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={handleCloseAssignModal}
+                className="p-1.5 rounded-[12px] text-white/50 hover:text-white hover:bg-white/10 transition-colors"
+                title="Close Modal"
+              >
+                <PiX size={18} />
+              </button>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex items-center gap-2 px-6 pt-4 pb-2 border-b border-white/10 bg-black/20">
+              <button
+                onClick={() => setActiveAssignTab("camcorder")}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-[12px] text-xs font-bold transition-all border ${
+                  activeAssignTab === "camcorder"
+                    ? "bg-red-500/20 border-red-500/40 text-red-300 shadow-sm"
+                    : "bg-white/5 border-white/10 text-white/50 hover:text-white"
+                }`}
+              >
+                <PiTelevision size={15} />
+                <span>Camcorder & HDMI Capture</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-[12px] bg-black/40 text-white/70">
+                  {localVideoDevices.length}
+                </span>
+              </button>
+
+              <button
+                onClick={() => setActiveAssignTab("mobile")}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-[12px] text-xs font-bold transition-all border ${
+                  activeAssignTab === "mobile"
+                    ? "bg-sky-500/20 border-sky-500/40 text-sky-300 shadow-sm"
+                    : "bg-white/5 border-white/10 text-white/50 hover:text-white"
+                }`}
+              >
+                <PiDeviceMobile size={15} />
+                <span>Mobile Companions</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-[12px] bg-black/40 text-white/70">
+                  {pairedDevices.filter((d) => d.paired).length}
+                </span>
+              </button>
+            </div>
+
+            {/* Modal Content Body */}
+            <div className="p-6 max-h-[380px] overflow-y-auto flex flex-col gap-3">
+              {activeAssignTab === "camcorder" ? (
+                <>
+                  <div className="flex items-center justify-between pb-1">
+                    <span className="text-[10px] uppercase font-bold tracking-widest text-white/40">
+                      Detected Hardware Devices
+                    </span>
+                    <button
+                      onClick={refreshLocalDevices}
+                      disabled={isScanningDevices}
+                      className="flex items-center gap-1.5 text-[11px] font-semibold text-sky-400 hover:text-sky-300 disabled:opacity-50 px-2 py-1 rounded-[12px] bg-sky-500/10 border border-sky-500/20 transition-all"
+                    >
+                      <PiArrowsClockwise size={12} className={isScanningDevices ? "animate-spin" : ""} />
+                      <span>{isScanningDevices ? "Scanning..." : "Rescan Devices"}</span>
+                    </button>
+                  </div>
+
+                  {localVideoDevices.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center p-8 rounded-[12px] bg-white/[0.02] border border-white/10 text-center gap-2">
+                      <PiTelevision size={32} className="text-white/20" />
+                      <p className="text-xs font-bold text-white/80">No hardware video capture devices found</p>
+                      <p className="text-[11px] text-white/40 max-w-sm">
+                        Connect your camcorder or DSLR via an HDMI capture card (such as Elgato Cam Link, Blackmagic, or USB3 video dongle) and click Rescan.
+                      </p>
+                    </div>
+                  ) : (
+                    localVideoDevices.map((dev) => {
+                      const assignedSlot = cameraSlots.find((s) => s.deviceId === dev.deviceId);
+                      const isCurrentlyAssigned = !!assignedSlot;
+
+                      return (
+                        <div
+                          key={dev.deviceId}
+                          className="flex items-center justify-between p-3.5 rounded-[12px] bg-white/[0.03] border border-white/10 hover:border-white/20 transition-all"
+                        >
+                          <div className="flex items-center gap-3 min-w-0 pr-2">
+                            <div className="w-10 h-10 rounded-[12px] bg-white/5 border border-white/10 flex items-center justify-center text-white/60 shrink-0">
+                              {dev.isCamcorder ? <PiTelevision size={20} className="text-red-400" /> : <PiVideoCamera size={20} className="text-sky-400" />}
+                            </div>
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-white truncate">{dev.label}</p>
+                              <div className="flex items-center gap-1.5 mt-0.5">
+                                <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-[12px] bg-red-500/15 border border-red-500/25 text-red-300">
+                                  {dev.type}
+                                </span>
+                                <span className="text-[9px] font-mono text-white/40">1080p/720p 60fps UVC</span>
+                              </div>
+                            </div>
+                          </div>
+
+                          <button
+                            onClick={() => handleAssignCamcorder(selectedAssignSlotIndex, dev.deviceId, dev.label)}
+                            className="px-3.5 py-1.5 rounded-[12px] bg-emerald-600/80 hover:bg-emerald-500 text-white font-bold text-xs shrink-0 transition-all shadow-md active:scale-95"
+                          >
+                            {isCurrentlyAssigned ? `Move to Slot ${selectedAssignSlotIndex}` : "Connect & Assign"}
+                          </button>
+                        </div>
+                      );
+                    })
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between pb-1">
+                    <span className="text-[10px] uppercase font-bold tracking-widest text-white/40">
+                      Paired Mobile Companions
+                    </span>
+                  </div>
+
+                  {pairedDevices.filter((d) => d.paired).length === 0 ? (
+                    <div className="flex flex-col items-center justify-center p-8 rounded-[12px] bg-white/[0.02] border border-white/10 text-center gap-2">
+                      <PiDeviceMobile size={32} className="text-white/20" />
+                      <p className="text-xs font-bold text-white/80">No mobile companions paired</p>
+                      <p className="text-[11px] text-white/40 max-w-sm">
+                        Pair your mobile companion device via QR code in Church Presentation settings to stream live camera over local Wi-Fi.
+                      </p>
+                    </div>
+                  ) : (
+                    pairedDevices
+                      .filter((d) => d.paired)
+                      .map((dev) => {
+                        const assignedSlot = cameraSlots.find((s) => s.socketId === dev.id);
+                        const isCurrentlyAssigned = !!assignedSlot;
+
+                        return (
+                          <div
+                            key={dev.id}
+                            className="flex items-center justify-between p-3.5 rounded-[12px] bg-white/[0.03] border border-white/10 hover:border-white/20 transition-all"
+                          >
+                            <div className="flex items-center gap-3 min-w-0 pr-2">
+                              <div className="w-10 h-10 rounded-[12px] bg-white/5 border border-white/10 flex items-center justify-center text-sky-400 shrink-0">
+                                <PiDeviceMobile size={20} />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-xs font-bold text-white truncate">{dev.name || dev.id}</p>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-[12px] bg-emerald-500/15 border border-emerald-500/25 text-emerald-300">
+                                    Connected
+                                  </span>
+                                  <span className="text-[9px] font-mono text-white/40">LAN Wireless Stream</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <button
+                              onClick={() => handleAssignMobile(selectedAssignSlotIndex, dev)}
+                              className="px-3.5 py-1.5 rounded-[12px] bg-sky-600/80 hover:bg-sky-500 text-white font-bold text-xs shrink-0 transition-all shadow-md active:scale-95"
+                            >
+                              {isCurrentlyAssigned ? `Move to Slot ${selectedAssignSlotIndex}` : "Assign to Slot"}
+                            </button>
+                          </div>
+                        );
+                      })
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end px-6 py-3.5 border-t border-white/10 bg-white/[0.02]">
+              <button
+                onClick={handleCloseAssignModal}
+                className="px-4 py-2 rounded-[12px] bg-white/10 hover:bg-white/15 text-white/80 hover:text-white text-xs font-bold transition-all"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
