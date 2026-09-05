@@ -14,7 +14,7 @@ export default function StudioPhoneRenderer({
   onStreamActiveChange,
 }) {
   const canvasRef = useRef(null);
-  const imgCacheRef = useRef(new Image());
+  const latestImgRef = useRef(null);
   const statsRef = useRef({
     frameCount: 0,
     lastFpsUpdateTime: performance.now(),
@@ -29,21 +29,21 @@ export default function StudioPhoneRenderer({
   const isDirtyRef = useRef(false);
 
   useEffect(() => {
-    const img = imgCacheRef.current;
-    img.crossOrigin = "anonymous";
-
     // Continuous rendering loop decoupled from network arrivals
     const renderLoop = () => {
-      if (isDirtyRef.current && canvasRef.current && img.complete && img.naturalWidth > 0) {
-        const canvas = canvasRef.current;
-        const ctx = canvas.getContext("2d", { alpha: false });
-        if (ctx) {
-          if (canvas.width !== img.naturalWidth || canvas.height !== img.naturalHeight) {
-            canvas.width = img.naturalWidth;
-            canvas.height = img.naturalHeight;
+      if (isDirtyRef.current && canvasRef.current) {
+        const img = latestImgRef.current;
+        if (img && img.naturalWidth > 0) {
+          const canvas = canvasRef.current;
+          const ctx = canvas.getContext("2d", { alpha: false });
+          if (ctx) {
+            if (canvas.width !== img.naturalWidth || canvas.height !== img.naturalHeight) {
+              canvas.width = img.naturalWidth;
+              canvas.height = img.naturalHeight;
+            }
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            isDirtyRef.current = false;
           }
-          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          isDirtyRef.current = false;
         }
       }
       animFrameIdRef.current = requestAnimationFrame(renderLoop);
@@ -89,12 +89,13 @@ export default function StudioPhoneRenderer({
           ? payload.data
           : `data:image/jpeg;base64,${payload.data}`;
 
-        img.onload = () => {
+        const nextImg = new Image();
+        nextImg.onload = () => {
+          latestImgRef.current = nextImg;
           isDirtyRef.current = true;
+          setHasReceivedFrame(true);
         };
-        img.src = src;
-
-        setHasReceivedFrame(true);
+        nextImg.src = src;
       });
     }
 
@@ -116,14 +117,14 @@ export default function StudioPhoneRenderer({
           willChange: "transform, filter",
         }}
         className={`w-full h-full object-cover transition-opacity duration-300 ${
-          hasReceivedFrame && hudStats.isAlive ? "opacity-100" : "opacity-0"
+          hasReceivedFrame ? "opacity-100" : "opacity-0"
         }`}
       />
 
       {/* Fallback standby state when waiting for stream */}
-      {(!hasReceivedFrame || !hudStats.isAlive) && (
+      {!hasReceivedFrame && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0c0d12] text-white/50 p-6 text-center">
-          <div className="w-14 h-14 rounded-2xl bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-300 animate-pulse">
+          <div className="w-14 h-14 rounded-[12px] bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-300 animate-pulse">
             <PiVideoCamera size={30} />
           </div>
           <div>

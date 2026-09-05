@@ -126,7 +126,33 @@ const IS_LINUX = process.platform === "linux";
 const asrEngine = new AsrFacade(__dirname);
 /** @deprecated use asrEngine — kept for any residual references */
 const voskEngine = asrEngine;
-let pairing = generatePairing();
+function getOrCreatePairing() {
+  try {
+    if (app && typeof app.getPath === "function") {
+      appSettings.init(app.getPath("userData"));
+    }
+  } catch (_) {}
+  const savedCode = appSettings ? appSettings.get("activePairingCode") : null;
+  const savedToken = appSettings ? appSettings.get("activePairingToken") : null;
+  if (savedCode && savedToken) {
+    console.log(`[Pairing] Restored active session pairing code: ${savedCode}`);
+    return {
+      code: savedCode,
+      token: savedToken,
+      createdAt: Date.now(),
+    };
+  }
+  const fresh = generatePairing();
+  if (appSettings) {
+    try {
+      appSettings.set("activePairingCode", fresh.code);
+      appSettings.set("activePairingToken", fresh.token);
+    } catch (_) {}
+  }
+  console.log(`[Pairing] Generated session pairing code: ${fresh.code}`);
+  return fresh;
+}
+let pairing = getOrCreatePairing();
 let pairingQrDataUrl = null;
 /** @type {SessionArchiveService|null} */
 let sessionArchive = null;
@@ -319,7 +345,14 @@ async function refreshPairingQr() {
 
 function rotatePairing() {
   pairing = generatePairing();
+  if (appSettings) {
+    try {
+      appSettings.set("activePairingCode", pairing.code);
+      appSettings.set("activePairingToken", pairing.token);
+    } catch (_) {}
+  }
   clearPaired();
+  console.log(`[Pairing] Rotated pairing code to: ${pairing.code}`);
   return refreshPairingQr();
 }
 
@@ -2119,7 +2152,10 @@ io.on("connection", (socket) => {
   // Teleprompter Mobile Camera Frame Streaming (Mobile -> Desktop Workstation)
   // Now also serves as switcher preview frames — payload includes isProgramSource flag
   socket.on("teleprompter:camera-frame", (payload = {}) => {
-    if (!isPaired(socket.id)) return;
+    if (!isPaired(socket.id)) {
+      console.warn(`[Teleprompter] Dropped frame: socket ${socket.id} is not paired`);
+      return;
+    }
     const isProgramSource = socket.id === switcherProgramSourceId;
     const framePayload = {
       data: payload.data,
@@ -2142,7 +2178,10 @@ io.on("connection", (socket) => {
 
   // Switcher Mobile Camera Frame Streaming (Mobile -> Desktop Workstation)
   socket.on("switcher:camera-frame", (payload = {}) => {
-    if (!isPaired(socket.id)) return;
+    if (!isPaired(socket.id)) {
+      console.warn(`[Switcher] Dropped frame: socket ${socket.id} is not paired`);
+      return;
+    }
     const isProgramSource = socket.id === switcherProgramSourceId;
     const framePayload = {
       data: payload.data,
