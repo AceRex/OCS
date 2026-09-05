@@ -1,6 +1,5 @@
 import React, { useRef, useEffect, useState } from "react";
 import { renderAnimatedLyrics } from "../controller/LyricAnimationEngine";
-import { transitionEngine } from "../controller/TransitionEngine";
 
 // ─── Live Camera canvas ref (shared across renderContentSlot calls) ────────────
 // Allocated once per DisplayCanvas instance so the painting useEffect below
@@ -119,24 +118,16 @@ export default function DisplayCanvas({
   const liveCameraCanvasRef = useRef(null);
   const liveCameraIsDirtyRef = useRef(false);
   const liveCameraAnimRef = useRef(null);
-  const liveCameraTransitionRef = useRef(null);
   const [hasLiveFrame, setHasLiveFrame] = useState(false);
   const [isCameraMirrored, setIsCameraMirrored] = useState(false);
 
-  // Sync transition from contentSlot if provided by canvas state broadcast
-  useEffect(() => {
-    if (contentSlot?.data?.transition) {
-      liveCameraTransitionRef.current = contentSlot.data.transition;
-    }
-  }, [contentSlot?.data?.transition]);
-
-  // ── Live-camera & Live-output render loop + socket-frame listener + transition engine ─────
+  // ── Live-camera & Live-output single source of truth render loop ─────
   useEffect(() => {
     if (contentSlot?.type !== 'live-camera' && contentSlot?.type !== 'live-output') return;
 
     const deviceId = contentSlot?.data?.deviceId || 'live-output';
 
-    const cached = _liveCameraImgCache[deviceId] || _liveCameraImgCache['live-output'] || _liveCameraImgCache['default'];
+    const cached = _liveCameraImgCache['live-output'] || _liveCameraImgCache[deviceId] || _liveCameraImgCache['default'];
     if (cached && cached.complete && cached.naturalWidth > 0) {
       setHasLiveFrame(true);
       liveCameraIsDirtyRef.current = true;
@@ -145,38 +136,10 @@ export default function DisplayCanvas({
       liveCameraIsDirtyRef.current = true;
     }
 
-    // Render loop supporting both static display and dynamic transition compositing
+    // Render loop directly drawing composited live output stream
     const renderLoop = () => {
-      const trans = liveCameraTransitionRef.current;
-
-      if (trans && liveCameraCanvasRef.current) {
-        const canvas = liveCameraCanvasRef.current;
-        const ctx = canvas.getContext('2d', { alpha: false });
-        if (ctx) {
-          const now = Date.now();
-          const progress = Math.min(1, Math.max(0, (now - trans.startTime) / trans.duration));
-          const fromImg = _liveCameraImgCache[trans.fromId || 'default'];
-          const toImg = _liveCameraImgCache[trans.toId || deviceId || 'default'];
-
-          const w = toImg?.naturalWidth || fromImg?.naturalWidth || canvas.width || 1280;
-          const h = toImg?.naturalHeight || fromImg?.naturalHeight || canvas.height || 720;
-          if (canvas.width !== w || canvas.height !== h) {
-            canvas.width = w;
-            canvas.height = h;
-          }
-
-          transitionEngine.render(ctx, fromImg, toImg, progress, canvas.width, canvas.height, {
-            type: trans.type,
-            direction: trans.direction,
-          });
-
-          if (progress >= 1) {
-            liveCameraTransitionRef.current = null;
-            liveCameraIsDirtyRef.current = true;
-          }
-        }
-      } else if (liveCameraIsDirtyRef.current && liveCameraCanvasRef.current) {
-        const img = _liveCameraImgCache[deviceId] || _liveCameraImgCache['live-output'] || _liveCameraImgCache['default'];
+      if (liveCameraIsDirtyRef.current && liveCameraCanvasRef.current) {
+        const img = _liveCameraImgCache['live-output'] || _liveCameraImgCache[deviceId] || _liveCameraImgCache['default'];
         if (img && img.complete && img.naturalWidth > 0) {
           const canvas = liveCameraCanvasRef.current;
           const ctx = canvas.getContext('2d', { alpha: false });
@@ -199,7 +162,7 @@ export default function DisplayCanvas({
       if (isMirrored !== undefined) {
         setIsCameraMirrored(!!isMirrored);
       }
-      const key = fromId || deviceId || 'default';
+      const key = fromId || 'live-output';
       const img = _liveCameraImgCache[key] || new Image();
       _liveCameraImgCache[key] = img;
       const src = data.startsWith('data:') ? data : `data:image/jpeg;base64,${data}`;
@@ -210,30 +173,17 @@ export default function DisplayCanvas({
       img.src = src;
     };
 
-    // Subscribe to composited live output stream from switcher mixing engine
+    // Single source of truth: Subscribe to composited live output stream from switcher mixing engine
     let cleanupLiveOutput = null;
     if (window.electron?.Switcher?.onLiveOutputFrame) {
       cleanupLiveOutput = window.electron.Switcher.onLiveOutputFrame((payload) => {
         const frameData = payload?.data || payload;
         if (frameData) {
           handleFrame('live-output', frameData, payload?.isMirrored);
-          handleFrame(deviceId, frameData, payload?.isMirrored);
+          if (deviceId) {
+            handleFrame(deviceId, frameData, payload?.isMirrored);
+          }
         }
-      });
-    }
-
-    // Subscribe to live program frames
-    let cleanupProgram = null;
-    if (window.electron?.Switcher?.onProgramFrame) {
-      cleanupProgram = window.electron.Switcher.onProgramFrame((payload) => {
-        handleFrame(payload?.fromId || deviceId, payload?.data, payload?.isMirrored);
-      });
-    }
-
-    let cleanupCamera = null;
-    if (window.electron?.Switcher?.onCameraFrame) {
-      cleanupCamera = window.electron.Switcher.onCameraFrame((payload) => {
-        handleFrame(payload?.fromId, payload?.data, payload?.isMirrored);
       });
     }
 
@@ -241,36 +191,16 @@ export default function DisplayCanvas({
     if (window.electron?.Switcher?.onDisplayMirrorFrame) {
       cleanupMirror = window.electron.Switcher.onDisplayMirrorFrame((payload) => {
         if (!payload?.data) return;
-        if (deviceId === payload.destination) {
+        if (deviceId === payload.destination || payload.destination === mode) {
           handleFrame(payload.destination, payload.data);
         }
-      });
-    }
-
-    // Subscribe to transition events directly
-    let cleanupTransStart = null;
-    if (window.electron?.Switcher?.onTransitionStart) {
-      cleanupTransStart = window.electron.Switcher.onTransitionStart((t) => {
-        liveCameraTransitionRef.current = t;
-      });
-    }
-
-    let cleanupTransComplete = null;
-    if (window.electron?.Switcher?.onTransitionComplete) {
-      cleanupTransComplete = window.electron.Switcher.onTransitionComplete(() => {
-        liveCameraTransitionRef.current = null;
-        liveCameraIsDirtyRef.current = true;
       });
     }
 
     return () => {
       if (liveCameraAnimRef.current) cancelAnimationFrame(liveCameraAnimRef.current);
       if (cleanupLiveOutput) cleanupLiveOutput();
-      if (cleanupProgram) cleanupProgram();
-      if (cleanupCamera) cleanupCamera();
       if (cleanupMirror) cleanupMirror();
-      if (cleanupTransStart) cleanupTransStart();
-      if (cleanupTransComplete) cleanupTransComplete();
     };
   }, [contentSlot?.type, contentSlot?.data?.deviceId]);
 

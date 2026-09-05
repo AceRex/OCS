@@ -21,6 +21,8 @@ import { Button, DisabledContainer, Input } from "../../../components";
 import { useAuth } from "../context/AuthContext";
 import AgendaPlannerModal from "./AgendaPlannerModal.jsx";
 
+const electron = (typeof window !== "undefined" && window.electron) || {};
+
 export default function TimerController() {
   const { hasPermission } = useAuth();
   const canChangeView = hasPermission("timer.change_view");
@@ -104,7 +106,7 @@ export default function TimerController() {
       timeToSend = countdown;
     }
 
-    electron.Timer.setTimer({ time: timeToSend, isEventMode, isPaused, theme });
+    window.electron?.Timer?.setTimer?.({ time: timeToSend, isEventMode, isPaused, theme });
   }, [time, isEventMode, isPaused, theme, countdown, activeId]);
 
   // Listener for Mobile Actions

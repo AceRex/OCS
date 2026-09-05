@@ -105,15 +105,20 @@ export default function SwitcherCameraTile({
   }, [stream]);
 
   useEffect(() => {
-    if (stream || !socketId) { if (!stream) setHasFrame(false); return; }
+    if (stream || (!socketId && !slotInfo)) { if (!stream) setHasFrame(false); return; }
     let cleanup = null;
     if (window.electron?.Switcher?.onCameraFrame) {
       cleanup = window.electron.Switcher.onCameraFrame((payload) => {
-        if (payload?.fromId !== socketId) return;
-        if (!payload?.data) return;
+        if (!payload) return;
+        const matches = (payload.fromId && socketId && String(payload.fromId) === String(socketId)) ||
+                        (payload.slotIndex && Number(payload.slotIndex) === Number(slotIndex));
+        if (!matches) return;
+        const frameData = payload.data || payload.frame;
+        if (!frameData) return;
+
         statsRef.current.lastFrame = Date.now();
         statsRef.current.frameCount++;
-        const src = payload.data.startsWith("data:") ? payload.data : `data:image/jpeg;base64,${payload.data}`;
+        const src = frameData.startsWith("data:") ? frameData : `data:image/jpeg;base64,${frameData}`;
         const nextImg = new Image();
         nextImg.onload = () => {
           latestImgRef.current = nextImg;
@@ -121,10 +126,15 @@ export default function SwitcherCameraTile({
           setHasFrame(true);
         };
         nextImg.src = src;
+        if (nextImg.complete && nextImg.naturalWidth > 0) {
+          latestImgRef.current = nextImg;
+          isDirtyRef.current = true;
+          setHasFrame(true);
+        }
       });
     }
     return () => { if (cleanup) cleanup(); if (!stream) setHasFrame(false); };
-  }, [socketId, stream]);
+  }, [socketId, slotIndex, stream, slotInfo]);
 
   const isEmpty = !slotInfo;
   const isClickable = !isEmpty && canSwitch && !isProgram;

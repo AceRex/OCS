@@ -1464,6 +1464,84 @@ let savedPresentationContentSlot = null; // Preserves presentation contentSlot (
 let savedGeneralContentSlot = null;      // Preserves General Screen presentation state during live sharing
 let savedSpeakerContentSlot = null;      // Preserves Speaker Screen confidence state during live sharing
 
+// Generic destination registry for Live Output routing (DEF-05)
+const switcherDestinations = new Map([
+  ['general', {
+    id: 'general',
+    name: 'General Screen',
+    get active() { return switcherRouteGeneral; },
+    set active(val) { switcherRouteGeneral = !!val; },
+    get savedContentSlot() { return savedGeneralContentSlot; },
+    set savedContentSlot(val) { savedGeneralContentSlot = val; },
+    getWindow: () => (generalWindow && !generalWindow.isDestroyed() ? generalWindow : null),
+    sendLiveOutputFrame: (frameData) => {
+      if (generalWindow && !generalWindow.isDestroyed()) generalWindow.webContents.send("switcher-live-output-frame", frameData);
+    },
+  }],
+  ['speaker', {
+    id: 'speaker',
+    name: 'Speaker Screen',
+    get active() { return switcherRouteSpeaker; },
+    set active(val) { switcherRouteSpeaker = !!val; },
+    get savedContentSlot() { return savedSpeakerContentSlot; },
+    set savedContentSlot(val) { savedSpeakerContentSlot = val; },
+    getWindow: () => (speakerWindow && !speakerWindow.isDestroyed() ? speakerWindow : null),
+    sendLiveOutputFrame: (frameData) => {
+      if (speakerWindow && !speakerWindow.isDestroyed()) speakerWindow.webContents.send("switcher-live-output-frame", frameData);
+    },
+  }],
+]);
+
+function routeSwitcherDestination(destinationId, active) {
+  const dest = switcherDestinations.get(destinationId);
+  if (!dest) return { ok: false, error: 'Invalid destination' };
+
+  const isShared = !!active;
+  dest.active = isShared;
+  console.log(`[Switcher] Route destination ${dest.id} -> ${isShared}`);
+
+  const win = dest.getWindow();
+
+  if (isShared) {
+    if (currentCanvasState.contentSlot && currentCanvasState.contentSlot.type !== 'live-output' && currentCanvasState.contentSlot.type !== 'live-camera') {
+      dest.savedContentSlot = currentCanvasState.contentSlot;
+      if (dest.id === 'general') {
+        savedPresentationContentSlot = currentCanvasState.contentSlot;
+      }
+    }
+    const liveOutputSlot = { type: 'live-output', data: { title: 'Live Switcher Output' } };
+    if (dest.id === 'general') {
+      currentCanvasState.contentSlot = liveOutputSlot;
+    }
+    broadcastCanvasState(
+      dest.id === 'general' ? currentCanvasState : { ...currentCanvasState, contentSlot: liveOutputSlot },
+      [dest.id]
+    );
+  } else {
+    const fallbackSlot = dest.id === 'general' ? savedPresentationContentSlot : null;
+    const restoredSlot = dest.savedContentSlot || fallbackSlot || { type: 'none', data: null };
+    if (dest.id === 'general') {
+      currentCanvasState.contentSlot = restoredSlot;
+    }
+
+    // DEF-08: Ensure destination window receives set-content or clear-content
+    if (win) {
+      if (restoredSlot && restoredSlot.type !== 'none') {
+        win.webContents.send("set-content", restoredSlot);
+      } else {
+        win.webContents.send("clear-content");
+      }
+    }
+    broadcastCanvasState(
+      dest.id === 'general' ? currentCanvasState : { ...currentCanvasState, contentSlot: restoredSlot },
+      [dest.id]
+    );
+  }
+
+  broadcastSwitcherState();
+  return { ok: true, routeGeneral: switcherRouteGeneral, routeSpeaker: switcherRouteSpeaker };
+}
+
 // Global transition settings (Phase B)
 let switcherTransitionSetting = {
   type: 'fade',
@@ -1608,11 +1686,7 @@ function executeProgramSwitch(targetId, customTransition) {
       const dests = [];
       if (switcherRouteGeneral) dests.push('general');
       if (switcherRouteSpeaker) dests.push('speaker');
-      if (finalSourceId) {
-        currentCanvasState.contentSlot = { type: 'live-camera', data: { deviceId: finalSourceId } };
-      } else {
-        currentCanvasState.contentSlot = savedPresentationContentSlot || { type: 'none', data: null };
-      }
+      currentCanvasState.contentSlot = { type: 'live-output', data: { title: 'Live Switcher Output' } };
       broadcastCanvasState(currentCanvasState, dests);
     }
     broadcastSwitcherState();
@@ -1648,15 +1722,12 @@ function executeProgramSwitch(targetId, customTransition) {
   // Broadcast transition start
   broadcastTransitionStart(switcherActiveTransition);
 
-  // Update routed displays with incoming and outgoing references
+  // Keep routed displays on composited live-output stream
   if (switcherRouteGeneral || switcherRouteSpeaker) {
     const dests = [];
     if (switcherRouteGeneral) dests.push('general');
     if (switcherRouteSpeaker) dests.push('speaker');
-    currentCanvasState.contentSlot = {
-      type: 'live-camera',
-      data: { deviceId: finalSourceId, fromId, toId: toId || 'general', transition: switcherActiveTransition },
-    };
+    currentCanvasState.contentSlot = { type: 'live-output', data: { title: 'Live Switcher Output' } };
     broadcastCanvasState(currentCanvasState, dests);
   }
 
@@ -1672,11 +1743,7 @@ function executeProgramSwitch(targetId, customTransition) {
       const dests = [];
       if (switcherRouteGeneral) dests.push('general');
       if (switcherRouteSpeaker) dests.push('speaker');
-      if (finalSourceId) {
-        currentCanvasState.contentSlot = { type: 'live-camera', data: { deviceId: finalSourceId } };
-      } else {
-        currentCanvasState.contentSlot = savedPresentationContentSlot || { type: 'none', data: null };
-      }
+      currentCanvasState.contentSlot = { type: 'live-output', data: { title: 'Live Switcher Output' } };
       broadcastCanvasState(currentCanvasState, dests);
     }
 
@@ -2159,13 +2226,15 @@ io.on("connection", (socket) => {
   // Teleprompter Mobile Camera Frame Streaming (Mobile -> Desktop Workstation)
   // Now also serves as switcher preview frames — payload includes isProgramSource flag
   socket.on("teleprompter:camera-frame", (payload = {}) => {
-    if (!isPaired(socket.id)) {
-      console.warn(`[Teleprompter] Dropped frame: socket ${socket.id} is not paired`);
+    if (!isPaired(socket.id) && !switcherCameraSlots.has(socket.id)) {
+      console.warn(`[Teleprompter] Dropped frame: socket ${socket.id} is not paired or assigned`);
       return;
     }
+    const cameraSlot = switcherCameraSlots.get(socket.id);
     const isProgramSource = socket.id === switcherProgramSourceId;
     const framePayload = {
-      data: payload.data,
+      slotIndex: cameraSlot ? cameraSlot.slotIndex : (payload.slotIndex || 1),
+      data: payload.data || payload.frame,
       fromId: socket.id,
       timestamp: payload.timestamp || Date.now(),
       isProgramSource,
@@ -2173,6 +2242,7 @@ io.on("connection", (socket) => {
     };
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
+        win.webContents.send("switcher-camera-frame", framePayload);
         win.webContents.send("teleprompter-mobile-frame", framePayload);
         if (isProgramSource) {
           win.webContents.send("switcher-program-frame", framePayload);
@@ -2186,13 +2256,15 @@ io.on("connection", (socket) => {
 
   // Switcher Mobile Camera Frame Streaming (Mobile -> Desktop Workstation)
   socket.on("switcher:camera-frame", (payload = {}) => {
-    if (!isPaired(socket.id)) {
-      console.warn(`[Switcher] Dropped frame: socket ${socket.id} is not paired`);
+    if (!isPaired(socket.id) && !switcherCameraSlots.has(socket.id)) {
+      console.warn(`[Switcher] Dropped frame: socket ${socket.id} is not paired or assigned`);
       return;
     }
+    const cameraSlot = switcherCameraSlots.get(socket.id);
     const isProgramSource = socket.id === switcherProgramSourceId;
     const framePayload = {
-      data: payload.data,
+      slotIndex: cameraSlot ? cameraSlot.slotIndex : (payload.slotIndex || 1),
+      data: payload.data || payload.frame,
       fromId: socket.id,
       timestamp: payload.timestamp || Date.now(),
       isProgramSource,
@@ -2200,6 +2272,7 @@ io.on("connection", (socket) => {
     };
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
+        win.webContents.send("switcher-camera-frame", framePayload);
         win.webContents.send("teleprompter-mobile-frame", framePayload);
         if (isProgramSource) {
           win.webContents.send("switcher-program-frame", framePayload);
@@ -2255,6 +2328,14 @@ io.on("connection", (socket) => {
   socket.on("switcher:opt-in-camera", (payload = {}, ack = () => {}) => {
     if (!isPaired(socket.id)) {
       if (typeof ack === 'function') ack({ ok: false, error: 'Pairing required' });
+      return;
+    }
+    // DEF-03/04: Enforce role separation: current controller cannot opt in as camera source
+    if (switcherControllerSocketId === socket.id) {
+      console.warn(`[Switcher] Camera opt-in rejected for controller ${socket.id}`);
+      if (typeof ack === 'function') {
+        ack({ ok: false, error: "You're currently controlling the switcher — hand off control first to use this device as a camera" });
+      }
       return;
     }
     if (switcherCameraSlots.has(socket.id)) {
@@ -2370,47 +2451,8 @@ io.on("connection", (socket) => {
       return;
     }
     const { destination, active } = payload;
-    if (destination !== 'general' && destination !== 'speaker') {
-      if (typeof ack === 'function') ack({ ok: false, error: 'Invalid destination' });
-      return;
-    }
-    const isShared = !!active;
-    if (destination === 'general') {
-      switcherRouteGeneral = isShared;
-      console.log(`[Switcher] Route ${destination} -> ${isShared}`);
-      if (isShared) {
-        if (currentCanvasState.contentSlot && currentCanvasState.contentSlot.type !== 'live-output' && currentCanvasState.contentSlot.type !== 'live-camera') {
-          savedGeneralContentSlot = currentCanvasState.contentSlot;
-          savedPresentationContentSlot = currentCanvasState.contentSlot;
-        }
-        currentCanvasState.contentSlot = { type: 'live-output', data: { title: 'Live Switcher Output' } };
-        broadcastCanvasState(currentCanvasState, ['general']);
-      } else {
-        const restoredSlot = savedGeneralContentSlot || savedPresentationContentSlot || { type: 'none', data: null };
-        currentCanvasState.contentSlot = restoredSlot;
-        if (generalWindow && !generalWindow.isDestroyed() && restoredSlot.type !== 'none') {
-          generalWindow.webContents.send("set-content", restoredSlot);
-        }
-        broadcastCanvasState(currentCanvasState, ['general']);
-      }
-    } else if (destination === 'speaker') {
-      switcherRouteSpeaker = isShared;
-      console.log(`[Switcher] Route ${destination} -> ${isShared}`);
-      if (isShared) {
-        if (currentCanvasState.contentSlot && currentCanvasState.contentSlot.type !== 'live-output' && currentCanvasState.contentSlot.type !== 'live-camera') {
-          savedSpeakerContentSlot = currentCanvasState.contentSlot;
-        }
-        broadcastCanvasState({ ...currentCanvasState, contentSlot: { type: 'live-output', data: { title: 'Live Switcher Output' } } }, ['speaker']);
-      } else {
-        const restoredSlot = savedSpeakerContentSlot || { type: 'none', data: null };
-        if (speakerWindow && !speakerWindow.isDestroyed() && restoredSlot.type !== 'none') {
-          speakerWindow.webContents.send("set-content", restoredSlot);
-        }
-        broadcastCanvasState({ ...currentCanvasState, contentSlot: restoredSlot }, ['speaker']);
-      }
-    }
-    broadcastSwitcherState();
-    if (typeof ack === 'function') ack({ ok: true });
+    const result = routeSwitcherDestination(destination, active);
+    if (typeof ack === 'function') ack(result);
   });
 
   // Mobile-initiated active display selection (Display 1 vs Display 2)
@@ -2489,9 +2531,27 @@ io.on("connection", (socket) => {
     }
   });
 
-  // WebRTC Continuous Camera Signaling: ICE Candidate from camera source -> Desktop
+  // WebRTC Continuous Camera Signaling: Answer from controller -> Camera source
+  socket.on("switcher:webrtc-answer", (payload = {}) => {
+    if (!isPaired(socket.id)) return;
+    const targetId = payload.targetId || payload.targetSocketId;
+    if (!io || !targetId) return;
+    const targetSock = io.sockets.sockets.get(targetId);
+    if (targetSock) {
+      targetSock.emit("switcher:webrtc-answer", { answer: payload.answer });
+    }
+  });
+
+  // WebRTC Continuous Camera Signaling: ICE Candidate from camera source -> Desktop / Target
   socket.on("switcher:webrtc-ice-candidate", (payload = {}) => {
     if (!isPaired(socket.id)) return;
+    const targetId = payload.targetId || payload.targetSocketId;
+    if (io && targetId) {
+      const targetSock = io.sockets.sockets.get(targetId);
+      if (targetSock) {
+        targetSock.emit("switcher:webrtc-ice-candidate", { candidate: payload.candidate });
+      }
+    }
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
         win.webContents.send("switcher-webrtc-ice-candidate", {
@@ -2869,18 +2929,19 @@ ipcMain.handle("get-server-info", async () => {
 });
 
 ipcMain.handle("get-paired-devices", async () => {
-  return connectedDevices
-    .filter((d) => d.paired)
-    .map((d) => ({
-      id: d.id,
-      ip: d.ip,
-      name: d.name,
-      paired: true,
-      isAdmin: adminDeviceIds.has(d.id) || adminDeviceNames.has(d.name) || !!d.isAdmin,
-      deviceRole: d.deviceRole || (adminDeviceIds.has(d.id) ? "admin" : "speaker"),
-      isVoiceActive: !!d.isVoiceActive,
-      connectedAt: d.connectedAt,
-    }));
+  return connectedDevices.map((d) => ({
+    id: d.id,
+    ip: d.ip,
+    name: d.name,
+    paired: !!d.paired,
+    status: d.paired ? "connected" : (d.status || "connected"),
+    isAdmin: adminDeviceIds.has(d.id) || adminDeviceNames.has(d.name) || !!d.isAdmin,
+    deviceRole: d.deviceRole || (adminDeviceIds.has(d.id) ? "admin" : "speaker"),
+    isVoiceActive: !!d.isVoiceActive,
+    connectedAt: d.connectedAt,
+    isCameraSource: switcherCameraSlots.has(d.id),
+    cameraSlotIndex: switcherCameraSlots.has(d.id) ? switcherCameraSlots.get(d.id).slotIndex : null,
+  }));
 });
 
 ipcMain.on("teleprompter-socket-send", (_e, { event, payload }) => {
@@ -3268,6 +3329,23 @@ ipcMain.handle("switcher:grant-control", (_event, deviceId) => {
   const prevHolder = switcherControllerSocketId;
   switcherControllerSocketId = deviceId;
   console.log(`[Switcher] Control granted to: ${deviceId} (was: ${prevHolder})`);
+
+  // DEF-03/04: Enforce role separation: If device was a camera source, remove from camera slots
+  if (switcherCameraSlots.has(deviceId)) {
+    console.log(`[Switcher] Relinquishing camera role for newly granted controller: ${deviceId}`);
+    switcherCameraSlots.delete(deviceId);
+    if (switcherProgramSourceId === deviceId) {
+      switcherProgramSourceId = null;
+    }
+    if (switcherDisplay2Source === deviceId) {
+      switcherDisplay2Source = null;
+    }
+    const targetSock = io && io.sockets.sockets.get(deviceId);
+    if (targetSock) {
+      targetSock.emit('switcher:you-are-program', { active: false });
+    }
+  }
+
   // Notify new holder
   const targetSock = io && io.sockets.sockets.get(deviceId);
   if (targetSock) {
@@ -3378,50 +3456,7 @@ ipcMain.handle("switcher:route-destination-desktop", (_event, { destination, act
   if (switcherControllerSocketId !== 'desktop') {
     return { ok: false, error: 'Desktop does not hold controller permission' };
   }
-  if (destination !== 'general' && destination !== 'speaker') {
-    return { ok: false, error: 'Invalid destination' };
-  }
-
-  const isShared = !!active;
-  if (destination === 'general') {
-    switcherRouteGeneral = isShared;
-    console.log(`[Switcher] Desktop General Screen Live Output sharing -> ${isShared}`);
-
-    if (isShared) {
-      if (currentCanvasState.contentSlot && currentCanvasState.contentSlot.type !== 'live-output' && currentCanvasState.contentSlot.type !== 'live-camera') {
-        savedGeneralContentSlot = currentCanvasState.contentSlot;
-        savedPresentationContentSlot = currentCanvasState.contentSlot;
-      }
-      currentCanvasState.contentSlot = { type: 'live-output', data: { title: 'Live Switcher Output' } };
-      broadcastCanvasState(currentCanvasState, ['general']);
-    } else {
-      const restoredSlot = savedGeneralContentSlot || savedPresentationContentSlot || { type: 'none', data: null };
-      currentCanvasState.contentSlot = restoredSlot;
-      if (generalWindow && !generalWindow.isDestroyed() && restoredSlot.type !== 'none') {
-        generalWindow.webContents.send("set-content", restoredSlot);
-      }
-      broadcastCanvasState(currentCanvasState, ['general']);
-    }
-  } else if (destination === 'speaker') {
-    switcherRouteSpeaker = isShared;
-    console.log(`[Switcher] Desktop Speaker Screen Live Output sharing -> ${isShared}`);
-
-    if (isShared) {
-      if (currentCanvasState.contentSlot && currentCanvasState.contentSlot.type !== 'live-output' && currentCanvasState.contentSlot.type !== 'live-camera') {
-        savedSpeakerContentSlot = currentCanvasState.contentSlot;
-      }
-      broadcastCanvasState({ ...currentCanvasState, contentSlot: { type: 'live-output', data: { title: 'Live Switcher Output' } } }, ['speaker']);
-    } else {
-      const restoredSlot = savedSpeakerContentSlot || { type: 'none', data: null };
-      if (speakerWindow && !speakerWindow.isDestroyed() && restoredSlot.type !== 'none') {
-        speakerWindow.webContents.send("set-content", restoredSlot);
-      }
-      broadcastCanvasState({ ...currentCanvasState, contentSlot: restoredSlot }, ['speaker']);
-    }
-  }
-
-  broadcastSwitcherState();
-  return { ok: true, routeGeneral: switcherRouteGeneral, routeSpeaker: switcherRouteSpeaker };
+  return routeSwitcherDestination(destination, active);
 });
 
 // Get current switcher state (for desktop UI hydration)
@@ -3451,6 +3486,12 @@ ipcMain.handle("switcher:assign-slot-desktop", (_event, { socketId, name, slotIn
   }
   const id = socketId;
   const devName = name || (type === 'camcorder' ? `Camcorder ${slotIndex}` : `Camera ${slotIndex}`);
+  markPaired(id);
+  const matchedDev = connectedDevices.find((d) => d.id === id);
+  if (matchedDev) {
+    matchedDev.paired = true;
+    matchedDev.status = "connected";
+  }
   switcherCameraSlots.set(id, {
     name: devName,
     slotIndex: Number(slotIndex),
@@ -3500,8 +3541,9 @@ ipcMain.handle("switcher:remove-slot-desktop", (_event, { socketId, slotIndex })
 
 // Desktop sends WebRTC answer back to specific camera source
 ipcMain.on("switcher:webrtc-answer", (_event, payload = {}) => {
-  if (!io || !payload.targetId) return;
-  const targetSock = io.sockets.sockets.get(payload.targetId);
+  const targetId = payload.targetId || payload.targetSocketId;
+  if (!io || !targetId) return;
+  const targetSock = io.sockets.sockets.get(targetId);
   if (targetSock) {
     targetSock.emit("switcher:webrtc-answer", { answer: payload.answer });
   }
@@ -3509,8 +3551,9 @@ ipcMain.on("switcher:webrtc-answer", (_event, payload = {}) => {
 
 // Desktop sends WebRTC ICE candidate back to specific camera source
 ipcMain.on("switcher:webrtc-ice-candidate", (_event, payload = {}) => {
-  if (!io || !payload.targetId) return;
-  const targetSock = io.sockets.sockets.get(payload.targetId);
+  const targetId = payload.targetId || payload.targetSocketId;
+  if (!io || !targetId) return;
+  const targetSock = io.sockets.sockets.get(targetId);
   if (targetSock) {
     targetSock.emit("switcher:webrtc-ice-candidate", { candidate: payload.candidate });
   }

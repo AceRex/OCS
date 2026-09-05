@@ -31,49 +31,55 @@ export default function PreviewModal({ isOpen, onClose, mode }) {
     };
 
     useEffect(() => {
+        const electronApi = typeof window !== "undefined" ? window.electron : null;
+        if (!electronApi) return;
+
         // Listen to Timer Updates
-        electron.Timer.onSetTimer((value) => {
-            let newTime, newEventMode, newTheme;
-            if (typeof value === "object" && value !== null) {
-                newTime = value.time;
-                newEventMode = value.isEventMode || false;
-                newTheme = value.theme || "default";
-            } else {
-                newTime = value;
-                newEventMode = false;
-                newTheme = "default";
-            }
-
-            // General View Preview Logic: Ignore standard timers
-            // If mode is 'general' and it's NOT an event mode timer, we reset/hide the local countdown
-            if (mode === 'general' && !newEventMode) {
-                setCountDown(null);
-                setIsEventMode(false);
-                return;
-            }
-
-            setIsEventMode(newEventMode);
-            setTheme(newTheme);
-
-            setCountDown(prev => {
-                if (newTime === 0 && prev === null) {
-                    setTimeUp(false);
-                    return null;
+        let unsubTimer = null;
+        if (electronApi.Timer?.onSetTimer) {
+            unsubTimer = electronApi.Timer.onSetTimer((value) => {
+                let newTime, newEventMode, newTheme;
+                if (typeof value === "object" && value !== null) {
+                    newTime = value.time;
+                    newEventMode = value.isEventMode || false;
+                    newTheme = value.theme || "default";
+                } else {
+                    newTime = value;
+                    newEventMode = false;
+                    newTheme = "default";
                 }
-                if (newTime === 0) setTimeUp(true);
-                else setTimeUp(false);
-                return newTime;
+
+                // General View Preview Logic: Ignore standard timers
+                // If mode is 'general' and it's NOT an event mode timer, we reset/hide the local countdown
+                if (mode === 'general' && !newEventMode) {
+                    setCountDown(null);
+                    setIsEventMode(false);
+                    return;
+                }
+
+                setIsEventMode(newEventMode);
+                setTheme(newTheme);
+
+                setCountDown(prev => {
+                    if (newTime === 0 && prev === null) {
+                        setTimeUp(false);
+                        return null;
+                    }
+                    if (newTime === 0) setTimeUp(true);
+                    else setTimeUp(false);
+                    return newTime;
+                });
             });
-        });
+        }
 
         // Listen to Content Updates (use disposers — never removeAllListeners)
-        const unsubContent = electron.Presentation.onSetContent(setPresentationContent);
-        const unsubStyle = electron.Presentation.onSetStyle((value) => {
+        const unsubContent = electronApi.Presentation?.onSetContent?.(setPresentationContent);
+        const unsubStyle = electronApi.Presentation?.onSetStyle?.((value) => {
             setPresentationStyle(prev => ({ ...prev, ...value }));
         });
 
-        if (electron.Presentation.getStyle) {
-            electron.Presentation.getStyle().then((initialStyle) => {
+        if (electronApi.Presentation?.getStyle) {
+            electronApi.Presentation.getStyle().then((initialStyle) => {
                 if (initialStyle && Object.keys(initialStyle).length > 0) {
                     setPresentationStyle(prev => ({ ...prev, ...initialStyle }));
                 }
@@ -81,7 +87,8 @@ export default function PreviewModal({ isOpen, onClose, mode }) {
         }
 
         return () => {
-            electron.Timer.removeSetTimerListener();
+            if (typeof unsubTimer === 'function') unsubTimer();
+            else if (electronApi.Timer?.removeSetTimerListener) electronApi.Timer.removeSetTimerListener();
             if (typeof unsubContent === 'function') unsubContent();
             if (typeof unsubStyle === 'function') unsubStyle();
         };

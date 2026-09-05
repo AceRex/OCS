@@ -98,6 +98,35 @@ export default function LiveSwitcherController() {
     }
   }, []);
 
+  const [isScanningMobiles, setIsScanningMobiles] = useState(false);
+  const fetchConnectedDevices = useCallback(async () => {
+    try {
+      let devs = [];
+      if (window.electron?.MobileDevices?.getConnected) {
+        devs = await window.electron.MobileDevices.getConnected();
+      } else if (window.electron?.Network?.getPairedDevices) {
+        devs = await window.electron.Network.getPairedDevices();
+      } else if (window.electron?.Network?.getServerInfo) {
+        const info = await window.electron.Network.getServerInfo();
+        devs = info?.devices || [];
+      }
+      if (Array.isArray(devs)) setPairedDevices(devs);
+      return devs;
+    } catch (e) {
+      console.error("[SwitcherController] Failed to fetch connected devices:", e);
+      return [];
+    }
+  }, []);
+
+  const refreshMobileDevices = useCallback(async () => {
+    setIsScanningMobiles(true);
+    try {
+      await fetchConnectedDevices();
+    } finally {
+      setTimeout(() => setIsScanningMobiles(false), 400);
+    }
+  }, [fetchConnectedDevices]);
+
   useEffect(() => {
     const hydrate = async () => {
       try {
@@ -106,12 +135,7 @@ export default function LiveSwitcherController() {
       } catch (e) {
         console.error("[SwitcherController] Failed to fetch initial state:", e);
       }
-      try {
-        const devs = await window.electron?.MobileDevices?.getConnected?.();
-        if (Array.isArray(devs)) setPairedDevices(devs);
-      } catch (e) {
-        console.error("[SwitcherController] Failed to fetch connected devices:", e);
-      }
+      await fetchConnectedDevices();
     };
     hydrate();
     refreshLocalDevices();
@@ -121,7 +145,11 @@ export default function LiveSwitcherController() {
       if (newState) applyState(newState);
     });
 
-    const unsubDevices = window.electron?.MobileDevices?.onUpdated?.((devs) => {
+    const unsubDevices1 = window.electron?.MobileDevices?.onUpdated?.((devs) => {
+      if (Array.isArray(devs)) setPairedDevices(devs);
+    });
+
+    const unsubDevices2 = window.electron?.Network?.onDevicesUpdated?.((devs) => {
       if (Array.isArray(devs)) setPairedDevices(devs);
     });
 
@@ -225,7 +253,8 @@ export default function LiveSwitcherController() {
 
     return () => {
       if (typeof unsubState === "function") unsubState();
-      if (typeof unsubDevices === "function") unsubDevices();
+      if (typeof unsubDevices1 === "function") unsubDevices1();
+      if (typeof unsubDevices2 === "function") unsubDevices2();
       if (typeof unsubReclaim === "function") unsubReclaim();
       if (typeof unsubLocalDevs === "function") unsubLocalDevs();
       if (typeof unsubCamFrame === "function") unsubCamFrame();
@@ -238,7 +267,11 @@ export default function LiveSwitcherController() {
         try { pc.close(); } catch (_) {}
       });
       peerConnectionsRef.current.clear();
-      localCameraManager.cleanupAll();
+      if (typeof localCameraManager?.cleanupAll === "function") {
+        localCameraManager.cleanupAll();
+      } else if (typeof localCameraManager?.destroy === "function") {
+        localCameraManager.destroy();
+      }
     };
   }, [refreshLocalDevices]);
 
@@ -406,7 +439,8 @@ export default function LiveSwitcherController() {
     setSelectedAssignSlotIndex(slotIndex);
     setIsAssignModalOpen(true);
     refreshLocalDevices();
-  }, [refreshLocalDevices]);
+    fetchConnectedDevices();
+  }, [refreshLocalDevices, fetchConnectedDevices]);
 
   const handleCloseAssignModal = useCallback(() => {
     setIsAssignModalOpen(false);
@@ -717,7 +751,7 @@ export default function LiveSwitcherController() {
                   key={slotIndex}
                   slotIndex={slotIndex}
                   slotInfo={slotInfo}
-                  stream={stream}
+                  stream={cameraStreams.get(slotInfo?.socketId)}
                   isProgram={isProgram}
                   isPreview={isPreview}
                   assignedDisplayNumber={assignedDisp}
@@ -906,7 +940,7 @@ export default function LiveSwitcherController() {
               programSourceName={getSourceName(effectiveProgramSourceId)}
               previewSourceId={effectivePreviewSourceId}
               previewSourceName={getSourceName(effectivePreviewSourceId)}
-              stream={cameraStreams.get(effectiveProgramSourceId)}
+              stream={cameraStreams.get(programSourceId)}
               cameraStreams={cameraStreams}
               activeTransition={activeTransition}
               mixProgress={mixProgress}
@@ -1276,7 +1310,7 @@ export default function LiveSwitcherController() {
                 <PiDeviceMobile size={15} />
                 <span>Mobile Companions</span>
                 <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-[12px] bg-black/40 text-white/70">
-                  {pairedDevices.filter((d) => d.paired).length}
+                  {pairedDevices.filter((d) => d && (d.paired !== false || d.id)).length}
                 </span>
               </button>
             </div>
@@ -1347,21 +1381,29 @@ export default function LiveSwitcherController() {
                 <>
                   <div className="flex items-center justify-between pb-1">
                     <span className="text-[10px] uppercase font-bold tracking-widest text-white/40">
-                      Paired Mobile Companions
+                      Connected Mobile Companions
                     </span>
+                    <button
+                      onClick={refreshMobileDevices}
+                      disabled={isScanningMobiles}
+                      className="flex items-center gap-1.5 text-[11px] font-semibold text-sky-400 hover:text-sky-300 disabled:opacity-50 px-2 py-1 rounded-[12px] bg-sky-500/10 border border-sky-500/20 transition-all"
+                    >
+                      <PiArrowsClockwise size={12} className={isScanningMobiles ? "animate-spin" : ""} />
+                      <span>{isScanningMobiles ? "Scanning..." : "Rescan Mobile"}</span>
+                    </button>
                   </div>
 
-                  {pairedDevices.filter((d) => d.paired).length === 0 ? (
+                  {pairedDevices.filter((d) => d && (d.paired !== false || d.id)).length === 0 ? (
                     <div className="flex flex-col items-center justify-center p-8 rounded-[12px] bg-white/[0.02] border border-white/10 text-center gap-2">
                       <PiDeviceMobile size={32} className="text-white/20" />
-                      <p className="text-xs font-bold text-white/80">No mobile companions paired</p>
+                      <p className="text-xs font-bold text-white/80">No mobile companions connected</p>
                       <p className="text-[11px] text-white/40 max-w-sm">
-                        Pair your mobile companion device via QR code in Church Presentation settings to stream live camera over local Wi-Fi.
+                        Connect or pair your mobile companion phone on the local Wi-Fi to stream live video into this slot.
                       </p>
                     </div>
                   ) : (
                     pairedDevices
-                      .filter((d) => d.paired)
+                      .filter((d) => d && (d.paired !== false || d.id))
                       .map((dev) => {
                         const assignedSlot = cameraSlots.find((s) => s.socketId === dev.id);
                         const isCurrentlyAssigned = !!assignedSlot;
@@ -1378,10 +1420,19 @@ export default function LiveSwitcherController() {
                               <div className="min-w-0">
                                 <p className="text-xs font-bold text-white truncate">{dev.name || dev.id}</p>
                                 <div className="flex items-center gap-1.5 mt-0.5">
-                                  <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-[12px] bg-emerald-500/15 border border-emerald-500/25 text-emerald-300">
-                                    Connected
+                                  <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-[12px] border ${
+                                    dev.paired !== false
+                                      ? "bg-emerald-500/15 border-emerald-500/25 text-emerald-300"
+                                      : "bg-amber-500/15 border-amber-500/25 text-amber-300"
+                                  }`}>
+                                    {dev.paired !== false ? "Connected" : "Connected (Pending Pair)"}
                                   </span>
-                                  <span className="text-[9px] font-mono text-white/40">LAN Wireless Stream</span>
+                                  {dev.ip && (
+                                    <span className="text-[9px] font-mono text-white/40">
+                                      {dev.ip}
+                                    </span>
+                                  )}
+                                  <span className="text-[9px] font-mono text-white/40">LAN Wireless</span>
                                 </div>
                               </div>
                             </div>
@@ -1390,7 +1441,7 @@ export default function LiveSwitcherController() {
                               onClick={() => handleAssignMobile(selectedAssignSlotIndex, dev)}
                               className="px-3.5 py-1.5 rounded-[12px] bg-sky-600/80 hover:bg-sky-500 text-white font-bold text-xs shrink-0 transition-all shadow-md active:scale-95"
                             >
-                              {isCurrentlyAssigned ? `Move to Slot ${selectedAssignSlotIndex}` : "Assign to Slot"}
+                              {isCurrentlyAssigned ? `Move to Slot ${selectedAssignSlotIndex}` : `Assign to Slot ${selectedAssignSlotIndex}`}
                             </button>
                           </div>
                         );

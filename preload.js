@@ -299,6 +299,14 @@ contextBridge.exposeInMainWorld("electron", {
       };
     },
   },
+  MobileDevices: {
+    getConnected: () => ipcRenderer.invoke('get-paired-devices'),
+    onUpdated: (callback) => {
+      const listener = (_e, val) => callback(val);
+      ipcRenderer.on('mobile-devices-updated', listener);
+      return () => ipcRenderer.removeListener('mobile-devices-updated', listener);
+    },
+  },
   Network: {
     getServerInfo: () => ipcRenderer.invoke('get-server-info'),
     getPairedDevices: () => ipcRenderer.invoke('get-paired-devices'),
@@ -580,8 +588,12 @@ contextBridge.exposeInMainWorld("electron", {
     /** Subscribe to all camera preview frames (includes fromId and isProgramSource) */
     onCameraFrame: (callback) => {
       const listener = (_e, payload) => callback(payload);
+      ipcRenderer.on('switcher-camera-frame', listener);
       ipcRenderer.on('teleprompter-mobile-frame', listener);
-      return () => ipcRenderer.removeListener('teleprompter-mobile-frame', listener);
+      return () => {
+        ipcRenderer.removeListener('switcher-camera-frame', listener);
+        ipcRenderer.removeListener('teleprompter-mobile-frame', listener);
+      };
     },
 
     /** Subscribe to controller-reclaimed events (phone disconnected / desktop forcibly reclaimed) */
@@ -626,6 +638,7 @@ contextBridge.exposeInMainWorld("electron", {
     /** WebRTC Signaling for continuous camera video */
     sendWebRtcAnswer: (payload) => ipcRenderer.send('switcher:webrtc-answer', payload),
     sendWebRtcIceCandidate: (payload) => ipcRenderer.send('switcher:webrtc-ice-candidate', payload),
+    sendWebRtcIce: (payload) => ipcRenderer.send('switcher:webrtc-ice-candidate', payload),
 
     onWebRtcOffer: (callback) => {
       const listener = (_e, payload) => callback(payload);

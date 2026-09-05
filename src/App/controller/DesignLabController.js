@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { PiSparkle, PiImage, PiTextT, PiPaintBrush, PiUploadSimple, PiCheckCircle, PiGear } from "react-icons/pi";
 import DisabledContainer from "../components/DisabledContainer";
 
+const electron = (typeof window !== "undefined" && window.electron) || {};
 
 function DesignLabPanel() {
     const [poster, setPoster] = useState(null);
@@ -11,7 +12,7 @@ function DesignLabPanel() {
     const [generatedAsset, setGeneratedAsset] = useState(null);
 
     const handleUpload = async () => {
-        const file = await electron.Media.import();
+        const file = await window.electron?.Media?.import?.();
         if (file) {
             setPoster(file);
             analyzePoster(file);
@@ -22,8 +23,8 @@ function DesignLabPanel() {
         setIsAnalyzing(true);
         setAnalysis(null);
         try {
-            const result = await electron.Design.analyzePoster(imagePath);
-            if (result.error) {
+            const result = await window.electron?.Design?.analyzePoster?.(imagePath);
+            if (result?.error) {
                 console.error("Design Lab Error:", result.error, result.details);
                 alert(`AI Analysis failed: ${result.error}\n\nDetails: ${result.details || 'No details available'}`);
             } else {
@@ -48,7 +49,7 @@ function DesignLabPanel() {
     const handleApplyAsset = (path, type) => {
         const fileUrl = `file://${path}`;
         if (type === 'background') {
-            electron.Presentation.setStyle({
+            window.electron?.Presentation?.setStyle?.({
                 backgroundImage: fileUrl,
                 backgroundColor: '#000000',
                 backgroundVideo: null,
@@ -56,7 +57,7 @@ function DesignLabPanel() {
             });
         } else {
             // Apply lower third as a style overlay
-            electron.Presentation.setStyle({
+            window.electron?.Presentation?.setStyle?.({
                 lowerThirdImage: fileUrl,
                 target: ['general']
             });
@@ -74,7 +75,7 @@ function DesignLabPanel() {
                     </h2>
                     {poster && (
                         <button 
-                            onClick={() => electron.Presentation.setStyle({ backgroundImage: null, lowerThirdImage: null, target: ['general'] })}
+                            onClick={() => window.electron?.Presentation?.setStyle?.({ backgroundImage: null, lowerThirdImage: null, target: ['general'] })}
                             className="bg-red/10 text-red-400 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider hover:bg-red/20 transition-all border border-red-500/20"
                         >
                             Clear Screen

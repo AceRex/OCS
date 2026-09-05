@@ -74,7 +74,11 @@ interface SocketState {
     setSwitcherTransitionSetting: (setting: { type?: string; duration?: number; direction?: string }) => Promise<{ ok: boolean; error?: string }>;
     requestControlReclaim: () => void;
     sendProgramFrame: (base64Data: string) => void;
-    sendSwitcherCameraFrame: (base64Data: string) => void;
+    sendSwitcherCameraFrame: (base64Data: string, isMirrored?: boolean) => void;
+    sendWebRtcOffer: (offer: any) => void;
+    sendWebRtcIceCandidate: (candidate: any) => void;
+    setWebRtcAnswerHandler: (handler: ((answer: any) => void) | null) => void;
+    setWebRtcIceHandler: (handler: ((candidate: any) => void) | null) => void;
 
     setDeviceName: (name: string) => void;
     connect: (ip: string, pairingCode?: string, customPort?: number) => void;
@@ -97,7 +101,7 @@ interface SocketState {
     overlayContent: any | null;
     overlayTimer: any | null;
     shareContentToDesktop: (title: string, content: string) => Promise<{ ok: boolean; error?: string }>;
-    sendCameraFrame: (base64Data: string) => void;
+    sendCameraFrame: (base64Data: string, isMirrored?: boolean) => void;
     startCameraSync: () => void;
     stopCameraSync: () => void;
     acceptCameraRequest: () => void;
@@ -290,11 +294,29 @@ export const useSocketStore = create<SocketState>((set, get) => ({
             socket.emit('switcher:program-frame', { data: base64Data, timestamp: Date.now() });
         }
     },
-    sendSwitcherCameraFrame: (base64Data: string) => {
-        const { socket, isPaired } = get();
-        if (socket && socket.connected && isPaired && base64Data) {
-            socket.emit('switcher:camera-frame', { data: base64Data, timestamp: Date.now() });
+    sendSwitcherCameraFrame: (base64Data: string, isMirrored?: boolean) => {
+        const { socket, isPaired, isCameraSource } = get();
+        if (socket && socket.connected && (isPaired || isCameraSource) && base64Data) {
+            socket.emit('switcher:camera-frame', { data: base64Data, timestamp: Date.now(), isMirrored: !!isMirrored });
         }
+    },
+    sendWebRtcOffer: (offer: any) => {
+        const { socket, isPaired } = get();
+        if (socket && socket.connected && isPaired) {
+            socket.emit('switcher:webrtc-offer', { offer });
+        }
+    },
+    sendWebRtcIceCandidate: (candidate: any) => {
+        const { socket, isPaired } = get();
+        if (socket && socket.connected && isPaired) {
+            socket.emit('switcher:webrtc-ice-candidate', { candidate });
+        }
+    },
+    setWebRtcAnswerHandler: (handler: ((answer: any) => void) | null) => {
+        (set as any)({ _onWebRtcAnswerHandler: handler });
+    },
+    setWebRtcIceHandler: (handler: ((candidate: any) => void) | null) => {
+        (set as any)({ _onWebRtcIceHandler: handler });
     },
 
     shareContentToDesktop: (title: string, content: string): Promise<{ ok: boolean; error?: string }> => {
@@ -310,10 +332,10 @@ export const useSocketStore = create<SocketState>((set, get) => ({
             });
         });
     },
-    sendCameraFrame: (base64Data: string) => {
+    sendCameraFrame: (base64Data: string, isMirrored?: boolean) => {
         const { socket, isPaired } = get();
         if (socket && socket.connected && isPaired && base64Data) {
-            socket.emit('teleprompter:camera-frame', { data: base64Data, timestamp: Date.now() });
+            socket.emit('teleprompter:camera-frame', { data: base64Data, timestamp: Date.now(), isMirrored: !!isMirrored });
         }
     },
     startCameraSync: () => {
@@ -613,6 +635,20 @@ export const useSocketStore = create<SocketState>((set, get) => ({
             if (payload?.active) {
                 set({ switcherProgramSourceId: socket.id });
             }
+        });
+
+        // WebRTC Signaling: Answer from desktop controller
+        socket.on('switcher:webrtc-answer', (payload: any) => {
+            console.log('[Switcher WebRTC] Received answer from desktop');
+            const handler = (get() as any)._onWebRtcAnswerHandler;
+            if (handler) handler(payload?.answer || payload);
+        });
+
+        // WebRTC Signaling: ICE candidate from desktop controller
+        socket.on('switcher:webrtc-ice-candidate', (payload: any) => {
+            console.log('[Switcher WebRTC] Received ICE candidate from desktop');
+            const handler = (get() as any)._onWebRtcIceHandler;
+            if (handler) handler(payload?.candidate || payload);
         });
 
         // Request initial state from server after pairing

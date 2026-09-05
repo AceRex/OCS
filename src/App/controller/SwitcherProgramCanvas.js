@@ -289,6 +289,14 @@ export default function SwitcherProgramCanvas({
         }
       };
       nextImg.src = src;
+      if (nextImg.complete && nextImg.naturalWidth > 0) {
+        _programImageCache[fromId || "default"] = nextImg;
+        if (isProg || fromId === programSourceId) {
+          latestImgRef.current = nextImg;
+          isDirtyRef.current = true;
+          setHasFrame(true);
+        }
+      }
 
       if (isProg || fromId === programSourceId) {
         statsRef.current.lastFrame = Date.now();
@@ -299,14 +307,14 @@ export default function SwitcherProgramCanvas({
     let cleanupProgram = null;
     if (window.electron?.Switcher?.onProgramFrame) {
       cleanupProgram = window.electron.Switcher.onProgramFrame((payload) => {
-        handleFrame(payload?.fromId || programSourceId, payload?.data, true);
+        handleFrame(payload?.fromId || programSourceId, payload?.data || payload?.frame, true);
       });
     }
 
     let cleanupFallback = null;
     if (window.electron?.Switcher?.onCameraFrame) {
       cleanupFallback = window.electron.Switcher.onCameraFrame((payload) => {
-        handleFrame(payload?.fromId, payload?.data, payload?.fromId === programSourceId);
+        handleFrame(payload?.fromId, payload?.data || payload?.frame, payload?.fromId === programSourceId);
       });
     }
 

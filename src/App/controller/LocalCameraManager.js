@@ -178,6 +178,10 @@ class LocalCameraManager {
     this.stopAll();
     this.listeners.clear();
   }
+
+  cleanupAll() {
+    this.destroy();
+  }
 }
 
 export const localCameraManager = new LocalCameraManager();

@@ -35,34 +35,35 @@ console.log('[1. Mobile socketStore: sendSwitcherCameraFrame]');
 const socketStoreCode = fs.readFileSync(path.join(__dirname, '../ocs-mobile/store/socketStore.ts'), 'utf8');
 
 test('socketStore.ts defines sendSwitcherCameraFrame in SocketState interface', () => {
-  assert(socketStoreCode.includes('sendSwitcherCameraFrame: (base64Data: string) => void;'), 'Missing sendSwitcherCameraFrame in SocketState interface');
+  assert(socketStoreCode.includes('sendSwitcherCameraFrame: (base64Data: string'), 'Missing sendSwitcherCameraFrame in SocketState interface');
 });
 
 test('socketStore.ts implements sendSwitcherCameraFrame emitting switcher:camera-frame', () => {
-  assert(socketStoreCode.includes("socket.emit('switcher:camera-frame', { data: base64Data, timestamp: Date.now() });"), 'sendSwitcherCameraFrame should emit switcher:camera-frame');
+  assert(socketStoreCode.includes("socket.emit('switcher:camera-frame'"), 'sendSwitcherCameraFrame should emit switcher:camera-frame');
 });
 
-// 2. Check live-switcher.tsx native CameraView integration
-console.log('\n[2. Mobile live-switcher.tsx: Native CameraView]');
+// 2. Check live-switcher.tsx Native WebRTC Camera Integration
+console.log('\n[2. Mobile live-switcher.tsx: Native WebRTC Camera]');
 const mobileSwitcherCode = fs.readFileSync(path.join(__dirname, '../ocs-mobile/app/live-switcher.tsx'), 'utf8');
 
-test('live-switcher.tsx imports CameraView and useCameraPermissions from expo-camera', () => {
-  assert(mobileSwitcherCode.includes("import { CameraView, useCameraPermissions } from \"expo-camera\";"), 'Missing CameraView import');
+test('live-switcher.tsx integrates native react-native-webrtc (RTCView, mediaDevices, RTCPeerConnection)', () => {
+  assert(mobileSwitcherCode.includes("react-native-webrtc"), 'Must import from react-native-webrtc');
+  assert(mobileSwitcherCode.includes("<RTCView"), 'Must render native RTCView viewfinder component');
+  assert(mobileSwitcherCode.includes("mediaDevices.getUserMedia"), 'Must capture camera video via mediaDevices.getUserMedia');
+  assert(mobileSwitcherCode.includes("new RTCPeerConnection"), 'Must create native RTCPeerConnection');
 });
 
-test('live-switcher.tsx does NOT use WebBrowser for camera streaming', () => {
-  assert(!mobileSwitcherCode.includes("WebBrowser.openBrowserAsync"), 'Should not open external WebBrowser sheet for camera');
+test('live-switcher.tsx eliminates WebBrowser.openBrowserAsync and /switcher-camera external route', () => {
+  assert(!mobileSwitcherCode.includes("WebBrowser.openBrowserAsync"), 'WebBrowser.openBrowserAsync must NOT be used');
+  assert(!mobileSwitcherCode.includes("/switcher-camera"), '/switcher-camera route must NOT be referenced');
 });
 
-test('live-switcher.tsx implements continuous frame pumping via takePictureAsync and sendSwitcherCameraFrame', () => {
-  assert(mobileSwitcherCode.includes("takePictureAsync"), 'Missing takePictureAsync frame capture');
-  assert(mobileSwitcherCode.includes("sendSwitcherCameraFrame(photo.base64);"), 'Missing sendSwitcherCameraFrame call in pump loop');
+test('live-switcher.tsx does NOT use takePictureAsync polling for continuous video', () => {
+  assert(!mobileSwitcherCode.includes("takePictureAsync"), 'takePictureAsync must NOT be used for camera streaming (violates continuous WebRTC)');
 });
 
-test('live-switcher.tsx provides lens flip, torch toggle, and studio controls', () => {
-  assert(mobileSwitcherCode.includes("setFacing"), 'Missing lens flip');
-  assert(mobileSwitcherCode.includes("setTorch"), 'Missing torch toggle');
-  assert(mobileSwitcherCode.includes("setStreamQuality"), 'Missing quality selector');
+test('live-switcher.tsx filters out viewing device own camera from multiview grid (DEF-07)', () => {
+  assert(mobileSwitcherCode.includes("socketId !== socket?.id") || mobileSwitcherCode.includes("s.socketId !== socket?.id"), 'Multiview grid should filter out self camera');
 });
 
 test('live-switcher.tsx strictly adheres to Universal 12px border radius mandate', () => {

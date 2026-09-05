@@ -3,6 +3,8 @@ import React, { useState, useEffect, useRef } from "react";
 import { PiCaretDown, PiMagnifyingGlass, PiCheck } from "react-icons/pi";
 import { filterBooksFuzzy, resolveBookName } from "./smartBibleMatch";
 
+const electron = (typeof window !== "undefined" && window.electron) || {};
+
 const versions = {
   // ── Most Popular Modern ──────────────────────────────────────────────────
   niv:       "New International Version (NIV)",
@@ -184,11 +186,7 @@ export default function BibleController() {
 
   // Sync State to Mobile
   useEffect(() => {
-    if (
-      window.electron &&
-      window.electron.Bible &&
-      window.electron.Bible.sync
-    ) {
+    if (window.electron?.Bible?.sync) {
       window.electron.Bible.sync({
         version: selectedVersion,
         bookIndex: selectedBookIndex,
@@ -199,7 +197,9 @@ export default function BibleController() {
 
   // Fetch Books on Mount
   useEffect(() => {
-    electron.Bible.getBooks().then(setBooks).catch(console.error);
+    if (window.electron?.Bible?.getBooks) {
+      window.electron.Bible.getBooks().then(setBooks).catch(console.error);
+    }
   }, []);
 
   // Pending selection for remote sync
@@ -229,12 +229,13 @@ export default function BibleController() {
     setVerses([]);
 
     const bookIdx = selectedBookIndex >= 0 ? selectedBookIndex : 0;
-    electron.Bible.getChapter(
-      selectedVersion,
-      bookIdx,
-      selectedChapterIndex + 1,
-    )
-      .then((newVerses) => {
+    if (window.electron?.Bible?.getChapter) {
+      window.electron.Bible.getChapter(
+        selectedVersion,
+        bookIdx,
+        selectedChapterIndex + 1,
+      )
+        .then((newVerses) => {
         setVerses(newVerses);
         // Handle pending remote selection
         if (pendingSelection.current) {
@@ -257,7 +258,8 @@ export default function BibleController() {
           pendingSelection.current = null;
         }
       })
-      .catch(console.error);
+        .catch(console.error);
+    }
   }, [selectedVersion, selectedBookIndex, selectedChapterIndex, books]);
 
   // Listen for Mobile Actions
@@ -411,7 +413,7 @@ export default function BibleController() {
   ) => {
     if (indices.size === 0) {
       setIsLive(false);
-      electron.Presentation.setContent(null);
+      window.electron?.Presentation?.setContent?.(null);
       return;
     }
     setIsLive(true);
@@ -452,7 +454,7 @@ export default function BibleController() {
       }
     }
 
-    electron.Presentation.setContent({
+    window.electron?.Presentation?.setContent?.({
       type: "bible",
       data: {
         title: verseRef,
@@ -516,7 +518,7 @@ export default function BibleController() {
     }
     setSelectedVerseIndices(new Set());
     console.log("[Bible] clear presentation on book/chapter change");
-    electron.Presentation.setContent(null);
+    window.electron?.Presentation?.setContent?.(null);
   }, [selectedBookIndex, selectedChapterIndex]);
 
   // Sync 2XL Header Inputs with selection state when user has interacted and is not actively editing
@@ -625,16 +627,18 @@ export default function BibleController() {
 
     // If verses are already selected, re-fetch chapter in new version and present immediately
     if (selectedVerseIndices.size > 0 && selectedBookIndex >= 0) {
-      electron.Bible.getChapter(
-        versionKey,
-        selectedBookIndex,
-        selectedChapterIndex + 1,
-      )
-        .then((newVerses) => {
-          setVerses(newVerses);
-          presentVerses(selectedVerseIndices, newVerses, selectedBookIndex, selectedChapterIndex, versionKey);
-        })
-        .catch(console.error);
+      if (window.electron?.Bible?.getChapter) {
+        window.electron.Bible.getChapter(
+          versionKey,
+          selectedBookIndex,
+          selectedChapterIndex + 1,
+        )
+          .then((newVerses) => {
+            setVerses(newVerses);
+            presentVerses(selectedVerseIndices, newVerses, selectedBookIndex, selectedChapterIndex, versionKey);
+          })
+          .catch(console.error);
+      }
     }
   };
 
@@ -733,7 +737,7 @@ export default function BibleController() {
     isUserEditingVerseRef.current = false;
     if (!val || !val.trim()) {
       setSelectedVerseIndices(new Set());
-      electron.Presentation.setContent(null);
+      window.electron?.Presentation?.setContent?.(null);
       return;
     }
 
@@ -777,12 +781,14 @@ export default function BibleController() {
       selectedChapterIndex !== chIdx
     ) {
       try {
-        currentChapterVerses = await electron.Bible.getChapter(
-          ver,
-          bookIdx,
-          chIdx + 1,
-        );
-        setVerses(currentChapterVerses);
+        if (window.electron?.Bible?.getChapter) {
+          currentChapterVerses = await window.electron.Bible.getChapter(
+            ver,
+            bookIdx,
+            chIdx + 1,
+          );
+          setVerses(currentChapterVerses);
+        }
       } catch (err) {
         console.error("Failed to load chapter verses for bounds clamping:", err);
       }

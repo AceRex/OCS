@@ -12,8 +12,12 @@
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
-        }
-      }
+        },
+        "NSCameraUsageDescription": "OCS requires camera access for live church switcher video streaming.",
+        "NSMicrophoneUsageDescription": "OCS requires microphone access for church intercom and audio streaming."
+      },
+      "bitcode": false,
+      "bundleIdentifier": "com.ocs.companion"
     },
     "android": {
       "package": "com.ocs.companion",
@@ -32,7 +36,13 @@
         "android.permission.RECORD_AUDIO",
         "android.permission.MODIFY_AUDIO_SETTINGS",
         "android.permission.FOREGROUND_SERVICE",
-        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"
+        "android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "android.permission.CAMERA",
+        "android.permission.ACCESS_NETWORK_STATE",
+        "android.permission.INTERNET",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+        "android.permission.WAKE_LOCK",
+        "android.permission.BLUETOOTH"
       ],
       "predictiveBackGestureEnabled": false,
       "usesCleartextTraffic": true
@@ -61,7 +71,8 @@
       "expo-web-browser",
       "expo-audio",
       "expo-asset",
-      "expo-camera"
+      "expo-camera",
+      "@config-plugins/react-native-webrtc"
     ],
     "experiments": {
       "typedRoutes": true,
