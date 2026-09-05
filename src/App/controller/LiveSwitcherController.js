@@ -726,14 +726,6 @@ export default function LiveSwitcherController() {
               <p className="text-[10px] font-bold uppercase tracking-widest text-white/40">
                 Live Output (Program Mix)
               </p>
-              <div className="flex items-center gap-2">
-                <span className="text-[9px] font-bold px-2 py-0.5 rounded-[12px] bg-red-500/20 text-red-400 border border-red-500/30">
-                  ON AIR: {activeDisplay === "display1" ? "DISPLAY 1" : "DISPLAY 2"} ({getSourceName(effectiveProgramSourceId)})
-                </span>
-                <span className="text-[9px] font-bold px-2 py-0.5 rounded-[12px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                  STANDBY: {activeDisplay === "display1" ? "DISPLAY 2" : "DISPLAY 1"} ({getSourceName(effectivePreviewSourceId)})
-                </span>
-              </div>
             </div>
 
             <SwitcherProgramCanvas

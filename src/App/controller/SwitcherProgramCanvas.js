@@ -381,29 +381,29 @@ export default function SwitcherProgramCanvas({
       {/* Overlaid HUD */}
       {(isTransitioning || hasFrame || stream) && (
         <>
-          <div className="absolute top-3 left-3 flex items-center gap-2 z-10">
-            <div className={`text-white text-xs font-black px-3 py-1 rounded-full flex items-center gap-1.5 shadow-lg ${
-              isManualMixing ? "bg-amber-600/95" : isTransitioning ? "bg-amber-600/90" : "bg-red-600/90"
+          <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 z-10">
+            <div className={`text-white text-[10px] font-bold px-2 py-0.5 rounded-[12px] flex items-center gap-1.5 shadow-md ${
+              isManualMixing ? "bg-amber-600/90" : isTransitioning ? "bg-amber-600/85" : "bg-red-600/85"
             }`}>
-              <span className="w-2 h-2 rounded-full bg-white animate-ping" />
+              <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
               {isManualMixing ? `T-BAR: ${Math.round(mixProgress * 100)}%` : isTransitioning ? "TRANSITION" : "LIVE OUTPUT"}
             </div>
             {isManualMixing && (
-              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300 bg-black/60 px-2 py-0.5 rounded-[12px] border border-amber-500/30">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-amber-300 bg-black/60 px-1.5 py-0.5 rounded-[12px] border border-amber-500/30">
                 {transitionSetting?.type?.toUpperCase() || "FADE"} ({Math.round(mixProgress * 100)}%)
               </span>
             )}
             {!isManualMixing && isTransitioning && (
-              <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300 bg-black/60 px-2 py-0.5 rounded-[12px] border border-amber-500/30">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-amber-300 bg-black/60 px-1.5 py-0.5 rounded-[12px] border border-amber-500/30">
                 {activeTransition?.type} ({activeTransition?.duration}ms)
               </span>
             )}
           </div>
-          <div className="absolute top-3 right-3 bg-black/70 text-white/60 text-[10px] font-mono px-2 py-1 rounded-[12px] border border-white/10 z-10">
+          <div className="absolute top-2.5 right-2.5 bg-black/60 text-white/50 text-[9px] font-mono px-1.5 py-0.5 rounded-[12px] border border-white/10 z-10">
             {isTransitioning ? "Compositing" : stream ? "30 fps HD" : `${hudStats.fps || 30} fps`}
           </div>
-          <div className="absolute bottom-3 left-3 right-3 flex items-end justify-between z-10">
-            <span className="bg-black/70 text-white text-xs font-bold px-3 py-1 rounded-[12px] border border-white/10 truncate max-w-[70%]">
+          <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-end justify-between z-10">
+            <span className="bg-black/60 backdrop-blur-sm text-white/80 text-[10px] font-medium px-2 py-0.5 rounded-[12px] border border-white/10 truncate max-w-[70%]">
               {isManualMixing
                 ? `${programSourceName || "Program"} ➔ ${previewSourceName || "Preview"}`
                 : (programSourceName || "Live Output")}
