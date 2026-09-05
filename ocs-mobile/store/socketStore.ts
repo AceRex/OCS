@@ -48,12 +48,33 @@ interface SocketState {
     switcherControllerSocketId: string | null; // Current controller
     switcherRouteGeneral: boolean;
     switcherRouteSpeaker: boolean;
+    switcherTransitionSetting: {
+        type: 'cut' | 'fade' | 'wipe';
+        duration: number;
+        direction: 'left-to-right' | 'right-to-left' | 'top-to-bottom' | 'bottom-to-top';
+    };
+    switcherActiveTransition: {
+        id: string;
+        fromId: string | null;
+        toId: string;
+        type: string;
+        duration: number;
+        direction: string;
+        startTime: number;
+    } | null;
+    switcherActiveDisplay: "display1" | "display2";
+    switcherDisplay1Source: string | null;
+    switcherDisplay2Source: string | null;
+    setSwitcherActiveDisplay: (displayId: "display1" | "display2", transition?: any) => Promise<{ ok: boolean; error?: string }>;
+    setSwitcherDisplaySource: (displayId: "display1" | "display2", sourceId: string) => Promise<{ ok: boolean; error?: string }>;
     optInAsCamera: () => Promise<{ ok: boolean; error?: string; slotIndex?: number }>;
     optOutAsCamera: () => Promise<{ ok: boolean; error?: string }>;
     setSwitcherProgram: (deviceId: string) => Promise<{ ok: boolean; error?: string }>;
     setSwitcherRoute: (destination: 'general' | 'speaker', active: boolean) => Promise<{ ok: boolean; error?: string }>;
+    setSwitcherTransitionSetting: (setting: { type?: string; duration?: number; direction?: string }) => Promise<{ ok: boolean; error?: string }>;
     requestControlReclaim: () => void;
     sendProgramFrame: (base64Data: string) => void;
+    sendSwitcherCameraFrame: (base64Data: string) => void;
 
     setDeviceName: (name: string) => void;
     connect: (ip: string, pairingCode?: string, customPort?: number) => void;
@@ -113,6 +134,15 @@ export const useSocketStore = create<SocketState>((set, get) => ({
     switcherControllerSocketId: null,
     switcherRouteGeneral: false,
     switcherRouteSpeaker: false,
+    switcherTransitionSetting: {
+        type: 'fade',
+        duration: 750,
+        direction: 'left-to-right',
+    },
+    switcherActiveTransition: null,
+    switcherActiveDisplay: 'display1',
+    switcherDisplay1Source: 'general',
+    switcherDisplay2Source: null,
     // ─ Switcher actions ───────────────────────────────────────────────────────
     optInAsCamera: (): Promise<{ ok: boolean; error?: string; slotIndex?: number }> => {
         return new Promise((resolve) => {
@@ -126,7 +156,7 @@ export const useSocketStore = create<SocketState>((set, get) => ({
                     set({ isCameraSource: true, cameraSlotIndex: res.slotIndex });
                     resolve({ ok: true, slotIndex: res.slotIndex });
                 } else {
-                    resolve({ ok: false, error: res?.error || 'Failed to join as camera source' });
+                    resolve({ ok: false, error: res?.error || 'Slot assignment failed' });
                 }
             });
         });
@@ -139,8 +169,12 @@ export const useSocketStore = create<SocketState>((set, get) => ({
                 return;
             }
             socket.emit('switcher:opt-out-camera', {}, (res: any) => {
-                set({ isCameraSource: false, cameraSlotIndex: null });
-                resolve(res?.ok ? { ok: true } : { ok: false, error: res?.error });
+                if (res?.ok) {
+                    set({ isCameraSource: false, cameraSlotIndex: null });
+                    resolve({ ok: true });
+                } else {
+                    resolve({ ok: false, error: res?.error || 'Failed to release slot' });
+                }
             });
         });
     },
@@ -179,6 +213,70 @@ export const useSocketStore = create<SocketState>((set, get) => ({
             });
         });
     },
+    setSwitcherTransitionSetting: (setting: { type?: string; duration?: number; direction?: string }): Promise<{ ok: boolean; error?: string }> => {
+        return new Promise((resolve) => {
+            const { socket, isPaired, isSwitcherController } = get();
+            if (!socket || !socket.connected || !isPaired) {
+                resolve({ ok: false, error: 'Must be connected and paired' });
+                return;
+            }
+            if (!isSwitcherController) {
+                resolve({ ok: false, error: 'You do not hold controller permission' });
+                return;
+            }
+            socket.emit('switcher:set-transition-setting', setting, (res: any) => {
+                if (res?.ok) {
+                    if (res.transitionSetting) set({ switcherTransitionSetting: res.transitionSetting });
+                    resolve({ ok: true });
+                } else {
+                    resolve({ ok: false, error: res?.error || 'Failed to update transition setting' });
+                }
+            });
+        });
+    },
+    setSwitcherActiveDisplay: (displayId: "display1" | "display2", transition?: any): Promise<{ ok: boolean; error?: string }> => {
+        return new Promise((resolve) => {
+            const { socket, isPaired, isSwitcherController } = get();
+            if (!socket || !socket.connected || !isPaired) {
+                resolve({ ok: false, error: 'Must be connected and paired' });
+                return;
+            }
+            if (!isSwitcherController) {
+                resolve({ ok: false, error: 'You do not hold controller permission' });
+                return;
+            }
+            socket.emit('switcher:set-active-display', { displayId, transition }, (res: any) => {
+                if (res?.ok) {
+                    set({ switcherActiveDisplay: displayId });
+                    resolve({ ok: true });
+                } else {
+                    resolve({ ok: false, error: res?.error || 'Display switch rejected' });
+                }
+            });
+        });
+    },
+    setSwitcherDisplaySource: (displayId: "display1" | "display2", sourceId: string): Promise<{ ok: boolean; error?: string }> => {
+        return new Promise((resolve) => {
+            const { socket, isPaired, isSwitcherController } = get();
+            if (!socket || !socket.connected || !isPaired) {
+                resolve({ ok: false, error: 'Must be connected and paired' });
+                return;
+            }
+            if (!isSwitcherController) {
+                resolve({ ok: false, error: 'You do not hold controller permission' });
+                return;
+            }
+            socket.emit('switcher:set-display-source', { displayId, sourceId }, (res: any) => {
+                if (res?.ok) {
+                    if (displayId === "display1") set({ switcherDisplay1Source: sourceId });
+                    else set({ switcherDisplay2Source: sourceId });
+                    resolve({ ok: true });
+                } else {
+                    resolve({ ok: false, error: res?.error || 'Failed to set display source' });
+                }
+            });
+        });
+    },
     requestControlReclaim: () => {
         const { socket } = get();
         if (socket && socket.connected) {
@@ -190,6 +288,12 @@ export const useSocketStore = create<SocketState>((set, get) => ({
         if (socket && socket.connected && isPaired && base64Data) {
             // Send at full resolution via dedicated program-frame channel
             socket.emit('switcher:program-frame', { data: base64Data, timestamp: Date.now() });
+        }
+    },
+    sendSwitcherCameraFrame: (base64Data: string) => {
+        const { socket, isPaired } = get();
+        if (socket && socket.connected && isPaired && base64Data) {
+            socket.emit('switcher:camera-frame', { data: base64Data, timestamp: Date.now() });
         }
     },
 
@@ -447,7 +551,7 @@ export const useSocketStore = create<SocketState>((set, get) => ({
             set({ overlayTimer: timer });
         });
 
-        // \u2500 Switcher event listeners (Phase A) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        // ── Switcher event listeners (Phase A & B) ───────────────────────────
 
         // Full switcher state sync (on connect and after any change)
         socket.on('switcher:state', (state: any) => {
@@ -462,9 +566,31 @@ export const useSocketStore = create<SocketState>((set, get) => ({
                 switcherProgramSourceId: state.programSourceId || null,
                 switcherRouteGeneral: !!state.routeGeneral,
                 switcherRouteSpeaker: !!state.routeSpeaker,
+                ...(state.activeDisplay ? { switcherActiveDisplay: state.activeDisplay } : {}),
+                ...(state.display1Source ? { switcherDisplay1Source: state.display1Source } : {}),
+                ...(state.display2Source !== undefined ? { switcherDisplay2Source: state.display2Source } : {}),
+                ...(state.transitionSetting ? { switcherTransitionSetting: state.transitionSetting } : {}),
                 isCameraSource: !!mySlot,
                 cameraSlotIndex: mySlot ? mySlot.slotIndex : null,
                 isSwitcherController: state.controllerSocketId === myId,
+            });
+        });
+
+        // Transition setting updated
+        socket.on('switcher:transition-setting-updated', (setting: any) => {
+            if (setting) set({ switcherTransitionSetting: setting });
+        });
+
+        // Transition start (tally at t=0)
+        socket.on('switcher:transition-start', (trans: any) => {
+            set({ switcherActiveTransition: trans });
+        });
+
+        // Transition complete (program state update)
+        socket.on('switcher:transition-complete', (payload: any) => {
+            set({
+                switcherActiveTransition: null,
+                ...(payload?.programSourceId ? { switcherProgramSourceId: payload.programSourceId } : {}),
             });
         });
 
@@ -480,7 +606,7 @@ export const useSocketStore = create<SocketState>((set, get) => ({
             set({ isSwitcherController: false, switcherControllerSocketId: payload?.newControllerSocketId || null });
         });
 
-        // This device is now the program source \u2014 switch to high-quality streaming
+        // This device is now the program source — switch to high-quality streaming
         socket.on('switcher:you-are-program', (payload: any) => {
             console.log('[Switcher] This device is now the program source, active:', payload?.active);
             // The mobile camera screen listens for isCameraSource + this flag to upgrade quality
@@ -502,6 +628,10 @@ export const useSocketStore = create<SocketState>((set, get) => ({
                     switcherProgramSourceId: res.programSourceId || null,
                     switcherRouteGeneral: !!res.routeGeneral,
                     switcherRouteSpeaker: !!res.routeSpeaker,
+                    ...(res.activeDisplay ? { switcherActiveDisplay: res.activeDisplay } : {}),
+                    ...(res.display1Source ? { switcherDisplay1Source: res.display1Source } : {}),
+                    ...(res.display2Source !== undefined ? { switcherDisplay2Source: res.display2Source } : {}),
+                    ...(res.transitionSetting ? { switcherTransitionSetting: res.transitionSetting } : {}),
                     isCameraSource: !!mySlot,
                     cameraSlotIndex: mySlot ? mySlot.slotIndex : null,
                     isSwitcherController: res.controllerSocketId === myId,

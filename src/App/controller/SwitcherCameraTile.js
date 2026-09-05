@@ -17,12 +17,15 @@ export default function SwitcherCameraTile({
   slotInfo,
   stream,
   isProgram,
+  isPreview = false,
+  assignedDisplayNumber = null,
   canSwitch,
   onSelect,
+  onSetDisplay,
 }) {
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
-  const imgRef = useRef(new Image());
+  const latestImgRef = useRef(null);
   const isDirtyRef = useRef(false);
   const animRef = useRef(null);
   const statsRef = useRef({ frameCount: 0, lastFpsTime: performance.now(), fps: 0, lastFrame: 0 });
@@ -51,8 +54,8 @@ export default function SwitcherCameraTile({
 
     const renderLoop = () => {
       if (isDirtyRef.current && canvasRef.current) {
-        const img = imgRef.current;
-        if (img.complete && img.naturalWidth > 0) {
+        const img = latestImgRef.current;
+        if (img && img.naturalWidth > 0) {
           const canvas = canvasRef.current;
           const ctx = canvas.getContext("2d", { alpha: false });
           if (ctx) {
@@ -76,8 +79,11 @@ export default function SwitcherCameraTile({
       statsRef.current.fps = fps;
       statsRef.current.frameCount = 0;
       statsRef.current.lastFpsTime = now;
-      const isAlive = Date.now() - statsRef.current.lastFrame < 3000;
+      const isAlive = Date.now() - statsRef.current.lastFrame < 4000;
       setHudStats({ fps: isAlive ? fps : 0, isAlive });
+      if (!isAlive && !stream) {
+        setHasFrame(false);
+      }
     }, 500);
 
     return () => {
@@ -96,9 +102,13 @@ export default function SwitcherCameraTile({
         statsRef.current.lastFrame = Date.now();
         statsRef.current.frameCount++;
         const src = payload.data.startsWith("data:") ? payload.data : `data:image/jpeg;base64,${payload.data}`;
-        imgRef.current.onload = () => { isDirtyRef.current = true; };
-        imgRef.current.src = src;
-        setHasFrame(true);
+        const nextImg = new Image();
+        nextImg.onload = () => {
+          latestImgRef.current = nextImg;
+          isDirtyRef.current = true;
+          setHasFrame(true);
+        };
+        nextImg.src = src;
       });
     }
     return () => { if (cleanup) cleanup(); if (!stream) setHasFrame(false); };
@@ -115,6 +125,7 @@ export default function SwitcherCameraTile({
         "relative flex flex-col overflow-hidden rounded-[12px] border transition-all duration-150 select-none",
         isEmpty ? "border-white/10 bg-white/[0.03] cursor-default" :
           isProgram ? "border-red-500/80 ring-2 ring-red-500/60 bg-black cursor-default shadow-[0_0_20px_rgba(239,68,68,0.3)]" :
+          isPreview ? "border-emerald-500/80 ring-2 ring-emerald-500/60 bg-black cursor-pointer shadow-[0_0_20px_rgba(16,185,129,0.3)]" :
           isClickable ? "border-white/15 bg-black/60 cursor-pointer hover:border-white/30 hover:ring-1 hover:ring-white/20 active:scale-[0.98]" :
           "border-white/10 bg-black/60 cursor-default"
       ].join(" ")}
@@ -141,22 +152,47 @@ export default function SwitcherCameraTile({
           ) : (
             <canvas
               ref={canvasRef}
-              className={`w-full h-full object-cover transition-opacity duration-300 ${hasFrame && hudStats.isAlive ? "opacity-100" : "opacity-0"}`}
+              className={`w-full h-full object-cover transition-opacity duration-300 ${hasFrame ? "opacity-100" : "opacity-0"}`}
             />
           )}
 
-          {(!hasFrame || !hudStats.isAlive) && !stream && (
+          {!hasFrame && !stream && (
             <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-[#0c0d12] text-white/40">
               <PiVideoCamera size={20} className="animate-pulse text-white/30" />
               <span className="text-[9px] font-semibold">Camera not streaming</span>
             </div>
           )}
-          {isProgram && (
-            <div className="absolute top-1.5 left-1.5 bg-red-600/95 text-white text-[9px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 shadow-lg border border-red-400/40 z-10">
-              <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
-              PROGRAM
-            </div>
-          )}
+          {/* Top Left: Program / Preview / Display Badges */}
+          <div className="absolute top-1.5 left-1.5 flex items-center gap-1 z-10">
+            {assignedDisplayNumber === 1 && (
+              <span className="bg-sky-500 text-sky-950 text-[8px] font-black px-1.5 py-0.5 rounded-[12px] shadow-md">
+                DISP 1
+              </span>
+            )}
+            {assignedDisplayNumber === 2 && (
+              <span className="bg-violet-500 text-violet-950 text-[8px] font-black px-1.5 py-0.5 rounded-[12px] shadow-md">
+                DISP 2
+              </span>
+            )}
+            {assignedDisplayNumber === "both" && (
+              <span className="bg-gradient-to-r from-sky-500 to-violet-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-[12px] shadow-md">
+                DISP 1 & 2
+              </span>
+            )}
+            {isProgram && (
+              <div className="bg-red-600/95 text-white text-[8px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 shadow-lg border border-red-400/40">
+                <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />
+                ON AIR
+              </div>
+            )}
+            {!isProgram && isPreview && (
+              <div className="bg-emerald-600/95 text-white text-[8px] font-black px-2 py-0.5 rounded-full flex items-center gap-1 shadow-lg border border-emerald-400/40">
+                <span className="w-1.5 h-1.5 rounded-full bg-white" />
+                STANDBY
+              </div>
+            )}
+          </div>
+
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1.5 flex items-center justify-between z-10">
             <span className="text-[9px] font-bold text-white/80 truncate">{slotInfo.name}</span>
             {hudStats.isAlive && (
@@ -166,8 +202,40 @@ export default function SwitcherCameraTile({
               </span>
             )}
           </div>
-          <div className="absolute top-1.5 right-1.5 bg-black/60 text-white/50 text-[8px] font-black px-1.5 py-0.5 rounded-[12px] border border-white/10 z-10">
-            CAM {slotIndex}
+
+          {/* Top Right: Quick Assign Buttons and CAM Badge */}
+          <div className="absolute top-1.5 right-1.5 flex items-center gap-1 z-10">
+            {canSwitch && typeof onSetDisplay === "function" && (
+              <div className="flex items-center gap-0.5 bg-black/80 rounded-[12px] p-0.5 border border-white/20">
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onSetDisplay(socketId, 1); }}
+                  title="Set as Display 1"
+                  className={`px-1.5 py-0.5 rounded-[12px] text-[8px] font-black transition-all ${
+                    assignedDisplayNumber === 1 || assignedDisplayNumber === "both"
+                      ? "bg-sky-500 text-sky-950"
+                      : "text-white/60 hover:text-white hover:bg-white/20"
+                  }`}
+                >
+                  1
+                </button>
+                <button
+                  type="button"
+                  onClick={(e) => { e.stopPropagation(); onSetDisplay(socketId, 2); }}
+                  title="Set as Display 2"
+                  className={`px-1.5 py-0.5 rounded-[12px] text-[8px] font-black transition-all ${
+                    assignedDisplayNumber === 2 || assignedDisplayNumber === "both"
+                      ? "bg-violet-500 text-violet-950"
+                      : "text-white/60 hover:text-white hover:bg-white/20"
+                  }`}
+                >
+                  2
+                </button>
+              </div>
+            )}
+            <div className="bg-black/60 text-white/50 text-[8px] font-black px-1.5 py-0.5 rounded-[12px] border border-white/10">
+              CAM {slotIndex}
+            </div>
           </div>
         </>
       )}

@@ -15,9 +15,17 @@ import { PiWifiHigh, PiTelevision } from "react-icons/pi";
 export default function SwitcherMonitorTile({
   type,              // 'general' | 'speaker'
   label,             // "GENERAL VIEW" | "SPEAKER VIEW"
+  displayNumber,     // 1 | 2
+  assignedDisplayNumber = null, // 1 | 2 | "both" | null
   isRouted,          // boolean: whether this destination display is actively routed to Program
   programSourceId,   // string | null: socketId of active program camera source
   programSourceName, // string | null: display name of program camera
+  isSelected = false,// boolean: whether this display is selected
+  isShowing = false, // boolean: whether this display is currently on air / showing
+  canSelect = true,  // boolean: whether operator can select
+  onSelect,          // function (type) => void
+  onSetDisplay,      // function (type, 1 | 2) => void
+  assignedSourceLabel, // optional string: e.g. "Presentation (Slides)" or "Cam 1"
 }) {
   const canvasRef = useRef(null);
   const imgRef = useRef(new Image());
@@ -27,7 +35,8 @@ export default function SwitcherMonitorTile({
   const [hudStats, setHudStats] = useState({ fps: 0, isAlive: false });
   const [hasFrame, setHasFrame] = useState(false);
 
-  const isLive = !!(isRouted && programSourceId);
+  const isLive = !!(isShowing || (isRouted && programSourceId));
+  const dispNum = displayNumber || (type === "general" ? 1 : 2);
 
   // ── Render loop via requestAnimationFrame (draws captured raster into canvas) ────────
   useEffect(() => {
@@ -118,19 +127,48 @@ export default function SwitcherMonitorTile({
   }, [isLive, programSourceId]);
 
   const isGeneral = type === "general";
-  const accentBorder = isGeneral
-    ? "border-sky-500/70 ring-2 ring-sky-500/50 shadow-[0_0_20px_rgba(56,189,248,0.25)]"
-    : "border-violet-500/70 ring-2 ring-violet-500/50 shadow-[0_0_20px_rgba(167,139,250,0.25)]";
-  const accentBadgeBg = isGeneral ? "bg-sky-500 text-sky-950" : "bg-violet-500 text-violet-950";
+  const accentTheme = isGeneral ? "sky" : "violet";
+
+  // Border & Ring determination
+  let borderRingClass = "border-white/10 hover:border-white/25";
+  if (isShowing) {
+    borderRingClass = "border-red-500 ring-2 ring-red-500/80 shadow-[0_0_20px_rgba(239,68,68,0.4)]";
+  } else if (isSelected) {
+    borderRingClass = isGeneral
+      ? "border-sky-400 ring-2 ring-sky-400/60 shadow-[0_0_16px_rgba(56,189,248,0.25)]"
+      : "border-violet-400 ring-2 ring-violet-400/60 shadow-[0_0_16px_rgba(167,139,250,0.25)]";
+  } else if (isLive) {
+    borderRingClass = isGeneral
+      ? "border-sky-500/60 ring-1 ring-sky-500/40"
+      : "border-violet-500/60 ring-1 ring-violet-500/40";
+  }
+
+  const handleClick = () => {
+    if (canSelect && typeof onSelect === "function") {
+      onSelect(type);
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    if ((e.key === "Enter" || e.key === " ") && canSelect && typeof onSelect === "function") {
+      e.preventDefault();
+      onSelect(type);
+    }
+  };
 
   return (
     <div
+      role={canSelect ? "button" : undefined}
+      tabIndex={canSelect ? 0 : -1}
+      onClick={handleClick}
+      onKeyDown={handleKeyDown}
       className={[
-        "relative flex flex-col overflow-hidden rounded-[12px] border select-none transition-all duration-200 bg-black",
-        isLive ? accentBorder : "border-white/10"
+        "group relative flex flex-col overflow-hidden rounded-[12px] border select-none transition-all duration-200 bg-black",
+        canSelect ? "cursor-pointer hover:scale-[1.01] active:scale-[0.99] focus:outline-none" : "cursor-default",
+        borderRingClass,
       ].join(" ")}
       style={{ aspectRatio: "16/9" }}
-      title={`${label} — read-only display mirror (${isLive ? "LIVE CAMERA" : "DISPLAY PIXELS"})`}
+      title={`${label} (Display ${dispNum}) — Click to select / show on Program`}
     >
       {/* ── 1. True Raster Pixel Mirror Canvas (Scaled Uniformly) ─────────────── */}
       <canvas
@@ -151,29 +189,105 @@ export default function SwitcherMonitorTile({
       )}
 
       {/* ── 3. Persistent Header Bar (12px standard) ──────────────────────────── */}
-      <div className="absolute top-1.5 left-1.5 right-1.5 flex items-center justify-between pointer-events-none z-10">
-        <div className={`flex items-center gap-1 px-2 py-0.5 rounded-[12px] text-[8px] font-black uppercase tracking-wider ${
-          isLive ? `${accentBadgeBg} shadow-md` : "bg-black/75 border border-white/10 text-white/80"
-        }`}>
-          {isLive && <span className="w-1.5 h-1.5 rounded-full bg-current animate-ping" />}
-          <span>{isLive ? `LIVE · ${isGeneral ? "GENERAL" : "SPEAKER"}` : (isGeneral ? "GENERAL VIEW" : "SPEAKER VIEW")}</span>
+      <div className="absolute top-1.5 left-1.5 right-1.5 flex items-center justify-between z-10 pointer-events-none">
+        {/* Left: Display Number + Label + Assigned Badges */}
+        <div className="flex items-center gap-1">
+          <span className={`w-5 h-5 flex items-center justify-center rounded-[12px] text-[10px] font-black tracking-tighter ${
+            isShowing
+              ? "bg-red-500 text-white shadow-md animate-pulse"
+              : isSelected
+              ? isGeneral
+                ? "bg-sky-500 text-sky-950 font-black"
+                : "bg-violet-500 text-violet-950 font-black"
+              : "bg-black/80 border border-white/20 text-white"
+          }`}>
+            {dispNum}
+          </span>
+          <div className={`flex items-center gap-1 px-2 py-0.5 rounded-[12px] text-[8px] font-black uppercase tracking-wider ${
+            isShowing
+              ? "bg-red-500/90 text-white shadow-md"
+              : isLive
+              ? isGeneral
+                ? "bg-sky-500/80 text-sky-950 shadow-md"
+                : "bg-violet-500/80 text-violet-950 shadow-md"
+              : "bg-black/75 border border-white/10 text-white/80"
+          }`}>
+            {isShowing && <span className="w-1.5 h-1.5 rounded-full bg-white animate-ping" />}
+            <span>{isShowing ? `LIVE · DISPLAY ${dispNum}` : `DISPLAY ${dispNum} · ${isGeneral ? "GENERAL" : "SPEAKER"}`}</span>
+          </div>
+          {assignedDisplayNumber === 1 && (
+            <span className="bg-sky-500 text-sky-950 text-[8px] font-black px-1.5 py-0.5 rounded-[12px] shadow-md">
+              DISP 1
+            </span>
+          )}
+          {assignedDisplayNumber === 2 && (
+            <span className="bg-violet-500 text-violet-950 text-[8px] font-black px-1.5 py-0.5 rounded-[12px] shadow-md">
+              DISP 2
+            </span>
+          )}
+          {assignedDisplayNumber === "both" && (
+            <span className="bg-gradient-to-r from-sky-500 to-violet-500 text-white text-[8px] font-black px-1.5 py-0.5 rounded-[12px] shadow-md">
+              DISP 1 & 2
+            </span>
+          )}
         </div>
-        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-[12px] border ${
-          isLive
-            ? "border-white/20 bg-black/75 text-white/80 font-mono"
-            : "border-white/10 bg-black/60 text-white/50 font-mono"
-        }`}>
-          {isLive ? "LIVE CAM" : "PIXEL MIRROR"}
-        </span>
+
+        {/* Right: Quick Assign Buttons & Mode Badge */}
+        <div className="flex items-center gap-1 pointer-events-auto">
+          {typeof onSetDisplay === "function" && (
+            <div className="flex items-center gap-0.5 bg-black/80 rounded-[12px] p-0.5 border border-white/20">
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onSetDisplay(type, 1); }}
+                title={`Set ${isGeneral ? "General Screen" : "Speaker Screen"} as Display 1`}
+                className={`px-1.5 py-0.5 rounded-[12px] text-[8px] font-black transition-all ${
+                  assignedDisplayNumber === 1 || assignedDisplayNumber === "both"
+                    ? "bg-sky-500 text-sky-950"
+                    : "text-white/60 hover:text-white hover:bg-white/20"
+                }`}
+              >
+                1
+              </button>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onSetDisplay(type, 2); }}
+                title={`Set ${isGeneral ? "General Screen" : "Speaker Screen"} as Display 2`}
+                className={`px-1.5 py-0.5 rounded-[12px] text-[8px] font-black transition-all ${
+                  assignedDisplayNumber === 2 || assignedDisplayNumber === "both"
+                    ? "bg-violet-500 text-violet-950"
+                    : "text-white/60 hover:text-white hover:bg-white/20"
+                }`}
+              >
+                2
+              </button>
+            </div>
+          )}
+          <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-[12px] border ${
+            isShowing
+              ? "border-red-400/40 bg-red-950/80 text-red-200 font-mono"
+              : isLive
+              ? "border-white/20 bg-black/75 text-white/80 font-mono"
+              : "border-white/10 bg-black/60 text-white/50 font-mono"
+          }`}>
+            {isShowing ? "ON AIR" : isLive ? "LIVE CAM" : "PRESENTATION"}
+          </span>
+        </div>
       </div>
 
-      {/* ── 4. Bottom HUD: Display Out Label & FPS ────────────────────────────── */}
+      {/* ── 4. Bottom HUD: Display Out Label, Source & FPS ───────────────────── */}
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent px-2.5 py-1.5 flex items-center justify-between pointer-events-none z-10">
-        <span className="text-[9px] font-bold text-white/80 truncate max-w-[120px]">
-          {isLive ? (programSourceName || "Program Camera") : (isGeneral ? "General Out (Projector)" : "Speaker Out (Stage)")}
-        </span>
+        <div className="flex flex-col min-w-0">
+          <span className="text-[9px] font-bold text-white/90 truncate max-w-[130px]">
+            {assignedSourceLabel || (isGeneral ? "General Out (Projector)" : "Speaker Out (Stage)")}
+          </span>
+          {programSourceName && isLive && (
+            <span className="text-[8px] text-amber-300 font-medium truncate max-w-[130px]">
+              ↳ {programSourceName}
+            </span>
+          )}
+        </div>
         {hudStats.isAlive && (
-          <span className="text-[8px] font-mono text-white/50 flex items-center gap-0.5">
+          <span className="text-[8px] font-mono text-white/50 flex items-center gap-0.5 shrink-0">
             <PiWifiHigh size={9} className={isGeneral ? "text-sky-400" : "text-violet-400"} />
             {hudStats.fps} fps
           </span>
@@ -182,3 +296,4 @@ export default function SwitcherMonitorTile({
     </div>
   );
 }
+

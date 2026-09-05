@@ -1423,6 +1423,23 @@ let switcherProgramSourceId = null;
 let switcherRouteGeneral = false;
 let switcherRouteSpeaker = false;
 
+// Active display selection & A/B source assignments
+let switcherActiveDisplay = 'display1'; // 'display1' | 'display2'
+let switcherDisplay1Source = 'general'; // 'general' | socketId
+let switcherDisplay2Source = null;      // 'speaker' | socketId | null
+let savedPresentationContentSlot = null; // Preserves presentation contentSlot (lyrics/bible/slides) when live-output/camera overrides
+let savedGeneralContentSlot = null;      // Preserves General Screen presentation state during live sharing
+let savedSpeakerContentSlot = null;      // Preserves Speaker Screen confidence state during live sharing
+
+// Global transition settings (Phase B)
+let switcherTransitionSetting = {
+  type: 'fade',
+  duration: 750,
+  direction: 'left-to-right',
+};
+let switcherActiveTransition = null;
+let switcherTransitionTimer = null;
+
 // Assign the next available slot index (1–6)
 function _nextSwitcherSlot() {
   const used = new Set([...switcherCameraSlots.values()].map((v) => v.slotIndex));
@@ -1448,6 +1465,11 @@ function broadcastSwitcherState() {
     programSourceId: switcherProgramSourceId,
     routeGeneral: switcherRouteGeneral,
     routeSpeaker: switcherRouteSpeaker,
+    transitionSetting: switcherTransitionSetting,
+    activeTransition: switcherActiveTransition,
+    activeDisplay: switcherActiveDisplay,
+    display1Source: switcherDisplay1Source,
+    display2Source: switcherDisplay2Source,
   };
   // To all paired mobile clients
   if (io) {
@@ -1463,6 +1485,179 @@ function broadcastSwitcherState() {
       win.webContents.send('switcher-state-update', state);
     }
   }
+}
+
+function broadcastTransitionStart(transition) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send('switcher-transition-start', transition);
+    }
+  }
+  if (io) {
+    for (const [id, sock] of io.sockets.sockets) {
+      if (isPaired(id)) {
+        sock.emit('switcher:transition-start', transition);
+      }
+    }
+  }
+}
+
+function broadcastTransitionComplete(programSourceId) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send('switcher-transition-complete', { programSourceId });
+    }
+  }
+  if (io) {
+    for (const [id, sock] of io.sockets.sockets) {
+      if (isPaired(id)) {
+        sock.emit('switcher:transition-complete', { programSourceId });
+      }
+    }
+  }
+}
+
+/**
+ * Execute a program camera switch with transition support.
+ * Shared by both Socket.IO mobile controllers and desktop IPC.
+ */
+function executeProgramSwitch(targetId, customTransition) {
+  const transition = customTransition || switcherTransitionSetting;
+  const toId = targetId;
+
+  // Preserve non-camera presentation contentSlot whenever switching from presentation
+  if (currentCanvasState.contentSlot && currentCanvasState.contentSlot.type !== 'live-camera') {
+    savedPresentationContentSlot = currentCanvasState.contentSlot;
+  }
+
+  // If already on targetId with no transition running, nothing to do
+  const currentEffective = switcherProgramSourceId || 'general';
+  const targetEffective = toId || 'general';
+  if (!switcherActiveTransition && currentEffective === targetEffective) {
+    return { ok: true, programSourceId: switcherProgramSourceId };
+  }
+
+  // If already transitioning to this exact target, ignore duplicate clicks
+  if (switcherActiveTransition && switcherActiveTransition.toId === toId) {
+    return { ok: true, transitioning: true, transition: switcherActiveTransition };
+  }
+
+  // Interruption handling (Section 4):
+  // Cancel previous transition timer immediately
+  let fromId = switcherProgramSourceId || 'general';
+  if (switcherActiveTransition) {
+    fromId = switcherActiveTransition.toId || switcherProgramSourceId || 'general';
+    if (switcherTransitionTimer) {
+      clearTimeout(switcherTransitionTimer);
+      switcherTransitionTimer = null;
+    }
+    switcherActiveTransition = null;
+  }
+
+  const finalSourceId = (toId === 'general' || !toId) ? null : toId;
+
+  // If cut, no previous source, or duration <= 0: immediate hard cut
+  if (transition.type === 'cut' || !fromId || transition.duration <= 0) {
+    switcherActiveTransition = null;
+    switcherProgramSourceId = finalSourceId;
+    if (finalSourceId) {
+      const targetSock = io && io.sockets.sockets.get(finalSourceId);
+      if (targetSock) targetSock.emit('switcher:you-are-program', { active: true });
+    }
+    if (switcherRouteGeneral || switcherRouteSpeaker) {
+      const dests = [];
+      if (switcherRouteGeneral) dests.push('general');
+      if (switcherRouteSpeaker) dests.push('speaker');
+      if (finalSourceId) {
+        currentCanvasState.contentSlot = { type: 'live-camera', data: { deviceId: finalSourceId } };
+      } else {
+        currentCanvasState.contentSlot = savedPresentationContentSlot || { type: 'none', data: null };
+      }
+      broadcastCanvasState(currentCanvasState, dests);
+    }
+    broadcastSwitcherState();
+    broadcastTransitionComplete(finalSourceId);
+    return { ok: true, programSourceId: finalSourceId };
+  }
+
+  // Animated transition (Fade / Wipe)
+  const duration = Math.max(100, Math.min(3000, Number(transition.duration) || 750));
+  const type = ['cut', 'fade', 'wipe'].includes(transition.type) ? transition.type : 'fade';
+  const direction = ['left-to-right', 'right-to-left', 'top-to-bottom', 'bottom-to-top'].includes(transition.direction)
+    ? transition.direction
+    : 'left-to-right';
+  const transitionId = `trans_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
+  const startTime = Date.now();
+
+  switcherActiveTransition = {
+    id: transitionId,
+    fromId,
+    toId: toId || 'general',
+    type,
+    duration,
+    direction,
+    startTime,
+  };
+
+  // Section 5: Tally lights up immediately at transition start
+  if (finalSourceId) {
+    const targetSock = io && io.sockets.sockets.get(finalSourceId);
+    if (targetSock) targetSock.emit('switcher:you-are-program', { active: true });
+  }
+
+  // Broadcast transition start
+  broadcastTransitionStart(switcherActiveTransition);
+
+  // Update routed displays with incoming and outgoing references
+  if (switcherRouteGeneral || switcherRouteSpeaker) {
+    const dests = [];
+    if (switcherRouteGeneral) dests.push('general');
+    if (switcherRouteSpeaker) dests.push('speaker');
+    currentCanvasState.contentSlot = {
+      type: 'live-camera',
+      data: { deviceId: finalSourceId, fromId, toId: toId || 'general', transition: switcherActiveTransition },
+    };
+    broadcastCanvasState(currentCanvasState, dests);
+  }
+
+  // Schedule transition completion
+  switcherTransitionTimer = setTimeout(() => {
+    switcherTransitionTimer = null;
+    switcherActiveTransition = null;
+    // Section 5: Authoritative program state updates at transition completion
+    switcherProgramSourceId = finalSourceId;
+    console.log(`[Switcher] Transition complete. Authoritative program source: ${finalSourceId}`);
+
+    if (switcherRouteGeneral || switcherRouteSpeaker) {
+      const dests = [];
+      if (switcherRouteGeneral) dests.push('general');
+      if (switcherRouteSpeaker) dests.push('speaker');
+      if (finalSourceId) {
+        currentCanvasState.contentSlot = { type: 'live-camera', data: { deviceId: finalSourceId } };
+      } else {
+        currentCanvasState.contentSlot = savedPresentationContentSlot || { type: 'none', data: null };
+      }
+      broadcastCanvasState(currentCanvasState, dests);
+    }
+
+    broadcastSwitcherState();
+    broadcastTransitionComplete(finalSourceId);
+  }, duration);
+
+  return { ok: true, inTransition: true, transitionId, programSourceId: finalSourceId };
+}
+
+function switchDisplay(targetDisplay, customTransition) {
+  switcherActiveDisplay = targetDisplay === 'display2' ? 'display2' : 'display1';
+  let targetSource = switcherActiveDisplay === 'display1' ? switcherDisplay1Source : switcherDisplay2Source;
+  if (!targetSource || (switcherActiveDisplay === 'display2' && targetSource === 'speaker')) {
+    const firstCam = switcherCameraSlots.size > 0 ? Array.from(switcherCameraSlots.keys())[0] : null;
+    targetSource = firstCam || (switcherActiveDisplay === 'display1' ? 'general' : 'speaker');
+    if (firstCam && switcherActiveDisplay === 'display2') {
+      switcherDisplay2Source = firstCam;
+    }
+  }
+  return executeProgramSwitch(targetSource, customTransition);
 }
 
 function broadcastDevicesUpdated() {
@@ -1813,6 +2008,10 @@ io.on("connection", (socket) => {
         switcherProgramSourceId = null;
         console.log('[Switcher] Program source cleared (camera disconnected)');
       }
+      if (switcherDisplay2Source === socket.id) {
+        const remaining = Array.from(switcherCameraSlots.keys());
+        switcherDisplay2Source = remaining.length > 0 ? remaining[0] : null;
+      }
       switcherChanged = true;
     }
     if (switcherControllerSocketId === socket.id) {
@@ -1922,15 +2121,45 @@ io.on("connection", (socket) => {
   socket.on("teleprompter:camera-frame", (payload = {}) => {
     if (!isPaired(socket.id)) return;
     const isProgramSource = socket.id === switcherProgramSourceId;
+    const framePayload = {
+      data: payload.data,
+      fromId: socket.id,
+      timestamp: payload.timestamp || Date.now(),
+      isProgramSource,
+    };
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
-        win.webContents.send("teleprompter-mobile-frame", {
-          data: payload.data,
-          fromId: socket.id,
-          timestamp: payload.timestamp || Date.now(),
-          isProgramSource,
-        });
+        win.webContents.send("teleprompter-mobile-frame", framePayload);
+        if (isProgramSource) {
+          win.webContents.send("switcher-program-frame", framePayload);
+        }
       }
+    }
+    if (io && isProgramSource && (switcherRouteGeneral || switcherRouteSpeaker)) {
+      io.emit('switcher:live-frame', framePayload);
+    }
+  });
+
+  // Switcher Mobile Camera Frame Streaming (Mobile -> Desktop Workstation)
+  socket.on("switcher:camera-frame", (payload = {}) => {
+    if (!isPaired(socket.id)) return;
+    const isProgramSource = socket.id === switcherProgramSourceId;
+    const framePayload = {
+      data: payload.data,
+      fromId: socket.id,
+      timestamp: payload.timestamp || Date.now(),
+      isProgramSource,
+    };
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send("teleprompter-mobile-frame", framePayload);
+        if (isProgramSource) {
+          win.webContents.send("switcher-program-frame", framePayload);
+        }
+      }
+    }
+    if (io && isProgramSource && (switcherRouteGeneral || switcherRouteSpeaker)) {
+      io.emit('switcher:live-frame', framePayload);
     }
   });
 
@@ -1995,6 +2224,12 @@ io.on("connection", (socket) => {
     const devName = connectedDevices.find((d) => d.id === socket.id)?.name || payload.name || 'Camera';
     switcherCameraSlots.set(socket.id, { name: devName, slotIndex });
     console.log(`[Switcher] Camera opted in: ${devName} -> slot ${slotIndex}`);
+
+    // Auto-assign first camera to switcherDisplay2Source if empty or defaulted to speaker
+    if (!switcherDisplay2Source || switcherDisplay2Source === 'speaker' || !switcherCameraSlots.has(switcherDisplay2Source)) {
+      switcherDisplay2Source = socket.id;
+    }
+
     broadcastSwitcherState();
     broadcastDevicesUpdated();
     if (typeof ack === 'function') ack({ ok: true, slotIndex });
@@ -2015,13 +2250,17 @@ io.on("connection", (socket) => {
     if (switcherProgramSourceId === socket.id) {
       switcherProgramSourceId = null;
     }
+    if (switcherDisplay2Source === socket.id) {
+      const remaining = Array.from(switcherCameraSlots.keys());
+      switcherDisplay2Source = remaining.length > 0 ? remaining[0] : null;
+    }
     console.log(`[Switcher] Camera opted out: slot ${info.slotIndex}`);
     broadcastSwitcherState();
     broadcastDevicesUpdated();
     if (typeof ack === 'function') ack({ ok: true });
   });
 
-  // Hard-cut program source switch — ENFORCED SERVER-SIDE
+  // Program source switch with transition support — ENFORCED SERVER-SIDE
   socket.on("switcher:set-program", (payload = {}, ack = () => {}) => {
     if (!isPaired(socket.id)) {
       if (typeof ack === 'function') ack({ ok: false, error: 'Pairing required' });
@@ -2038,15 +2277,37 @@ io.on("connection", (socket) => {
       if (typeof ack === 'function') ack({ ok: false, error: 'Invalid camera source' });
       return;
     }
-    switcherProgramSourceId = targetId;
-    console.log(`[Switcher] Program source set to: ${targetId}`);
-    // Notify the new program source to upgrade its stream quality
-    const targetSock = targetId ? io.sockets.sockets.get(targetId) : null;
-    if (targetSock) targetSock.emit('switcher:you-are-program', { active: true });
-    // Notify previous program source (if different) to drop back to preview quality
-    // (handled implicitly — phone uses isProgramSource flag on ack)
+    const result = executeProgramSwitch(targetId, payload.transition);
+    if (typeof ack === 'function') ack(result);
+  });
+
+  // Global transition settings update — ENFORCED SERVER-SIDE
+  socket.on("switcher:set-transition-setting", (payload = {}, ack = () => {}) => {
+    if (!isPaired(socket.id)) {
+      if (typeof ack === 'function') ack({ ok: false, error: 'Pairing required' });
+      return;
+    }
+    if (switcherControllerSocketId !== socket.id) {
+      console.warn(`[Switcher] REJECTED switcher:set-transition-setting from non-controller ${socket.id}`);
+      if (typeof ack === 'function') ack({ ok: false, error: 'Permission denied — you are not the current switcher controller' });
+      return;
+    }
+    const { type = 'fade', duration = 750, direction = 'left-to-right' } = payload;
+    switcherTransitionSetting = {
+      type: ['cut', 'fade', 'wipe'].includes(type) ? type : 'fade',
+      duration: Math.max(100, Math.min(3000, Number(duration) || 750)),
+      direction: ['left-to-right', 'right-to-left', 'top-to-bottom', 'bottom-to-top'].includes(direction)
+        ? direction
+        : 'left-to-right',
+    };
+    console.log(`[Switcher] Transition setting updated by ${socket.id}:`, switcherTransitionSetting);
     broadcastSwitcherState();
-    if (typeof ack === 'function') ack({ ok: true, programSourceId: targetId });
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send("switcher-transition-setting-updated", switcherTransitionSetting);
+      }
+    }
+    if (typeof ack === 'function') ack({ ok: true, transitionSetting: switcherTransitionSetting });
   });
 
   // Destination routing (General View / Speaker View)
@@ -2065,23 +2326,81 @@ io.on("connection", (socket) => {
       if (typeof ack === 'function') ack({ ok: false, error: 'Invalid destination' });
       return;
     }
-    if (destination === 'general') switcherRouteGeneral = !!active;
-    if (destination === 'speaker') switcherRouteSpeaker = !!active;
-    console.log(`[Switcher] Route ${destination} -> ${active}`);
-    // Update the content slot on that display window
-    const contentValue = active && switcherProgramSourceId
-      ? { type: 'live-camera', data: { deviceId: switcherProgramSourceId }, target: [destination] }
-      : { type: 'none', data: null, target: [destination] };
-    // Trigger the existing canvas state machinery
-    if (active && switcherProgramSourceId) {
-      currentCanvasState.contentSlot = { type: 'live-camera', data: { deviceId: switcherProgramSourceId } };
-    } else {
-      // Only clear if the slot was live-camera for that target
-      // (don't clobber if the other destination is still using a different type)
+    const isShared = !!active;
+    if (destination === 'general') {
+      switcherRouteGeneral = isShared;
+      console.log(`[Switcher] Route ${destination} -> ${isShared}`);
+      if (isShared) {
+        if (currentCanvasState.contentSlot && currentCanvasState.contentSlot.type !== 'live-output' && currentCanvasState.contentSlot.type !== 'live-camera') {
+          savedGeneralContentSlot = currentCanvasState.contentSlot;
+          savedPresentationContentSlot = currentCanvasState.contentSlot;
+        }
+        currentCanvasState.contentSlot = { type: 'live-output', data: { title: 'Live Switcher Output' } };
+        broadcastCanvasState(currentCanvasState, ['general']);
+      } else {
+        const restoredSlot = savedGeneralContentSlot || savedPresentationContentSlot || { type: 'none', data: null };
+        currentCanvasState.contentSlot = restoredSlot;
+        if (generalWindow && !generalWindow.isDestroyed() && restoredSlot.type !== 'none') {
+          generalWindow.webContents.send("set-content", restoredSlot);
+        }
+        broadcastCanvasState(currentCanvasState, ['general']);
+      }
+    } else if (destination === 'speaker') {
+      switcherRouteSpeaker = isShared;
+      console.log(`[Switcher] Route ${destination} -> ${isShared}`);
+      if (isShared) {
+        if (currentCanvasState.contentSlot && currentCanvasState.contentSlot.type !== 'live-output' && currentCanvasState.contentSlot.type !== 'live-camera') {
+          savedSpeakerContentSlot = currentCanvasState.contentSlot;
+        }
+        broadcastCanvasState({ ...currentCanvasState, contentSlot: { type: 'live-output', data: { title: 'Live Switcher Output' } } }, ['speaker']);
+      } else {
+        const restoredSlot = savedSpeakerContentSlot || { type: 'none', data: null };
+        if (speakerWindow && !speakerWindow.isDestroyed() && restoredSlot.type !== 'none') {
+          speakerWindow.webContents.send("set-content", restoredSlot);
+        }
+        broadcastCanvasState({ ...currentCanvasState, contentSlot: restoredSlot }, ['speaker']);
+      }
     }
-    broadcastCanvasState(currentCanvasState, [destination]);
     broadcastSwitcherState();
     if (typeof ack === 'function') ack({ ok: true });
+  });
+
+  // Mobile-initiated active display selection (Display 1 vs Display 2)
+  socket.on("switcher:set-active-display", (payload = {}, ack = () => {}) => {
+    if (!isPaired(socket.id)) {
+      if (typeof ack === 'function') ack({ ok: false, error: 'Pairing required' });
+      return;
+    }
+    if (switcherControllerSocketId !== socket.id) {
+      console.warn(`[Switcher] REJECTED switcher:set-active-display from non-controller ${socket.id}`);
+      if (typeof ack === 'function') ack({ ok: false, error: 'Permission denied — you are not the current switcher controller' });
+      return;
+    }
+    const displayId = typeof payload === 'string' ? payload : payload?.displayId;
+    const customTransition = typeof payload === 'object' ? payload?.transition : null;
+    const result = switchDisplay(displayId, customTransition);
+    if (typeof ack === 'function') ack(result);
+  });
+
+  // Mobile-initiated display source assignment (set source for Display 1 or Display 2)
+  socket.on("switcher:set-display-source", (payload = {}, ack = () => {}) => {
+    if (!isPaired(socket.id)) {
+      if (typeof ack === 'function') ack({ ok: false, error: 'Pairing required' });
+      return;
+    }
+    if (switcherControllerSocketId !== socket.id) {
+      console.warn(`[Switcher] REJECTED switcher:set-display-source from non-controller ${socket.id}`);
+      if (typeof ack === 'function') ack({ ok: false, error: 'Permission denied — you are not the current switcher controller' });
+      return;
+    }
+    const { displayId, sourceId } = payload || {};
+    if (displayId === 'display1') {
+      switcherDisplay1Source = sourceId || 'general';
+    } else if (displayId === 'display2') {
+      switcherDisplay2Source = sourceId || 'speaker';
+    }
+    broadcastSwitcherState();
+    if (typeof ack === 'function') ack({ ok: true, display1Source: switcherDisplay1Source, display2Source: switcherDisplay2Source });
   });
 
   // Request initial switcher state sync
@@ -2097,6 +2416,11 @@ io.on("connection", (socket) => {
       programSourceId: switcherProgramSourceId,
       routeGeneral: switcherRouteGeneral,
       routeSpeaker: switcherRouteSpeaker,
+      activeDisplay: switcherActiveDisplay,
+      display1Source: switcherDisplay1Source,
+      display2Source: switcherDisplay2Source,
+      transitionSetting: switcherTransitionSetting,
+      activeTransition: switcherActiveTransition,
     };
     if (typeof ack === 'function') ack(state);
   });
@@ -2925,25 +3249,83 @@ ipcMain.handle("switcher:reclaim-control", () => {
   return { ok: true };
 });
 
-// Desktop-initiated hard cut (desktop is always allowed when it holds controller permission)
-ipcMain.handle("switcher:set-program-desktop", (_event, deviceId) => {
+// Desktop-initiated program switch with transition support
+ipcMain.handle("switcher:set-program-desktop", (_event, payload) => {
   if (switcherControllerSocketId !== 'desktop') {
     return { ok: false, error: 'Desktop does not hold controller permission' };
   }
-  if (deviceId && !switcherCameraSlots.has(deviceId)) {
+  const deviceId = typeof payload === 'string' ? payload : payload?.deviceId;
+  const customTransition = typeof payload === 'object' ? payload?.transition : null;
+  if (deviceId && deviceId !== 'general' && deviceId !== 'speaker' && !switcherCameraSlots.has(deviceId)) {
     return { ok: false, error: 'Device is not a camera source' };
   }
-  switcherProgramSourceId = deviceId || null;
-  console.log(`[Switcher] Desktop set program source: ${deviceId}`);
-  if (deviceId) {
-    const sock = io && io.sockets.sockets.get(deviceId);
-    if (sock) sock.emit('switcher:you-are-program', { active: true });
-  }
-  broadcastSwitcherState();
-  return { ok: true, programSourceId: deviceId };
+  return executeProgramSwitch(deviceId || null, customTransition);
 });
 
-// Desktop-initiated destination routing
+// Desktop-initiated active display selection (Display 1 vs Display 2)
+ipcMain.handle("switcher:set-active-display-desktop", (_event, payload) => {
+  if (switcherControllerSocketId !== 'desktop') {
+    return { ok: false, error: 'Desktop does not hold controller permission' };
+  }
+  const displayId = typeof payload === 'string' ? payload : payload?.displayId;
+  const customTransition = typeof payload === 'object' ? payload?.transition : null;
+  return switchDisplay(displayId, customTransition);
+});
+
+// Desktop-initiated display source assignment (set source for Display 1 or Display 2)
+ipcMain.handle("switcher:set-display-source-desktop", (_event, { displayId, sourceId }) => {
+  if (switcherControllerSocketId !== 'desktop') {
+    return { ok: false, error: 'Desktop does not hold controller permission' };
+  }
+  if (displayId === 'display1') {
+    switcherDisplay1Source = sourceId || 'general';
+  } else if (displayId === 'display2') {
+    switcherDisplay2Source = sourceId || 'speaker';
+  }
+  broadcastSwitcherState();
+  return { ok: true, display1Source: switcherDisplay1Source, display2Source: switcherDisplay2Source };
+});
+
+// Desktop-initiated global transition settings update
+ipcMain.handle("switcher:set-transition-setting-desktop", (_event, setting) => {
+  if (switcherControllerSocketId !== 'desktop') {
+    return { ok: false, error: 'Desktop does not hold controller permission' };
+  }
+  const { type = 'fade', duration = 750, direction = 'left-to-right' } = setting || {};
+  switcherTransitionSetting = {
+    type: ['cut', 'fade', 'wipe'].includes(type) ? type : 'fade',
+    duration: Math.max(100, Math.min(3000, Number(duration) || 750)),
+    direction: ['left-to-right', 'right-to-left', 'top-to-bottom', 'bottom-to-top'].includes(direction)
+      ? direction
+      : 'left-to-right',
+  };
+  broadcastSwitcherState();
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send("switcher-transition-setting-updated", switcherTransitionSetting);
+    }
+  }
+  return { ok: true, transitionSetting: switcherTransitionSetting };
+});
+
+// Live Output frame broadcast from Switcher mixing engine
+ipcMain.on("switcher:send-live-output-frame", (_event, frameData) => {
+  if (!frameData) return;
+  // If General Screen is actively shared to Live Output, deliver the composited frame
+  if (switcherRouteGeneral && generalWindow && !generalWindow.isDestroyed()) {
+    generalWindow.webContents.send("switcher-live-output-frame", frameData);
+  }
+  // If Speaker Screen is actively shared to Live Output, deliver the composited frame
+  if (switcherRouteSpeaker && speakerWindow && !speakerWindow.isDestroyed()) {
+    speakerWindow.webContents.send("switcher-live-output-frame", frameData);
+  }
+  // Deliver over Socket.IO to any remote displays or streaming clients
+  if (io) {
+    io.emit("switcher:live-frame", { data: frameData, timestamp: Date.now() });
+  }
+});
+
+// Desktop-initiated destination routing (Non-destructive Live Output sharing)
 ipcMain.handle("switcher:route-destination-desktop", (_event, { destination, active }) => {
   if (switcherControllerSocketId !== 'desktop') {
     return { ok: false, error: 'Desktop does not hold controller permission' };
@@ -2951,15 +3333,47 @@ ipcMain.handle("switcher:route-destination-desktop", (_event, { destination, act
   if (destination !== 'general' && destination !== 'speaker') {
     return { ok: false, error: 'Invalid destination' };
   }
-  if (destination === 'general') switcherRouteGeneral = !!active;
-  if (destination === 'speaker') switcherRouteSpeaker = !!active;
-  console.log(`[Switcher] Desktop route ${destination} -> ${active}`);
-  if (active && switcherProgramSourceId) {
-    currentCanvasState.contentSlot = { type: 'live-camera', data: { deviceId: switcherProgramSourceId } };
+
+  const isShared = !!active;
+  if (destination === 'general') {
+    switcherRouteGeneral = isShared;
+    console.log(`[Switcher] Desktop General Screen Live Output sharing -> ${isShared}`);
+
+    if (isShared) {
+      if (currentCanvasState.contentSlot && currentCanvasState.contentSlot.type !== 'live-output' && currentCanvasState.contentSlot.type !== 'live-camera') {
+        savedGeneralContentSlot = currentCanvasState.contentSlot;
+        savedPresentationContentSlot = currentCanvasState.contentSlot;
+      }
+      currentCanvasState.contentSlot = { type: 'live-output', data: { title: 'Live Switcher Output' } };
+      broadcastCanvasState(currentCanvasState, ['general']);
+    } else {
+      const restoredSlot = savedGeneralContentSlot || savedPresentationContentSlot || { type: 'none', data: null };
+      currentCanvasState.contentSlot = restoredSlot;
+      if (generalWindow && !generalWindow.isDestroyed() && restoredSlot.type !== 'none') {
+        generalWindow.webContents.send("set-content", restoredSlot);
+      }
+      broadcastCanvasState(currentCanvasState, ['general']);
+    }
+  } else if (destination === 'speaker') {
+    switcherRouteSpeaker = isShared;
+    console.log(`[Switcher] Desktop Speaker Screen Live Output sharing -> ${isShared}`);
+
+    if (isShared) {
+      if (currentCanvasState.contentSlot && currentCanvasState.contentSlot.type !== 'live-output' && currentCanvasState.contentSlot.type !== 'live-camera') {
+        savedSpeakerContentSlot = currentCanvasState.contentSlot;
+      }
+      broadcastCanvasState({ ...currentCanvasState, contentSlot: { type: 'live-output', data: { title: 'Live Switcher Output' } } }, ['speaker']);
+    } else {
+      const restoredSlot = savedSpeakerContentSlot || { type: 'none', data: null };
+      if (speakerWindow && !speakerWindow.isDestroyed() && restoredSlot.type !== 'none') {
+        speakerWindow.webContents.send("set-content", restoredSlot);
+      }
+      broadcastCanvasState({ ...currentCanvasState, contentSlot: restoredSlot }, ['speaker']);
+    }
   }
-  broadcastCanvasState(currentCanvasState, [destination]);
+
   broadcastSwitcherState();
-  return { ok: true };
+  return { ok: true, routeGeneral: switcherRouteGeneral, routeSpeaker: switcherRouteSpeaker };
 });
 
 // Get current switcher state (for desktop UI hydration)
@@ -2971,6 +3385,11 @@ ipcMain.handle("switcher:get-state-desktop", () => {
     programSourceId: switcherProgramSourceId,
     routeGeneral: switcherRouteGeneral,
     routeSpeaker: switcherRouteSpeaker,
+    transitionSetting: switcherTransitionSetting,
+    activeTransition: switcherActiveTransition,
+    activeDisplay: switcherActiveDisplay,
+    display1Source: switcherDisplay1Source,
+    display2Source: switcherDisplay2Source,
   };
 });
 
@@ -3241,11 +3660,21 @@ function createWindows() {
         data: value.data || value,
       };
     }
+    if (currentCanvasState.contentSlot.type !== 'live-camera' && currentCanvasState.contentSlot.type !== 'live-output') {
+      savedPresentationContentSlot = currentCanvasState.contentSlot;
+      savedGeneralContentSlot = currentCanvasState.contentSlot;
+    }
+
+    // If General Screen is actively shared to Live Output, preserve the live-output slot on air
+    if (switcherRouteGeneral) {
+      currentCanvasState.contentSlot = { type: 'live-output', data: { title: 'Live Switcher Output' } };
+    }
+
     broadcastCanvasState(currentCanvasState, allowedTargets);
 
-    // Dispatch to gated windows
-    if (speakerOk) speakerWindow.webContents.send("set-content", value);
-    if (generalOk) generalWindow.webContents.send("set-content", value);
+    // Dispatch to gated windows (do not interrupt screen if actively sharing live output)
+    if (speakerOk && !switcherRouteSpeaker) speakerWindow.webContents.send("set-content", value);
+    if (generalOk && !switcherRouteGeneral) generalWindow.webContents.send("set-content", value);
     if (controllerOk) controllerWindow.webContents.send("set-content", value);
 
     // Tier 2 cleanup bias: record displayed scripture refs during active session
@@ -3399,18 +3828,23 @@ function startDisplayMirrorEngine() {
   displayMirrorInterval = setInterval(() => {
     if (!controllerWindow || controllerWindow.isDestroyed()) return;
 
-    // General View window raster capture
+    // General View window raster capture (High Definition 1280x720 for crisp live output)
     if (generalWindow && !generalWindow.isDestroyed() && !isCapturingGeneral) {
       isCapturingGeneral = true;
       generalWindow.webContents
         .capturePage()
         .then((img) => {
-          if (img && !img.isEmpty() && controllerWindow && !controllerWindow.isDestroyed()) {
-            const thumb = img.resize({ width: 480, height: 270, quality: "good" });
-            controllerWindow.webContents.send("display-mirror-frame", {
+          if (img && !img.isEmpty()) {
+            const thumb = img.resize({ width: 1280, height: 720, quality: "better" });
+            const payload = {
               destination: "general",
-              data: thumb.toDataURL(),
-            });
+              data: "data:image/jpeg;base64," + thumb.toJPEG(85).toString("base64"),
+            };
+            for (const win of BrowserWindow.getAllWindows()) {
+              if (!win.isDestroyed()) {
+                win.webContents.send("display-mirror-frame", payload);
+              }
+            }
           }
         })
         .catch(() => {})
@@ -3419,18 +3853,23 @@ function startDisplayMirrorEngine() {
         });
     }
 
-    // Speaker View window raster capture
+    // Speaker View window raster capture (High Definition 1280x720 for crisp live output)
     if (speakerWindow && !speakerWindow.isDestroyed() && !isCapturingSpeaker) {
       isCapturingSpeaker = true;
       speakerWindow.webContents
         .capturePage()
         .then((img) => {
-          if (img && !img.isEmpty() && controllerWindow && !controllerWindow.isDestroyed()) {
-            const thumb = img.resize({ width: 480, height: 270, quality: "good" });
-            controllerWindow.webContents.send("display-mirror-frame", {
+          if (img && !img.isEmpty()) {
+            const thumb = img.resize({ width: 1280, height: 720, quality: "better" });
+            const payload = {
               destination: "speaker",
-              data: thumb.toDataURL(),
-            });
+              data: "data:image/jpeg;base64," + thumb.toJPEG(85).toString("base64"),
+            };
+            for (const win of BrowserWindow.getAllWindows()) {
+              if (!win.isDestroyed()) {
+                win.webContents.send("display-mirror-frame", payload);
+              }
+            }
           }
         })
         .catch(() => {})

@@ -19,6 +19,7 @@
 - **High-Resolution Program Canvas (`SwitcherProgramCanvas.js`) (FR-24.5):** Dedicated Program Out viewer with live tally border and HUD FPS counter.
 - **Destination Routing & 'live-camera' Content Slot (FR-24.6):** Implemented `'live-camera'` Content Slot in `DisplayCanvas.js`, allowing desktop and mobile controllers to independently route Program video to General View and Speaker View.
 - **Mobile Companion Switcher UI (`live-switcher.tsx`) (FR-24.7):** Dual-mode mobile UI supporting camera preview/high-res streaming when opted in, and multiview switching / destination routing when holding controller authority.
+- **Unified Multi-Camera Transition Library (FR-24.10–FR-24.13):** Phase B live switcher transition engine supporting Cut, Fade (dissolve crossfade), and Wipe (4 directions: left-to-right, right-to-left, top-to-bottom, bottom-to-top) with durations from 100ms–3000ms. Implements single-bus execution, immediate takeover / interruption without queuing, t=0 tally lighting, and synchronized canvas rendering across desktop preview and sanctuary displays.
 
 **Section 4.23 (Teleprompter Mobile Camera Integration):**
 - **Teleprompter Mobile Camera Stream (FR-25.1):** Integrates mobile camera video streaming directly into the desktop teleprompter presentation overlay view (`teleprompter:request-camera`, `teleprompter:mobile-camera-start`, `teleprompter:mobile-camera-frame`, `teleprompter:mobile-camera-stop`).
@@ -960,6 +961,26 @@ Editable at runtime by `super_admin` via a dedicated admin console (FR-13.14).
 - All camera-source phones stream continuous video using standard HTML5 `getUserMedia({ video: { ideal: 1280x720, 30-60fps } })` connected via peer-to-peer WebRTC `RTCPeerConnection` over the local church LAN.
 - Desktop controller manages active `RTCPeerConnection`s per camera slot, binding the incoming `MediaStreamTrack` directly to HTML5 `<video autoPlay playsInline muted />` elements in `SwitcherCameraTile.js` and `SwitcherProgramCanvas.js`.
 - Bidirectional Socket.IO signaling relays SDP offers, answers, and ICE candidates with sub-second connection times.
+
+**FR-24.10 (New) — Unified TransitionEngine Compositor (`TransitionEngine.js`):**
+- Single source of truth for composited multi-camera transitions driving both the desktop Program Preview canvas (`SwitcherProgramCanvas.js`) and physical sanctuary output screens (`DisplayCanvas.js` via `live-camera` slot).
+- Extensible transition plugin registry with default implementations:
+  - **Cut**: Instantaneous switch at $t = 0$.
+  - **Fade / Dissolve**: Smooth crossfade with linear alpha blending (`globalAlpha`) between outgoing and incoming feeds.
+  - **Wipe**: Directional reveal using canvas clipping (`ctx.clip()`) supporting 4 cardinal directions (`left-to-right`, `right-to-left`, `top-to-bottom`, `bottom-to-top`).
+- Duck-typed source support accepting `HTMLVideoElement` (WebRTC streams), `HTMLImageElement` (frame cache), `HTMLCanvasElement`, and mock raster buffers.
+
+**FR-24.11 (New) — Single-Bus Transition Workflow & Global Synchronization:**
+- Global transition configuration (`type`: `'cut'` | `'fade'` | `'wipe'`, `duration`: `100`–`3000`ms [default `750`ms], `direction`: `'left-to-right'` | `'right-to-left'` | `'top-to-bottom'` | `'bottom-to-top'`).
+- Synchronized across backend (`main.js`), Desktop Controller (`LiveSwitcherController.js`), and Mobile Companion (`live-switcher.tsx`).
+- Selecting any camera slot immediately initiates a transition from current Program to the clicked source.
+
+**FR-24.12 (New) — Immediate Interruption / Takeover Without Queuing:**
+- Clicking any camera slot while a transition is actively in flight immediately cancels the running transition timer and begins a new transition directly towards the newly selected target without visual stutter. Transitions never queue.
+
+**FR-24.13 (New) — Asynchronous Tally at $t = 0$ & Authoritative Program State at $t = duration$:**
+- Target camera tile and routed output tallies immediately light up red tally at transition start ($t = 0$).
+- Authoritative backend Program state (`switcherProgramSourceId`) updates upon completion of the transition timer ($t = duration$).
 
 ---
 

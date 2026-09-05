@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState } from "react";
 import { renderAnimatedLyrics } from "../controller/LyricAnimationEngine";
+import { transitionEngine } from "../controller/TransitionEngine";
 
 // ─── Live Camera canvas ref (shared across renderContentSlot calls) ────────────
 // Allocated once per DisplayCanvas instance so the painting useEffect below
@@ -114,19 +115,67 @@ export default function DisplayCanvas({
     setAlignProgress({ wordIndex: -1, totalTokens: 0 });
   }, [contentSlot?.data?.pageIndex, contentSlot?.data?.sceneId]);
 
-  // ── Live-camera canvas ref for 'live-camera' Content Slot ───────────────────
+  // ── Live-camera canvas ref & transition state for 'live-camera' Content Slot ─
   const liveCameraCanvasRef = useRef(null);
   const liveCameraIsDirtyRef = useRef(false);
   const liveCameraAnimRef = useRef(null);
+  const liveCameraTransitionRef = useRef(null);
+  const [hasLiveFrame, setHasLiveFrame] = useState(false);
 
-  // ── Live-camera render loop + socket-frame listener ──────────────────────────
+  // Sync transition from contentSlot if provided by canvas state broadcast
   useEffect(() => {
-    if (contentSlot?.type !== 'live-camera') return;
+    if (contentSlot?.data?.transition) {
+      liveCameraTransitionRef.current = contentSlot.data.transition;
+    }
+  }, [contentSlot?.data?.transition]);
 
-    // Render loop
+  // ── Live-camera & Live-output render loop + socket-frame listener + transition engine ─────
+  useEffect(() => {
+    if (contentSlot?.type !== 'live-camera' && contentSlot?.type !== 'live-output') return;
+
+    const deviceId = contentSlot?.data?.deviceId || 'live-output';
+
+    const cached = _liveCameraImgCache[deviceId] || _liveCameraImgCache['live-output'] || _liveCameraImgCache['default'];
+    if (cached && cached.complete && cached.naturalWidth > 0) {
+      setHasLiveFrame(true);
+      liveCameraIsDirtyRef.current = true;
+    } else {
+      setHasLiveFrame(false);
+      liveCameraIsDirtyRef.current = true;
+    }
+
+    // Render loop supporting both static display and dynamic transition compositing
     const renderLoop = () => {
-      if (liveCameraIsDirtyRef.current && liveCameraCanvasRef.current) {
-        const img = _liveCameraImgCache[contentSlot?.data?.deviceId || 'default'];
+      const trans = liveCameraTransitionRef.current;
+
+      if (trans && liveCameraCanvasRef.current) {
+        const canvas = liveCameraCanvasRef.current;
+        const ctx = canvas.getContext('2d', { alpha: false });
+        if (ctx) {
+          const now = Date.now();
+          const progress = Math.min(1, Math.max(0, (now - trans.startTime) / trans.duration));
+          const fromImg = _liveCameraImgCache[trans.fromId || 'default'];
+          const toImg = _liveCameraImgCache[trans.toId || deviceId || 'default'];
+
+          const w = toImg?.naturalWidth || fromImg?.naturalWidth || canvas.width || 1280;
+          const h = toImg?.naturalHeight || fromImg?.naturalHeight || canvas.height || 720;
+          if (canvas.width !== w || canvas.height !== h) {
+            canvas.width = w;
+            canvas.height = h;
+          }
+
+          transitionEngine.render(ctx, fromImg, toImg, progress, canvas.width, canvas.height, {
+            type: trans.type,
+            direction: trans.direction,
+          });
+
+          if (progress >= 1) {
+            liveCameraTransitionRef.current = null;
+            liveCameraIsDirtyRef.current = true;
+          }
+        }
+      } else if (liveCameraIsDirtyRef.current && liveCameraCanvasRef.current) {
+        const img = _liveCameraImgCache[deviceId] || _liveCameraImgCache['live-output'] || _liveCameraImgCache['default'];
         if (img && img.complete && img.naturalWidth > 0) {
           const canvas = liveCameraCanvasRef.current;
           const ctx = canvas.getContext('2d', { alpha: false });
@@ -144,39 +193,80 @@ export default function DisplayCanvas({
     };
     liveCameraAnimRef.current = requestAnimationFrame(renderLoop);
 
-    // Subscribe to live frames — uses the program-frame channel when available
-    // (view windows receive frames via socket.io switcher:live-frame)
-    const deviceId = contentSlot?.data?.deviceId;
-    let cleanup = null;
-    if (window.electron?.Switcher?.onProgramFrame) {
-      // Renderer windows (controller) get the dedicated program-frame IPC channel
-      cleanup = window.electron.Switcher.onProgramFrame((payload) => {
-        if (!payload?.data) return;
-        const img = _liveCameraImgCache[deviceId || 'default'] || new Image();
-        _liveCameraImgCache[deviceId || 'default'] = img;
-        const src = payload.data.startsWith('data:') ? payload.data : `data:image/jpeg;base64,${payload.data}`;
-        img.onload = () => { liveCameraIsDirtyRef.current = true; };
-        img.src = src;
+    const handleFrame = (fromId, data) => {
+      if (!data) return;
+      const key = fromId || deviceId || 'default';
+      const img = _liveCameraImgCache[key] || new Image();
+      _liveCameraImgCache[key] = img;
+      const src = data.startsWith('data:') ? data : `data:image/jpeg;base64,${data}`;
+      img.onload = () => {
+        liveCameraIsDirtyRef.current = true;
+        setHasLiveFrame(true);
+      };
+      img.src = src;
+    };
+
+    // Subscribe to composited live output stream from switcher mixing engine
+    let cleanupLiveOutput = null;
+    if (window.electron?.Switcher?.onLiveOutputFrame) {
+      cleanupLiveOutput = window.electron.Switcher.onLiveOutputFrame((payload) => {
+        const frameData = payload?.data || payload;
+        if (frameData) {
+          handleFrame('live-output', frameData);
+          handleFrame(deviceId, frameData);
+        }
       });
     }
-    // Also listen for low-res preview frames as fallback (keyed to deviceId)
-    let cleanupFallback = null;
+
+    // Subscribe to live program frames
+    let cleanupProgram = null;
+    if (window.electron?.Switcher?.onProgramFrame) {
+      cleanupProgram = window.electron.Switcher.onProgramFrame((payload) => {
+        handleFrame(payload?.fromId || deviceId, payload?.data);
+      });
+    }
+
+    let cleanupCamera = null;
     if (window.electron?.Switcher?.onCameraFrame) {
-      cleanupFallback = window.electron.Switcher.onCameraFrame((payload) => {
-        if (payload?.fromId !== deviceId) return;
+      cleanupCamera = window.electron.Switcher.onCameraFrame((payload) => {
+        handleFrame(payload?.fromId, payload?.data);
+      });
+    }
+
+    let cleanupMirror = null;
+    if (window.electron?.Switcher?.onDisplayMirrorFrame) {
+      cleanupMirror = window.electron.Switcher.onDisplayMirrorFrame((payload) => {
         if (!payload?.data) return;
-        const img = _liveCameraImgCache[deviceId || 'default'] || new Image();
-        _liveCameraImgCache[deviceId || 'default'] = img;
-        const src = payload.data.startsWith('data:') ? payload.data : `data:image/jpeg;base64,${payload.data}`;
-        img.onload = () => { liveCameraIsDirtyRef.current = true; };
-        img.src = src;
+        if (deviceId === payload.destination) {
+          handleFrame(payload.destination, payload.data);
+        }
+      });
+    }
+
+    // Subscribe to transition events directly
+    let cleanupTransStart = null;
+    if (window.electron?.Switcher?.onTransitionStart) {
+      cleanupTransStart = window.electron.Switcher.onTransitionStart((t) => {
+        liveCameraTransitionRef.current = t;
+      });
+    }
+
+    let cleanupTransComplete = null;
+    if (window.electron?.Switcher?.onTransitionComplete) {
+      cleanupTransComplete = window.electron.Switcher.onTransitionComplete(() => {
+        liveCameraTransitionRef.current = null;
+        liveCameraIsDirtyRef.current = true;
       });
     }
 
     return () => {
       if (liveCameraAnimRef.current) cancelAnimationFrame(liveCameraAnimRef.current);
-      if (cleanup) cleanup();
-      if (cleanupFallback) cleanupFallback();
+      if (cleanupLiveOutput) cleanupLiveOutput();
+      if (cleanupProgram) cleanupProgram();
+      if (cleanupCamera) cleanupCamera();
+      if (cleanupMirror) cleanupMirror();
+      if (cleanupTransStart) cleanupTransStart();
+      if (cleanupTransComplete) cleanupTransComplete();
     };
   }, [contentSlot?.type, contentSlot?.data?.deviceId]);
 
@@ -746,25 +836,53 @@ export default function DisplayCanvas({
         );
       }
 
-      // ── live-camera: renders the program stream on a canvas ────────────────────
+      // ── live-camera & live-output: renders the program stream on a canvas ────────
       // FR-4.14: Only Band 2 (Content Slot) is touched here. Background (Band 1)
       // and Pinned Layers (Band 3) are rendered in completely separate branches
       // and are entirely unaffected by this case.
-      case 'live-camera': {
+      case 'live-camera':
+      case 'live-output': {
         const { deviceId } = data || {};
+        const isLiveOutput = type === 'live-output';
         return (
           <div
-            className="w-full h-full relative z-10 bg-black overflow-hidden"
+            className="w-full h-full relative z-10 bg-black overflow-hidden flex items-center justify-center"
             style={{ containerType: 'size' }}
           >
             <canvas
               ref={liveCameraCanvasRef}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover absolute inset-0"
               style={{ display: 'block' }}
             />
+            {/* Standby HUD overlay when no live frames have arrived yet */}
+            {!hasLiveFrame && (
+              <div className="relative z-10 flex flex-col items-center justify-center gap-3 p-6 rounded-[12px] bg-white/[0.04] border border-white/10 backdrop-blur-md max-w-sm text-center select-none pointer-events-none shadow-2xl">
+                <div className="w-12 h-12 rounded-[12px] bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-400">
+                  <svg className="w-6 h-6 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                </div>
+                <div>
+                  <h3 className="text-white font-bold text-sm tracking-wide">
+                    {isLiveOutput ? 'Live Switcher Output' : deviceId === 'speaker' ? 'Speaker Screen Channel' : 'Live Camera Channel'}
+                  </h3>
+                  <p className="text-white/40 text-xs mt-1">
+                    {isLiveOutput
+                      ? 'Displaying live video stream from switcher...'
+                      : deviceId === 'speaker'
+                      ? 'Mirroring confidence monitor output'
+                      : 'Awaiting video stream from mobile companion...'}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 px-3 py-1 rounded-[12px] bg-amber-500/15 border border-amber-500/30">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                  <span className="text-[10px] font-bold text-amber-300 uppercase tracking-wider">Awaiting Stream</span>
+                </div>
+              </div>
+            )}
             {/* PROGRAM tally indicator — shown in speaker/general view */}
             {(mode === 'speaker' || mode === 'general') && (
-              <div className="absolute top-3 left-3 bg-red-600/90 text-white text-[clamp(10px,1.2cqw,1.4vw)] font-black px-3 py-1 rounded-full flex items-center gap-1.5 shadow-lg pointer-events-none select-none">
+              <div className="absolute top-3 left-3 bg-red-600/90 text-white text-[clamp(10px,1.2cqw,1.4vw)] font-black px-3 py-1 rounded-[12px] flex items-center gap-1.5 shadow-lg pointer-events-none select-none z-20">
                 <span className="w-2 h-2 rounded-full bg-white animate-ping" />
                 LIVE
               </div>

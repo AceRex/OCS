@@ -296,6 +296,8 @@ function SidebarAccount({ isCollapsed, onExpand }) {
 
 export default function Sidebar({ activeTab, onTabChange }) {
   const [isCollapsed, setIsCollapsed] = useState(true);
+  const isSwitcher = activeTab === "camera";
+  const effectiveCollapsed = isSwitcher ? true : isCollapsed;
 
   const tabs = [
     { id: "dashboard", label: "Broadcast", icon: PiHouse, isBlock: false },
@@ -327,31 +329,33 @@ export default function Sidebar({ activeTab, onTabChange }) {
   return (
     <aside
       className={`${
-        isCollapsed ? "w-20" : "w-60"
-      } h-full bg-[#12111a]/95 backdrop-blur-2xl border border-white/10 rounded-2xl flex flex-col items-center py-5 transition-all duration-300 ease-in-out relative shadow-2xl z-50 shrink-0`}
+        effectiveCollapsed ? "w-20" : "w-60"
+      } h-full bg-[#12111a]/95 backdrop-blur-2xl border border-white/10 rounded-[12px] flex flex-col items-center py-5 transition-all duration-300 ease-in-out relative shadow-2xl z-50 shrink-0`}
     >
-      {/* Collapse Toggle */}
-      <button
-        onClick={() => setIsCollapsed(!isCollapsed)}
-        className="absolute -right-3 top-10 w-6 h-6 bg-white/10 border border-white/20 rounded-full flex items-center justify-center text-white hover:bg-white/20 transition-colors z-50"
-      >
-        {isCollapsed ? (
-          <PiCaretRightBold size={12} />
-        ) : (
-          <PiCaretLeftBold size={12} />
-        )}
-      </button>
+      {/* Collapse Toggle (hidden on Live Switcher screen) */}
+      {!isSwitcher && (
+        <button
+          onClick={() => setIsCollapsed(!isCollapsed)}
+          className="absolute -right-3 top-10 w-6 h-6 bg-white/10 border border-white/20 rounded-full flex items-center justify-center text-white hover:bg-white/20 transition-colors z-50"
+        >
+          {effectiveCollapsed ? (
+            <PiCaretRightBold size={12} />
+          ) : (
+            <PiCaretLeftBold size={12} />
+          )}
+        </button>
+      )}
 
       {/* Logo */}
       <div className="w-full px-4 mb-8 flex items-center justify-center">
         <div
           className={`font-black text-2xl tracking-tighter text-white transition-opacity duration-300 ${
-            isCollapsed ? "opacity-0 w-0" : "opacity-100"
+            effectiveCollapsed ? "opacity-0 w-0" : "opacity-100"
           }`}
         >
           OCS
         </div>
-        {isCollapsed && (
+        {effectiveCollapsed && (
           <div className="font-black text-xl text-white/20">O</div>
         )}
       </div>
@@ -367,7 +371,7 @@ export default function Sidebar({ activeTab, onTabChange }) {
               key={tab.id}
               onClick={() => onTabChange(tab.id)}
               className={`${isDisabled && "hidden"}
-                flex items-center w-full p-3 rounded-2xl transition-all duration-200 group relative ${
+                flex items-center w-full p-3 rounded-[12px] transition-all duration-200 group relative ${
                   isActive
                     ? "bg-white/10 text-white shadow-[0_0_20px_rgba(255,255,255,0.05)]"
                     : "text-white/40 hover:bg-white/5 hover:text-white/80"
@@ -380,7 +384,7 @@ export default function Sidebar({ activeTab, onTabChange }) {
                 }`}
               />
 
-              {!isCollapsed && (
+              {!effectiveCollapsed && (
                 <span className="ml-4 font-medium text-sm whitespace-nowrap opacity-100 transition-opacity duration-300">
                   {tab.label}
                 </span>
@@ -397,8 +401,10 @@ export default function Sidebar({ activeTab, onTabChange }) {
       {/* ── Account / Login Panel ── */}
       <div className="mt-auto w-full px-3 pt-4 border-t border-white/5">
         <SidebarAccount
-          isCollapsed={isCollapsed}
-          onExpand={() => setIsCollapsed(false)}
+          isCollapsed={effectiveCollapsed}
+          onExpand={() => {
+            if (!isSwitcher) setIsCollapsed(false);
+          }}
         />
       </div>
     </aside>

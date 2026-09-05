@@ -541,8 +541,15 @@ contextBridge.exposeInMainWorld("electron", {
     /** Desktop: reclaim switcher controller permission (safety valve — unconditional) */
     reclaimControl: () => ipcRenderer.invoke('switcher:reclaim-control'),
 
-    /** Desktop: hard cut to a specific camera (when desktop holds controller permission) */
+    /** Desktop: hard cut / transition to a specific source ('general', 'speaker', or socketId) */
     setProgramSource: (deviceId) => ipcRenderer.invoke('switcher:set-program-desktop', deviceId),
+
+    /** Desktop: set active showing display ('display1' | 'display2') with optional transition */
+    setActiveDisplay: (payload) => ipcRenderer.invoke('switcher:set-active-display-desktop', payload),
+
+    /** Desktop: set display source ('display1' | 'display2', sourceId) */
+    setDisplaySource: (displayId, sourceId) =>
+      ipcRenderer.invoke('switcher:set-display-source-desktop', { displayId, sourceId }),
 
     /** Desktop: toggle destination routing (General View or Speaker View) */
     routeDestination: (destination, active) =>
@@ -583,6 +590,31 @@ contextBridge.exposeInMainWorld("electron", {
       return () => ipcRenderer.removeListener('display-mirror-frame', listener);
     },
 
+    /** Desktop: set global transition setting ({ type, duration, direction }) */
+    setTransitionSetting: (setting) =>
+      ipcRenderer.invoke('switcher:set-transition-setting-desktop', setting),
+
+    /** Subscribe to transition-start event ({ transitionId, fromId, toId, type, duration, direction }) */
+    onTransitionStart: (callback) => {
+      const listener = (_e, payload) => callback(payload);
+      ipcRenderer.on('switcher-transition-start', listener);
+      return () => ipcRenderer.removeListener('switcher-transition-start', listener);
+    },
+
+    /** Subscribe to transition-complete event ({ programSourceId }) */
+    onTransitionComplete: (callback) => {
+      const listener = (_e, payload) => callback(payload);
+      ipcRenderer.on('switcher-transition-complete', listener);
+      return () => ipcRenderer.removeListener('switcher-transition-complete', listener);
+    },
+
+    /** Subscribe to global transition setting updates */
+    onTransitionSettingUpdate: (callback) => {
+      const listener = (_e, payload) => callback(payload);
+      ipcRenderer.on('switcher-transition-setting-updated', listener);
+      return () => ipcRenderer.removeListener('switcher-transition-setting-updated', listener);
+    },
+
     /** WebRTC Signaling for continuous camera video */
     sendWebRtcAnswer: (payload) => ipcRenderer.send('switcher:webrtc-answer', payload),
     sendWebRtcIceCandidate: (payload) => ipcRenderer.send('switcher:webrtc-ice-candidate', payload),
@@ -597,6 +629,16 @@ contextBridge.exposeInMainWorld("electron", {
       const listener = (_e, payload) => callback(payload);
       ipcRenderer.on('switcher-webrtc-ice-candidate', listener);
       return () => ipcRenderer.removeListener('switcher-webrtc-ice-candidate', listener);
+    },
+
+    /** Broadcast a composited live output frame from the switcher mixing engine to shared destinations */
+    sendLiveOutputFrame: (frameData) => ipcRenderer.send('switcher:send-live-output-frame', frameData),
+
+    /** Subscribe to composited live output frames on actual display windows (General Screen & Speaker Screen) */
+    onLiveOutputFrame: (callback) => {
+      const listener = (_e, payload) => callback(payload);
+      ipcRenderer.on('switcher-live-output-frame', listener);
+      return () => ipcRenderer.removeListener('switcher-live-output-frame', listener);
     },
   },
 });
