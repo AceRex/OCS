@@ -15,6 +15,7 @@ export default function StudioPhoneRenderer({
 }) {
   const canvasRef = useRef(null);
   const latestImgRef = useRef(null);
+  const lastRenderedBitmapRef = useRef(null);
   const statsRef = useRef({
     frameCount: 0,
     lastFpsUpdateTime: performance.now(),
@@ -25,24 +26,45 @@ export default function StudioPhoneRenderer({
 
   const [hudStats, setHudStats] = useState({ fps: 0, latency: 0, isAlive: false });
   const [hasReceivedFrame, setHasReceivedFrame] = useState(false);
+  const latestEffectRef = useRef(null);
+  const [currentEffect, setCurrentEffect] = useState(null);
   const animFrameIdRef = useRef(null);
   const isDirtyRef = useRef(false);
 
   useEffect(() => {
-    // Continuous rendering loop decoupled from network arrivals
+    // Continuous rendering loop decoupled from network arrivals (GPU texture blit)
     const renderLoop = () => {
       if (isDirtyRef.current && canvasRef.current) {
+        const bitmap = lastRenderedBitmapRef.current;
         const img = latestImgRef.current;
-        if (img && img.naturalWidth > 0) {
-          const canvas = canvasRef.current;
-          const ctx = canvas.getContext("2d", { alpha: false });
-          if (ctx) {
-            if (canvas.width !== img.naturalWidth || canvas.height !== img.naturalHeight) {
-              canvas.width = img.naturalWidth;
-              canvas.height = img.naturalHeight;
+        const source = bitmap || img;
+        if (source) {
+          const w = source.width || source.naturalWidth;
+          const h = source.height || source.naturalHeight;
+          if (w > 0 && h > 0) {
+            const canvas = canvasRef.current;
+            const ctx = canvas.getContext("2d", { alpha: false });
+            if (ctx) {
+              if (canvas.width !== w || canvas.height !== h) {
+                canvas.width = w;
+                canvas.height = h;
+              }
+              const eff = latestEffectRef.current;
+              if (eff && eff.filter && eff.filter !== "none") {
+                ctx.filter = eff.filter;
+              } else {
+                ctx.filter = "none";
+              }
+              ctx.drawImage(source, 0, 0, w, h);
+              if (eff && eff.overlayColor && eff.overlayColor !== "transparent") {
+                ctx.save();
+                ctx.filter = "none";
+                ctx.fillStyle = eff.overlayColor;
+                ctx.fillRect(0, 0, w, h);
+                ctx.restore();
+              }
+              isDirtyRef.current = false;
             }
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            isDirtyRef.current = false;
           }
         }
       }
@@ -76,6 +98,75 @@ export default function StudioPhoneRenderer({
     // Direct listener for mobile camera frames from Electron IPC
     let cleanup = null;
     if (window.electron?.Network?.onMobileFrame) {
+      let isDecoding = false;
+      let pendingPayload = null;
+      let lastDecodedTimestamp = 0;
+
+      const decodeNext = async () => {
+        if (isDecoding || !pendingPayload) return;
+        isDecoding = true;
+        const payload = pendingPayload;
+        pendingPayload = null;
+
+        const src = payload.data.startsWith("data:")
+          ? payload.data
+          : `data:image/jpeg;base64,${payload.data}`;
+
+        try {
+          if (typeof window.createImageBitmap === "function" && typeof window.fetch === "function") {
+            const res = await fetch(src);
+            const blob = await res.blob();
+            const bitmap = await createImageBitmap(blob);
+
+            // Discard bitmap if a newer frame has already rendered
+            if (payload.timestamp && payload.timestamp < lastDecodedTimestamp) {
+              bitmap.close();
+            } else {
+              const old = lastRenderedBitmapRef.current;
+              lastRenderedBitmapRef.current = bitmap;
+              lastDecodedTimestamp = payload.timestamp || Date.now();
+              isDirtyRef.current = true;
+              setHasReceivedFrame(true);
+              if (old && typeof old.close === "function") {
+                old.close();
+              }
+            }
+          } else {
+            await new Promise((resolve) => {
+              const nextImg = new Image();
+              nextImg.onload = () => {
+                latestImgRef.current = nextImg;
+                isDirtyRef.current = true;
+                setHasReceivedFrame(true);
+                resolve();
+              };
+              nextImg.onerror = resolve;
+              nextImg.src = src;
+            });
+          }
+        } catch (_) {
+          // Robust fallback to HTMLImageElement
+          try {
+            await new Promise((resolve) => {
+              const nextImg = new Image();
+              nextImg.onload = () => {
+                latestImgRef.current = nextImg;
+                isDirtyRef.current = true;
+                setHasReceivedFrame(true);
+                resolve();
+              };
+              nextImg.onerror = resolve;
+              nextImg.src = src;
+            });
+          } catch (__) {}
+        } finally {
+          isDecoding = false;
+          if (pendingPayload) {
+            decodeNext();
+          }
+        }
+      };
+
       cleanup = window.electron.Network.onMobileFrame((payload) => {
         if (!payload?.data) return;
         const now = Date.now();
@@ -85,23 +176,22 @@ export default function StudioPhoneRenderer({
           statsRef.current.latency = Math.max(2, Math.min(999, now - payload.timestamp));
         }
 
-        const src = payload.data.startsWith("data:")
-          ? payload.data
-          : `data:image/jpeg;base64,${payload.data}`;
-
-        const nextImg = new Image();
-        nextImg.onload = () => {
-          latestImgRef.current = nextImg;
-          isDirtyRef.current = true;
-          setHasReceivedFrame(true);
-        };
-        nextImg.src = src;
+        if (payload.effect) {
+          latestEffectRef.current = payload.effect;
+          setCurrentEffect(payload.effect);
+        }
+        pendingPayload = payload;
+        decodeNext();
       });
     }
 
     return () => {
       if (cleanup) cleanup();
       if (animFrameIdRef.current) cancelAnimationFrame(animFrameIdRef.current);
+      if (lastRenderedBitmapRef.current && typeof lastRenderedBitmapRef.current.close === "function") {
+        lastRenderedBitmapRef.current.close();
+        lastRenderedBitmapRef.current = null;
+      }
       clearInterval(statsInterval);
     };
   }, [onStreamActiveChange]);
@@ -113,13 +203,19 @@ export default function StudioPhoneRenderer({
         ref={canvasRef}
         style={{
           transform: isMirrored ? "scaleX(-1) translateZ(0)" : "translateZ(0)",
-          filter: filterStyle,
+          filter: (currentEffect?.filter && currentEffect.filter !== "none") ? currentEffect.filter : filterStyle,
           willChange: "transform, filter",
         }}
         className={`w-full h-full object-cover transition-opacity duration-300 ${
           hasReceivedFrame ? "opacity-100" : "opacity-0"
         }`}
       />
+      {currentEffect?.overlayColor && currentEffect.overlayColor !== "transparent" && (
+        <div
+          className="absolute inset-0 pointer-events-none z-[2]"
+          style={{ backgroundColor: currentEffect.overlayColor }}
+        />
+      )}
 
       {/* Fallback standby state when waiting for stream */}
       {!hasReceivedFrame && (

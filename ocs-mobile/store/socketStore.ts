@@ -26,6 +26,100 @@ interface SwitcherState {
     routeSpeaker: boolean;
 }
 
+export interface LiveBroadcastConfig {
+    scale: number;
+    fitMode: 'cover' | 'contain';
+    logo: {
+        enabled: boolean;
+        preset: 'cross' | 'ocs' | 'dove' | 'custom';
+        url: string;
+        position: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left';
+        size: number;
+        opacity: number;
+    };
+    lowerThird: {
+        enabled: boolean;
+        title: string;
+        subtitle: string;
+        theme: 'glass' | 'gradient' | 'minimal' | 'purple';
+        autoHideSec: number;
+        x?: number;
+        y?: number;
+        width?: number;
+    };
+    bibleLowerThird: {
+        enabled: boolean;
+        autoTrigger: boolean;
+        currentRef: string;
+        currentText: string;
+        version: string;
+        autoDismissSec: number;
+        isShowing: boolean;
+        x?: number;
+        y?: number;
+        width?: number;
+    };
+    ticker: {
+        enabled: boolean;
+        text: string;
+        speed: 'slow' | 'medium' | 'fast';
+    };
+    layers?: Array<{
+        id: string;
+        type: 'image';
+        content: string;
+        name?: string;
+        x: number;
+        y: number;
+        style?: {
+            width?: number;
+            opacity?: number;
+            borderRadius?: number;
+        };
+    }>;
+}
+
+export const defaultBroadcastConfig: LiveBroadcastConfig = {
+    scale: 1.0,
+    fitMode: 'cover',
+    logo: {
+        enabled: true,
+        preset: 'cross',
+        url: '',
+        position: 'top-right',
+        size: 72,
+        opacity: 0.9,
+    },
+    lowerThird: {
+        enabled: false,
+        title: 'Pastor John Doe',
+        subtitle: 'Senior Pastor • Sunday Celebration Service',
+        theme: 'glass',
+        autoHideSec: 0,
+        x: 35,
+        y: 88,
+        width: 55,
+    },
+    bibleLowerThird: {
+        enabled: true,
+        autoTrigger: true,
+        currentRef: 'John 3:16',
+        currentText: 'For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.',
+        version: 'KJV',
+        autoDismissSec: 15,
+        isShowing: false,
+        x: 50,
+        y: 85,
+        width: 90,
+    },
+    ticker: {
+        enabled: false,
+        text: 'Welcome to our Live Worship Experience! • Offering & Tithing online at church.org/give • Join us every Sunday at 9:00 AM',
+        speed: 'medium',
+    },
+    layers: [],
+};
+
 interface SocketState {
     socket: Socket | null;
     isConnected: boolean;
@@ -74,11 +168,13 @@ interface SocketState {
     setSwitcherTransitionSetting: (setting: { type?: string; duration?: number; direction?: string }) => Promise<{ ok: boolean; error?: string }>;
     requestControlReclaim: () => void;
     sendProgramFrame: (base64Data: string) => void;
-    sendSwitcherCameraFrame: (base64Data: string, isMirrored?: boolean) => void;
+    sendSwitcherCameraFrame: (base64Data: string, isMirrored?: boolean, effect?: { id: string; filter?: string; overlayColor?: string } | null) => void;
     sendWebRtcOffer: (offer: any) => void;
     sendWebRtcIceCandidate: (candidate: any) => void;
     setWebRtcAnswerHandler: (handler: ((answer: any) => void) | null) => void;
     setWebRtcIceHandler: (handler: ((candidate: any) => void) | null) => void;
+    liveBroadcastConfig: LiveBroadcastConfig;
+    updateBroadcastConfig: (patch: Partial<LiveBroadcastConfig>) => Promise<{ ok: boolean; error?: string; config?: LiveBroadcastConfig }>;
 
     setDeviceName: (name: string) => void;
     connect: (ip: string, pairingCode?: string, customPort?: number) => void;
@@ -147,6 +243,7 @@ export const useSocketStore = create<SocketState>((set, get) => ({
     switcherActiveDisplay: 'display1',
     switcherDisplay1Source: 'general',
     switcherDisplay2Source: null,
+    liveBroadcastConfig: defaultBroadcastConfig,
     // ─ Switcher actions ───────────────────────────────────────────────────────
     optInAsCamera: (): Promise<{ ok: boolean; error?: string; slotIndex?: number }> => {
         return new Promise((resolve) => {
@@ -290,14 +387,29 @@ export const useSocketStore = create<SocketState>((set, get) => ({
     sendProgramFrame: (base64Data: string) => {
         const { socket, isPaired, isSwitcherController } = get();
         if (socket && socket.connected && isPaired && base64Data) {
-            // Send at full resolution via dedicated program-frame channel
-            socket.emit('switcher:program-frame', { data: base64Data, timestamp: Date.now() });
+            // Send at full resolution via dedicated program-frame channel (volatile prevents queue backlog)
+            if ((socket as any).volatile) {
+                (socket as any).volatile.emit('switcher:program-frame', { data: base64Data, timestamp: Date.now() });
+            } else {
+                socket.emit('switcher:program-frame', { data: base64Data, timestamp: Date.now() });
+            }
         }
     },
-    sendSwitcherCameraFrame: (base64Data: string, isMirrored?: boolean) => {
+    sendSwitcherCameraFrame: (base64Data: string, isMirrored?: boolean, effect?: { id: string; filter?: string; overlayColor?: string } | null) => {
         const { socket, isPaired, isCameraSource } = get();
         if (socket && socket.connected && (isPaired || isCameraSource) && base64Data) {
-            socket.emit('switcher:camera-frame', { data: base64Data, timestamp: Date.now(), isMirrored: !!isMirrored });
+            const framePayload = {
+                data: base64Data,
+                timestamp: Date.now(),
+                isMirrored: !!isMirrored,
+                effect: effect || null,
+            };
+            // Volatile socket emission guarantees real-time delivery and drops stale buffered frames
+            if ((socket as any).volatile) {
+                (socket as any).volatile.emit('switcher:camera-frame', framePayload);
+            } else {
+                socket.emit('switcher:camera-frame', framePayload);
+            }
         }
     },
     sendWebRtcOffer: (offer: any) => {
@@ -318,6 +430,23 @@ export const useSocketStore = create<SocketState>((set, get) => ({
     setWebRtcIceHandler: (handler: ((candidate: any) => void) | null) => {
         (set as any)({ _onWebRtcIceHandler: handler });
     },
+    updateBroadcastConfig: (patch: Partial<LiveBroadcastConfig>): Promise<{ ok: boolean; error?: string; config?: LiveBroadcastConfig }> => {
+        return new Promise((resolve) => {
+            const { socket, isPaired } = get();
+            if (!socket || !socket.connected || !isPaired) {
+                resolve({ ok: false, error: 'Must be connected and paired' });
+                return;
+            }
+            socket.emit('switcher:update-broadcast-config', patch, (res: any) => {
+                if (res?.ok && res?.config) {
+                    set({ liveBroadcastConfig: res.config });
+                    resolve({ ok: true, config: res.config });
+                } else {
+                    resolve({ ok: false, error: res?.error || 'Failed to update broadcast config' });
+                }
+            });
+        });
+    },
 
     shareContentToDesktop: (title: string, content: string): Promise<{ ok: boolean; error?: string }> => {
         return new Promise((resolve) => {
@@ -335,7 +464,12 @@ export const useSocketStore = create<SocketState>((set, get) => ({
     sendCameraFrame: (base64Data: string, isMirrored?: boolean) => {
         const { socket, isPaired } = get();
         if (socket && socket.connected && isPaired && base64Data) {
-            socket.emit('teleprompter:camera-frame', { data: base64Data, timestamp: Date.now(), isMirrored: !!isMirrored });
+            // Volatile socket emission eliminates Wi-Fi buffer queueing and stale frame latency
+            if ((socket as any).volatile) {
+                (socket as any).volatile.emit('teleprompter:camera-frame', { data: base64Data, timestamp: Date.now(), isMirrored: !!isMirrored });
+            } else {
+                socket.emit('teleprompter:camera-frame', { data: base64Data, timestamp: Date.now(), isMirrored: !!isMirrored });
+            }
         }
     },
     startCameraSync: () => {
@@ -476,18 +610,19 @@ export const useSocketStore = create<SocketState>((set, get) => ({
         });
 
         socket.on('connect', () => {
-            console.log('Connected to server — awaiting pair confirmation');
+            console.log(`[Remote Socket] Connected to server at ${host}:${targetPort} — awaiting pair confirmation for "${get().deviceName || 'Mobile Companion'}"`);
             set({ isConnected: true, connectionError: null });
             socket.emit('pair', { code, token: code, deviceName: get().deviceName || 'Mobile Companion' });
         });
 
         socket.on('reconnect', () => {
-            console.log('Reconnected to server — refreshing pairing');
+            console.log('[Remote Socket] Reconnected to server — refreshing pairing');
             socket.emit('pair', { code, token: code, deviceName: get().deviceName || 'Mobile Companion' });
         });
 
         socket.on('pair-result', (result: { ok: boolean; error?: string; deviceName?: string; isAdmin?: boolean; deviceRole?: string }) => {
             if (result?.ok) {
+                console.log(`[Remote Socket] Pairing SUCCESS: confirmed as "${result.deviceName || get().deviceName}" (role: ${result.deviceRole || (result.isAdmin ? 'admin' : 'speaker')})`);
                 set({
                     isPaired: true,
                     connectionError: null,
@@ -510,11 +645,13 @@ export const useSocketStore = create<SocketState>((set, get) => ({
                 }
                 get().fetchPeers();
             } else {
+                const errorMsg = result?.error || 'Invalid pairing code';
+                console.warn(`[Remote Socket] Pairing REJECTED by server: ${errorMsg}`);
                 set({
                     isPaired: false,
                     isAdmin: false,
                     deviceRole: 'speaker',
-                    connectionError: result?.error || 'Invalid pairing code',
+                    connectionError: errorMsg,
                 });
             }
         });
@@ -592,10 +729,18 @@ export const useSocketStore = create<SocketState>((set, get) => ({
                 ...(state.display1Source ? { switcherDisplay1Source: state.display1Source } : {}),
                 ...(state.display2Source !== undefined ? { switcherDisplay2Source: state.display2Source } : {}),
                 ...(state.transitionSetting ? { switcherTransitionSetting: state.transitionSetting } : {}),
+                ...(state.broadcastConfig ? { liveBroadcastConfig: state.broadcastConfig } : {}),
                 isCameraSource: !!mySlot,
                 cameraSlotIndex: mySlot ? mySlot.slotIndex : null,
                 isSwitcherController: state.controllerSocketId === myId,
             });
+        });
+
+        // Broadcast config direct update
+        socket.on('switcher:broadcast-config', (config: any) => {
+            if (config) {
+                set({ liveBroadcastConfig: config });
+            }
         });
 
         // Transition setting updated
@@ -668,6 +813,7 @@ export const useSocketStore = create<SocketState>((set, get) => ({
                     ...(res.display1Source ? { switcherDisplay1Source: res.display1Source } : {}),
                     ...(res.display2Source !== undefined ? { switcherDisplay2Source: res.display2Source } : {}),
                     ...(res.transitionSetting ? { switcherTransitionSetting: res.transitionSetting } : {}),
+                    ...(res.broadcastConfig ? { liveBroadcastConfig: res.broadcastConfig } : {}),
                     isCameraSource: !!mySlot,
                     cameraSlotIndex: mySlot ? mySlot.slotIndex : null,
                     isSwitcherController: res.controllerSocketId === myId,
@@ -676,14 +822,15 @@ export const useSocketStore = create<SocketState>((set, get) => ({
         });
 
         socket.on('pair-required', (payload: { message?: string }) => {
+            console.warn(`[Remote Socket] Server requires pairing credentials: ${payload?.message || 'Send 6-digit code or token'}`);
             set({
                 isPaired: false,
                 connectionError: payload?.message || 'Pairing required',
             });
         });
 
-        socket.on('disconnect', () => {
-            console.log('Disconnected from server');
+        socket.on('disconnect', (reason) => {
+            console.log('[Remote Socket] Disconnected from server:', reason);
             set({ isConnected: false, isPaired: false, overlayContent: null, overlayTimer: null });
         });
 
@@ -709,10 +856,10 @@ export const useSocketStore = create<SocketState>((set, get) => ({
         const { lastHost, lastCode, lastPort, serverIp, connect } = get();
         const targetHost = lastHost || serverIp;
         if (targetHost && lastCode) {
-            console.log(`[Remote Socket] Reconnecting to ${targetHost}:${lastPort || 4000}...`);
+            console.log(`[Remote Socket] Reconnecting to ${targetHost}:${lastPort || 4000} with saved pairing code...`);
             connect(targetHost, lastCode, lastPort || 4000);
         } else if (targetHost) {
-            console.log(`[Remote Socket] Reconnecting with fallback host ${targetHost}...`);
+            console.log(`[Remote Socket] Reconnecting to fallback host ${targetHost}:${lastPort || 4000} without saved code (manual pair required)...`);
             connect(targetHost, '', lastPort || 4000);
         }
     },

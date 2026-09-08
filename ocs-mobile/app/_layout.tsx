@@ -10,12 +10,22 @@ import MobileSplash from "../components/MobileSplash";
 import TeleprompterCameraPrompt from "../components/TeleprompterCameraPrompt";
 import { useAuthStore } from "../store/authStore";
 
-LogBox.ignoreLogs(["SafeAreaView has been deprecated"]);
+LogBox.ignoreLogs([
+  "SafeAreaView has been deprecated",
+  "The `mirror` option is deprecated",
+  "[Reanimated] Reading from `value` during component render",
+  "[Reanimated] Writing to `value` during component render",
+]);
 
-// Suppress deprecated SafeAreaView warning from third-party library getters
+// Suppress deprecated warnings from third-party library getters
 const _origWarn = console.warn;
 console.warn = (...args: any[]) => {
-  if (typeof args[0] === "string" && args[0].includes("SafeAreaView has been deprecated")) {
+  if (
+    typeof args[0] === "string" &&
+    (args[0].includes("SafeAreaView has been deprecated") ||
+     args[0].includes("The `mirror` option is deprecated") ||
+     args[0].includes("[Reanimated]"))
+  ) {
     return;
   }
   _origWarn(...args);
@@ -134,7 +144,6 @@ export default function RootLayout() {
             <Stack.Screen name="assets" />
             <Stack.Screen name="scenes" />
             <Stack.Screen name="intercom" />
-            <Stack.Screen name="stage-control" />
             <Stack.Screen name="live-switcher" />
             <Stack.Screen name="presentation" />
             <Stack.Screen name="teleprompter" />

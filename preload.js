@@ -652,6 +652,13 @@ contextBridge.exposeInMainWorld("electron", {
       return () => ipcRenderer.removeListener('switcher-webrtc-ice-candidate', listener);
     },
 
+    /** Alias used by LiveSwitcherController — both names subscribe to the same IPC channel */
+    onWebRtcIce: (callback) => {
+      const listener = (_e, payload) => callback(payload);
+      ipcRenderer.on('switcher-webrtc-ice-candidate', listener);
+      return () => ipcRenderer.removeListener('switcher-webrtc-ice-candidate', listener);
+    },
+
     /** Broadcast a composited live output frame from the switcher mixing engine to shared destinations */
     sendLiveOutputFrame: (frameData) => ipcRenderer.send('switcher:send-live-output-frame', frameData),
 
@@ -661,5 +668,50 @@ contextBridge.exposeInMainWorld("electron", {
       ipcRenderer.on('switcher-live-output-frame', listener);
       return () => ipcRenderer.removeListener('switcher-live-output-frame', listener);
     },
+
+    /** Update live broadcast engine overlays and scaling configuration */
+    updateBroadcastConfig: (config) => ipcRenderer.invoke('switcher:update-broadcast-config-desktop', config),
+
+    /** Get current live broadcast engine overlays and scaling configuration */
+    getBroadcastConfig: () => ipcRenderer.invoke('switcher:get-broadcast-config-desktop'),
+
+    /** Subscribe to live broadcast engine configuration changes */
+    onBroadcastConfig: (callback) => {
+      const listener = (_e, payload) => callback(payload);
+      ipcRenderer.on('switcher-broadcast-config', listener);
+      return () => ipcRenderer.removeListener('switcher-broadcast-config', listener);
+    },
+  },
+  Recovery: {
+    recordEvent: (type, payload) => ipcRenderer.invoke('session:record-event', { type, payload }),
+    saveSnapshot: (state) => ipcRenderer.invoke('session:save-snapshot', state),
+    getRecoveryState: () => ipcRenderer.invoke('session:get-recovery-state'),
+    onStateRestored: (callback) => {
+      const listener = (_e, data) => callback(data);
+      ipcRenderer.on('recovery:state-restored', listener);
+      return () => ipcRenderer.removeListener('recovery:state-restored', listener);
+    },
+  },
+  Recorder: {
+    start: (options) => ipcRenderer.invoke('recorder:start', options),
+    stop: () => ipcRenderer.invoke('recorder:stop'),
+    getStatus: () => ipcRenderer.invoke('recorder:status'),
+    pushVideoFrame: (buffer) => ipcRenderer.send('recorder:push-video-frame', buffer),
+    pushAudioChunk: (buffer) => ipcRenderer.send('recorder:push-audio-chunk', buffer),
+  },
+  AudioBus: {
+    setChannelGain: (ch, gain) => ipcRenderer.invoke('audio-bus:set-channel-gain', { ch, gain }),
+    setChannelMute: (ch, muted) => ipcRenderer.invoke('audio-bus:set-channel-mute', { ch, muted }),
+    setChannelSolo: (ch, solo) => ipcRenderer.invoke('audio-bus:set-channel-solo', { ch, solo }),
+    setMasterGain: (gain) => ipcRenderer.invoke('audio-bus:set-master-gain', gain),
+    setDelayMs: (ms) => ipcRenderer.invoke('audio-bus:set-delay-ms', ms),
+    getMeters: () => ipcRenderer.invoke('audio-bus:get-meters'),
+  },
+  Broadcast: {
+    start: (config) => ipcRenderer.invoke('broadcast:start', config),
+    stop: () => ipcRenderer.invoke('broadcast:stop'),
+    getStatus: () => ipcRenderer.invoke('broadcast:status'),
+    pushVideoFrame: (buffer) => ipcRenderer.send('broadcast:push-video-frame', buffer),
+    pushAudioChunk: (buffer) => ipcRenderer.send('broadcast:push-audio-chunk', buffer),
   },
 });

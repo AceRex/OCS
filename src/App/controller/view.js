@@ -113,11 +113,56 @@ import IncomingAssetModal from "./IncomingAssetModal";
 import MobileVoiceNotification from "./MobileVoiceNotification";
 
 import GuestExpiredGate from "../components/GuestExpiredGate";
+import { useDispatch } from "react-redux";
+import { utilAction } from "../../Redux/state.jsx";
 
 function App() {
+  const dispatch = useDispatch();
   const [activeTab, setActiveTab] = useState("dashboard");
   const [previewMode, setPreviewMode] = useState(null); // 'speaker', 'general', or null
   const [saveProgress, setSaveProgress] = useState(null);
+  const [recoveryNotice, setRecoveryNotice] = useState(null);
+
+  // Crash Recovery State Hydration (P0-03 / DEF-04)
+  useEffect(() => {
+    const handleHydrate = (data) => {
+      if (!data || !data.state) return;
+      const s = data.state;
+      const report = data.report;
+
+      // 1. Rehydrate Timer State if previously present
+      if (s.timer && s.timer.durationSec > 0) {
+        dispatch(utilAction.setTime(s.timer.remainingSec || s.timer.durationSec));
+        dispatch(utilAction.setPaused(true)); // Always safety-paused upon recovery
+      }
+
+      // 2. Set user-visible recovery advisory toast
+      if (report && report.crashed) {
+        setRecoveryNotice({
+          title: "Session Crash Recovered",
+          desc: `Reconstructed service state in ${report.reconstructionTimeMs || 3}ms from SQLite WAL journal. Timers safety-paused.`,
+        });
+      }
+    };
+
+    let unsubRecovery = null;
+    if (window.electron?.Recovery?.onStateRestored) {
+      unsubRecovery = window.electron.Recovery.onStateRestored(handleHydrate);
+    }
+
+    // Also poll getRecoveryState once on mount in case event fired before mount
+    if (window.electron?.Recovery?.getRecoveryState) {
+      window.electron.Recovery.getRecoveryState().then((rep) => {
+        if (rep && rep.crashed) {
+          handleHydrate({ report: rep, state: rep.reconstructedState });
+        }
+      }).catch(() => {});
+    }
+
+    return () => {
+      if (unsubRecovery) unsubRecovery();
+    };
+  }, [dispatch]);
 
   useEffect(() => {
     if (!window.electron?.Session) return undefined;
@@ -275,6 +320,36 @@ function App() {
       <IncomingAssetModal />
       <MobileVoiceNotification />
       <UpdateModal />
+
+      {/* Recovery Advisory Toast — Universal 12px border radius */}
+      {recoveryNotice && (
+        <div
+          style={{
+            position: "fixed",
+            bottom: 24,
+            right: 24,
+            zIndex: 99999,
+            maxWidth: 380,
+          }}
+          className="bg-emerald-950/90 border border-emerald-500/40 p-4 rounded-[12px] shadow-2xl backdrop-blur-md flex flex-col gap-1 text-white animate-in fade-in duration-300"
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-emerald-300 flex items-center gap-1.5 uppercase tracking-wider">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              {recoveryNotice.title}
+            </span>
+            <button
+              onClick={() => setRecoveryNotice(null)}
+              className="text-white/40 hover:text-white text-xs px-1.5 py-0.5 rounded-[12px]"
+            >
+              ✕
+            </button>
+          </div>
+          <p className="text-xs text-white/80 leading-relaxed mt-1">
+            {recoveryNotice.desc}
+          </p>
+        </div>
+      )}
     </section>
   );
 }

@@ -2,11 +2,11 @@ import React, { useEffect, useRef, useState } from "react";
 import {
   PiVideoCamera,
   PiWifiHigh,
-  PiArrowsLeftRight,
   PiPlus,
   PiX,
   PiDeviceMobile,
   PiTelevision,
+  PiArrowsLeftRight,
 } from "react-icons/pi";
 
 /**
@@ -38,11 +38,14 @@ export default function SwitcherCameraTile({
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const latestImgRef = useRef(null);
+  const lastRenderedBitmapRef = useRef(null);
   const isDirtyRef = useRef(false);
   const animRef = useRef(null);
   const statsRef = useRef({ frameCount: 0, lastFpsTime: performance.now(), fps: 0, lastFrame: 0 });
   const [hudStats, setHudStats] = useState({ fps: 0, isAlive: false });
   const [hasFrame, setHasFrame] = useState(false);
+  const latestEffectRef = useRef(null);
+  const [currentEffect, setCurrentEffect] = useState(null);
 
   const socketId = slotInfo?.socketId || null;
 
@@ -66,17 +69,36 @@ export default function SwitcherCameraTile({
 
     const renderLoop = () => {
       if (isDirtyRef.current && canvasRef.current) {
+        const bitmap = lastRenderedBitmapRef.current;
         const img = latestImgRef.current;
-        if (img && img.naturalWidth > 0) {
-          const canvas = canvasRef.current;
-          const ctx = canvas.getContext("2d", { alpha: false });
-          if (ctx) {
-            if (canvas.width !== img.naturalWidth || canvas.height !== img.naturalHeight) {
-              canvas.width = img.naturalWidth;
-              canvas.height = img.naturalHeight;
+        const source = bitmap || img;
+        if (source) {
+          const w = source.width || source.naturalWidth;
+          const h = source.height || source.naturalHeight;
+          if (w > 0 && h > 0) {
+            const canvas = canvasRef.current;
+            const ctx = canvas.getContext("2d", { alpha: false });
+            if (ctx) {
+              if (canvas.width !== w || canvas.height !== h) {
+                canvas.width = w;
+                canvas.height = h;
+              }
+              const eff = latestEffectRef.current;
+              if (eff && eff.filter && eff.filter !== "none") {
+                ctx.filter = eff.filter;
+              } else {
+                ctx.filter = "none";
+              }
+              ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+              if (eff && eff.overlayColor && eff.overlayColor !== "transparent") {
+                ctx.save();
+                ctx.filter = "none";
+                ctx.fillStyle = eff.overlayColor;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.restore();
+              }
+              isDirtyRef.current = false;
             }
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-            isDirtyRef.current = false;
           }
         }
       }
@@ -108,6 +130,73 @@ export default function SwitcherCameraTile({
     if (stream || (!socketId && !slotInfo)) { if (!stream) setHasFrame(false); return; }
     let cleanup = null;
     if (window.electron?.Switcher?.onCameraFrame) {
+      let isDecoding = false;
+      let pendingPayload = null;
+      let lastDecodedTimestamp = 0;
+
+      const decodeNext = async () => {
+        if (isDecoding || !pendingPayload) return;
+        isDecoding = true;
+        const payload = pendingPayload;
+        pendingPayload = null;
+
+        const src = payload.data.startsWith("data:")
+          ? payload.data
+          : `data:image/jpeg;base64,${payload.data}`;
+
+        try {
+          if (typeof window.createImageBitmap === "function" && typeof window.fetch === "function") {
+            const res = await fetch(src);
+            const blob = await res.blob();
+            const bitmap = await createImageBitmap(blob);
+
+            if (payload.timestamp && payload.timestamp < lastDecodedTimestamp) {
+              bitmap.close();
+            } else {
+              const old = lastRenderedBitmapRef.current;
+              lastRenderedBitmapRef.current = bitmap;
+              lastDecodedTimestamp = payload.timestamp || Date.now();
+              isDirtyRef.current = true;
+              setHasFrame(true);
+              if (old && typeof old.close === "function") {
+                old.close();
+              }
+            }
+          } else {
+            await new Promise((resolve) => {
+              const nextImg = new Image();
+              nextImg.onload = () => {
+                latestImgRef.current = nextImg;
+                isDirtyRef.current = true;
+                setHasFrame(true);
+                resolve();
+              };
+              nextImg.onerror = resolve;
+              nextImg.src = src;
+            });
+          }
+        } catch (_) {
+          try {
+            await new Promise((resolve) => {
+              const nextImg = new Image();
+              nextImg.onload = () => {
+                latestImgRef.current = nextImg;
+                isDirtyRef.current = true;
+                setHasFrame(true);
+                resolve();
+              };
+              nextImg.onerror = resolve;
+              nextImg.src = src;
+            });
+          } catch (__) {}
+        } finally {
+          isDecoding = false;
+          if (pendingPayload) {
+            decodeNext();
+          }
+        }
+      };
+
       cleanup = window.electron.Switcher.onCameraFrame((payload) => {
         if (!payload) return;
         const matches = (payload.fromId && socketId && String(payload.fromId) === String(socketId)) ||
@@ -118,22 +207,22 @@ export default function SwitcherCameraTile({
 
         statsRef.current.lastFrame = Date.now();
         statsRef.current.frameCount++;
-        const src = frameData.startsWith("data:") ? frameData : `data:image/jpeg;base64,${frameData}`;
-        const nextImg = new Image();
-        nextImg.onload = () => {
-          latestImgRef.current = nextImg;
-          isDirtyRef.current = true;
-          setHasFrame(true);
-        };
-        nextImg.src = src;
-        if (nextImg.complete && nextImg.naturalWidth > 0) {
-          latestImgRef.current = nextImg;
-          isDirtyRef.current = true;
-          setHasFrame(true);
+        if (payload.effect) {
+          latestEffectRef.current = payload.effect;
+          setCurrentEffect(payload.effect);
         }
+        pendingPayload = { data: frameData, timestamp: payload.timestamp || Date.now() };
+        decodeNext();
       });
     }
-    return () => { if (cleanup) cleanup(); if (!stream) setHasFrame(false); };
+    return () => {
+      if (cleanup) cleanup();
+      if (lastRenderedBitmapRef.current && typeof lastRenderedBitmapRef.current.close === "function") {
+        lastRenderedBitmapRef.current.close();
+        lastRenderedBitmapRef.current = null;
+      }
+      if (!stream) setHasFrame(false);
+    };
   }, [socketId, slotIndex, stream, slotInfo]);
 
   const isEmpty = !slotInfo;
@@ -189,8 +278,18 @@ export default function SwitcherCameraTile({
           ) : (
             <canvas
               ref={canvasRef}
-              style={{ transform: isMirrored ? "scaleX(-1) translateZ(0)" : "translateZ(0)" }}
+              style={{
+                transform: isMirrored ? "scaleX(-1) translateZ(0)" : "translateZ(0)",
+                filter: currentEffect?.filter && currentEffect.filter !== "none" ? currentEffect.filter : "none",
+              }}
               className={`w-full h-full object-cover transition-opacity duration-300 ${hasFrame ? "opacity-100" : "opacity-0"}`}
+            />
+          )}
+
+          {currentEffect?.overlayColor && currentEffect.overlayColor !== "transparent" && (
+            <div
+              className="absolute inset-0 pointer-events-none z-[2]"
+              style={{ backgroundColor: currentEffect.overlayColor }}
             />
           )}
 
@@ -268,10 +367,9 @@ export default function SwitcherCameraTile({
                 }`}
               >
                 <PiArrowsLeftRight size={9} />
-                <span>{isMirrored ? "MIR" : "MIR"}</span>
+                <span>MIR</span>
               </button>
             )}
-
             {canSwitch && typeof onSetDisplay === "function" && (
               <div className="flex items-center gap-0.5 bg-black/80 rounded-[12px] p-0.5 border border-white/20">
                 <button

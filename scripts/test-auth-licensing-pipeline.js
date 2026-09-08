@@ -222,6 +222,9 @@ async function runTests() {
       ok(html.includes('mock_test_state'), 'T8.2: Mock auth server embeds state parameter');
       ok(html.includes('ocs://auth/callback'), 'T8.3: Mock auth server includes custom scheme redirect buttons');
     } finally {
+      if (typeof mockServer.closeAllConnections === 'function') {
+        mockServer.closeAllConnections();
+      }
       await new Promise((resolve) => mockServer.close(resolve));
     }
 
@@ -238,6 +241,8 @@ async function runTests() {
 
   if (failed > 0) {
     process.exit(1);
+  } else {
+    process.exit(0);
   }
 }
 

@@ -9,7 +9,7 @@ import {
   StyleSheet,
   KeyboardAvoidingView,
   ScrollView,
-  TouchableWithoutFeedback,
+  Pressable,
   Keyboard,
   Platform,
 } from "react-native";
@@ -18,12 +18,14 @@ import { useRouter } from "expo-router";
 import { useSocketStore } from "../store/socketStore";
 import {
   ArrowLeft,
+  ArrowRight,
   Monitor,
   CheckCircle,
   XCircle,
   QrCode,
   X,
   Lightning,
+  ShieldCheck,
 } from "phosphor-react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 
@@ -39,6 +41,9 @@ export default function ConnectScreen() {
     reconnectLastSession,
     disconnect,
     connectionError,
+    deviceName,
+    isAdmin,
+    deviceRole,
   } = useSocketStore();
   const [ip, setIp] = useState(serverIp || "");
   const [pairingCode, setPairingCode] = useState("");
@@ -176,112 +181,150 @@ export default function ConnectScreen() {
         style={styles.keyboardAvoid}
         keyboardVerticalOffset={Platform.OS === "ios" ? 10 : 0}
       >
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+        <Pressable onPress={Keyboard.dismiss} style={{ flex: 1 }}>
           <ScrollView
             contentContainerStyle={styles.scrollContent}
             keyboardShouldPersistTaps="handled"
             showsVerticalScrollIndicator={false}
             bounces={false}
           >
-            <View style={styles.card}>
-              <View style={styles.monitorIconBox}>
-                <Monitor size={40} color="#60A5FA" weight="duotone" />
-              </View>
-
-              <Text style={styles.title}>Pair Remote</Text>
-              <Text style={styles.subtitle}>
-                Scan the QR code on your desktop screen or enter the IP and 6-digit code.
-              </Text>
-
-              {/* Quick Reconnect Option */}
-              {!ready && lastHost ? (
-                <TouchableOpacity
-                  onPress={() => reconnectLastSession()}
-                  activeOpacity={0.8}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    backgroundColor: "rgba(168, 85, 247, 0.15)",
-                    borderWidth: 1.5,
-                    borderColor: "#C084FC",
-                    paddingVertical: 14,
-                    borderRadius: 16,
-                    marginBottom: 12,
-                    gap: 8,
-                  }}
-                >
-                  <Lightning size={20} color="#C084FC" weight="fill" />
-                  <Text style={{ color: "#FFFFFF", fontWeight: "800", fontSize: 14 }}>
-                    1-Tap Reconnect to {lastHost}
-                  </Text>
-                </TouchableOpacity>
-              ) : null}
-
-              {/* Scan QR Code Button */}
-              <TouchableOpacity
-                onPress={openScanner}
-                activeOpacity={0.8}
-                style={styles.scanButton}
-              >
-                <QrCode size={22} color="#60A5FA" weight="bold" />
-                <Text style={styles.scanButtonText}>Scan QR / Barcode</Text>
-              </TouchableOpacity>
-
-              <View style={styles.dividerRow}>
-                <View style={styles.dividerLine} />
-                <Text style={styles.dividerText}>or manual</Text>
-                <View style={styles.dividerLine} />
-              </View>
-
-              {/* IP Input */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Desktop IP Address</Text>
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="192.168.1.X"
-                  placeholderTextColor="#555"
-                  value={ip}
-                  onChangeText={handleIpChange}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  keyboardType="default"
-                />
-              </View>
-
-              {/* Pairing Code Input */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>6-Digit Pairing Code</Text>
-                <TextInput
-                  style={[styles.textInput, styles.pairingInput]}
-                  placeholder="000000"
-                  placeholderTextColor="#555"
-                  value={pairingCode}
-                  onChangeText={setPairingCode}
-                  keyboardType="number-pad"
-                  maxLength={6}
-                />
-              </View>
-
-              {/* Connection Error Banner */}
-              {connectionError && (
-                <View style={styles.errorBox}>
-                  <XCircle size={16} color="#F87171" weight="bold" />
-                  <Text style={styles.errorText}>{connectionError}</Text>
+            {ready ? (
+              /* ─── Connected Dashboard State ───────────────────────────── */
+              <View style={styles.card}>
+                <View style={styles.connectedIconBox}>
+                  <CheckCircle size={44} color="#4ADE80" weight="fill" />
                 </View>
-              )}
 
-              {/* Action Button */}
-              {ready ? (
+                <Text style={styles.title}>Connected & Paired</Text>
+                <Text style={styles.subtitle}>
+                  Your companion is actively paired with the OCS desktop workstation.
+                </Text>
+
+                {/* Session Details Card */}
+                <View style={styles.sessionCard}>
+                  <View style={styles.sessionRow}>
+                    <Text style={styles.sessionLabel}>HOST SERVER</Text>
+                    <Text style={styles.sessionValue}>{serverIp || lastHost || "127.0.0.1"}</Text>
+                  </View>
+                  <View style={styles.sessionDivider} />
+                  <View style={styles.sessionRow}>
+                    <Text style={styles.sessionLabel}>DEVICE NAME</Text>
+                    <Text style={styles.sessionValue}>{deviceName || "Mobile Companion"}</Text>
+                  </View>
+                  <View style={styles.sessionDivider} />
+                  <View style={styles.sessionRow}>
+                    <Text style={styles.sessionLabel}>ASSIGNED ROLE</Text>
+                    <View style={[
+                      styles.roleBadge,
+                      isAdmin ? styles.roleBadgeAdmin : deviceRole === "stageManager" ? styles.roleBadgeStageMgr : styles.roleBadgeSpeaker
+                    ]}>
+                      <Text style={styles.roleBadgeText}>
+                        {isAdmin ? "Admin (Overseer)" : deviceRole === "stageManager" ? "Stage Manager" : "Camera / Companion"}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+
+                {/* Primary Button: Open Dashboard */}
+                <TouchableOpacity
+                  onPress={() => router.push("/")}
+                  activeOpacity={0.85}
+                  style={styles.continueButton}
+                >
+                  <Text style={styles.continueText}>Open Main Dashboard</Text>
+                  <ArrowRight size={18} color="#ffffff" weight="bold" />
+                </TouchableOpacity>
+
+                {/* Disconnect Button */}
                 <TouchableOpacity
                   onPress={disconnect}
                   activeOpacity={0.8}
                   style={styles.disconnectButton}
                 >
-                  <XCircle size={20} color="#F87171" weight="bold" />
-                  <Text style={styles.disconnectText}>Disconnect</Text>
+                  <XCircle size={18} color="#F87171" weight="bold" />
+                  <Text style={styles.disconnectText}>Disconnect Session</Text>
                 </TouchableOpacity>
-              ) : (
+              </View>
+            ) : (
+              /* ─── Disconnected / Pairing Form State ─────────────────────── */
+              <View style={styles.card}>
+                <View style={styles.monitorIconBox}>
+                  <Monitor size={40} color="#60A5FA" weight="duotone" />
+                </View>
+
+                <Text style={styles.title}>Pair Remote</Text>
+                <Text style={styles.subtitle}>
+                  Scan the QR code on your desktop screen or enter the IP and 6-digit code.
+                </Text>
+
+                {/* Quick Reconnect Option */}
+                {lastHost ? (
+                  <TouchableOpacity
+                    onPress={() => reconnectLastSession()}
+                    activeOpacity={0.8}
+                    style={styles.reconnectButton}
+                  >
+                    <Lightning size={20} color="#C084FC" weight="fill" />
+                    <Text style={styles.reconnectButtonText}>
+                      1-Tap Reconnect to {lastHost}
+                    </Text>
+                  </TouchableOpacity>
+                ) : null}
+
+                {/* Scan QR Code Button */}
+                <TouchableOpacity
+                  onPress={openScanner}
+                  activeOpacity={0.8}
+                  style={styles.scanButton}
+                >
+                  <QrCode size={22} color="#60A5FA" weight="bold" />
+                  <Text style={styles.scanButtonText}>Scan QR / Barcode</Text>
+                </TouchableOpacity>
+
+                <View style={styles.dividerRow}>
+                  <View style={styles.dividerLine} />
+                  <Text style={styles.dividerText}>or manual</Text>
+                  <View style={styles.dividerLine} />
+                </View>
+
+                {/* IP Input */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Desktop IP Address</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="192.168.1.X"
+                    placeholderTextColor="#555"
+                    value={ip}
+                    onChangeText={handleIpChange}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    keyboardType="default"
+                  />
+                </View>
+
+                {/* Pairing Code Input */}
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>6-Digit Pairing Code</Text>
+                  <TextInput
+                    style={[styles.textInput, styles.pairingInput]}
+                    placeholder="000000"
+                    placeholderTextColor="#555"
+                    value={pairingCode}
+                    onChangeText={setPairingCode}
+                    keyboardType="number-pad"
+                    maxLength={6}
+                  />
+                </View>
+
+                {/* Connection Error Banner */}
+                {connectionError && (
+                  <View style={styles.errorBox}>
+                    <XCircle size={16} color="#F87171" weight="bold" />
+                    <Text style={styles.errorText}>{connectionError}</Text>
+                  </View>
+                )}
+
+                {/* Action Button */}
                 <TouchableOpacity
                   onPress={handleManualConnect}
                   activeOpacity={0.8}
@@ -291,18 +334,10 @@ export default function ConnectScreen() {
                     {isConnected && !isPaired ? "Pairing…" : "Connect & Pair"}
                   </Text>
                 </TouchableOpacity>
-              )}
-
-              {/* Paired Status Badge */}
-              {ready && (
-                <View style={styles.pairedBadge}>
-                  <CheckCircle size={16} color="#4ADE80" weight="fill" />
-                  <Text style={styles.pairedText}>Paired with {serverIp}</Text>
-                </View>
-              )}
-            </View>
+              </View>
+            )}
           </ScrollView>
-        </TouchableWithoutFeedback>
+        </Pressable>
       </KeyboardAvoidingView>
 
       {/* QR / Barcode Scanner Modal */}
@@ -379,16 +414,24 @@ const styles = StyleSheet.create({
     width: "100%",
     backgroundColor: "rgba(255, 255, 255, 0.05)",
     padding: 24,
-    borderRadius: 24,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
     alignItems: "center",
+  },
+  connectedIconBox: {
+    marginBottom: 16,
+    backgroundColor: "rgba(34, 197, 94, 0.15)",
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(34, 197, 94, 0.3)",
   },
   monitorIconBox: {
     marginBottom: 16,
     backgroundColor: "rgba(59, 130, 246, 0.2)",
     padding: 20,
-    borderRadius: 16,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: "rgba(59, 130, 246, 0.3)",
   },
@@ -405,13 +448,101 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     lineHeight: 18,
   },
+  sessionCard: {
+    width: "100%",
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    padding: 14,
+    marginBottom: 16,
+  },
+  sessionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 6,
+  },
+  sessionLabel: {
+    color: "rgba(255, 255, 255, 0.4)",
+    fontSize: 10,
+    fontWeight: "bold",
+    letterSpacing: 0.8,
+  },
+  sessionValue: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  sessionDivider: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    marginVertical: 4,
+  },
+  roleBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+  },
+  roleBadgeAdmin: {
+    backgroundColor: "rgba(168, 85, 247, 0.2)",
+    borderColor: "rgba(168, 85, 247, 0.4)",
+  },
+  roleBadgeStageMgr: {
+    backgroundColor: "rgba(59, 130, 246, 0.2)",
+    borderColor: "rgba(59, 130, 246, 0.4)",
+  },
+  roleBadgeSpeaker: {
+    backgroundColor: "rgba(16, 185, 129, 0.2)",
+    borderColor: "rgba(16, 185, 129, 0.4)",
+  },
+  roleBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  continueButton: {
+    width: "100%",
+    backgroundColor: "#7c3aed",
+    paddingVertical: 15,
+    borderRadius: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginBottom: 10,
+  },
+  continueText: {
+    color: "#ffffff",
+    fontWeight: "bold",
+    fontSize: 14,
+  },
+  reconnectButton: {
+    width: "100%",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(168, 85, 247, 0.15)",
+    borderWidth: 1.5,
+    borderColor: "#C084FC",
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginBottom: 12,
+    gap: 8,
+  },
+  reconnectButtonText: {
+    color: "#FFFFFF",
+    fontWeight: "800",
+    fontSize: 14,
+  },
   scanButton: {
     width: "100%",
     backgroundColor: "rgba(255, 255, 255, 0.1)",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.2)",
     padding: 16,
-    borderRadius: 16,
+    borderRadius: 12,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -494,7 +625,7 @@ const styles = StyleSheet.create({
     width: "100%",
     backgroundColor: "#2563EB",
     padding: 16,
-    borderRadius: 16,
+    borderRadius: 12,
     alignItems: "center",
   },
   connectText: {
@@ -504,11 +635,11 @@ const styles = StyleSheet.create({
   },
   disconnectButton: {
     width: "100%",
-    backgroundColor: "rgba(239, 68, 68, 0.2)",
+    backgroundColor: "rgba(239, 68, 68, 0.15)",
     borderWidth: 1,
-    borderColor: "rgba(239, 68, 68, 0.4)",
-    padding: 16,
-    borderRadius: 16,
+    borderColor: "rgba(239, 68, 68, 0.35)",
+    padding: 14,
+    borderRadius: 12,
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "center",

@@ -652,6 +652,17 @@ export default function PresentationController() {
         if (window.electron?.Presentation?.setContent) {
             window.electron.Presentation.setContent(payload);
         }
+
+        // Journal slide change for SQLite WAL crash recovery
+        try {
+            if (window.electron?.Recovery?.recordEvent) {
+                window.electron.Recovery.recordEvent('SLIDE_CHANGE', {
+                    activePresentationId: deck.id,
+                    activeSlideIndex: sIdx,
+                    slideTitle: slide.notes || deck.name || `Slide ${sIdx + 1}`
+                });
+            }
+        } catch (_) {}
     };
 
     const handleStopSlidePresentation = () => {
@@ -660,6 +671,16 @@ export default function PresentationController() {
         if (window.electron?.Presentation?.setContent) {
             window.electron.Presentation.setContent(null);
         }
+
+        try {
+            if (window.electron?.Recovery?.recordEvent) {
+                window.electron.Recovery.recordEvent('SLIDE_CHANGE', {
+                    activePresentationId: null,
+                    activeSlideIndex: 0,
+                    slideTitle: ''
+                });
+            }
+        } catch (_) {}
     };
 
     const handleNextSlide = () => {

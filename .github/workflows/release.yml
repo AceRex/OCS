@@ -2,8 +2,13 @@ name: Release OCS Desktop
 
 on:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
@@ -12,6 +17,7 @@ jobs:
   validate-version:
     name: Validate Tag and Version Consistency
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -34,9 +40,29 @@ jobs:
           fi
           echo "✓ Version verification passed: ${PKG_VERSION}"
 
+  test-gate:
+    name: Mandatory Automated CI Test Gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Run CI Automated Test Suite
+        run: npm run test:ci
+
   build-and-release:
     name: Build & Publish Desktop (${{ matrix.os }})
-    needs: validate-version
+    needs: [validate-version, test-gate]
+    if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false

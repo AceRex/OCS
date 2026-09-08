@@ -313,6 +313,19 @@ export default function TimerController() {
       speakerName: (item.anchor && String(item.anchor).trim()) || "Speaker",
       recordAudio: shouldRecordAudio,
     });
+
+    try {
+      if (window.electron?.Recovery?.recordEvent) {
+        window.electron.Recovery.recordEvent("TIMER_UPDATE", {
+          durationSec: Number(item.time) || 0,
+          remainingSec: Number(item.time) || 0,
+          type: "countdown",
+          isRunning: true,
+          activeId: item._id,
+          title: item.agenda || item.anchor || "Session"
+        });
+      }
+    } catch (_) {}
   };
 
   const handleDeleteFromList = (id) => {
@@ -330,6 +343,18 @@ export default function TimerController() {
           ? Math.max(0, Number(time) - Number(countdown))
           : 0,
     });
+
+    try {
+      if (window.electron?.Recovery?.recordEvent) {
+        window.electron.Recovery.recordEvent("TIMER_UPDATE", {
+          durationSec: Number(time) || 0,
+          remainingSec: Number(countdown) || 0,
+          type: "countdown",
+          isRunning: !next,
+          activeId
+        });
+      }
+    } catch (_) {}
   };
 
   const handleStop = () => {
@@ -346,6 +371,18 @@ export default function TimerController() {
     dispatch(utilAction.setTime(0));
     dispatch(utilAction.setPaused(false));
     dispatch(utilAction.setActiveId(null));
+
+    try {
+      if (window.electron?.Recovery?.recordEvent) {
+        window.electron.Recovery.recordEvent("TIMER_UPDATE", {
+          durationSec: 0,
+          remainingSec: 0,
+          type: "countdown",
+          isRunning: false,
+          activeId: null
+        });
+      }
+    } catch (_) {}
   };
 
   const handleAddTime = (id, currentAmount, amount = 60) => {

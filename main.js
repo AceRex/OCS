@@ -4,6 +4,7 @@ const {
   app,
   BrowserWindow,
   Menu,
+  nativeTheme,
   screen,
   ipcMain,
   session,
@@ -13,6 +14,73 @@ const {
   globalShortcut,
   systemPreferences,
 } = require("electron");
+
+// ── Universal Dark Theme Mandate (Enforce dark theme across Windows titlebars, menu bars, and dialogs) ──
+if (nativeTheme) {
+  nativeTheme.themeSource = "dark";
+}
+
+// ── WebFrameMain Safe Dispatch Helpers (Prevents "Render frame was disposed before WebFrameMain could be accessed") ──
+function safeWebContentsSend(target, channel, ...args) {
+  try {
+    if (!target) return;
+    const wc = target.webContents ? target.webContents : target;
+    if (!wc || (typeof wc.isDestroyed === "function" && wc.isDestroyed())) return;
+    if (typeof wc.isCrashed === "function" && wc.isCrashed()) return;
+    if (typeof wc.isLoadingMainFrame === "function" && wc.isLoadingMainFrame()) return;
+
+    // Electron's WebContents.prototype.send internally catches errors and prints:
+    // "Error sending from webFrameMain: Error: Render frame was disposed before WebFrameMain could be accessed"
+    // By dispatching directly on wc.mainFrame within our own try/catch, we prevent Electron's internal
+    // console.error logger from triggering when frames are disposed during window navigation or reload.
+    let frame = null;
+    try {
+      frame = wc.mainFrame;
+    } catch (_) {
+      return;
+    }
+
+    if (frame && typeof frame.send === "function") {
+      try {
+        frame.send(channel, ...args);
+        return;
+      } catch (_) {
+        return;
+      }
+    }
+
+    if (typeof wc.send === "function") {
+      wc.send(channel, ...args);
+    }
+  } catch (_) {
+    // Suppress transient frame disposal
+  }
+}
+
+function broadcastToAllWindows(channel, ...args) {
+  try {
+    for (const win of BrowserWindow.getAllWindows()) {
+      safeWebContentsSend(win, channel, ...args);
+    }
+  } catch (_) {}
+}
+
+// Global safety net: suppress benign transient Electron frame disposal during reload / rapid frame streaming
+process.on("uncaughtException", (err) => {
+  const msg = (err && err.message) || String(err || "");
+  if (msg.includes("WebFrameMain") || msg.includes("Render frame was disposed") || msg.includes("Object has been destroyed")) {
+    return;
+  }
+  console.error("[UncaughtException]", err);
+});
+
+process.on("unhandledRejection", (reason) => {
+  const msg = (reason && reason.message) || String(reason || "");
+  if (msg.includes("WebFrameMain") || msg.includes("Render frame was disposed") || msg.includes("Object has been destroyed")) {
+    return;
+  }
+  console.error("[UnhandledRejection]", reason);
+});
 
 // ── Custom Protocol Scheme for Authentication & Deep Links (FR-13.8, FR-13.3) ───
 app.setAsDefaultProtocolClient("ocs");
@@ -68,6 +136,10 @@ const QRCode = require("qrcode");
 const { AsrFacade } = require("./src/main/asr/asrFacade");
 const { emitTimerLifecycle } = require("./src/main/timerLifecycle");
 const { SessionArchiveService } = require("./src/main/sessionArchive");
+const { recoveryManager } = require("./src/main/session/recoveryManager");
+const { programRecorder } = require("./src/main/recording/programRecorder");
+const { broadcastAudioBus } = require("./src/App/controller/broadcastAudioBus");
+const { broadcastSupervisor } = require("./src/main/streaming/broadcastSupervisor");
 const { probeMediaInfo } = require("./src/main/sessionAudio");
 const {
   generatePairing,
@@ -231,9 +303,7 @@ function handleAuthDeepLink(rawUrl) {
     console.warn("[Auth] Callback validation failed:", result.error);
     // Broadcast error to login window and controller UI
     for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) {
-        win.webContents.send("auth-error", result.error);
-      }
+      safeWebContentsSend(win, "auth-error", result.error);
     }
   }
 }
@@ -241,9 +311,7 @@ function handleAuthDeepLink(rawUrl) {
 function broadcastAuthStatus() {
   const status = authService.getAuthStatus();
   for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) {
-      win.webContents.send("auth-status", status);
-    }
+    safeWebContentsSend(win, "auth-status", status);
   }
 }
 
@@ -1464,6 +1532,62 @@ let savedPresentationContentSlot = null; // Preserves presentation contentSlot (
 let savedGeneralContentSlot = null;      // Preserves General Screen presentation state during live sharing
 let savedSpeakerContentSlot = null;      // Preserves Speaker Screen confidence state during live sharing
 
+// ─── Live Broadcast Engine: Screen Scaling & Overlays ────────────────────────
+let liveBroadcastConfig = {
+  scale: 1.0, // 1.0, 0.90, 0.85, 0.75
+  fitMode: "cover", // "cover" | "contain"
+  logo: {
+    enabled: false,
+    preset: "cross", // "cross" | "ocs" | "dove" | "custom"
+    url: "",
+    position: "top-right", // "top-right" | "top-left" | "bottom-right" | "bottom-left"
+    size: 56,
+    opacity: 0.85,
+  },
+  lowerThird: {
+    enabled: false,
+    title: "",
+    subtitle: "",
+    theme: "purple",
+    autoHideSec: 10,
+    x: 22,
+    y: 88,
+    width: 36,
+    style: {
+      shape: "rounded-rect",     // "rounded-rect" | "angled-cut" | "minimal-bar" | "pill"
+      badgeShape: "circle",      // "circle" | "triangle" | "rect" | "none"
+      badgeIcon: "cross",        // "cross" | "dove" | "user" | "mic" | "star" | "bible"
+      primaryColor: "#581c87",   // Deep purple
+      secondaryColor: "#3b0764", // Secondary gradient
+      accentColor: "#a855f7",    // Accent highlight
+      textColor: "#ffffff",
+      subtitleColor: "#cbd5e1",
+      opacity: 0.95,
+      fontSize: "medium",        // "small" | "medium" | "large"
+      uppercaseTitle: false,
+      showAccentSlash: true,
+    },
+  },
+  bibleLowerThird: {
+    enabled: true, // Linked to Bible
+    autoTrigger: true, // Auto trigger on voice/presentation
+    currentRef: "",
+    currentText: "",
+    version: "KJV",
+    autoDismissSec: 15,
+    isShowing: false,
+    x: 50,
+    y: 85,
+    width: 90,
+  },
+  ticker: {
+    enabled: false,
+    text: "",
+    speed: "medium", // "slow" | "medium" | "fast"
+  },
+  layers: [], // Custom image & graphic overlay layers [{ id, type, content, name, x, y, style: { width, opacity, borderRadius } }]
+};
+
 // Generic destination registry for Live Output routing (DEF-05)
 const switcherDestinations = new Map([
   ['general', {
@@ -1475,7 +1599,7 @@ const switcherDestinations = new Map([
     set savedContentSlot(val) { savedGeneralContentSlot = val; },
     getWindow: () => (generalWindow && !generalWindow.isDestroyed() ? generalWindow : null),
     sendLiveOutputFrame: (frameData) => {
-      if (generalWindow && !generalWindow.isDestroyed()) generalWindow.webContents.send("switcher-live-output-frame", frameData);
+      safeWebContentsSend(generalWindow, "switcher-live-output-frame", frameData);
     },
   }],
   ['speaker', {
@@ -1487,7 +1611,7 @@ const switcherDestinations = new Map([
     set savedContentSlot(val) { savedSpeakerContentSlot = val; },
     getWindow: () => (speakerWindow && !speakerWindow.isDestroyed() ? speakerWindow : null),
     sendLiveOutputFrame: (frameData) => {
-      if (speakerWindow && !speakerWindow.isDestroyed()) speakerWindow.webContents.send("switcher-live-output-frame", frameData);
+      safeWebContentsSend(speakerWindow, "switcher-live-output-frame", frameData);
     },
   }],
 ]);
@@ -1509,7 +1633,7 @@ function routeSwitcherDestination(destinationId, active) {
         savedPresentationContentSlot = currentCanvasState.contentSlot;
       }
     }
-    const liveOutputSlot = { type: 'live-output', data: { title: 'Live Switcher Output' } };
+    const liveOutputSlot = { type: 'live-output', data: { title: 'Live Output' } };
     if (dest.id === 'general') {
       currentCanvasState.contentSlot = liveOutputSlot;
     }
@@ -1527,9 +1651,9 @@ function routeSwitcherDestination(destinationId, active) {
     // DEF-08: Ensure destination window receives set-content or clear-content
     if (win) {
       if (restoredSlot && restoredSlot.type !== 'none') {
-        win.webContents.send("set-content", restoredSlot);
+        safeWebContentsSend(win, "set-content", restoredSlot);
       } else {
-        win.webContents.send("clear-content");
+        safeWebContentsSend(win, "clear-content");
       }
     }
     broadcastCanvasState(
@@ -1588,6 +1712,7 @@ function broadcastSwitcherState() {
     activeDisplay: switcherActiveDisplay,
     display1Source: switcherDisplay1Source,
     display2Source: switcherDisplay2Source,
+    broadcastConfig: liveBroadcastConfig,
   };
   // To all paired mobile clients
   if (io) {
@@ -1598,19 +1723,60 @@ function broadcastSwitcherState() {
     }
   }
   // To controller window
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) {
-      win.webContents.send('switcher-state-update', state);
+  broadcastToAllWindows('switcher-state-update', state);
+}
+
+function broadcastLiveConfig() {
+  if (io) {
+    for (const [id, sock] of io.sockets.sockets) {
+      if (isPaired(id)) {
+        sock.emit('switcher:broadcast-config', liveBroadcastConfig);
+      }
     }
   }
+  broadcastToAllWindows('switcher-broadcast-config', liveBroadcastConfig);
+}
+
+function updateLiveBroadcastConfig(payload = {}) {
+  if (!payload || typeof payload !== 'object') return;
+  if (typeof payload.scale === 'number') {
+    liveBroadcastConfig.scale = Math.max(0.5, Math.min(1.0, payload.scale));
+  }
+  if (typeof payload.fitMode === 'string') {
+    liveBroadcastConfig.fitMode = payload.fitMode;
+  }
+  if (payload.logo && typeof payload.logo === 'object') {
+    liveBroadcastConfig.logo = {
+      ...liveBroadcastConfig.logo,
+      ...payload.logo,
+    };
+  }
+  if (payload.lowerThird && typeof payload.lowerThird === 'object') {
+    liveBroadcastConfig.lowerThird = {
+      ...liveBroadcastConfig.lowerThird,
+      ...payload.lowerThird,
+    };
+  }
+  if (payload.bibleLowerThird && typeof payload.bibleLowerThird === 'object') {
+    liveBroadcastConfig.bibleLowerThird = {
+      ...liveBroadcastConfig.bibleLowerThird,
+      ...payload.bibleLowerThird,
+    };
+  }
+  if (payload.ticker && typeof payload.ticker === 'object') {
+    liveBroadcastConfig.ticker = {
+      ...liveBroadcastConfig.ticker,
+      ...payload.ticker,
+    };
+  }
+  if (Array.isArray(payload.layers)) {
+    liveBroadcastConfig.layers = payload.layers;
+  }
+  broadcastLiveConfig();
 }
 
 function broadcastTransitionStart(transition) {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) {
-      win.webContents.send('switcher-transition-start', transition);
-    }
-  }
+  broadcastToAllWindows('switcher-transition-start', transition);
   if (io) {
     for (const [id, sock] of io.sockets.sockets) {
       if (isPaired(id)) {
@@ -1621,11 +1787,7 @@ function broadcastTransitionStart(transition) {
 }
 
 function broadcastTransitionComplete(programSourceId) {
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) {
-      win.webContents.send('switcher-transition-complete', { programSourceId });
-    }
-  }
+  broadcastToAllWindows('switcher-transition-complete', { programSourceId });
   if (io) {
     for (const [id, sock] of io.sockets.sockets) {
       if (isPaired(id)) {
@@ -1686,7 +1848,7 @@ function executeProgramSwitch(targetId, customTransition) {
       const dests = [];
       if (switcherRouteGeneral) dests.push('general');
       if (switcherRouteSpeaker) dests.push('speaker');
-      currentCanvasState.contentSlot = { type: 'live-output', data: { title: 'Live Switcher Output' } };
+      currentCanvasState.contentSlot = { type: 'live-output', data: { title: 'Live Output' } };
       broadcastCanvasState(currentCanvasState, dests);
     }
     broadcastSwitcherState();
@@ -1743,7 +1905,7 @@ function executeProgramSwitch(targetId, customTransition) {
       const dests = [];
       if (switcherRouteGeneral) dests.push('general');
       if (switcherRouteSpeaker) dests.push('speaker');
-      currentCanvasState.contentSlot = { type: 'live-output', data: { title: 'Live Switcher Output' } };
+      currentCanvasState.contentSlot = { type: 'live-output', data: { title: 'Live Output' } };
       broadcastCanvasState(currentCanvasState, dests);
     }
 
@@ -1959,19 +2121,30 @@ io.on("connection", (socket) => {
     }
 
     const deviceRole = device.deviceRole || (device.isAdmin ? "admin" : "speaker");
-    // Admin and StageManager can use controller/mic voice; Speaker is locked to peers only
-    const canUseControllerMode = deviceRole === "admin" || deviceRole === "stageManager";
     const roleForPayload = payload.role || "controller";
-    if ((roleForPayload === "controller" || roleForPayload === "mic") && !canUseControllerMode) {
-      console.warn(
-        `[Remote Voice] Blocked ${deviceRole} device ${device.name} (${socket.id}) from controller/mic mode`,
-      );
-      ack({
-        ok: false,
-        error:
-          "Unauthorized: Controller Voice and Wireless Mic modes are for Admin and Stage Manager devices only.",
-      });
-      return;
+
+    // Admin (overseer) and Stage Manager can use Controller Voice Prompts (Bible AI control)
+    if (roleForPayload === "controller") {
+      const canUseControllerVoice = deviceRole === "admin" || deviceRole === "stageManager";
+      if (!canUseControllerVoice) {
+        console.warn(`[Remote Voice] Blocked ${deviceRole} device ${device.name} (${socket.id}) from controller voice prompt mode`);
+        ack({ ok: false, error: "Unauthorized: Controller Voice Prompts are for Admin and Stage Manager devices only." });
+        return;
+      }
+    }
+
+    // Live Mic broadcast is reserved strictly for Stage Managers (Admin is overseer, restricted from live mic)
+    if (roleForPayload === "mic") {
+      if (deviceRole === "admin") {
+        console.warn(`[Remote Voice] Blocked Admin overseer ${device.name} (${socket.id}) from live mic mode`);
+        ack({ ok: false, error: "Overseer Restriction: Admin accounts can use Voice Prompts for Bible Control, but Live Sanctuary Microphone broadcast is restricted to Stage Managers." });
+        return;
+      }
+      if (deviceRole !== "stageManager") {
+        console.warn(`[Remote Voice] Blocked ${deviceRole} device ${device.name} (${socket.id}) from live mic mode`);
+        ack({ ok: false, error: "Unauthorized: Live Sanctuary Microphone broadcast is restricted to Stage Managers." });
+        return;
+      }
     }
 
     try {
@@ -2239,18 +2412,16 @@ io.on("connection", (socket) => {
       timestamp: payload.timestamp || Date.now(),
       isProgramSource,
       isMirrored: !!payload.isMirrored,
+      effect: payload.effect || null,
     };
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) {
-        win.webContents.send("switcher-camera-frame", framePayload);
-        win.webContents.send("teleprompter-mobile-frame", framePayload);
-        if (isProgramSource) {
-          win.webContents.send("switcher-program-frame", framePayload);
-        }
-      }
+    broadcastToAllWindows("switcher-camera-frame", framePayload);
+    broadcastToAllWindows("teleprompter-mobile-frame", framePayload);
+    if (isProgramSource) {
+      broadcastToAllWindows("switcher-program-frame", framePayload);
     }
     if (io && isProgramSource && (switcherRouteGeneral || switcherRouteSpeaker)) {
-      io.emit('switcher:live-frame', framePayload);
+      const vIo = io.volatile || io;
+      vIo.emit('switcher:live-frame', framePayload);
     }
   });
 
@@ -2269,18 +2440,16 @@ io.on("connection", (socket) => {
       timestamp: payload.timestamp || Date.now(),
       isProgramSource,
       isMirrored: !!payload.isMirrored,
+      effect: payload.effect || null,
     };
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) {
-        win.webContents.send("switcher-camera-frame", framePayload);
-        win.webContents.send("teleprompter-mobile-frame", framePayload);
-        if (isProgramSource) {
-          win.webContents.send("switcher-program-frame", framePayload);
-        }
-      }
+    broadcastToAllWindows("switcher-camera-frame", framePayload);
+    broadcastToAllWindows("teleprompter-mobile-frame", framePayload);
+    if (isProgramSource) {
+      broadcastToAllWindows("switcher-program-frame", framePayload); // win.webContents.send("switcher-program-frame", framePayload);
     }
     if (io && isProgramSource && (switcherRouteGeneral || switcherRouteSpeaker)) {
-      io.emit('switcher:live-frame', framePayload);
+      const vIo = io.volatile || io;
+      vIo.emit('switcher:live-frame', framePayload);
     }
   });
 
@@ -2288,19 +2457,23 @@ io.on("connection", (socket) => {
   socket.on("switcher:program-frame", (payload = {}) => {
     if (!isPaired(socket.id)) return;
     if (socket.id !== switcherProgramSourceId) return; // Only accept from current program source
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) {
-        win.webContents.send("switcher-program-frame", {
-          data: payload.data,
-          fromId: socket.id,
-          timestamp: payload.timestamp || Date.now(),
-        });
-      }
-    }
+    broadcastToAllWindows("switcher-program-frame", {
+      data: payload.data,
+      fromId: socket.id,
+      timestamp: payload.timestamp || Date.now(),
+      isMirrored: !!payload.isMirrored,
+      effect: payload.effect || null,
+    });
     // Also forward to view windows as live-camera content via Socket.IO
     if (io && (switcherRouteGeneral || switcherRouteSpeaker)) {
       // The view windows (General/Speaker) receive it via their own Socket.IO connection
-      io.emit('switcher:live-frame', { data: payload.data, timestamp: payload.timestamp || Date.now() });
+      const vIo = io.volatile || io;
+      vIo.emit('switcher:live-frame', {
+        data: payload.data,
+        timestamp: payload.timestamp || Date.now(),
+        isMirrored: !!payload.isMirrored,
+        effect: payload.effect || null,
+      });
     }
   });
 
@@ -2330,13 +2503,16 @@ io.on("connection", (socket) => {
       if (typeof ack === 'function') ack({ ok: false, error: 'Pairing required' });
       return;
     }
-    // DEF-03/04: Enforce role separation: current controller cannot opt in as camera source
+    // DEF-03/04: Role separation: if current controller opts in as camera, yield controller role to desktop
     if (switcherControllerSocketId === socket.id) {
-      console.warn(`[Switcher] Camera opt-in rejected for controller ${socket.id}`);
-      if (typeof ack === 'function') {
-        ack({ ok: false, error: "You're currently controlling the switcher — hand off control first to use this device as a camera" });
+      console.log(`[Switcher] Camera opt-in for controller ${socket.id} — yielding controller role to desktop to allow camera mode`);
+      switcherControllerSocketId = null;
+      io.emit('switcher:controller-changed', { controllerSocketId: null });
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) {
+          win.webContents.send("switcher-controller-reclaimed", { reason: "Device switched to camera mode" });
+        }
       }
-      return;
     }
     if (switcherCameraSlots.has(socket.id)) {
       // Already opted in — return current slot
@@ -2511,8 +2687,23 @@ io.on("connection", (socket) => {
       display2Source: switcherDisplay2Source,
       transitionSetting: switcherTransitionSetting,
       activeTransition: switcherActiveTransition,
+      broadcastConfig: liveBroadcastConfig,
     };
     if (typeof ack === 'function') ack(state);
+  });
+
+  // Live Broadcast Studio Config: Overlays, Screen Scaling, Bible Lower Third
+  socket.on("switcher:update-broadcast-config", (payload = {}, ack = () => {}) => {
+    if (!isPaired(socket.id)) {
+      if (typeof ack === 'function') ack({ ok: false, error: 'Pairing required' });
+      return;
+    }
+    updateLiveBroadcastConfig(payload);
+    if (typeof ack === 'function') ack({ ok: true, broadcastConfig: liveBroadcastConfig });
+  });
+
+  socket.on("switcher:get-broadcast-config", (_payload, ack = () => {}) => {
+    if (typeof ack === 'function') ack({ ok: true, broadcastConfig: liveBroadcastConfig });
   });
 
   // WebRTC Continuous Camera Signaling: Offer from camera source -> Desktop
@@ -3240,23 +3431,20 @@ function broadcastCanvasState(state, allowedTargets = null) {
     allowedTargets.includes("general") ||
     allowedTargets.includes("all");
 
-  if (speakerWindow && !speakerWindow.isDestroyed()) {
+  if (speakerWindow) {
     const speakerState = speakerAllowed
       ? currentCanvasState
       : { ...currentCanvasState, contentSlot: { type: "none", data: null } };
-    speakerWindow.webContents.send("canvas-state-update", speakerState);
+    safeWebContentsSend(speakerWindow, "canvas-state-update", speakerState);
   }
-  if (generalWindow && !generalWindow.isDestroyed()) {
+  if (generalWindow) {
     const generalState = generalAllowed
       ? currentCanvasState
       : { ...currentCanvasState, contentSlot: { type: "none", data: null } };
-    generalWindow.webContents.send("canvas-state-update", generalState);
+    safeWebContentsSend(generalWindow, "canvas-state-update", generalState);
   }
-  if (controllerWindow && !controllerWindow.isDestroyed()) {
-    controllerWindow.webContents.send(
-      "canvas-state-update",
-      currentCanvasState,
-    );
+  if (controllerWindow) {
+    safeWebContentsSend(controllerWindow, "canvas-state-update", currentCanvasState);
   }
 
   // FR-4.15: lightweight summary to Mobile Companion
@@ -3426,28 +3614,36 @@ ipcMain.handle("switcher:set-transition-setting-desktop", (_event, setting) => {
       : 'left-to-right',
   };
   broadcastSwitcherState();
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed()) {
-      win.webContents.send("switcher-transition-setting-updated", switcherTransitionSetting);
-    }
-  }
+  broadcastToAllWindows("switcher-transition-setting-updated", switcherTransitionSetting);
   return { ok: true, transitionSetting: switcherTransitionSetting };
+});
+
+// Desktop-initiated live broadcast engine config update (screen scaling, overlays, bible lower-third)
+ipcMain.handle("switcher:update-broadcast-config-desktop", (_event, payload) => {
+  updateLiveBroadcastConfig(payload);
+  return { ok: true, broadcastConfig: liveBroadcastConfig, ...liveBroadcastConfig };
+});
+
+ipcMain.handle("switcher:get-broadcast-config-desktop", () => {
+  return { ok: true, broadcastConfig: liveBroadcastConfig, ...liveBroadcastConfig };
 });
 
 // Live Output frame broadcast from Switcher mixing engine
 ipcMain.on("switcher:send-live-output-frame", (_event, frameData) => {
   if (!frameData) return;
+  const frameString = typeof frameData === "string" ? frameData : (frameData.data || "");
+  const effect = typeof frameData === "object" ? frameData.effect : null;
   // If General Screen is actively shared to Live Output, deliver the composited frame
-  if (switcherRouteGeneral && generalWindow && !generalWindow.isDestroyed()) {
-    generalWindow.webContents.send("switcher-live-output-frame", frameData);
+  if (switcherRouteGeneral && generalWindow) {
+    safeWebContentsSend(generalWindow, "switcher-live-output-frame", frameData); // generalWindow.webContents.send("switcher-live-output-frame", frameData);
   }
   // If Speaker Screen is actively shared to Live Output, deliver the composited frame
-  if (switcherRouteSpeaker && speakerWindow && !speakerWindow.isDestroyed()) {
-    speakerWindow.webContents.send("switcher-live-output-frame", frameData);
+  if (switcherRouteSpeaker && speakerWindow) {
+    safeWebContentsSend(speakerWindow, "switcher-live-output-frame", frameData); // speakerWindow.webContents.send("switcher-live-output-frame", frameData);
   }
   // Deliver over Socket.IO to any remote displays or streaming clients
   if (io) {
-    io.emit("switcher:live-frame", { data: frameData, timestamp: Date.now() });
+    io.emit("switcher:live-frame", { data: frameString, timestamp: Date.now(), effect });
   }
 });
 
@@ -3632,7 +3828,9 @@ function createWindows() {
     x: primaryDisplay.bounds.x,
     y: primaryDisplay.bounds.y,
     title: "OCS Controller",
-    backgroundColor: "white",
+    backgroundColor: "#0B0814",
+    darkTheme: true,
+    autoHideMenuBar: true,
     show: false,
     webPreferences: {
       nodeIntegration: false,
@@ -3640,6 +3838,17 @@ function createWindows() {
       backgroundThrottling: false,
       preload: path.join(__dirname, "preload.js"),
     },
+  });
+
+  // Dev / Debug Listeners
+  controllerWindow.webContents.on(
+    "console-message",
+    (e, level, msg, line, src) => {
+      console.log(`[Controller JS (L${line})]`, msg);
+    },
+  );
+  controllerWindow.webContents.on("did-fail-load", (e, code, desc) => {
+    console.error("[Controller did-fail-load]", code, desc);
   });
 
   // Dev / Debug Listeners
@@ -3666,6 +3875,9 @@ function createWindows() {
   speakerWindow.loadFile("view.html", { search: "mode=speaker" });
   generalWindow.loadFile("view.html", { search: "mode=general" });
   controllerWindow.loadFile("controller.html");
+  controllerWindow.webContents.on("did-finish-load", () => {
+    recoveryManager.dispatchToWindow(controllerWindow);
+  });
 
   // Initialize NDI and Broadcast Video Engine (FR-4.42: always default off on launch/login; manual user start required)
   ndiEngine.init({
@@ -3677,9 +3889,7 @@ function createWindows() {
   });
 
   ndiEngine.on("stats", (status) => {
-    if (controllerWindow && !controllerWindow.isDestroyed()) {
-      controllerWindow.webContents.send("ndi-status-update", status);
-    }
+    safeWebContentsSend(controllerWindow, "ndi-status-update", status);
   });
 
   // Master Unthrottled Auth & Guest Session State Broadcaster
@@ -3689,9 +3899,7 @@ function createWindows() {
 
   // Fast UI pulse for sub-second guest counters
   setInterval(() => {
-    if (controllerWindow && !controllerWindow.isDestroyed()) {
-      controllerWindow.webContents.send("auth:status", authService.getAuthStatus());
-    }
+    safeWebContentsSend(controllerWindow, "auth:status", authService.getAuthStatus());
   }, 3000);
 
   // Periodic Silent Reload of Days Left (Offline Wall-Clock + Background Sync)
@@ -3712,13 +3920,10 @@ function createWindows() {
     latestOverlayTimer = value;
     if (io) io.emit("overlay-timer", value);
     // Timer -> Speaker View (Always)
-    if (!speakerWindow.isDestroyed())
-      speakerWindow.webContents.send("set-timer", value);
+    safeWebContentsSend(speakerWindow, "set-timer", value);
     // Timer -> General View (Always - view.js now checks 'mode' and 'isEventMode' to decide whether to show it)
-    if (!generalWindow.isDestroyed())
-      generalWindow.webContents.send("set-timer", value);
-    if (!controllerWindow.isDestroyed())
-      controllerWindow.webContents.send("set-timer", value);
+    safeWebContentsSend(generalWindow, "set-timer", value);
+    safeWebContentsSend(controllerWindow, "set-timer", value);
     const t =
       typeof value === "object" && value != null
         ? Number(value.time)
@@ -3770,6 +3975,21 @@ function createWindows() {
     latestOverlayContent = value;
     if (io) io.emit("overlay-content", value);
 
+    // Auto-trigger Bible scripture lower third on Live screen if enabled
+    if (value?.type === "bible" && liveBroadcastConfig.bibleLowerThird?.enabled && liveBroadcastConfig.bibleLowerThird?.autoTrigger) {
+      const bData = value.data || {};
+      const ref = (bData.title || (bData.book ? `${bData.book} ${bData.chapter || ''}:${bData.verse || ''}` : '') || "").trim();
+      const body = (bData.body || "").trim();
+      const version = (bData.version || bData.translation || "KJV").toUpperCase();
+      if (ref || body) {
+        liveBroadcastConfig.bibleLowerThird.currentRef = ref;
+        liveBroadcastConfig.bibleLowerThird.currentText = body;
+        liveBroadcastConfig.bibleLowerThird.version = version;
+        liveBroadcastConfig.bibleLowerThird.isShowing = true;
+        broadcastLiveConfig();
+      }
+    }
+
     const summary =
       value == null
         ? "null (black)"
@@ -3815,15 +4035,15 @@ function createWindows() {
 
     // If General Screen is actively shared to Live Output, preserve the live-output slot on air
     if (switcherRouteGeneral) {
-      currentCanvasState.contentSlot = { type: 'live-output', data: { title: 'Live Switcher Output' } };
+      currentCanvasState.contentSlot = { type: 'live-output', data: { title: 'Live Output' } };
     }
 
     broadcastCanvasState(currentCanvasState, allowedTargets);
 
     // Dispatch to gated windows (do not interrupt screen if actively sharing live output)
-    if (speakerOk && !switcherRouteSpeaker) speakerWindow.webContents.send("set-content", value);
-    if (generalOk && !switcherRouteGeneral) generalWindow.webContents.send("set-content", value);
-    if (controllerOk) controllerWindow.webContents.send("set-content", value);
+    if (speakerOk && !switcherRouteSpeaker) safeWebContentsSend(speakerWindow, "set-content", value);
+    if (generalOk && !switcherRouteGeneral) safeWebContentsSend(generalWindow, "set-content", value);
+    if (controllerOk) safeWebContentsSend(controllerWindow, "set-content", value);
 
     // Tier 2 cleanup bias: record displayed scripture refs during active session
     if (
@@ -3853,18 +4073,13 @@ function createWindows() {
 
     // FR-4.9 fix: respect target array just like activate_set_content
     const allowedTargets = Array.isArray(value?.target) ? value.target : null;
-    if (
-      !speakerWindow.isDestroyed() &&
-      (allowedTargets === null || allowedTargets.includes("speaker"))
-    )
-      speakerWindow.webContents.send("set-style", latestOverlayStyle);
-    if (
-      !generalWindow.isDestroyed() &&
-      (allowedTargets === null || allowedTargets.includes("general"))
-    )
-      generalWindow.webContents.send("set-style", latestOverlayStyle);
-    if (!controllerWindow.isDestroyed())
-      controllerWindow.webContents.send("set-style", latestOverlayStyle);
+    if (allowedTargets === null || allowedTargets.includes("speaker")) {
+      safeWebContentsSend(speakerWindow, "set-style", latestOverlayStyle);
+    }
+    if (allowedTargets === null || allowedTargets.includes("general")) {
+      safeWebContentsSend(generalWindow, "set-style", latestOverlayStyle);
+    }
+    safeWebContentsSend(controllerWindow, "set-style", latestOverlayStyle);
   });
 
   ipcMain.handle("presentation-get-style", () => {
@@ -3977,53 +4192,65 @@ function startDisplayMirrorEngine() {
     if (!controllerWindow || controllerWindow.isDestroyed()) return;
 
     // General View window raster capture (High Definition 1280x720 for crisp live output)
-    if (generalWindow && !generalWindow.isDestroyed() && !isCapturingGeneral) {
-      isCapturingGeneral = true;
-      generalWindow.webContents
-        .capturePage()
-        .then((img) => {
-          if (img && !img.isEmpty()) {
-            const thumb = img.resize({ width: 1280, height: 720, quality: "better" });
-            const payload = {
-              destination: "general",
-              data: "data:image/jpeg;base64," + thumb.toJPEG(85).toString("base64"),
-            };
-            for (const win of BrowserWindow.getAllWindows()) {
-              if (!win.isDestroyed()) {
-                win.webContents.send("display-mirror-frame", payload);
-              }
-            }
+    if (generalWindow && !generalWindow.isDestroyed()) {
+      const wc = generalWindow.webContents;
+      if (wc && !wc.isDestroyed() && !isCapturingGeneral) {
+        if (typeof wc.isLoadingMainFrame === "function" && wc.isLoadingMainFrame()) {
+          // Window is navigating or reloading; skip frame
+        } else {
+          isCapturingGeneral = true;
+          try {
+            wc.capturePage()
+              .then((img) => {
+                if (img && !img.isEmpty()) {
+                  const thumb = img.resize({ width: 1280, height: 720, quality: "better" });
+                  const payload = {
+                    destination: "general",
+                    data: "data:image/jpeg;base64," + thumb.toJPEG(85).toString("base64"),
+                  };
+                  broadcastToAllWindows("display-mirror-frame", payload); // win.webContents.send("display-mirror-frame", payload);
+                }
+              })
+              .catch(() => {})
+              .finally(() => {
+                isCapturingGeneral = false;
+              });
+          } catch (_) {
+            isCapturingGeneral = false;
           }
-        })
-        .catch(() => {})
-        .finally(() => {
-          isCapturingGeneral = false;
-        });
+        }
+      }
     }
 
     // Speaker View window raster capture (High Definition 1280x720 for crisp live output)
-    if (speakerWindow && !speakerWindow.isDestroyed() && !isCapturingSpeaker) {
-      isCapturingSpeaker = true;
-      speakerWindow.webContents
-        .capturePage()
-        .then((img) => {
-          if (img && !img.isEmpty()) {
-            const thumb = img.resize({ width: 1280, height: 720, quality: "better" });
-            const payload = {
-              destination: "speaker",
-              data: "data:image/jpeg;base64," + thumb.toJPEG(85).toString("base64"),
-            };
-            for (const win of BrowserWindow.getAllWindows()) {
-              if (!win.isDestroyed()) {
-                win.webContents.send("display-mirror-frame", payload);
-              }
-            }
+    if (speakerWindow && !speakerWindow.isDestroyed()) {
+      const wc = speakerWindow.webContents;
+      if (wc && !wc.isDestroyed() && !isCapturingSpeaker) {
+        if (typeof wc.isLoadingMainFrame === "function" && wc.isLoadingMainFrame()) {
+          // Window is navigating or reloading; skip frame
+        } else {
+          isCapturingSpeaker = true;
+          try {
+            wc.capturePage()
+              .then((img) => {
+                if (img && !img.isEmpty()) {
+                  const thumb = img.resize({ width: 1280, height: 720, quality: "better" });
+                  const payload = {
+                    destination: "speaker",
+                    data: "data:image/jpeg;base64," + thumb.toJPEG(85).toString("base64"),
+                  };
+                  broadcastToAllWindows("display-mirror-frame", payload); // win.webContents.send("display-mirror-frame", payload);
+                }
+              })
+              .catch(() => {})
+              .finally(() => {
+                isCapturingSpeaker = false;
+              });
+          } catch (_) {
+            isCapturingSpeaker = false;
           }
-        })
-        .catch(() => {})
-        .finally(() => {
-          isCapturingSpeaker = false;
-        });
+        }
+      }
     }
   }, 300);
 }
@@ -4182,6 +4409,128 @@ function broadcastSessionProgress(progress) {
 
 ipcMain.on("timer-lifecycle", (_e, event) => {
   emitTimerLifecycle(event || {});
+});
+
+ipcMain.handle("session:record-event", async (_e, { type, payload }) => {
+  try {
+    return await recoveryManager.recordStateChange(type, payload);
+  } catch (err) {
+    console.error("[IPC session:record-event] error:", err.message);
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle("session:save-snapshot", async (_e, state) => {
+  try {
+    return await recoveryManager.saveSnapshot(state);
+  } catch (err) {
+    console.error("[IPC session:save-snapshot] error:", err.message);
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle("session:get-recovery-state", async () => {
+  return recoveryManager.recoveryReport;
+});
+
+// Program Video Canvas Recorder (P0-05)
+ipcMain.handle("recorder:start", async (_e, options) => {
+  try {
+    return await programRecorder.start(options);
+  } catch (err) {
+    console.error("[IPC recorder:start] error:", err.message);
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle("recorder:stop", async () => {
+  try {
+    return await programRecorder.stop();
+  } catch (err) {
+    console.error("[IPC recorder:stop] error:", err.message);
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle("recorder:status", () => {
+  return programRecorder.getStatus();
+});
+
+ipcMain.on("recorder:push-video-frame", (_e, buffer) => {
+  if (buffer) {
+    programRecorder.writeVideoFrame(Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer));
+  }
+});
+
+ipcMain.on("recorder:push-audio-chunk", (_e, buffer) => {
+  if (buffer) {
+    programRecorder.writeAudioChunk(Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer));
+  }
+});
+
+// Broadcast Audio Bus & Limiter (P0-02)
+ipcMain.handle("audio-bus:set-channel-gain", (_e, { ch, gain }) => {
+  broadcastAudioBus.setChannelGain(ch, gain);
+  return { ok: true };
+});
+
+ipcMain.handle("audio-bus:set-channel-mute", (_e, { ch, muted }) => {
+  broadcastAudioBus.setChannelMute(ch, muted);
+  return { ok: true };
+});
+
+ipcMain.handle("audio-bus:set-channel-solo", (_e, { ch, solo }) => {
+  broadcastAudioBus.setChannelSolo(ch, solo);
+  return { ok: true };
+});
+
+ipcMain.handle("audio-bus:set-master-gain", (_e, gain) => {
+  broadcastAudioBus.setMasterGain(gain);
+  return { ok: true };
+});
+
+ipcMain.handle("audio-bus:set-delay-ms", (_e, ms) => {
+  broadcastAudioBus.setDelayMs(ms);
+  return { ok: true };
+});
+
+ipcMain.handle("audio-bus:get-meters", () => {
+  return broadcastAudioBus.getMeterData();
+});
+
+// Broadcast RTMP/SRT Supervisor (P0-01)
+ipcMain.handle("broadcast:start", async (_e, config) => {
+  try {
+    return await broadcastSupervisor.start(config);
+  } catch (err) {
+    console.error("[IPC broadcast:start] error:", err.message);
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle("broadcast:stop", async () => {
+  try {
+    return await broadcastSupervisor.stop();
+  } catch (err) {
+    console.error("[IPC broadcast:stop] error:", err.message);
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle("broadcast:status", () => {
+  return broadcastSupervisor.getStatus();
+});
+
+ipcMain.on("broadcast:push-video-frame", (_e, buffer) => {
+  if (buffer) {
+    broadcastSupervisor.writeVideoFrame(Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer));
+  }
+});
+
+ipcMain.on("broadcast:push-audio-chunk", (_e, buffer) => {
+  if (buffer) {
+    broadcastSupervisor.writeAudioChunk(Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer));
+  }
 });
 
 ipcMain.handle("session-list", async () => {
@@ -4582,6 +4931,13 @@ app.whenReady().then(async () => {
   // Show splash window immediately on startup (FR-13.2)
   showSplashWindow();
 
+  try {
+    const journalDir = path.join(app.getPath("userData"), "journal");
+    await recoveryManager.initialize(journalDir);
+  } catch (err) {
+    console.error("[RecoveryManager] Startup init error:", err.message);
+  }
+
   // GRANT MEDIA ACCESS (Camera & Microphone) AUTOMATICALLY
   session.defaultSession.setPermissionRequestHandler(
     (webContents, permission, callback) => {
@@ -4764,6 +5120,20 @@ app.on("before-quit", async () => {
     if (sessionArchive && sessionArchive.active) {
       await sessionArchive.finalizeSession({ incomplete: true });
     }
+  } catch (_) {}
+  try {
+    if (programRecorder && programRecorder.isRecording) {
+      await programRecorder.stop();
+    }
+  } catch (_) {}
+  try {
+    if (broadcastSupervisor && broadcastSupervisor.isStreaming) {
+      await broadcastSupervisor.stop();
+    }
+  } catch (_) {}
+  try {
+    await recoveryManager.markCleanExit();
+    await recoveryManager.close();
   } catch (_) {}
   sleepPrevention.shutdown();
   asrEngine.shutdown();

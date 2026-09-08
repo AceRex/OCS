@@ -42,24 +42,20 @@ test('socketStore.ts implements sendSwitcherCameraFrame emitting switcher:camera
   assert(socketStoreCode.includes("socket.emit('switcher:camera-frame'"), 'sendSwitcherCameraFrame should emit switcher:camera-frame');
 });
 
-// 2. Check live-switcher.tsx Native WebRTC Camera Integration
-console.log('\n[2. Mobile live-switcher.tsx: Native WebRTC Camera]');
+// 2. Check live-switcher.tsx Teleprompter-Style Native Camera Integration
+console.log('\n[2. Mobile live-switcher.tsx: Teleprompter-Style Native Camera]');
 const mobileSwitcherCode = fs.readFileSync(path.join(__dirname, '../ocs-mobile/app/live-switcher.tsx'), 'utf8');
 
-test('live-switcher.tsx integrates native react-native-webrtc (RTCView, mediaDevices, RTCPeerConnection)', () => {
-  assert(mobileSwitcherCode.includes("react-native-webrtc"), 'Must import from react-native-webrtc');
-  assert(mobileSwitcherCode.includes("<RTCView"), 'Must render native RTCView viewfinder component');
-  assert(mobileSwitcherCode.includes("mediaDevices.getUserMedia"), 'Must capture camera video via mediaDevices.getUserMedia');
-  assert(mobileSwitcherCode.includes("new RTCPeerConnection"), 'Must create native RTCPeerConnection');
+test('live-switcher.tsx integrates expo-camera CameraView viewfinder with adaptive frame pump', () => {
+  assert(mobileSwitcherCode.includes("expo-camera"), 'Must import from expo-camera');
+  assert(mobileSwitcherCode.includes("<CameraView"), 'Must render native CameraView viewfinder component');
+  assert(mobileSwitcherCode.includes("takePictureAsync"), 'Must use takePictureAsync cadence engine for low-latency streaming');
+  assert(mobileSwitcherCode.includes("pictureSize"), 'Must support pictureSize for low-overhead sensor capture');
 });
 
 test('live-switcher.tsx eliminates WebBrowser.openBrowserAsync and /switcher-camera external route', () => {
   assert(!mobileSwitcherCode.includes("WebBrowser.openBrowserAsync"), 'WebBrowser.openBrowserAsync must NOT be used');
   assert(!mobileSwitcherCode.includes("/switcher-camera"), '/switcher-camera route must NOT be referenced');
-});
-
-test('live-switcher.tsx does NOT use takePictureAsync polling for continuous video', () => {
-  assert(!mobileSwitcherCode.includes("takePictureAsync"), 'takePictureAsync must NOT be used for camera streaming (violates continuous WebRTC)');
 });
 
 test('live-switcher.tsx filters out viewing device own camera from multiview grid (DEF-07)', () => {

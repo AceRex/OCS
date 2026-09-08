@@ -45,6 +45,8 @@ export default function Dashboard() {
     isConnected,
     isPaired,
     isAdmin,
+    deviceRole,
+    isSwitcherController,
     deviceName,
     setDeviceName,
     serverIp,
@@ -53,6 +55,7 @@ export default function Dashboard() {
     reconnectLastSession,
     disconnect,
   } = useSocketStore();
+  const isStageManager = isAdmin || deviceRole === "stageManager" || deviceRole === "admin";
   const { user, isAuthenticated, guestRemainingMinutes, logout } = useAuthStore();
 
   const [renameModalVisible, setRenameModalVisible] = useState(false);
@@ -121,14 +124,6 @@ export default function Dashboard() {
       description: "Slides & Content",
     },
     {
-      id: "stage-control",
-      label: "Stage Master",
-      icon: Broadcast,
-      gradient: isAdmin ? ["#8A2387", "#E94057", "#F27121"] : ["#2a2838", "#1c1b26"],
-      description: isAdmin ? "Admin Live Control" : "Admin Locked",
-      adminOnly: true,
-    },
-    {
       id: "intercom",
       label: "Intercom",
       icon: Microphone,
@@ -137,10 +132,10 @@ export default function Dashboard() {
     },
     {
       id: "live-switcher",
-      label: "Live Switcher",
+      label: "Live",
       icon: VideoCamera,
       gradient: ["#e52d27", "#b31217"],
-      description: "Multi-Camera",
+      description: isSwitcherController ? "Broadcast Studio & Mixer" : "Broadcast Studio & Camera",
     },
   ];
 
@@ -470,7 +465,7 @@ export default function Dashboard() {
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                       style={{
-                        borderRadius: 10,
+                        borderRadius: 12,
                         padding: 14,
                         height: 145,
                         justifyContent: "space-between",
@@ -484,7 +479,7 @@ export default function Dashboard() {
                           style={{
                             width: 38,
                             height: 38,
-                            borderRadius: 8,
+                            borderRadius: 12,
                             backgroundColor: "rgba(255, 255, 255, 0.2)",
                             alignItems: "center",
                             justifyContent: "center",

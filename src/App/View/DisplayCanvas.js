@@ -120,6 +120,8 @@ export default function DisplayCanvas({
   const liveCameraAnimRef = useRef(null);
   const [hasLiveFrame, setHasLiveFrame] = useState(false);
   const [isCameraMirrored, setIsCameraMirrored] = useState(false);
+  const liveCameraEffectRef = useRef(null);
+  const [liveCameraEffect, setLiveCameraEffect] = useState(null);
 
   // ── Live-camera & Live-output single source of truth render loop ─────
   useEffect(() => {
@@ -148,7 +150,20 @@ export default function DisplayCanvas({
               canvas.width = img.naturalWidth;
               canvas.height = img.naturalHeight;
             }
+            const eff = liveCameraEffectRef.current;
+            if (eff && eff.filter && eff.filter !== "none") {
+              ctx.filter = eff.filter;
+            } else {
+              ctx.filter = "none";
+            }
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            if (eff && eff.overlayColor && eff.overlayColor !== "transparent") {
+              ctx.save();
+              ctx.filter = "none";
+              ctx.fillStyle = eff.overlayColor;
+              ctx.fillRect(0, 0, canvas.width, canvas.height);
+              ctx.restore();
+            }
             liveCameraIsDirtyRef.current = false;
           }
         }
@@ -157,10 +172,14 @@ export default function DisplayCanvas({
     };
     liveCameraAnimRef.current = requestAnimationFrame(renderLoop);
 
-    const handleFrame = (fromId, data, isMirrored) => {
+    const handleFrame = (fromId, data, isMirrored, effect) => {
       if (!data) return;
       if (isMirrored !== undefined) {
         setIsCameraMirrored(!!isMirrored);
+      }
+      if (effect) {
+        liveCameraEffectRef.current = effect;
+        setLiveCameraEffect(effect);
       }
       const key = fromId || 'live-output';
       const img = _liveCameraImgCache[key] || new Image();
@@ -179,9 +198,9 @@ export default function DisplayCanvas({
       cleanupLiveOutput = window.electron.Switcher.onLiveOutputFrame((payload) => {
         const frameData = payload?.data || payload;
         if (frameData) {
-          handleFrame('live-output', frameData, payload?.isMirrored);
+          handleFrame('live-output', frameData, payload?.isMirrored, payload?.effect);
           if (deviceId) {
-            handleFrame(deviceId, frameData, payload?.isMirrored);
+            handleFrame(deviceId, frameData, payload?.isMirrored, payload?.effect);
           }
         }
       });
@@ -788,9 +807,16 @@ export default function DisplayCanvas({
               className="w-full h-full object-cover absolute inset-0"
               style={{
                 display: 'block',
-                transform: (data?.isMirrored || isCameraMirrored) ? 'scaleX(-1)' : 'none',
+                transform: (!isLiveOutput && (data?.isMirrored || isCameraMirrored)) ? 'scaleX(-1)' : 'none',
+                filter: (liveCameraEffect?.filter && liveCameraEffect.filter !== 'none') ? liveCameraEffect.filter : 'none',
               }}
             />
+            {liveCameraEffect?.overlayColor && liveCameraEffect.overlayColor !== 'transparent' && (
+              <div
+                className="absolute inset-0 pointer-events-none z-[1]"
+                style={{ backgroundColor: liveCameraEffect.overlayColor }}
+              />
+            )}
             {/* Standby HUD overlay when no live frames have arrived yet */}
             {!hasLiveFrame && (
               <div className="relative z-10 flex flex-col items-center justify-center gap-3 p-6 rounded-[12px] bg-white/[0.04] border border-white/10 backdrop-blur-md max-w-sm text-center select-none pointer-events-none shadow-2xl">
@@ -801,11 +827,11 @@ export default function DisplayCanvas({
                 </div>
                 <div>
                   <h3 className="text-white font-bold text-sm tracking-wide">
-                    {isLiveOutput ? 'Live Switcher Output' : deviceId === 'speaker' ? 'Speaker Screen Channel' : 'Live Camera Channel'}
+                    {isLiveOutput ? 'Live Output' : deviceId === 'speaker' ? 'Speaker Screen Channel' : 'Live Camera Channel'}
                   </h3>
                   <p className="text-white/40 text-xs mt-1">
                     {isLiveOutput
-                      ? 'Displaying live video stream from switcher...'
+                      ? 'Displaying live broadcast stream...'
                       : deviceId === 'speaker'
                       ? 'Mirroring confidence monitor output'
                       : 'Awaiting video stream from mobile companion...'}

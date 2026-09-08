@@ -13,6 +13,7 @@ files:
   - "*.html"
   - "assets/**/*"
   - "src/main/**/*"
+  - "src/App/controller/broadcastAudioBus.js"
   - "src/App/utils/**/*"
   - "src/Bible/**/*"
   - "dist/**/*"
