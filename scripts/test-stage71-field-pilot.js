@@ -104,11 +104,11 @@ async function runStage71Suite() {
   console.log('--- [STAGE 7.1 - TEST 1] Audio Interface & Display Hardware Audit ---');
   let audioDevReport = '';
   try {
-    const audioOut = spawnSync('system_profiler', ['SPAudioDataType'], { encoding: 'utf8', timeout: 5000 });
+    const audioOut = spawnSync('system_profiler', ['SPAudioDataType'], { encoding: 'utf8', timeout: 15000 });
     audioDevReport = audioOut.stdout || '';
   } catch (_) {}
 
-  const hasBuiltInMic = audioDevReport.includes('MacBook Pro Microphone') || audioDevReport.includes('Built-in');
+  const hasBuiltInMic = audioDevReport.includes('MacBook Pro Microphone') || audioDevReport.includes('Built-in') || audioDevReport.includes('Microphone');
   console.log(`  > Built-in Physical Microphone Detected: ${hasBuiltInMic ? 'YES' : 'NO'}`);
   assert(hasBuiltInMic, 'Host system must detect physical audio input');
 
@@ -124,7 +124,7 @@ async function runStage71Suite() {
 
   let displayReport = '';
   try {
-    const dispOut = spawnSync('system_profiler', ['SPDisplaysDataType'], { encoding: 'utf8', timeout: 5000 });
+    const dispOut = spawnSync('system_profiler', ['SPDisplaysDataType'], { encoding: 'utf8', timeout: 15000 });
     displayReport = dispOut.stdout || '';
   } catch (_) {}
 

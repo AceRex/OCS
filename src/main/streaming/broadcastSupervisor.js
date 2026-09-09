@@ -15,6 +15,7 @@
 const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
+const { DestinationWorker, DESTINATION_STATES } = require('./destinationWorker');
 
 /**
  * Broadcast lifecycle states.
@@ -56,6 +57,7 @@ class BroadcastSupervisor {
     this._connectTimeoutTimer = null;
     this._liveTimer        = null;
     this._isIntentionalStop = false;
+    this._isBackpressured  = false;
 
     // Real-time telemetry
     this.stats = {
@@ -71,7 +73,8 @@ class BroadcastSupervisor {
     this._ffmpegPath    = null;
     this._cachedEncoder = null;
 
-    // Multi-destination streaming maps
+    // Multi-destination streaming maps & workers
+    this._workers        = new Map();
     this._multiProcesses = new Map();
     this._multiStats     = new Map();
     this._multiConfig    = new Map();
@@ -118,7 +121,7 @@ class BroadcastSupervisor {
       for (const candidate of systemCandidates) {
         if (fs.existsSync(candidate)) {
           try {
-            const res = spawnSync(candidate, ['-buildconf'], { encoding: 'utf8', timeout: 2000 });
+            const res = spawnSync(candidate, ['-buildconf'], { encoding: 'utf8', timeout: 5000 });
             const conf = (res.stdout || '') + (res.stderr || '');
             if (conf.includes('--enable-openssl') || conf.includes('--enable-gnutls')) {
               console.log(`[BroadcastSupervisor] Using system FFmpeg with TLS: ${candidate}`);
@@ -157,7 +160,7 @@ class BroadcastSupervisor {
 
     const ffmpegBin = this.getFfmpegPath();
     try {
-      const res = spawnSync(ffmpegBin, ['-encoders'], { encoding: 'utf8', timeout: 3000 });
+      const res = spawnSync(ffmpegBin, ['-encoders'], { encoding: 'utf8', timeout: 5000 });
       const out = res.stdout || '';
 
       if (process.platform === 'darwin' && out.includes('h264_videotoolbox')) {
@@ -270,6 +273,7 @@ class BroadcastSupervisor {
       if (encoder === 'libx264') {
         args.push(
           '-preset', 'veryfast',
+          '-tune', 'zerolatency',
           '-b:v', `${c.videoBitrateKbps}k`,
           '-maxrate', `${c.videoBitrateKbps}k`,
           '-bufsize', `${c.videoBitrateKbps * 2}k`,
@@ -379,6 +383,14 @@ class BroadcastSupervisor {
               resolve({ ok: true, streamUrl: c.streamUrl, state: this.state });
             }
           }
+        });
+
+        if (this.ffmpegProcess.stdin && this.ffmpegProcess.stdin._writableState) {
+          const expectedFrameBytes = (c.width || 1280) * (c.height || 720) * 4;
+          this.ffmpegProcess.stdin._writableState.highWaterMark = Math.max(16 * 1024 * 1024, expectedFrameBytes * 2);
+        }
+        this.ffmpegProcess.stdin.on('drain', () => {
+          this._isBackpressured = false;
         });
 
         this.ffmpegProcess.stdin.on('error', (err) => {
@@ -513,11 +525,25 @@ class BroadcastSupervisor {
    * Writes a composite video frame into the stream pipeline.
    */
   writeVideoFrame(buffer) {
-    if (!this.isStreaming || !this.ffmpegProcess || !this.ffmpegProcess.stdin) {
+    if (!this.isStreaming || !this.ffmpegProcess || !this.ffmpegProcess.stdin || this.ffmpegProcess.killed) {
+      return false;
+    }
+    const cfg = this.streamConfig || this.config;
+    const expectedFrameBytes = (cfg?.width || 1280) * (cfg?.height || 720) * 4;
+    if (buffer.length !== expectedFrameBytes) {
+      this.stats.droppedFrames = (this.stats.droppedFrames || 0) + 1;
+      return false;
+    }
+    if (this._isBackpressured) {
+      this.stats.droppedFrames = (this.stats.droppedFrames || 0) + 1;
       return false;
     }
     try {
-      return this.ffmpegProcess.stdin.write(buffer);
+      const ok = this.ffmpegProcess.stdin.write(buffer);
+      if (!ok) {
+        this._isBackpressured = true;
+      }
+      return true;
     } catch (_) {
       return false;
     }
@@ -527,7 +553,7 @@ class BroadcastSupervisor {
    * Writes mixed broadcast audio PCM into the stream pipeline.
    */
   writeAudioChunk(buffer) {
-    if (!this.isStreaming || !this.ffmpegProcess || !this.ffmpegProcess.stdio || !this.ffmpegProcess.stdio[3]) {
+    if (!this.isStreaming || !this.ffmpegProcess || !this.ffmpegProcess.stdio || !this.ffmpegProcess.stdio[3] || this.ffmpegProcess.killed) {
       return false;
     }
     try {
@@ -549,20 +575,24 @@ class BroadcastSupervisor {
 
     if (!this.ffmpegProcess) {
       this.isStreaming = false;
+      this.state = BROADCAST_STATES.IDLE;
       this.stats.health = 'offline';
       return Promise.resolve({ ok: true, stopped: true });
     }
 
-    const proc = this.ffmpegProcess;
+    this.state = BROADCAST_STATES.STOPPING;
+
     return new Promise((resolve) => {
-      const timer = setTimeout(() => {
-        try { proc.kill('SIGTERM'); } catch (_) {}
-      }, 4000);
+      const proc = this.ffmpegProcess;
+      const forceKillTimer = setTimeout(() => {
+        try { proc.kill('SIGKILL'); } catch (_) {}
+      }, 3000);
 
       proc.once('exit', () => {
-        clearTimeout(timer);
-        this.isStreaming = false;
+        clearTimeout(forceKillTimer);
         this.ffmpegProcess = null;
+        this.isStreaming = false;
+        this.state = BROADCAST_STATES.STOPPED;
         this.stats.health = 'offline';
         console.log('[BroadcastSupervisor] Broadcast stopped cleanly');
         resolve({ ok: true, stopped: true });
@@ -584,6 +614,10 @@ class BroadcastSupervisor {
     const uptimeSec = this.isStreaming ? Math.round((Date.now() - this.startTime) / 1000) : 0;
     const rawUrl = this.streamConfig ? this.streamConfig.streamUrl : null;
     const sanitizedUrl = rawUrl ? this.sanitizeEndpoint(rawUrl) : null;
+    const isTransmitting = (this.state === BROADCAST_STATES.LIVE || this.state === BROADCAST_STATES.TRANSMITTING) &&
+                           this.stats.framesSent > 0 &&
+                           this.stats.fps > 0 &&
+                           this.stats.bitrateKbps > 0;
     return {
       isStreaming: this.isStreaming,
       state: this.state,
@@ -594,10 +628,8 @@ class BroadcastSupervisor {
       stats: {
         ...this.stats,
         // Expose null for unconfirmed metrics instead of misleading 0
-        fps: this.state === BROADCAST_STATES.LIVE || this.state === BROADCAST_STATES.TRANSMITTING
-          ? this.stats.fps : null,
-        bitrateKbps: this.state === BROADCAST_STATES.LIVE || this.state === BROADCAST_STATES.TRANSMITTING
-          ? this.stats.bitrateKbps : null,
+        fps: isTransmitting ? this.stats.fps : null,
+        bitrateKbps: isTransmitting ? this.stats.bitrateKbps : null,
       },
       encoder: this._cachedEncoder || 'unknown',
     };
@@ -621,7 +653,8 @@ class BroadcastSupervisor {
       return { ok: false, error: 'destinations array is required' };
     }
 
-    // Initialize per-destination tracking maps if not present
+    // Initialize per-destination tracking maps and workers
+    if (!this._workers) this._workers = new Map();
     if (!this._multiProcesses) this._multiProcesses = new Map();
     if (!this._multiStats) this._multiStats = new Map();
     if (!this._multiConfig) this._multiConfig = new Map();
@@ -637,35 +670,36 @@ class BroadcastSupervisor {
         continue;
       }
 
-      // Stop any existing process for this id before restarting
+      // Stop any existing process/worker for this id before restarting
       await this._stopDestination(dest.id);
 
-      const c = {
+      const workerConfig = {
+        id: dest.id,
+        label: dest.label || dest.id,
+        streamUrl: dest.streamUrl,
+        videoBitrateKbps: dest.videoBitrateKbps || baseConfig.videoBitrateKbps || 4500,
+        audioBitrateKbps: dest.audioBitrateKbps || baseConfig.audioBitrateKbps || 192,
         width: baseConfig.width || 1280,
         height: baseConfig.height || 720,
         fps: baseConfig.fps || 30,
-        videoBitrateKbps: dest.videoBitrateKbps || baseConfig.videoBitrateKbps || 4500,
-        audioBitrateKbps: dest.audioBitrateKbps || baseConfig.audioBitrateKbps || 192,
         sampleRate: baseConfig.sampleRate || 48000,
         channels: baseConfig.channels || 2,
         withAudio: baseConfig.withAudio !== false,
-        streamUrl: dest.streamUrl,
-        id: dest.id,
-        label: dest.label || dest.id,
+        ffmpegBin,
+        encoder,
       };
-      this._multiConfig.set(dest.id, c);
-      this._multiStats.set(dest.id, {
-        fps: null, bitrateKbps: null, framesSent: 0, droppedFrames: 0,
-        speedFactor: 1.0, health: 'connecting', reconnects: 0,
-        isStreaming: false, uptimeSec: 0, startTime: Date.now(),
-        state: BROADCAST_STATES.CONNECTING,
-        _connectTimer: null,
-        _liveTimer: null,
-      });
+
+      const worker = new DestinationWorker(workerConfig);
+      this._workers.set(dest.id, worker);
+      this._multiConfig.set(dest.id, workerConfig);
 
       try {
-        const result = await this._spawnDestinationProcess(dest.id, c, encoder, ffmpegBin);
-        results.push({ id: dest.id, ok: result.ok });
+        const result = await worker.start();
+        if (worker.proc) {
+          this._multiProcesses.set(dest.id, worker.proc);
+        }
+        this._multiStats.set(dest.id, worker.getStatus());
+        results.push({ id: dest.id, ok: result.ok, error: result.error });
       } catch (err) {
         console.error(`[BroadcastSupervisor] Failed to start destination "${dest.id}":`, err.message);
         results.push({ id: dest.id, ok: false, error: err.message });
@@ -893,14 +927,25 @@ class BroadcastSupervisor {
    * Stops a single destination process.
    */
   async _stopDestination(id) {
+    if (this._workers && this._workers.has(id)) {
+      const worker = this._workers.get(id);
+      this._workers.delete(id);
+      if (this._multiProcesses) this._multiProcesses.delete(id);
+      if (this._multiConfig) this._multiConfig.delete(id);
+      if (this._multiReconnect) this._multiReconnect.set(id, 99); // prevent reconnect
+      try {
+        await worker.stop();
+      } catch (_) {}
+      return;
+    }
     const proc = this._multiProcesses ? this._multiProcesses.get(id) : null;
-    if (!proc) return;
-    this._multiProcesses.delete(id);
+    if (this._multiProcesses) this._multiProcesses.delete(id);
     if (this._multiConfig) this._multiConfig.delete(id);
     if (this._multiReconnect) this._multiReconnect.set(id, 99); // prevent reconnect
+    if (!proc || proc.exitCode !== null) return;
 
     return new Promise((resolve) => {
-      const timer = setTimeout(() => { try { proc.kill('SIGTERM'); } catch (_) {} }, 4000);
+      const timer = setTimeout(() => { try { proc.kill('SIGTERM'); } catch (_) {} resolve(); }, 2000);
       proc.once('exit', () => {
         clearTimeout(timer);
         const s = this._multiStats ? this._multiStats.get(id) : null;
@@ -912,6 +957,7 @@ class BroadcastSupervisor {
         if (proc.stdio && proc.stdio[3]) proc.stdio[3].end();
       } catch (_) {
         try { proc.kill('SIGTERM'); } catch (_) {}
+        resolve();
       }
     });
   }
@@ -923,21 +969,39 @@ class BroadcastSupervisor {
    */
   async stopAll() {
     this._isIntentionalStop = true;
+    const workerPromises = [];
+    if (this._workers && this._workers.size > 0) {
+      for (const worker of this._workers.values()) {
+        workerPromises.push(worker.stop());
+      }
+      this._workers.clear();
+    }
     const ids = this._multiProcesses ? [...this._multiProcesses.keys()] : [];
-    await Promise.all(ids.map(id => this._stopDestination(id)));
-    // Reset intentional stop after all are terminated so future starts work
+    const procPromises = ids.map(id => this._stopDestination(id));
+    await Promise.all([...workerPromises, ...procPromises]);
     this._isIntentionalStop = false;
-    console.log(`[BroadcastSupervisor] All ${ids.length} destinations stopped.`);
-    return { ok: true, stopped: ids.length };
+    const count = Math.max(workerPromises.length, ids.length);
+    console.log(`[BroadcastSupervisor] All ${count} destinations stopped.`);
+    return { ok: true, stopped: count };
   }
 
   /**
-   * Writes a composite video frame to ALL active destination FFmpeg processes.
+   * Writes a composite video frame to ALL active destination workers/processes.
+   * Leverages bounded backpressure: drops stale frames per destination to prevent heap bloat.
    *
    * @param {Buffer} buffer - Raw RGBA frame
    * @returns {number} Number of destinations that received the frame
    */
   writeVideoFrameAll(buffer) {
+    if (this._workers && this._workers.size > 0) {
+      let count = 0;
+      for (const worker of this._workers.values()) {
+        try {
+          if (worker.writeVideoFrame && worker.writeVideoFrame(buffer)) count++;
+        } catch (_) {}
+      }
+      return count;
+    }
     if (!this._multiProcesses || this._multiProcesses.size === 0) {
       // Fall back to single-destination write for backward compat
       return this.writeVideoFrame(buffer) ? 1 : 0;
@@ -955,12 +1019,22 @@ class BroadcastSupervisor {
   }
 
   /**
-   * Writes mixed broadcast audio PCM to ALL active destination FFmpeg processes.
+   * Writes mixed broadcast audio PCM to ALL active destination workers/processes.
    *
    * @param {Buffer} buffer - Raw PCM s16le audio
    * @returns {number} Number of destinations that received the chunk
    */
   writeAudioChunkAll(buffer) {
+    if (this._workers && this._workers.size > 0) {
+      let count = 0;
+      for (const worker of this._workers.values()) {
+        try {
+          const fn = worker.writeAudioChunk || worker.writeAudioFrame;
+          if (fn && fn.call(worker, buffer)) count++;
+        } catch (_) {}
+      }
+      return count;
+    }
     if (!this._multiProcesses || this._multiProcesses.size === 0) {
       // Fall back to single-destination write for backward compat
       return this.writeAudioChunk(buffer) ? 1 : 0;
@@ -979,20 +1053,30 @@ class BroadcastSupervisor {
 
   /**
    * Returns per-destination telemetry for all active multi-stream destinations.
+   * Strict invariant: Never returns LIVE with fps=0 or bitrate=0.
    *
-   * @returns {Object<id, {isStreaming, health, fps, bitrateKbps, uptimeSec, droppedFrames, framesSent}>}
+   * @returns {Object<id, {isStreaming, state, health, fps, bitrateKbps, uptimeSec, droppedFrames, framesSent}>}
    */
   getMultiStatus() {
+    if (this._workers && this._workers.size > 0) {
+      const result = {};
+      for (const [id, worker] of this._workers) {
+        result[id] = worker.getStatus();
+      }
+      return result;
+    }
     if (!this._multiStats || this._multiStats.size === 0) return {};
     const result = {};
     for (const [id, stat] of this._multiStats) {
-      const isTransmitting = stat.state === BROADCAST_STATES.TRANSMITTING || stat.state === BROADCAST_STATES.LIVE;
+      const isTransmitting = (stat.state === BROADCAST_STATES.TRANSMITTING || stat.state === BROADCAST_STATES.LIVE) &&
+                             (stat.framesSent > 0 || stat.encodedFrames > 0) &&
+                             (stat.fps > 0) && (stat.bitrateKbps > 0);
       result[id] = {
         isStreaming:   stat.isStreaming || false,
         state:         stat.state || BROADCAST_STATES.IDLE,
         health:        stat.health || 'offline',
-        fps:           isTransmitting ? (stat.fps || 0) : null,
-        bitrateKbps:   isTransmitting ? (stat.bitrateKbps || 0) : null,
+        fps:           isTransmitting ? stat.fps : null,
+        bitrateKbps:   isTransmitting ? stat.bitrateKbps : null,
         uptimeSec:     stat.uptimeSec || 0,
         droppedFrames: stat.droppedFrames || 0,
         framesSent:    stat.framesSent || 0,
@@ -1006,9 +1090,15 @@ class BroadcastSupervisor {
    * Returns true if any multi-destination stream is currently active.
    */
   isAnyStreaming() {
-    if (!this._multiStats) return this.isStreaming;
-    for (const stat of this._multiStats.values()) {
-      if (stat.isStreaming) return true;
+    if (this._workers && this._workers.size > 0) {
+      for (const worker of this._workers.values()) {
+        if (worker.getStatus().isStreaming) return true;
+      }
+    }
+    if (this._multiStats) {
+      for (const stat of this._multiStats.values()) {
+        if (stat.isStreaming) return true;
+      }
     }
     return this.isStreaming;
   }
@@ -1020,4 +1110,6 @@ module.exports = {
   BroadcastSupervisor,
   broadcastSupervisor,
   BROADCAST_STATES,
+  DestinationWorker,
+  DESTINATION_STATES,
 };

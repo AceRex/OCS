@@ -90,10 +90,12 @@ class BroadcastAudioBus {
     this.limiterNode.attack.value = 0.003; // 3ms fast attack
     this.limiterNode.release.value = 0.150; // 150ms release
 
-    // Routing: MasterGain -> Delay -> Limiter -> Destination
+    // Routing: MasterGain -> Delay -> Limiter (PCM tap point for recording and broadcast)
     this.masterGainNode.connect(this.delayNode);
     this.delayNode.connect(this.limiterNode);
-    this.limiterNode.connect(this.audioCtx.destination);
+    // IMPORTANT: Never connect limiterNode directly to audioCtx.destination!
+    // Direct destination connection routes the live pulpit microphone to the laptop/control speakers,
+    // causing an immediate acoustic feedback loop and delayed echo.
 
     // Create 4 input channel gain nodes
     for (let i = 1; i <= this.channelsCount; i++) {
@@ -366,7 +368,14 @@ class BroadcastAudioBus {
       const bufferSize = 2048;
       const scriptNode = this.audioCtx.createScriptProcessor(bufferSize, 2, 2);
       this.limiterNode.connect(scriptNode);
-      scriptNode.connect(this.audioCtx.destination);
+
+      // Connect scriptNode to a silent GainNode (gain=0.0) before audioCtx.destination
+      // Chromium Web Audio requires ScriptProcessorNode to have a destination path to fire onaudioprocess,
+      // but routing through gain=0.0 ensures 0 sound emerges from physical speakers (zero feedback/echo).
+      const silentSink = this.audioCtx.createGain();
+      silentSink.gain.value = 0.0;
+      scriptNode.connect(silentSink);
+      silentSink.connect(this.audioCtx.destination);
 
       scriptNode.onaudioprocess = (e) => {
         const inputL = e.inputBuffer.getChannelData(0);
@@ -394,6 +403,7 @@ class BroadcastAudioBus {
       return () => {
         try {
           scriptNode.disconnect();
+          silentSink.disconnect();
           this.limiterNode.disconnect(scriptNode);
         } catch (_) {}
       };

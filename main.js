@@ -3847,7 +3847,7 @@ function createWindows() {
   controllerWindow.webContents.on(
     "console-message",
     (e, level, msg, line, src) => {
-      console.log(`[Controller JS (L${line})]`, msg);
+      console.log(`[Controller JS (L${line}) (${src})]`, msg);
     },
   );
   controllerWindow.webContents.on("did-fail-load", (e, code, desc) => {

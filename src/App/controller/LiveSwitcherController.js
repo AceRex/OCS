@@ -187,12 +187,16 @@ export default function LiveSwitcherController() {
   // ── Native RTMP / SRT Broadcast Engine (P0-01) & Recording (P0-05) ────────
   const [showBroadcastModal, setShowBroadcastModal] = useState(false);
 
-  // Multi-destination simulstreaming state (Stage 8)
+  // Multi-destination simulstreaming state (Stage 9.3)
   const PLATFORM_PRESETS = [
     { label: 'YouTube Live',    url: 'rtmp://a.rtmp.youtube.com/live2' },
     { label: 'Facebook Live',   url: 'rtmps://live-api-s.facebook.com:443/rtmp/' },
+    { label: 'Twitch',          url: 'rtmp://live.twitch.tv/app/' },
+    { label: 'TikTok Live',     url: 'rtmp://live-push.tiktok.com/live/' },
+    { label: 'Instagram Live',  url: 'rtmps://live-upload.instagram.com:443/rtmp/' },
+    { label: 'Mixlr (Audio)',   url: 'rtmp://live.mixlr.com/live/' },
     { label: 'Restream.io',     url: 'rtmp://live.restream.io/live' },
-    { label: 'Custom',          url: '' },
+    { label: 'Custom RTMP/SRT', url: '' },
   ];
 
   const loadDestinations = () => {
@@ -227,6 +231,34 @@ export default function LiveSwitcherController() {
   const updateDestination = (id, patch) => {
     setDestinations(prev => {
       const updated = prev.map(d => d.id === id ? { ...d, ...patch } : d);
+      saveDestinations(updated);
+      return updated;
+    });
+  };
+
+  const addDestination = () => {
+    if (destinations.length >= 6) return;
+    const newId = `dest_${Date.now()}`;
+    const newDest = {
+      id: newId,
+      label: 'Custom Stream',
+      url: '',
+      key: '',
+      enabled: false,
+      bitrate: 4500,
+      showKey: false,
+    };
+    setDestinations(prev => {
+      const updated = [...prev, newDest];
+      saveDestinations(updated);
+      return updated;
+    });
+  };
+
+  const removeDestination = (id) => {
+    if (destinations.length <= 1) return;
+    setDestinations(prev => {
+      const updated = prev.filter(d => d.id !== id);
       saveDestinations(updated);
       return updated;
     });
@@ -1507,6 +1539,8 @@ export default function LiveSwitcherController() {
               isMirrored={isProgramMirrored}
               broadcastConfig={cfg}
               isBroadcastActive={isAnyStreaming || isRecordingProgram}
+              outputWidth={streamWidth}
+              outputHeight={streamHeight}
             />
           </div>
 
@@ -1762,12 +1796,16 @@ export default function LiveSwitcherController() {
                         ? (() => {
                             const statValues = Object.values(multiStreamStatus).filter(s => s?.isStreaming);
                             const activeCount = statValues.length;
-                            const hasLive = statValues.some(s => s?.state === 'live');
-                            const hasTransmitting = statValues.some(s => s?.state === 'transmitting' || s?.state === 'encoding');
-                            const validFps = statValues.filter(s => typeof s.fps === 'number');
+                            const hasLive = statValues.some(s => (s?.state || '').toLowerCase() === 'live');
+                            const hasDegraded = statValues.some(s => (s?.state || '').toLowerCase() === 'degraded');
+                            const hasTransmitting = statValues.some(s => {
+                              const st = (s?.state || '').toLowerCase();
+                              return st === 'transmitting' || st === 'encoding';
+                            });
+                            const validFps = statValues.filter(s => typeof s.fps === 'number' && s.fps > 0);
                             const avgFps = validFps.length ? Math.round(validFps.reduce((a, s) => a + s.fps, 0) / validFps.length) : null;
                             const totalKbps = statValues.reduce((a, s) => a + (s.bitrateKbps || 0), 0);
-                            const stateLabel = hasLive ? 'live' : hasTransmitting ? 'transmitting' : 'active';
+                            const stateLabel = hasDegraded ? 'degraded' : hasLive ? 'live' : hasTransmitting ? 'transmitting' : 'active';
                             return `${activeCount} ${stateLabel} · ${avgFps != null ? avgFps + ' fps' : '— fps'} · ${totalKbps > 0 ? totalKbps.toFixed(0) + ' kbps' : '— kbps'}`;
                           })()
                         : "Configure RTMP/SRT Broadcast & Recording"}
@@ -3512,18 +3550,24 @@ export default function LiveSwitcherController() {
 
               {/* ── Destination Cards ── */}
               <div className="flex flex-col gap-3">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-white/40">Stream Destinations</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-white/40">Stream Destinations</span>
+                  <span className="text-[10px] text-white/30 font-mono">{destinations.length}/6 Destinations</span>
+                </div>
                 {destinations.map((dest, idx) => {
                   const status = multiStreamStatus[dest.id] || {};
                   const isLive = status.isStreaming;
+                  const st = (status.state || '').toLowerCase();
                   const health = status.health || 'offline';
                   return (
                     <div key={dest.id} className={`flex flex-col gap-3 p-4 rounded-[12px] border transition-all ${
-                      status.state === 'live'
+                      st === 'live'
                         ? 'border-rose-500/50 bg-rose-950/10'
-                        : (status.state === 'transmitting' || status.state === 'encoding')
+                        : st === 'degraded'
+                        ? 'border-amber-500/50 bg-amber-950/15'
+                        : (st === 'transmitting' || st === 'encoding')
                         ? 'border-sky-500/50 bg-sky-950/10'
-                        : status.state === 'failed'
+                        : st === 'failed'
                         ? 'border-red-500/40 bg-red-950/10'
                         : dest.enabled
                         ? 'border-purple-500/30 bg-purple-950/5'
@@ -3533,42 +3577,60 @@ export default function LiveSwitcherController() {
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2">
                           <span className="text-[10px] font-black text-white/50 uppercase tracking-widest">
-                            {idx === 0 ? 'Primary' : 'Secondary'} Destination
+                            {idx === 0 ? 'Primary Destination' : idx === 1 ? 'Secondary Destination' : `Destination #${idx + 1}`}
                           </span>
-                          {status.state === 'live' && (
+                          {st === 'live' && (
                             <span className="flex items-center gap-1 text-[9px] font-black text-rose-300 bg-rose-500/15 border border-rose-500/30 px-2 py-0.5 rounded-[12px] uppercase tracking-wider">
                               <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping inline-block" />
                               LIVE
                             </span>
                           )}
-                          {(status.state === 'transmitting' || status.state === 'encoding') && (
+                          {st === 'degraded' && (
+                            <span className="flex items-center gap-1 text-[9px] font-black text-amber-300 bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 rounded-[12px] uppercase tracking-wider">
+                              <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse inline-block" />
+                              DEGRADED
+                            </span>
+                          )}
+                          {(st === 'transmitting' || st === 'encoding') && (
                             <span className="flex items-center gap-1 text-[9px] font-black text-sky-300 bg-sky-500/15 border border-sky-500/30 px-2 py-0.5 rounded-[12px] uppercase tracking-wider">
                               <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse inline-block" />
                               TRANSMITTING
                             </span>
                           )}
-                          {(status.state === 'connecting' || status.state === 'starting' || (!status.state && health === 'connecting')) && (
+                          {(st === 'connecting' || st === 'starting' || (!status.state && health === 'connecting')) && (
                             <span className="text-[9px] font-black text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-[12px] uppercase">Connecting…</span>
                           )}
-                          {status.state === 'reconnecting' && (
+                          {st === 'reconnecting' && (
                             <span className="text-[9px] font-black text-orange-300 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded-[12px] uppercase animate-pulse">Reconnecting…</span>
                           )}
-                          {status.state === 'failed' && (
+                          {st === 'failed' && (
                             <span className="text-[9px] font-black text-rose-400 bg-rose-950/40 border border-rose-500/40 px-2 py-0.5 rounded-[12px] uppercase">Connection Failed</span>
                           )}
                         </div>
-                        {/* Enable toggle */}
-                        <button
-                          disabled={isAnyStreaming}
-                          onClick={() => updateDestination(dest.id, { enabled: !dest.enabled })}
-                          className={`px-3 py-1 rounded-[12px] text-[10px] font-bold border transition-all ${
-                            dest.enabled
-                              ? 'bg-purple-600/25 border-purple-500/50 text-purple-200'
-                              : 'bg-white/5 border-white/10 text-white/40 hover:text-white hover:bg-white/10'
-                          } disabled:opacity-40`}
-                        >
-                          {dest.enabled ? 'Enabled' : 'Disabled'}
-                        </button>
+                        {/* Enable toggle & Delete */}
+                        <div className="flex items-center gap-2">
+                          {destinations.length > 1 && (
+                            <button
+                              disabled={isAnyStreaming}
+                              onClick={() => removeDestination(dest.id)}
+                              className="p-1 rounded-[12px] text-white/30 hover:text-red-400 hover:bg-white/5 transition-all disabled:opacity-30"
+                              title="Remove Destination"
+                            >
+                              <PiTrash size={14} />
+                            </button>
+                          )}
+                          <button
+                            disabled={isAnyStreaming}
+                            onClick={() => updateDestination(dest.id, { enabled: !dest.enabled })}
+                            className={`px-3 py-1 rounded-[12px] text-[10px] font-bold border transition-all ${
+                              dest.enabled
+                                ? 'bg-purple-600/25 border-purple-500/50 text-purple-200'
+                                : 'bg-white/5 border-white/10 text-white/40 hover:text-white hover:bg-white/10'
+                            } disabled:opacity-40`}
+                          >
+                            {dest.enabled ? 'Enabled' : 'Disabled'}
+                          </button>
+                        </div>
                       </div>
 
                       {/* Platform presets */}
@@ -3628,7 +3690,7 @@ export default function LiveSwitcherController() {
                       </div>
 
                       {/* Live telemetry for this destination */}
-                      {(status.isStreaming || status.state === 'transmitting' || status.state === 'live') && (
+                      {(status.isStreaming || st === 'transmitting' || st === 'live' || st === 'degraded') && (
                         <div className="grid grid-cols-4 gap-1.5 pt-1 text-center border-t border-white/5 mt-1">
                           {[
                             { label: 'Uptime', val: `${status.uptimeSec || 0}s` },
@@ -3646,6 +3708,39 @@ export default function LiveSwitcherController() {
                     </div>
                   );
                 })}
+
+                {/* Add Destination Button (Up to 6) */}
+                {destinations.length < 6 && (
+                  <button
+                    disabled={isAnyStreaming}
+                    onClick={addDestination}
+                    className="flex items-center justify-center gap-1.5 p-2.5 rounded-[12px] border border-dashed border-white/20 hover:border-purple-500/50 bg-white/[0.01] hover:bg-purple-950/10 text-white/60 hover:text-white text-xs font-bold transition-all disabled:opacity-40"
+                  >
+                    <PiPlus size={14} />
+                    Add Broadcast Destination (Simulstream)
+                  </button>
+                )}
+
+                {/* Outbound Bandwidth Network Capacity Audit */}
+                {(() => {
+                  const enabledDests = destinations.filter(d => d.enabled);
+                  const totalMbps = (enabledDests.length * (streamBitrate || 4500)) / 1000;
+                  const isHighBandwidth = totalMbps > 12;
+                  return (
+                    <div className="flex items-center justify-between p-3 rounded-[12px] bg-white/[0.02] border border-white/10 text-[11px]">
+                      <div className="flex items-center gap-2">
+                        <span className="text-white/40">Est. Outbound Bandwidth:</span>
+                        <span className="font-bold text-white font-mono">{totalMbps.toFixed(1)} Mbps</span>
+                        <span className="text-white/40">({enabledDests.length} target{enabledDests.length === 1 ? '' : 's'})</span>
+                      </div>
+                      {isHighBandwidth && (
+                        <span className="flex items-center gap-1 text-[10px] font-bold text-amber-300 bg-amber-500/10 px-2 py-0.5 rounded-[12px] border border-amber-500/20">
+                          <PiWarning size={12} /> High Uplink Required (≥25 Mbps)
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* ── Encoding Quality ── */}

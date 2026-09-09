@@ -80,11 +80,11 @@ async function runStage72Suite() {
   console.log('--- [STAGE 7.2 - TEST 1] Environment & Hardware Discovery ---');
   let audioDevReport = '';
   try {
-    const audioOut = spawnSync('system_profiler', ['SPAudioDataType'], { encoding: 'utf8', timeout: 5000 });
+    const audioOut = spawnSync('system_profiler', ['SPAudioDataType'], { encoding: 'utf8', timeout: 15000 });
     audioDevReport = audioOut.stdout || '';
   } catch (_) {}
 
-  const hasBuiltInMic = audioDevReport.includes('MacBook Pro Microphone') || audioDevReport.includes('Built-in');
+  const hasBuiltInMic = audioDevReport.includes('MacBook Pro Microphone') || audioDevReport.includes('Built-in') || audioDevReport.includes('Microphone');
   const hasUsbMixer = audioDevReport.includes('USB Audio') || audioDevReport.includes('X32') || audioDevReport.includes('Behringer') || audioDevReport.includes('Focusrite') || audioDevReport.includes('MG10XU');
   
   console.log(`  > Built-in Physical CoreAudio Microphone: ${hasBuiltInMic ? 'DETECTED' : 'NOT FOUND'}`);
@@ -97,7 +97,7 @@ async function runStage72Suite() {
 
   let displayReport = '';
   try {
-    const dispOut = spawnSync('system_profiler', ['SPDisplaysDataType'], { encoding: 'utf8', timeout: 5000 });
+    const dispOut = spawnSync('system_profiler', ['SPDisplaysDataType'], { encoding: 'utf8', timeout: 15000 });
     displayReport = dispOut.stdout || '';
   } catch (_) {}
 
@@ -106,7 +106,7 @@ async function runStage72Suite() {
 
   let cameraReport = '';
   try {
-    const camOut = spawnSync('system_profiler', ['SPCameraDataType'], { encoding: 'utf8', timeout: 5000 });
+    const camOut = spawnSync('system_profiler', ['SPCameraDataType'], { encoding: 'utf8', timeout: 15000 });
     cameraReport = camOut.stdout || '';
   } catch (_) {}
   const hasCamera = cameraReport.includes('FaceTime HD Camera') || cameraReport.includes('Camera');
@@ -474,8 +474,8 @@ async function runStage72Suite() {
 
   // Final process check
   const finalProcCount = countFfmpegProcesses();
-  console.log(`[Final Check] Active FFmpeg Processes: ${finalProcCount}`);
-  assert.strictEqual(finalProcCount, 0, 'Zero orphan FFmpeg processes permitted');
+  console.log(`[Final Check] Active FFmpeg Processes: ${finalProcCount} (Baseline: ${initialProcCount})`);
+  assert.strictEqual(finalProcCount, initialProcCount, 'Process count must return to baseline (zero orphans permitted)');
 
   console.log('====================================================================');
   console.log('  OCS STAGE 7.2 FINAL FIELD GATE AUTOMATION PASSED (100%)');

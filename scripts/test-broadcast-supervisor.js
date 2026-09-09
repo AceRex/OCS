@@ -82,8 +82,13 @@ async function runBroadcastSupervisorTests() {
     supervisor.writeAudioChunk(audio);
   }
 
-  // Allow brief moment for TCP transmission
-  await new Promise(r => setTimeout(r, 600));
+  // Allow brief moment for TCP transmission (poll up to 6s for hardware encoder initialization)
+  const waitStart = Date.now();
+  while (Date.now() - waitStart < 6000 && bytesReceived === 0) {
+    supervisor.writeVideoFrame(frame);
+    supervisor.writeAudioChunk(audio);
+    await new Promise(r => setTimeout(r, 100));
+  }
 
   const status = supervisor.getStatus();
   console.log(`  Telemetry snapshot: streaming=${status.isStreaming}, uptime=${status.uptimeSec}s, health=${status.stats.health}, bytesSentToSink=${bytesReceived}`);

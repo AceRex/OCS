@@ -232,6 +232,11 @@ class ProgramRecorder {
           });
         }
 
+        if (this.ffmpegProcess.stdin && this.ffmpegProcess.stdin._writableState) {
+          const expectedFrameBytes = width * height * 4;
+          this.ffmpegProcess.stdin._writableState.highWaterMark = Math.max(16 * 1024 * 1024, expectedFrameBytes * 2);
+        }
+
         this.ffmpegProcess.stdin.on('drain', () => {
           this._isBackpressured = false;
           while (this._drainWaiters.length > 0) {
@@ -259,6 +264,11 @@ class ProgramRecorder {
    */
   writeVideoFrame(buffer) {
     if (!this.isRecording || !this.ffmpegProcess || !this.ffmpegProcess.stdin) {
+      return false;
+    }
+
+    const expectedFrameBytes = (this.config?.width || 1280) * (this.config?.height || 720) * 4;
+    if (buffer.length !== expectedFrameBytes) {
       return false;
     }
 

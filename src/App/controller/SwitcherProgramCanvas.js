@@ -29,6 +29,8 @@ export default function SwitcherProgramCanvas({
   isMirrored = false,
   broadcastConfig,
   isBroadcastActive = false, // true when streaming or recording — triggers continuous 30fps frame push
+  outputWidth = 1280,
+  outputHeight = 720,
 }) {
   const broadcastConfigRef = useRef(broadcastConfig);
   useEffect(() => {
@@ -368,8 +370,8 @@ export default function SwitcherProgramCanvas({
       const hasBroadcast = typeof window.electron?.Broadcast?.pushVideoFrame === "function";
 
       if (hasRecorder || hasBroadcast) {
-        const cw = canvas.width || 1280;
-        const ch = canvas.height || 720;
+        const cw = outputWidth || canvas.width || 1280;
+        const ch = outputHeight || canvas.height || 720;
         const imgData = ctx.getImageData(0, 0, cw, ch);
         if (imgData && imgData.data) {
           // IMPORTANT: ArrayBuffer.transfer() is destructive — the first receiver
@@ -409,14 +411,14 @@ export default function SwitcherProgramCanvas({
             ? incomingVideoRef.current
             : _programImageCache[previewSourceId || "default"];
 
-          const w = Math.max(1280, canvas.width || 1280);
-          const h = Math.max(720, canvas.height || 720);
-          if (canvas.width !== w || canvas.height !== h) {
-            canvas.width = w;
-            canvas.height = h;
+          const targetW = outputWidth || 1280;
+          const targetH = outputHeight || 720;
+          if (canvas.width !== targetW || canvas.height !== targetH) {
+            canvas.width = targetW;
+            canvas.height = targetH;
           }
 
-          transitionEngine.render(ctx, fromSource, toSource, mixProgress, w, h, {
+          transitionEngine.render(ctx, fromSource, toSource, mixProgress, targetW, targetH, {
             type: transitionSetting?.type || "fade",
             direction: transitionSetting?.direction || "left-to-right",
           });
@@ -445,14 +447,14 @@ export default function SwitcherProgramCanvas({
             toSource = _programImageCache[trans.toId || programSourceId || "default"];
           }
 
-          const w = Math.max(1280, canvas.width || 1280);
-          const h = Math.max(720, canvas.height || 720);
-          if (canvas.width !== w || canvas.height !== h) {
-            canvas.width = w;
-            canvas.height = h;
+          const targetW = outputWidth || 1280;
+          const targetH = outputHeight || 720;
+          if (canvas.width !== targetW || canvas.height !== targetH) {
+            canvas.width = targetW;
+            canvas.height = targetH;
           }
 
-          transitionEngine.render(ctx, fromSource, toSource, progress, w, h, {
+          transitionEngine.render(ctx, fromSource, toSource, progress, targetW, targetH, {
             type: trans.type,
             direction: trans.direction,
           });
@@ -466,38 +468,32 @@ export default function SwitcherProgramCanvas({
         }
       } else if (stream && videoRef.current && videoRef.current.readyState >= 2 && canvasRef.current) {
         // Continuous WebRTC stream playing: copy frame to canvas.
-        // Always render to canvas when sharing OR when broadcast is active (P0-01 fix:
-        // previously gated on isSharingActive, which starved FFmpeg of video frames during
-        // normal presentation mode and caused RTMP streams to be rejected by platforms).
-        if (isSharingActive || isBroadcastActive) {
-          const canvas = canvasRef.current;
-          const ctx = canvas.getContext("2d", { alpha: false });
-          if (ctx) {
-            const targetW = Math.max(1280, videoRef.current.videoWidth || 1280);
-            const targetH = Math.max(720, videoRef.current.videoHeight || 720);
-            if (canvas.width !== targetW || canvas.height !== targetH) {
-              canvas.width = targetW;
-              canvas.height = targetH;
-            }
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = "high";
-            if (isMirrored) {
-              ctx.save();
-              ctx.translate(canvas.width, 0);
-              ctx.scale(-1, 1);
-              ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-              ctx.restore();
-            } else {
-              ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
-            }
-            maybeEmitLiveOutputFrame(canvas);
+        // Always render to canvas so preview and broadcast receive continuous frames.
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext("2d", { alpha: false });
+        if (ctx) {
+          const targetW = outputWidth || 1280;
+          const targetH = outputHeight || 720;
+          if (canvas.width !== targetW || canvas.height !== targetH) {
+            canvas.width = targetW;
+            canvas.height = targetH;
           }
+          ctx.imageSmoothingEnabled = true;
+          ctx.imageSmoothingQuality = "high";
+          if (isMirrored) {
+            ctx.save();
+            ctx.translate(canvas.width, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+            ctx.restore();
+          } else {
+            ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+          }
+          maybeEmitLiveOutputFrame(canvas);
         }
       } else if (!stream && canvasRef.current) {
         // Static frame path (slides, Bible, presentations).
-        // When broadcast is active, we must emit frames continuously at ~30fps — not just on
-        // content changes — because RTMP requires a steady video bitstream. Previously only
-        // fired on isDirtyRef which produced a 1-2fps trickle causing platform rejection.
+        // When broadcast is active, emit frames continuously at ~30fps to maintain RTMP cadence.
         const bitmap = lastRenderedBitmapRef.current;
         const img = latestImgRef.current;
         const source = bitmap || img;
@@ -508,8 +504,8 @@ export default function SwitcherProgramCanvas({
             const canvas = canvasRef.current;
             const ctx = canvas.getContext("2d", { alpha: false });
             if (ctx) {
-              const targetW = Math.max(1280, w || 1280);
-              const targetH = Math.max(720, h || 720);
+              const targetW = outputWidth || 1280;
+              const targetH = outputHeight || 720;
               if (canvas.width !== targetW || canvas.height !== targetH) {
                 canvas.width = targetW;
                 canvas.height = targetH;
@@ -541,6 +537,42 @@ export default function SwitcherProgramCanvas({
               maybeEmitLiveOutputFrame(canvas);
               isDirtyRef.current = false;
             }
+          }
+        } else if (isBroadcastActive) {
+          // STANDBY BROADCAST SLATE:
+          // Emits clean standby slate frame matching outputWidth and outputHeight.
+          const canvas = canvasRef.current;
+          const ctx = canvas.getContext("2d", { alpha: false });
+          if (ctx) {
+            const targetW = outputWidth || 1280;
+            const targetH = outputHeight || 720;
+            if (canvas.width !== targetW || canvas.height !== targetH) {
+              canvas.width = targetW;
+              canvas.height = targetH;
+            }
+            // Crisp dark slate
+            ctx.fillStyle = "#09090b";
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Subtle purple gradient backdrop
+            const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+            grad.addColorStop(0, "rgba(147, 51, 234, 0.15)");
+            grad.addColorStop(1, "rgba(79, 70, 229, 0.08)");
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Standby title & instruction
+            ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
+            ctx.font = `bold ${Math.round(28 * (targetH / 720))}px system-ui, -apple-system, sans-serif`;
+            ctx.textAlign = "center";
+            ctx.fillText("OCS BROADCAST READY", canvas.width / 2, canvas.height / 2 - Math.round(12 * (targetH / 720)));
+
+            ctx.font = `${Math.round(14 * (targetH / 720))}px system-ui, -apple-system, sans-serif`;
+            ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+            ctx.fillText("Standby — Select Camera or Slide in Live Switcher", canvas.width / 2, canvas.height / 2 + Math.round(24 * (targetH / 720)));
+            ctx.textAlign = "start";
+
+            maybeEmitLiveOutputFrame(canvas);
           }
         }
       }
@@ -721,28 +753,26 @@ export default function SwitcherProgramCanvas({
             border: bConfig.scale < 1.0 ? "1.5px solid rgba(168, 85, 247, 0.5)" : "none",
           }}
         >
-          {/* Video element when not transitioning and stream is present */}
-          {stream && !isTransitioning ? (
-            <video
-              ref={videoRef}
-              autoPlay
-              playsInline
-              muted
-              style={{ transform: isMirrored ? "scaleX(-1) translateZ(0)" : "translateZ(0)" }}
-              className="w-full h-full object-cover"
-            />
-          ) : (
-            <canvas
-              ref={canvasRef}
-              style={{
-                transform: "translateZ(0)",
-                filter: currentEffect?.filter && currentEffect.filter !== "none" ? currentEffect.filter : "none",
-              }}
-              className={`w-full h-full object-cover transition-opacity duration-300 ${
-                isTransitioning || hasFrame ? "opacity-100" : "opacity-0"
-              }`}
-            />
-          )}
+          {/* Offscreen video element for WebRTC camera stream decoding */}
+          <video
+            ref={videoRef}
+            autoPlay
+            playsInline
+            muted
+            style={{ display: "none" }}
+          />
+
+          {/* Master Program Output Canvas — ALWAYS mounted for continuous composite playout */}
+          <canvas
+            ref={canvasRef}
+            style={{
+              transform: isMirrored ? "scaleX(-1) translateZ(0)" : "translateZ(0)",
+              filter: currentEffect?.filter && currentEffect.filter !== "none" ? currentEffect.filter : "none",
+            }}
+            className={`w-full h-full object-cover transition-opacity duration-300 ${
+              isTransitioning || hasFrame || stream ? "opacity-100" : "opacity-0"
+            }`}
+          />
 
           {currentEffect?.overlayColor && currentEffect.overlayColor !== "transparent" && (
             <div
