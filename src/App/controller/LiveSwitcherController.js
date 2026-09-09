@@ -1758,8 +1758,13 @@ export default function LiveSwitcherController() {
                       )}
                     </span>
                     <span className="text-[10px] text-white/40 block">
-                      {isStreaming
-                        ? `${streamStats.fps || 30} fps · ${(streamStats.bitrateKbps || 0).toFixed(0)} kbps · Health: ${streamStats.health}`
+                      {isAnyStreaming
+                        ? (() => {
+                            const statValues = Object.values(multiStreamStatus).filter(s => s?.isStreaming);
+                            const avgFps = statValues.length ? Math.round(statValues.reduce((a, s) => a + (s.fps || 0), 0) / statValues.length) : 30;
+                            const totalKbps = statValues.reduce((a, s) => a + (s.bitrateKbps || 0), 0);
+                            return `${statValues.length} live · ${avgFps} fps · ${totalKbps.toFixed(0)} kbps`;
+                          })()
                         : "Configure RTMP/SRT Broadcast & Recording"}
                     </span>
                   </div>
