@@ -358,10 +358,10 @@ export default function SessionsController() {
                 <SessionFolderCard
                   key={s.id}
                   title={s.title}
-                  speakerName={s.speakerName}
+                  speakerName={s.speakerName || (s.type === 'recording' ? (s.durationSec ? `${Math.round(s.durationSec)}s MP4` : 'MP4 Recording') : 'Speaker')}
                   index={index}
-                  sizeBytes={s.sizeBytes}
-                  createdAt={s.createdAt}
+                  sizeBytes={s.sizeBytes || s.bytesWritten || 0}
+                  createdAt={s.createdAt || s.startedAt}
                   status={s.status}
                   selected={selectedIds.has(s.id)}
                   onToggleSelect={(e) => toggleSelectOne(s.id, e)}

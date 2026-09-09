@@ -21,7 +21,11 @@ const TEST_SUITES = [
   { name: 'P0-02 Broadcast Audio Mixer & Limiter', script: 'scripts/test-broadcast-audio-bus.js' },
   { name: 'P0-01 Native RTMP/SRT Broadcast Supervisor', script: 'scripts/test-broadcast-supervisor.js' },
   { name: 'Stage 6.2 Production Pipeline Integration & P0 Closure', script: 'scripts/test-production-pipeline-integration.js' },
-  { name: 'Stage 6.3 Runtime Proof & Sunday Simulation', script: 'scripts/test-stage63-runtime-proof.js' }
+  { name: 'Stage 6.3 Runtime Proof & Sunday Simulation', script: 'scripts/test-stage63-runtime-proof.js' },
+  { name: 'Stage 7 Field Production Validation', script: 'scripts/test-stage7-field-validation.js' },
+  { name: 'Stage 7.1 Field Pilot & Operator Reliability', script: 'scripts/test-stage71-field-pilot.js' },
+  { name: 'Stage 7.2 Final Church Service Field Gate', script: 'scripts/test-stage72-field-gate.js' },
+  { name: 'Stage 8 Runtime Integration Closure', script: 'scripts/test-stage8-runtime.js' }
 ];
 
 console.log('====================================================');

@@ -119,6 +119,15 @@ class ProgramRecorder {
       fs.mkdirSync(dir, { recursive: true });
     }
 
+    // Storage preflight check (mandated by Stage 7 Section 13)
+    const minRequiredBytes = options.minFreeBytes || (100 * 1024 * 1024); // 100MB minimum emergency threshold
+    const freeSpace = ProgramRecorder.getAvailableDiskSpace(dir);
+    if (freeSpace !== null && freeSpace < minRequiredBytes) {
+      const freeMb = Math.round(freeSpace / (1024 * 1024));
+      const reqMb = Math.round(minRequiredBytes / (1024 * 1024));
+      return Promise.reject(new Error(`Insufficient disk space: only ${freeMb}MB free on target drive. Minimum required is ${reqMb}MB.`));
+    }
+
     this.outputPath = outputPath;
     this.config = { width, height, fps, sampleRate, channels, withAudio };
     this.startTime = Date.now();
@@ -347,17 +356,32 @@ class ProgramRecorder {
   }
 
   /**
+   * Probes available storage on the target directory path.
+   */
+  static getAvailableDiskSpace(dirPath) {
+    try {
+      if (typeof fs.statfsSync === 'function') {
+        const stats = fs.statfsSync(dirPath);
+        return stats.bavail * stats.bsize;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  /**
    * Retrieves live recording metrics.
    */
   getStatus() {
     const elapsedSec = this.isRecording ? ((Date.now() - this.startTime) / 1000) : 0;
+    const freeDiskBytes = this.outputPath ? ProgramRecorder.getAvailableDiskSpace(path.dirname(this.outputPath)) : null;
     return {
       isRecording: this.isRecording,
       outputPath: this.outputPath,
       framesRecorded: this.framesRecorded,
       audioBytesRecorded: this.audioBytesRecorded,
       elapsedSec: Math.round(elapsedSec),
-      encoder: this._cachedEncoder || 'unknown'
+      encoder: this._cachedEncoder || 'unknown',
+      freeDiskBytes
     };
   }
 }

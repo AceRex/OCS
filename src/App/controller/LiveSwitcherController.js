@@ -1761,16 +1761,21 @@ export default function LiveSwitcherController() {
                       {isAnyStreaming
                         ? (() => {
                             const statValues = Object.values(multiStreamStatus).filter(s => s?.isStreaming);
-                            const avgFps = statValues.length ? Math.round(statValues.reduce((a, s) => a + (s.fps || 0), 0) / statValues.length) : 30;
+                            const activeCount = statValues.length;
+                            const hasLive = statValues.some(s => s?.state === 'live');
+                            const hasTransmitting = statValues.some(s => s?.state === 'transmitting' || s?.state === 'encoding');
+                            const validFps = statValues.filter(s => typeof s.fps === 'number');
+                            const avgFps = validFps.length ? Math.round(validFps.reduce((a, s) => a + s.fps, 0) / validFps.length) : null;
                             const totalKbps = statValues.reduce((a, s) => a + (s.bitrateKbps || 0), 0);
-                            return `${statValues.length} live · ${avgFps} fps · ${totalKbps.toFixed(0)} kbps`;
+                            const stateLabel = hasLive ? 'live' : hasTransmitting ? 'transmitting' : 'active';
+                            return `${activeCount} ${stateLabel} · ${avgFps != null ? avgFps + ' fps' : '— fps'} · ${totalKbps > 0 ? totalKbps.toFixed(0) + ' kbps' : '— kbps'}`;
                           })()
                         : "Configure RTMP/SRT Broadcast & Recording"}
                     </span>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  {isStreaming ? (
+                  {isAnyStreaming ? (
                     <span className="text-[9px] font-black px-2.5 py-1 rounded-[12px] bg-rose-500 text-white uppercase tracking-wider animate-pulse shadow-md">
                       ● ON AIR
                     </span>
@@ -3514,8 +3519,12 @@ export default function LiveSwitcherController() {
                   const health = status.health || 'offline';
                   return (
                     <div key={dest.id} className={`flex flex-col gap-3 p-4 rounded-[12px] border transition-all ${
-                      isLive
+                      status.state === 'live'
                         ? 'border-rose-500/50 bg-rose-950/10'
+                        : (status.state === 'transmitting' || status.state === 'encoding')
+                        ? 'border-sky-500/50 bg-sky-950/10'
+                        : status.state === 'failed'
+                        ? 'border-red-500/40 bg-red-950/10'
                         : dest.enabled
                         ? 'border-purple-500/30 bg-purple-950/5'
                         : 'border-white/10 bg-white/[0.02]'
@@ -3526,14 +3535,26 @@ export default function LiveSwitcherController() {
                           <span className="text-[10px] font-black text-white/50 uppercase tracking-widest">
                             {idx === 0 ? 'Primary' : 'Secondary'} Destination
                           </span>
-                          {isLive && (
+                          {status.state === 'live' && (
                             <span className="flex items-center gap-1 text-[9px] font-black text-rose-300 bg-rose-500/15 border border-rose-500/30 px-2 py-0.5 rounded-[12px] uppercase tracking-wider">
                               <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping inline-block" />
                               LIVE
                             </span>
                           )}
-                          {!isLive && health === 'connecting' && (
+                          {(status.state === 'transmitting' || status.state === 'encoding') && (
+                            <span className="flex items-center gap-1 text-[9px] font-black text-sky-300 bg-sky-500/15 border border-sky-500/30 px-2 py-0.5 rounded-[12px] uppercase tracking-wider">
+                              <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-pulse inline-block" />
+                              TRANSMITTING
+                            </span>
+                          )}
+                          {(status.state === 'connecting' || status.state === 'starting' || (!status.state && health === 'connecting')) && (
                             <span className="text-[9px] font-black text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-[12px] uppercase">Connecting…</span>
+                          )}
+                          {status.state === 'reconnecting' && (
+                            <span className="text-[9px] font-black text-orange-300 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded-[12px] uppercase animate-pulse">Reconnecting…</span>
+                          )}
+                          {status.state === 'failed' && (
+                            <span className="text-[9px] font-black text-rose-400 bg-rose-950/40 border border-rose-500/40 px-2 py-0.5 rounded-[12px] uppercase">Connection Failed</span>
                           )}
                         </div>
                         {/* Enable toggle */}
@@ -3607,12 +3628,12 @@ export default function LiveSwitcherController() {
                       </div>
 
                       {/* Live telemetry for this destination */}
-                      {isLive && (
+                      {(status.isStreaming || status.state === 'transmitting' || status.state === 'live') && (
                         <div className="grid grid-cols-4 gap-1.5 pt-1 text-center border-t border-white/5 mt-1">
                           {[
                             { label: 'Uptime', val: `${status.uptimeSec || 0}s` },
-                            { label: 'FPS', val: status.fps || 0 },
-                            { label: 'Bitrate', val: `${(status.bitrateKbps || 0).toFixed(0)}k` },
+                            { label: 'FPS', val: status.fps != null ? status.fps : '—' },
+                            { label: 'Bitrate', val: status.bitrateKbps != null ? `${status.bitrateKbps.toFixed(0)}k` : '—' },
                             { label: 'Drops', val: status.droppedFrames || 0 },
                           ].map(m => (
                             <div key={m.label} className="p-1.5 rounded-[12px] bg-black/40 border border-white/5">

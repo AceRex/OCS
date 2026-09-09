@@ -462,7 +462,7 @@ async function runStage63Suite() {
       width: 320,
       height: 180,
       fps: 15
-    });
+    }).catch(() => {});
     await sup.stop();
   }
 

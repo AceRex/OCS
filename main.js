@@ -138,6 +138,7 @@ const { emitTimerLifecycle } = require("./src/main/timerLifecycle");
 const { SessionArchiveService } = require("./src/main/sessionArchive");
 const { recoveryManager } = require("./src/main/session/recoveryManager");
 const { programRecorder } = require("./src/main/recording/programRecorder");
+const { RecordingIndex } = require("./src/main/recording/recordingIndex");
 const { broadcastAudioBus } = require("./src/App/controller/broadcastAudioBus");
 const { broadcastSupervisor } = require("./src/main/streaming/broadcastSupervisor");
 const { probeMediaInfo } = require("./src/main/sessionAudio");
@@ -228,6 +229,8 @@ let pairing = getOrCreatePairing();
 let pairingQrDataUrl = null;
 /** @type {SessionArchiveService|null} */
 let sessionArchive = null;
+/** @type {import('./src/main/recording/recordingIndex').RecordingIndex|null} */
+let recordingIndex = null;
 let splashWindow = null;
 let loginWindow = null;
 let controllerWindow = null;
@@ -4437,13 +4440,25 @@ ipcMain.handle("session:get-recovery-state", async () => {
 ipcMain.handle("recorder:start", async (_e, options) => {
   try {
     let opts = { ...(options || {}) };
+    const defaultRecDir = path.join(app.getPath("userData"), "recordings");
     if (!opts.outputPath) {
-      const defaultRecDir = path.join(app.getPath("userData"), "recordings");
       opts.outputPath = path.join(defaultRecDir, `program_${Date.now()}.mp4`);
     } else if (!path.isAbsolute(opts.outputPath)) {
-      const defaultRecDir = path.join(app.getPath("userData"), "recordings");
       opts.outputPath = path.join(defaultRecDir, opts.outputPath);
     }
+
+    // Create recording index entry BEFORE starting — survives crash
+    if (recordingIndex) {
+      const entry = recordingIndex.createEntry({
+        outputPath: opts.outputPath,
+        title:  opts.title || null,
+        width:  opts.width  || 1280,
+        height: opts.height || 720,
+        fps:    opts.fps    || 30,
+      });
+      opts._recordingIndexId = entry.id; // pass through so stop() can finalize
+    }
+
     return await programRecorder.start(opts);
   } catch (err) {
     console.error("[IPC recorder:start] error:", err.message);
@@ -4452,9 +4467,35 @@ ipcMain.handle("recorder:start", async (_e, options) => {
 });
 
 ipcMain.handle("recorder:stop", async () => {
+  const pendingIndexId = programRecorder.config?._recordingIndexId || null;
   try {
-    return await programRecorder.stop();
+    const result = await programRecorder.stop();
+
+    // Finalize the recording index entry with validated metadata
+    if (recordingIndex && pendingIndexId) {
+      const finalized = recordingIndex.finalizeEntry(pendingIndexId, result);
+      console.log(`[IPC recorder:stop] Recording indexed: ${finalized?.status} — ${finalized?.outputPath}`);
+      // Notify renderer so Sessions UI refreshes immediately
+      const wins = BrowserWindow.getAllWindows();
+      for (const w of wins) {
+        try { w.webContents.send("recording-session-updated"); } catch (_) {}
+      }
+    } else if (result && result.ok && result.outputPath && recordingIndex) {
+      // Fallback: create+finalize if we lost the id (e.g. recorder was started before index was ready)
+      const entry = recordingIndex.createEntry({ outputPath: result.outputPath });
+      recordingIndex.finalizeEntry(entry.id, result);
+      const wins = BrowserWindow.getAllWindows();
+      for (const w of wins) {
+        try { w.webContents.send("recording-session-updated"); } catch (_) {}
+      }
+    }
+
+    return result;
   } catch (err) {
+    // Mark recording as failed in index
+    if (recordingIndex && pendingIndexId) {
+      recordingIndex.updateEntry(pendingIndexId, { status: 'failed', error: err.message, endedAt: Date.now() });
+    }
     console.error("[IPC recorder:stop] error:", err.message);
     return { ok: false, error: err.message };
   }
@@ -4591,30 +4632,61 @@ ipcMain.on("broadcast:push-audio-chunk", (_e, buffer) => {
 });
 
 ipcMain.handle("session-list", async () => {
-  if (!sessionArchive) return [];
-  return sessionArchive.listSessions();
+  try {
+    // Merge production recording sessions + Whisper/transcription sessions
+    const archiveSessions = sessionArchive ? (await sessionArchive.listSessions() || []) : [];
+    const recordings      = recordingIndex  ? recordingIndex.listEntries() : [];
+    // Tag archive sessions so UI can distinguish them
+    const taggedArchive   = archiveSessions.map(s => ({ ...s, type: s.type || 'transcription' }));
+    const taggedRecording = recordings.map(r => ({ ...r, type: 'recording' }));
+    // Sort all combined by creation time desc
+    const combined = [...taggedArchive, ...taggedRecording]
+      .sort((a, b) => (b.createdAt || b.startedAt || 0) - (a.createdAt || a.startedAt || 0));
+    return combined;
+  } catch (err) {
+    console.error('[IPC session-list] error:', err.message);
+    return [];
+  }
 });
 
 ipcMain.handle("session-get", async (_e, id) => {
+  if (recordingIndex) {
+    const rec = recordingIndex.getEntry(id);
+    if (rec) return rec;
+  }
   if (!sessionArchive) throw new Error("Session archive not ready");
   return sessionArchive.getSession(id);
 });
 
 ipcMain.handle("session-update", async (_e, { id, patch }) => {
+  if (recordingIndex) {
+    const rec = recordingIndex.getEntry(id);
+    if (rec) return recordingIndex.updateEntry(id, patch || {});
+  }
   if (!sessionArchive) throw new Error("Session archive not ready");
   return sessionArchive.updateSession(id, patch || {});
 });
 
 ipcMain.handle("session-delete", async (_e, id) => {
+  if (recordingIndex) {
+    const rec = recordingIndex.getEntry(id);
+    if (rec) {
+      recordingIndex.deleteEntry(id, true);
+      return { ok: true };
+    }
+  }
   if (!sessionArchive) throw new Error("Session archive not ready");
   return sessionArchive.deleteSession(id);
 });
 
 ipcMain.handle("session-delete-many", async (_e, ids) => {
-  if (!sessionArchive) throw new Error("Session archive not ready");
   if (Array.isArray(ids)) {
     for (const id of ids) {
-      await sessionArchive.deleteSession(id);
+      if (recordingIndex && recordingIndex.getEntry(id)) {
+        recordingIndex.deleteEntry(id, true);
+      } else if (sessionArchive) {
+        await sessionArchive.deleteSession(id);
+      }
     }
   }
   return { ok: true };
@@ -4626,9 +4698,16 @@ ipcMain.handle("session-update-transcript", async (_e, { id, text }) => {
 });
 
 ipcMain.handle("session-open-file", async (_e, { id, filename }) => {
+  const { shell } = require("electron");
+  if (recordingIndex) {
+    const rec = recordingIndex.getEntry(id);
+    if (rec && rec.outputPath) {
+      await shell.openPath(rec.outputPath);
+      return { ok: true, path: rec.outputPath };
+    }
+  }
   if (!sessionArchive) return { ok: false };
   const s = await sessionArchive.getSession(id);
-  const { shell } = require("electron");
   const target = filename ? path.join(s.paths.dir, filename) : s.paths.dir;
   await shell.openPath(target);
   return { ok: true, path: target };
@@ -4661,9 +4740,16 @@ ipcMain.on("session-audio-mime", (_e, mime) => {
 });
 
 ipcMain.handle("session-show-in-folder", async (_e, id) => {
+  const { shell } = require("electron");
+  if (recordingIndex) {
+    const rec = recordingIndex.getEntry(id);
+    if (rec && rec.outputPath) {
+      shell.showItemInFolder(rec.outputPath);
+      return { ok: true, path: rec.outputPath };
+    }
+  }
   if (!sessionArchive) return { ok: false };
   const s = await sessionArchive.getSession(id);
-  const { shell } = require("electron");
   const candidates = [
     s.paths.audio,
     s.paths.video,
@@ -4802,6 +4888,18 @@ ipcMain.handle("bumper-set-auto-merge", async (_e, enabled) => {
 });
 
 ipcMain.handle("session-audio-url", async (_e, id) => {
+  const { pathToFileURL } = require("url");
+  if (recordingIndex) {
+    const rec = recordingIndex.getEntry(id);
+    if (rec && rec.outputPath) {
+      try {
+        await fsp.access(rec.outputPath);
+        return pathToFileURL(rec.outputPath).href;
+      } catch (_) {
+        return null;
+      }
+    }
+  }
   if (!sessionArchive) return null;
   const s = await sessionArchive.getSession(id);
   const mediaPath = s.paths.audio || s.paths.video;
@@ -4809,7 +4907,6 @@ ipcMain.handle("session-audio-url", async (_e, id) => {
     await fsp.access(mediaPath);
     const st = await fsp.stat(mediaPath);
     if (!st.size) return null;
-    const { pathToFileURL } = require("url");
     return pathToFileURL(mediaPath).href;
   } catch (_) {
     return null;
@@ -5080,6 +5177,12 @@ app.whenReady().then(async () => {
       if (!win.isDestroyed()) win.webContents.send("session-finalized", meta);
     }
   });
+
+  // Production Recording Index (Stage 8)
+  const recordingsDir = path.join(app.getPath("userData"), "recordings");
+  const ffmpegBin = programRecorder ? programRecorder.getFfmpegPath() : null;
+  recordingIndex = new RecordingIndex(recordingsDir, ffmpegBin);
+
 
   sleepPrevention.init();
   const sleepProbe = sleepPrevention.probe();

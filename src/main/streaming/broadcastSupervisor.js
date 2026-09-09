@@ -16,15 +16,45 @@ const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 
+/**
+ * Broadcast lifecycle states.
+ * Progression: IDLE → STARTING → CONNECTING → ENCODING → TRANSMITTING → LIVE
+ * Failure:     any → FAILED
+ * Reconnect:   FAILED/TRANSMITTING → RECONNECTING → CONNECTING
+ * Stop:        any → STOPPING → STOPPED → IDLE
+ */
+const BROADCAST_STATES = {
+  IDLE:         'IDLE',
+  STARTING:     'STARTING',
+  CONNECTING:   'CONNECTING',
+  ENCODING:     'ENCODING',
+  TRANSMITTING: 'TRANSMITTING',
+  LIVE:         'LIVE',
+  RECONNECTING: 'RECONNECTING',
+  FAILED:       'FAILED',
+  STOPPING:     'STOPPING',
+  STOPPED:      'STOPPED',
+};
+
+// LIVE requires sustained transmission: ≥ this many seconds with fps > 0
+const LIVE_SUSTAIN_SEC = 30;
+
+// Connection timeout: if no frame= appears within this window, mark FAILED
+const CONNECT_TIMEOUT_MS = 20000;
+
 class BroadcastSupervisor {
   constructor() {
     this.ffmpegProcess = null;
-    this.isStreaming = false;
-    this.streamConfig = null;
-    this.startTime = 0;
+    this.isStreaming   = false;  // kept for backward compat
+    this.state         = BROADCAST_STATES.IDLE;
+    this.streamConfig  = null;
+    this.startTime     = 0;
+    this._encodingStartTime = 0;  // when first frame= appeared
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 5;
-    this._reconnectTimer = null;
+    this._reconnectTimer   = null;
+    this._connectTimeoutTimer = null;
+    this._liveTimer        = null;
     this._isIntentionalStop = false;
 
     // Real-time telemetry
@@ -34,12 +64,18 @@ class BroadcastSupervisor {
       framesSent: 0,
       droppedFrames: 0,
       speedFactor: 1.0,
-      health: 'offline', // offline | good | fair | poor
-      reconnects: 0
+      health: 'offline',
+      reconnects: 0,
     };
 
-    this._ffmpegPath = null;
+    this._ffmpegPath    = null;
     this._cachedEncoder = null;
+
+    // Multi-destination streaming maps
+    this._multiProcesses = new Map();
+    this._multiStats     = new Map();
+    this._multiConfig    = new Map();
+    this._multiReconnect = new Map();
   }
 
   /**
@@ -75,6 +111,26 @@ class BroadcastSupervisor {
   getFfmpegPath() {
     if (this._ffmpegPath) return this._ffmpegPath;
 
+    // Priority 1: system FFmpeg if it has openssl/TLS (required for RTMPS)
+    // Only used in development; packaged apps rely on bundled binary.
+    if (process.env.NODE_ENV !== 'production') {
+      const systemCandidates = ['/opt/homebrew/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/usr/bin/ffmpeg'];
+      for (const candidate of systemCandidates) {
+        if (fs.existsSync(candidate)) {
+          try {
+            const res = spawnSync(candidate, ['-buildconf'], { encoding: 'utf8', timeout: 2000 });
+            const conf = (res.stdout || '') + (res.stderr || '');
+            if (conf.includes('--enable-openssl') || conf.includes('--enable-gnutls')) {
+              console.log(`[BroadcastSupervisor] Using system FFmpeg with TLS: ${candidate}`);
+              this._ffmpegPath = candidate;
+              return this._ffmpegPath;
+            }
+          } catch (_) {}
+        }
+      }
+    }
+
+    // Priority 2: bundled ffmpeg-static (arm64 macOS, has SecureTransport TLS)
     try {
       const ffmpegStatic = require('ffmpeg-static');
       if (ffmpegStatic && fs.existsSync(ffmpegStatic)) {
@@ -165,8 +221,11 @@ class BroadcastSupervisor {
     };
 
     this._isIntentionalStop = false;
-    this.reconnectAttempts = 0;
-    this.startTime = Date.now();
+    this.reconnectAttempts   = 0;
+    this.startTime           = Date.now();
+    this._encodingStartTime  = 0;
+    this.state               = BROADCAST_STATES.STARTING;
+    this.stats               = { fps: 0, bitrateKbps: 0, framesSent: 0, droppedFrames: 0, speedFactor: 1.0, health: 'connecting', reconnects: 0 };
 
     return this._spawnStreamProcess();
   }
@@ -255,12 +314,14 @@ class BroadcastSupervisor {
 
       try {
         const stdio = c.withAudio
-          ? ['pipe', 'ignore', 'pipe', 'pipe'] // stdin, stdout, stderr, pipe:3
+          ? ['pipe', 'ignore', 'pipe', 'pipe']
           : ['pipe', 'ignore', 'pipe'];
 
+        this.state = BROADCAST_STATES.CONNECTING;
         this.ffmpegProcess = spawn(ffmpegBin, args, { stdio });
+        console.log(`[BroadcastSupervisor] FFmpeg spawned (PID ${this.ffmpegProcess.pid}) → ${this.sanitizeEndpoint(c.streamUrl)}`);
 
-        // Prime input pipes with 1 frame & audio chunk to satisfy input probers instantly
+        // Prime input pipes
         try {
           const blankFrame = Buffer.alloc(c.width * c.height * 4);
           this.ffmpegProcess.stdin.write(blankFrame);
@@ -272,20 +333,51 @@ class BroadcastSupervisor {
 
         let resolved = false;
 
-        this.ffmpegProcess.stderr.on('data', (data) => {
-          const text = data.toString();
-          if (process.env.DEBUG_BROADCAST) {
-            console.log('[FFmpeg Stderr]', text.trim());
+        // Connection timeout — if no frame= appears in CONNECT_TIMEOUT_MS, mark FAILED
+        this._connectTimeoutTimer = setTimeout(() => {
+          if (!resolved) {
+            console.error(`[BroadcastSupervisor] Connection timeout (${CONNECT_TIMEOUT_MS}ms) — no frames encoded. Marking FAILED.`);
+            this.state = BROADCAST_STATES.FAILED;
+            this.stats.health = 'offline';
+            resolved = true;
+            reject(new Error(`Connection timeout: no frames encoded within ${CONNECT_TIMEOUT_MS}ms`));
           }
-          this._parseStats(text);
+        }, CONNECT_TIMEOUT_MS);
 
-          // Treat first positive statistics emit as successful connection
-          if (!resolved && (text.includes('frame=') || text.includes('bitrate='))) {
+        // Spawn verification timer: resolve startup once process is healthy & ready for frames
+        // NOTE: State remains CONNECTING. It transitions to ENCODING/TRANSMITTING only when frames flow.
+        const spawnVerificationTimer = setTimeout(() => {
+          if (!resolved && this.ffmpegProcess) {
             resolved = true;
             this.isStreaming = true;
-            this.stats.health = 'good';
-            console.log(`[BroadcastSupervisor] Connected to ${this.sanitizeEndpoint(c.streamUrl)} using ${encoder}`);
-            resolve({ ok: true, streamUrl: c.streamUrl });
+            resolve({ ok: true, streamUrl: c.streamUrl, state: this.state });
+          }
+        }, 300);
+
+        this.ffmpegProcess.stderr.on('data', (data) => {
+          const text = data.toString();
+          if (process.env.DEBUG_BROADCAST) console.log('[FFmpeg Stderr]', text.trim());
+          this._parseStats(text);
+
+          // First frame= in stderr = FFmpeg is actively encoding
+          if (text.includes('frame=') || text.includes('bitrate=')) {
+            clearTimeout(this._connectTimeoutTimer);
+            this._connectTimeoutTimer = null;
+
+            if (this.state === BROADCAST_STATES.CONNECTING || this.state === BROADCAST_STATES.STARTING) {
+              this.state = BROADCAST_STATES.ENCODING;
+              this._encodingStartTime = Date.now();
+              this.stats.health = 'good';
+              console.log(`[BroadcastSupervisor] Encoding started → ${this.sanitizeEndpoint(c.streamUrl)} (${encoder})`);
+              this._scheduleLivePromotion();
+            }
+
+            if (!resolved) {
+              clearTimeout(spawnVerificationTimer);
+              resolved = true;
+              this.isStreaming = true;
+              resolve({ ok: true, streamUrl: c.streamUrl, state: this.state });
+            }
           }
         });
 
@@ -302,48 +394,67 @@ class BroadcastSupervisor {
         }
 
         this.ffmpegProcess.on('exit', (code, signal) => {
-          console.warn(`[BroadcastSupervisor] FFmpeg process exited with code ${code}, signal ${signal}`);
+          clearTimeout(spawnVerificationTimer);
+          clearTimeout(this._connectTimeoutTimer);
+          clearTimeout(this._liveTimer);
+          this._connectTimeoutTimer = null;
+          this._liveTimer = null;
+          console.warn(`[BroadcastSupervisor] FFmpeg exited (code=${code}, signal=${signal})`);
           this.ffmpegProcess = null;
 
           if (this._isIntentionalStop) {
             this.isStreaming = false;
+            this.state = BROADCAST_STATES.STOPPED;
             this.stats.health = 'offline';
             if (!resolved) resolve({ ok: true, stopped: true });
           } else {
             this._handleUnexpectedExit(code);
             if (!resolved) {
-              reject(new Error(`FFmpeg exited prematurely with code ${code}`));
+              resolved = true;
+              reject(new Error(`FFmpeg exited prematurely (code=${code})`));
             }
           }
         });
 
         this.ffmpegProcess.on('error', (err) => {
+          clearTimeout(spawnVerificationTimer);
+          clearTimeout(this._connectTimeoutTimer);
           console.error('[BroadcastSupervisor] Process error:', err.message);
-          if (!resolved) reject(err);
+          this.state = BROADCAST_STATES.FAILED;
+          if (!resolved) { resolved = true; reject(err); }
         });
 
-        // Resolve after 1000ms if process is healthy and still running
-        setTimeout(() => {
-          if (!resolved && this.ffmpegProcess && !this.ffmpegProcess.killed) {
-            resolved = true;
-            this.isStreaming = true;
-            this.stats.health = 'good';
-            resolve({ ok: true, streamUrl: c.streamUrl });
-          }
-        }, 1200);
+        // NOTE: NO unconditional timer-based LIVE transition.
+        // State advances only when FFmpeg stderr confirms encoding activity.
 
       } catch (err) {
         this.isStreaming = false;
+        this.state = BROADCAST_STATES.FAILED;
         reject(err);
       }
     });
   }
 
+  /** Schedules ENCODING→TRANSMITTING→LIVE promotion based on sustained real activity. */
+  _scheduleLivePromotion() {
+    if (this._liveTimer) clearTimeout(this._liveTimer);
+    this.state = BROADCAST_STATES.TRANSMITTING;
+    // After LIVE_SUSTAIN_SEC of continuous transmission, promote to LIVE
+    this._liveTimer = setTimeout(() => {
+      if (this.isStreaming && this.stats.fps > 0) {
+        this.state = BROADCAST_STATES.LIVE;
+        console.log('[BroadcastSupervisor] State → LIVE (sustained transmission confirmed)');
+      }
+      this._liveTimer = null;
+    }, LIVE_SUSTAIN_SEC * 1000);
+  }
+
   /**
    * Parses stderr lines from FFmpeg for telemetry (fps, bitrate, drops).
+   * Also drives ENCODING → TRANSMITTING state if we were still CONNECTING.
    */
   _parseStats(text) {
-    // Example: frame=  120 fps= 30 q=28.0 size=    1240kB time=00:00:04.00 bitrate=2539.5kbits/s speed=1.00x drop=0
+    // frame=  120 fps= 30 q=28.0 size=1240kB time=00:00:04.00 bitrate=2539.5kbits/s speed=1.00x drop=0
     const fpsMatch = text.match(/fps=\s*([\d.]+)/);
     if (fpsMatch) this.stats.fps = parseFloat(fpsMatch[1]);
 
@@ -359,14 +470,13 @@ class BroadcastSupervisor {
     const speedMatch = text.match(/speed=\s*([\d.]+)x/);
     if (speedMatch) {
       this.stats.speedFactor = parseFloat(speedMatch[1]);
-      if (this.stats.speedFactor < 0.85) {
-        this.stats.health = 'poor'; // Falling behind real time
-      } else if (this.stats.speedFactor < 0.96) {
-        this.stats.health = 'fair';
-      } else {
-        this.stats.health = 'good';
-      }
+      if (this.stats.speedFactor < 0.85)       this.stats.health = 'poor';
+      else if (this.stats.speedFactor < 0.96)  this.stats.health = 'fair';
+      else                                      this.stats.health = 'good';
     }
+
+    // Ensure we never show fps/bitrate as 0 when we have actual data
+    // (stats default to 0; only show real values or null-equivalent)
   }
 
   /**
@@ -473,14 +583,23 @@ class BroadcastSupervisor {
   getStatus() {
     const uptimeSec = this.isStreaming ? Math.round((Date.now() - this.startTime) / 1000) : 0;
     const rawUrl = this.streamConfig ? this.streamConfig.streamUrl : null;
+    const sanitizedUrl = rawUrl ? this.sanitizeEndpoint(rawUrl) : null;
     return {
       isStreaming: this.isStreaming,
-      streamUrl: rawUrl ? this.sanitizeEndpoint(rawUrl) : null,
-      targetUrl: rawUrl ? this.sanitizeEndpoint(rawUrl) : null,
+      state: this.state,
+      streamUrl: sanitizedUrl,
+      targetUrl: sanitizedUrl,
       uptimeSec,
       reconnectAttempts: this.reconnectAttempts,
-      stats: { ...this.stats },
-      encoder: this._cachedEncoder || 'unknown'
+      stats: {
+        ...this.stats,
+        // Expose null for unconfirmed metrics instead of misleading 0
+        fps: this.state === BROADCAST_STATES.LIVE || this.state === BROADCAST_STATES.TRANSMITTING
+          ? this.stats.fps : null,
+        bitrateKbps: this.state === BROADCAST_STATES.LIVE || this.state === BROADCAST_STATES.TRANSMITTING
+          ? this.stats.bitrateKbps : null,
+      },
+      encoder: this._cachedEncoder || 'unknown',
     };
   }
 
@@ -536,9 +655,12 @@ class BroadcastSupervisor {
       };
       this._multiConfig.set(dest.id, c);
       this._multiStats.set(dest.id, {
-        fps: 0, bitrateKbps: 0, framesSent: 0, droppedFrames: 0,
+        fps: null, bitrateKbps: null, framesSent: 0, droppedFrames: 0,
         speedFactor: 1.0, health: 'connecting', reconnects: 0,
-        isStreaming: false, uptimeSec: 0, startTime: Date.now()
+        isStreaming: false, uptimeSec: 0, startTime: Date.now(),
+        state: BROADCAST_STATES.CONNECTING,
+        _connectTimer: null,
+        _liveTimer: null,
       });
 
       try {
@@ -597,6 +719,7 @@ class BroadcastSupervisor {
       try {
         const stdio = c.withAudio ? ['pipe', 'ignore', 'pipe', 'pipe'] : ['pipe', 'ignore', 'pipe'];
         const proc = spawn(ffmpegBin, args, { stdio });
+        console.log(`[BroadcastSupervisor/${id}] FFmpeg spawned (PID ${proc.pid}) → ${this.sanitizeEndpoint(c.streamUrl)}`);
 
         // Prime pipes
         try {
@@ -612,15 +735,61 @@ class BroadcastSupervisor {
         let resolved = false;
         const stat = this._multiStats.get(id);
 
+        // Per-destination connection timeout
+        const connectTimer = setTimeout(() => {
+          if (!resolved) {
+            console.error(`[BroadcastSupervisor/${id}] Connection timeout — no frames encoded. Marking FAILED.`);
+            if (stat) { stat.state = BROADCAST_STATES.FAILED; stat.health = 'offline'; }
+            resolved = true;
+            reject(new Error(`[${id}] Connection timeout: no frames within ${CONNECT_TIMEOUT_MS}ms`));
+          }
+        }, CONNECT_TIMEOUT_MS);
+        if (stat) stat._connectTimer = connectTimer;
+
+        // Spawn verification timer: resolve startup once process is healthy & ready for frames
+        // NOTE: State remains CONNECTING. It transitions to ENCODING/TRANSMITTING only when frames flow.
+        const spawnVerificationTimer = setTimeout(() => {
+          if (!resolved && this._multiProcesses.has(id)) {
+            resolved = true;
+            if (stat) {
+              stat.isStreaming = true;
+              stat.state = BROADCAST_STATES.CONNECTING;
+              stat.health = 'connecting';
+            }
+            resolve({ ok: true, state: BROADCAST_STATES.CONNECTING });
+          }
+        }, 300);
+
         proc.stderr.on('data', (data) => {
           const text = data.toString();
           if (process.env.DEBUG_BROADCAST) console.log(`[FFmpeg/${id}]`, text.trim());
           this._parseDestStats(id, text);
-          if (!resolved && (text.includes('frame=') || text.includes('bitrate='))) {
-            resolved = true;
-            if (stat) { stat.isStreaming = true; stat.health = 'good'; }
-            console.log(`[BroadcastSupervisor] Destination "${id}" connected to ${this.sanitizeEndpoint(c.streamUrl)}`);
-            resolve({ ok: true });
+
+          if (text.includes('frame=') || text.includes('bitrate=')) {
+            clearTimeout(connectTimer);
+
+            if (stat && (stat.state === BROADCAST_STATES.CONNECTING || stat.state === BROADCAST_STATES.STARTING)) {
+              stat.isStreaming = true;
+              stat.state = BROADCAST_STATES.ENCODING;
+              stat.health = 'good';
+              console.log(`[BroadcastSupervisor/${id}] Encoding → ${this.sanitizeEndpoint(c.streamUrl)}`);
+
+              // Schedule TRANSMITTING→LIVE promotion
+              stat.state = BROADCAST_STATES.TRANSMITTING;
+              stat._liveTimer = setTimeout(() => {
+                if (stat.isStreaming && stat.fps > 0) {
+                  stat.state = BROADCAST_STATES.LIVE;
+                  console.log(`[BroadcastSupervisor/${id}] State → LIVE`);
+                }
+                stat._liveTimer = null;
+              }, LIVE_SUSTAIN_SEC * 1000);
+            }
+
+            if (!resolved) {
+              clearTimeout(spawnVerificationTimer);
+              resolved = true;
+              resolve({ ok: true, state: stat ? stat.state : BROADCAST_STATES.TRANSMITTING });
+            }
           }
         });
 
@@ -636,43 +805,53 @@ class BroadcastSupervisor {
         }
 
         proc.on('exit', (code, signal) => {
+          clearTimeout(spawnVerificationTimer);
+          clearTimeout(connectTimer);
+          if (stat && stat._liveTimer) { clearTimeout(stat._liveTimer); stat._liveTimer = null; }
           console.warn(`[BroadcastSupervisor/${id}] FFmpeg exited (code=${code}, signal=${signal})`);
           this._multiProcesses.delete(id);
-          const s = this._multiStats.get(id);
-          if (s) { s.isStreaming = false; s.health = 'offline'; }
+          if (stat) { stat.isStreaming = false; stat.health = 'offline'; stat.state = BROADCAST_STATES.STOPPED; }
 
           const reconnectCount = (this._multiReconnect.get(id) || 0);
           if (!this._isIntentionalStop && reconnectCount < 5 && this._multiConfig.has(id)) {
             const backoffMs = Math.min(1000 * Math.pow(2, reconnectCount), 16000);
             this._multiReconnect.set(id, reconnectCount + 1);
+            if (stat) { stat.state = BROADCAST_STATES.RECONNECTING; stat.reconnects = (stat.reconnects || 0) + 1; }
             console.warn(`[BroadcastSupervisor/${id}] Reconnecting in ${backoffMs}ms (attempt ${reconnectCount + 1}/5)...`);
             setTimeout(() => {
               if (!this._isIntentionalStop && this._multiConfig.has(id)) {
+                this._multiStats.set(id, {
+                  ...this._multiStats.get(id),
+                  state: BROADCAST_STATES.CONNECTING,
+                  health: 'connecting',
+                  fps: null, bitrateKbps: null,
+                });
                 this._spawnDestinationProcess(id, this._multiConfig.get(id), encoder, ffmpegBin).catch(e => {
                   console.error(`[BroadcastSupervisor/${id}] Reconnect failed:`, e.message);
+                  const s = this._multiStats.get(id);
+                  if (s) s.state = BROADCAST_STATES.FAILED;
                 });
               }
             }, backoffMs);
           }
 
-          if (!resolved) reject(new Error(`FFmpeg/${id} exited prematurely (code=${code})`));
+          if (!resolved) {
+            resolved = true;
+            reject(new Error(`FFmpeg/${id} exited prematurely (code=${code})`));
+          }
         });
 
         proc.on('error', (err) => {
+          clearTimeout(connectTimer);
           console.error(`[BroadcastSupervisor/${id}] Process error:`, err.message);
-          if (!resolved) reject(err);
+          if (stat) stat.state = BROADCAST_STATES.FAILED;
+          if (!resolved) { resolved = true; reject(err); }
         });
 
-        // Resolve after 1200ms if process is healthy
-        setTimeout(() => {
-          if (!resolved && this._multiProcesses.has(id)) {
-            resolved = true;
-            if (stat) { stat.isStreaming = true; stat.health = 'good'; }
-            resolve({ ok: true });
-          }
-        }, 1200);
+        // NOTE: NO unconditional timer-based LIVE/STREAMING transition.
 
       } catch (err) {
+        if (stat) stat.state = BROADCAST_STATES.FAILED;
         reject(err);
       }
     });
@@ -804,20 +983,20 @@ class BroadcastSupervisor {
    * @returns {Object<id, {isStreaming, health, fps, bitrateKbps, uptimeSec, droppedFrames, framesSent}>}
    */
   getMultiStatus() {
-    if (!this._multiStats || this._multiStats.size === 0) {
-      return {};
-    }
+    if (!this._multiStats || this._multiStats.size === 0) return {};
     const result = {};
     for (const [id, stat] of this._multiStats) {
+      const isTransmitting = stat.state === BROADCAST_STATES.TRANSMITTING || stat.state === BROADCAST_STATES.LIVE;
       result[id] = {
-        isStreaming: stat.isStreaming || false,
-        health: stat.health || 'offline',
-        fps: stat.fps || 0,
-        bitrateKbps: stat.bitrateKbps || 0,
-        uptimeSec: stat.uptimeSec || 0,
+        isStreaming:   stat.isStreaming || false,
+        state:         stat.state || BROADCAST_STATES.IDLE,
+        health:        stat.health || 'offline',
+        fps:           isTransmitting ? (stat.fps || 0) : null,
+        bitrateKbps:   isTransmitting ? (stat.bitrateKbps || 0) : null,
+        uptimeSec:     stat.uptimeSec || 0,
         droppedFrames: stat.droppedFrames || 0,
-        framesSent: stat.framesSent || 0,
-        reconnects: stat.reconnects || 0,
+        framesSent:    stat.framesSent || 0,
+        reconnects:    stat.reconnects || 0,
       };
     }
     return result;
@@ -839,5 +1018,6 @@ const broadcastSupervisor = new BroadcastSupervisor();
 
 module.exports = {
   BroadcastSupervisor,
-  broadcastSupervisor
+  broadcastSupervisor,
+  BROADCAST_STATES,
 };
