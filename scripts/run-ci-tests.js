@@ -28,6 +28,7 @@ const TEST_SUITES = [
   { name: 'Stage 8 Runtime Integration Closure', script: 'scripts/test-stage8-runtime.js' },
   { name: 'Stage 9.3 Multi-Destination Broadcast Engine Audit', script: 'scripts/test-stage93-multistream-audit.js' },
   { name: 'Stage 9.5 1080p Raw Video Integrity & Pipeline Audit', script: 'scripts/test-stage95-video-integrity.js' },
+  { name: 'Stage 9.6 Real 1080p A/V Runtime Validation & Stability Audit', script: 'scripts/test-stage96-runtime-validation.js' },
 ];
 
 console.log('====================================================');

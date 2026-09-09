@@ -221,7 +221,7 @@ async function runStage96RuntimeValidation() {
     }
     const audioChunk = create48kPcmAudioChunk(1600, 440, 0);
 
-    const totalTestFrames = 90; // 3.0 seconds of 1080p @ 30 FPS
+    const totalTestFrames = 120; // 4.0 seconds of 1080p @ 30 FPS
     const encodeStartTime = Date.now();
     let writeLatencies = [];
 
@@ -235,13 +235,6 @@ async function runStage96RuntimeValidation() {
 
       if (!vOk) await new Promise(r => proc.stdin.once('drain', r));
       if (!aOk) await new Promise(r => proc.stdio[3].once('drain', r));
-
-      // Drift-free pacing matching 30.0 FPS canvas loop
-      const targetTime = encodeStartTime + Math.round((i + 1) * (1000 / 30));
-      const sleepTime = Math.max(0, targetTime - Date.now());
-      if (sleepTime > 0) {
-        await new Promise(r => setTimeout(r, sleepTime));
-      }
     }
 
     proc.stdin.end();
@@ -254,7 +247,7 @@ async function runStage96RuntimeValidation() {
 
     // Parse FFmpeg reported realtime speed factor from stderr
     const speedMatches = [...stderrData.matchAll(/speed=\s*([\d.]+)x/g)];
-    const finalSpeed = speedMatches.length > 0 ? parseFloat(speedMatches[speedMatches.length - 1][1]) : 1.0;
+    const finalSpeed = speedMatches.length > 0 ? parseFloat(speedMatches[speedMatches.length - 1][1]) : (effectiveFps / 30);
 
     assert.strictEqual(exitCode, 0, `FFmpeg exited with error code ${exitCode}: ${stderrData}`);
     assert(fs.existsSync(localOutputFile), 'Local encoded MP4 must exist');
@@ -264,13 +257,13 @@ async function runStage96RuntimeValidation() {
     testMetrics.encodeDurationSec = totalEncodeTimeSec.toFixed(2);
     testMetrics.speedFactor = finalSpeed.toFixed(2);
 
-    console.log(`    Throughput: ${effectiveFps.toFixed(1)} FPS across ${totalTestFrames} frames in ${totalEncodeTimeSec.toFixed(2)}s`);
-    console.log(`    FFmpeg Reported Speed: ${finalSpeed.toFixed(2)}x`);
+    console.log(`    Hardware Encoding Throughput: ${effectiveFps.toFixed(1)} FPS across ${totalTestFrames} frames in ${totalEncodeTimeSec.toFixed(2)}s`);
+    console.log(`    FFmpeg Reported Speed Factor: ${finalSpeed.toFixed(2)}x (Realtime Target: >= 1.0x)`);
     console.log(`    Avg stdin write latency: ${avgWriteLatencyMs.toFixed(2)} ms per 8.29MB frame`);
 
-    assert(effectiveFps >= 20.0 || finalSpeed >= 0.95, `FFmpeg must maintain realtime speed (effective FPS: ${effectiveFps.toFixed(1)}, speed: ${finalSpeed.toFixed(2)}x)`);
+    assert(finalSpeed >= 1.0 || effectiveFps >= 30.0, `Hardware encoder must achieve speed >= 1.0x (speed: ${finalSpeed.toFixed(2)}x, FPS: ${effectiveFps.toFixed(1)})`);
 
-    pass('Local 1080p Hardware Encoding maintained realtime throughput', `${effectiveFps.toFixed(1)} FPS, speed: ${finalSpeed.toFixed(2)}x`);
+    pass('Local 1080p Hardware Encoding speed verified', `${effectiveFps.toFixed(1)} FPS, ${finalSpeed.toFixed(2)}x realtime headroom`);
   } catch (err) {
     fail('Gate 2 failed', err);
   }
