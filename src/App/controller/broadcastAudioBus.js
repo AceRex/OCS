@@ -44,8 +44,8 @@ class BroadcastAudioBus {
     };
 
     // Circular delay buffer for 0-500ms delay (stereo: 2 channels)
-    // 500ms at 48000Hz = 24,000 samples per channel
-    this.maxDelaySamples = Math.ceil(0.5 * this.sampleRate);
+    // Sized to 1.0s (48,000 samples) so delay up to 500ms (24,000 samples) never aliases the write index
+    this.maxDelaySamples = Math.ceil(1.0 * this.sampleRate);
     this.delayBufferL = new Float32Array(this.maxDelaySamples);
     this.delayBufferR = new Float32Array(this.maxDelaySamples);
     this.delayWriteIdx = 0;
@@ -372,7 +372,9 @@ class BroadcastAudioBus {
         const inputL = e.inputBuffer.getChannelData(0);
         const inputR = e.inputBuffer.numberOfChannels > 1 ? e.inputBuffer.getChannelData(1) : inputL;
         const numSamples = inputL.length;
-        const pcmBuf = Buffer.alloc(numSamples * 4); // 2 bytes L + 2 bytes R
+        // Use DataView + ArrayBuffer instead of Node.js Buffer (renderer has no Buffer global)
+        const pcmArrayBuf = new ArrayBuffer(numSamples * 4); // 2 bytes L + 2 bytes R per sample
+        const view = new DataView(pcmArrayBuf);
 
         for (let i = 0; i < numSamples; i++) {
           let sL = inputL[i];
@@ -382,11 +384,11 @@ class BroadcastAudioBus {
           sL = Math.max(-1.0, Math.min(1.0, sL));
           sR = Math.max(-1.0, Math.min(1.0, sR));
 
-          pcmBuf.writeInt16LE(Math.floor(sL * 32767), i * 4);
-          pcmBuf.writeInt16LE(Math.floor(sR * 32767), i * 4 + 2);
+          view.setInt16(i * 4,     Math.floor(sL * 32767), true); // little-endian
+          view.setInt16(i * 4 + 2, Math.floor(sR * 32767), true);
         }
 
-        if (onPcmChunk) onPcmChunk(pcmBuf);
+        if (onPcmChunk) onPcmChunk(pcmArrayBuf);
       };
 
       return () => {
@@ -404,11 +406,12 @@ class BroadcastAudioBus {
   /**
    * Helper to convert interleaved 16-bit signed PCM buffer to Float32Array.
    */
-  static pcm16ToFloat32(buffer) {
-    const numSamples = Math.floor(buffer.length / 2);
+  static pcm16ToFloat32(arrayBuf) {
+    const view = new DataView(arrayBuf instanceof ArrayBuffer ? arrayBuf : arrayBuf.buffer);
+    const numSamples = Math.floor(view.byteLength / 2);
     const floats = new Float32Array(numSamples);
     for (let i = 0; i < numSamples; i++) {
-      floats[i] = buffer.readInt16LE(i * 2) / 32768;
+      floats[i] = view.getInt16(i * 2, true) / 32768;
     }
     return floats;
   }
@@ -418,14 +421,16 @@ class BroadcastAudioBus {
    */
   static float32ToPcm16(left, right) {
     const numSamples = left.length;
-    const buf = Buffer.alloc(numSamples * 4); // 2 bytes left + 2 bytes right
+    // Use DataView + ArrayBuffer instead of Node.js Buffer (no Buffer in renderer)
+    const arrayBuf = new ArrayBuffer(numSamples * 4); // 2 bytes left + 2 bytes right
+    const view = new DataView(arrayBuf);
     for (let i = 0; i < numSamples; i++) {
       const sL = Math.max(-1.0, Math.min(1.0, left[i]));
       const sR = Math.max(-1.0, Math.min(1.0, right[i]));
-      buf.writeInt16LE(Math.floor(sL * 32767), i * 4);
-      buf.writeInt16LE(Math.floor(sR * 32767), i * 4 + 2);
+      view.setInt16(i * 4,     Math.floor(sL * 32767), true);
+      view.setInt16(i * 4 + 2, Math.floor(sR * 32767), true);
     }
-    return buf;
+    return new Uint8Array(arrayBuf);
   }
 
   /**
