@@ -4436,15 +4436,53 @@ ipcMain.handle("session:get-recovery-state", async () => {
   return recoveryManager.recoveryReport;
 });
 
-// Program Video Canvas Recorder (P0-05)
+// Helper to generate deterministic date-partitioned recording paths (Stage 9.9 Section 6)
+function getDeterministicRecordingPath(baseDir = null, customFilename = null) {
+  const d = new Date();
+  const year = String(d.getFullYear());
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  const hours = String(d.getHours()).padStart(2, '0');
+  const minutes = String(d.getMinutes()).padStart(2, '0');
+  const seconds = String(d.getSeconds()).padStart(2, '0');
+
+  let resolvedBase = baseDir;
+  if (!resolvedBase) {
+    try {
+      // Preferred operator directory: Movies/Videos folder -> OCS Recordings
+      const videosDir = app.getPath("videos");
+      if (videosDir && fs.existsSync(videosDir)) {
+        resolvedBase = path.join(videosDir, "OCS Recordings");
+      }
+    } catch (_) {}
+  }
+  if (!resolvedBase) {
+    resolvedBase = path.join(app.getPath("userData"), "recordings");
+  }
+
+  const dateSubdir = path.join(resolvedBase, year, month, day);
+  if (!fs.existsSync(dateSubdir)) {
+    fs.mkdirSync(dateSubdir, { recursive: true });
+  }
+
+  const filename = customFilename || `OCS_${year}-${month}-${day}_${hours}-${minutes}-${seconds}.mp4`;
+  return path.join(dateSubdir, filename);
+}
+
+// Program Video Canvas Recorder (P0-05 / Stage 9.9)
 ipcMain.handle("recorder:start", async (_e, options) => {
   try {
     let opts = { ...(options || {}) };
-    const defaultRecDir = path.join(app.getPath("userData"), "recordings");
     if (!opts.outputPath) {
-      opts.outputPath = path.join(defaultRecDir, `program_${Date.now()}.mp4`);
+      opts.outputPath = getDeterministicRecordingPath();
     } else if (!path.isAbsolute(opts.outputPath)) {
-      opts.outputPath = path.join(defaultRecDir, opts.outputPath);
+      // If a relative path was passed without directory delimiters, use it as custom filename in deterministic folder
+      if (!opts.outputPath.includes('/') && !opts.outputPath.includes('\\')) {
+        opts.outputPath = getDeterministicRecordingPath(null, opts.outputPath);
+      } else {
+        const defaultRecDir = path.join(app.getPath("userData"), "recordings");
+        opts.outputPath = path.join(defaultRecDir, opts.outputPath);
+      }
     }
 
     // Create recording index entry BEFORE starting — survives crash
@@ -4512,6 +4550,13 @@ ipcMain.handle("recorder:show-in-folder", async (_e, targetPath) => {
       shell.showItemInFolder(fileToReveal);
       return { ok: true, path: fileToReveal };
     }
+    try {
+      const videosDir = path.join(app.getPath("videos"), "OCS Recordings");
+      if (fs.existsSync(videosDir)) {
+        await shell.openPath(videosDir);
+        return { ok: true, path: videosDir };
+      }
+    } catch (_) {}
     const defaultDir = path.join(app.getPath("userData"), "recordings");
     if (fs.existsSync(defaultDir)) {
       await shell.openPath(defaultDir);
@@ -4616,11 +4661,11 @@ ipcMain.handle("broadcast:is-any-streaming", () => {
 });
 
 // Frame/audio push — fans out to ALL active destinations (single and multi)
-ipcMain.on("broadcast:push-video-frame", (_e, buffer) => {
+ipcMain.on("broadcast:push-video-frame", (_e, buffer, metadata) => {
   if (buffer) {
     const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
     // Use fanout if multi-destinations are active; fall back to single otherwise
-    broadcastSupervisor.writeVideoFrameAll(buf);
+    broadcastSupervisor.writeVideoFrameAll(buf, metadata);
   }
 });
 

@@ -29,6 +29,9 @@ const TEST_SUITES = [
   { name: 'Stage 9.3 Multi-Destination Broadcast Engine Audit', script: 'scripts/test-stage93-multistream-audit.js' },
   { name: 'Stage 9.5 1080p Raw Video Integrity & Pipeline Audit', script: 'scripts/test-stage95-video-integrity.js' },
   { name: 'Stage 9.6 Real 1080p A/V Runtime Validation & Stability Audit', script: 'scripts/test-stage96-runtime-validation.js' },
+  { name: 'Stage 9.7 Real 1080p Streaming Stability, Reconnect & Latency Audit', script: 'scripts/test-stage97-live-stability.js' },
+  { name: 'Stage 9.8 External Platform & Field Production Validation', script: 'scripts/test-stage98-external-validation.js' },
+  { name: 'Stage 9.9 Local Recording & Network Resilience Audit', script: 'scripts/test-stage99-recording-network-resilience.js' },
 ];
 
 console.log('====================================================');

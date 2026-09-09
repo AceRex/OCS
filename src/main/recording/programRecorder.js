@@ -13,9 +13,23 @@ const fs = require('fs');
 
 class ProgramRecorder {
   constructor() {
+    this.recordingId = null;
+    this.state = 'IDLE'; // IDLE | STARTING | RECORDING | STOPPING | COMPLETED | FAILED
+    this.processPid = null;
+    this.processStartTime = null;
+    this.processExitTime = null;
+    this.outputPath = null;
+    this.outputBytes = 0;
+    this.encodedFrames = 0;
+    this.lastFrameAt = null;
+    this.lastAudioAt = null;
+    this.lastError = null;
+    this.exitCode = null;
+    this.exitSignal = null;
+    this.durationMs = 0;
+
     this.ffmpegProcess = null;
     this.isRecording = false;
-    this.outputPath = null;
     this.config = null;
     this.startTime = 0;
     this.framesRecorded = 0;
@@ -125,12 +139,27 @@ class ProgramRecorder {
     if (freeSpace !== null && freeSpace < minRequiredBytes) {
       const freeMb = Math.round(freeSpace / (1024 * 1024));
       const reqMb = Math.round(minRequiredBytes / (1024 * 1024));
-      return Promise.reject(new Error(`Insufficient disk space: only ${freeMb}MB free on target drive. Minimum required is ${reqMb}MB.`));
+      this.state = 'FAILED';
+      this.lastError = `Insufficient disk space: only ${freeMb}MB free on target drive. Minimum required is ${reqMb}MB.`;
+      return Promise.reject(new Error(this.lastError));
     }
 
+    this.state = 'STARTING';
+    this.recordingId = options.recordingId || `rec_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+    this.processStartTime = Date.now();
+    this.processExitTime = null;
     this.outputPath = outputPath;
+    this.outputBytes = 0;
+    this.encodedFrames = 0;
+    this.lastFrameAt = null;
+    this.lastAudioAt = null;
+    this.lastError = null;
+    this.exitCode = null;
+    this.exitSignal = null;
+    this.durationMs = 0;
+
     this.config = { width, height, fps, sampleRate, channels, withAudio };
-    this.startTime = Date.now();
+    this.startTime = this.processStartTime;
     this.framesRecorded = 0;
     this.audioBytesRecorded = 0;
     this._isBackpressured = false;
@@ -191,13 +220,14 @@ class ProgramRecorder {
           : ['pipe', 'ignore', 'pipe'];
 
         this.ffmpegProcess = spawn(ffmpegBin, args, { stdio });
+        this.processPid = this.ffmpegProcess.pid || null;
 
         let started = false;
         let stderrData = '';
 
         this.ffmpegProcess.stderr.on('data', (data) => {
           stderrData += data.toString();
-          // Keep only the last 1KB for error reporting
+          // Keep only the last 2KB for error reporting
           if (stderrData.length > 2048) {
             stderrData = stderrData.slice(-2048);
           }
@@ -206,6 +236,8 @@ class ProgramRecorder {
         this.ffmpegProcess.on('error', (err) => {
           console.error('[ProgramRecorder] FFmpeg spawn error:', err.message);
           this.isRecording = false;
+          this.state = 'FAILED';
+          this.lastError = err.message;
           if (!started) {
             reject(err);
           }
@@ -214,9 +246,14 @@ class ProgramRecorder {
         this.ffmpegProcess.on('exit', (code, signal) => {
           console.log(`[ProgramRecorder] FFmpeg exited with code ${code}, signal ${signal}`);
           this.isRecording = false;
+          this.processExitTime = Date.now();
+          this.exitCode = code;
+          this.exitSignal = signal;
           this.ffmpegProcess = null;
           if (!started && code !== 0) {
-            reject(new Error(`FFmpeg exited immediately with code ${code}: ${stderrData}`));
+            this.state = 'FAILED';
+            this.lastError = `FFmpeg exited immediately with code ${code}: ${stderrData}`;
+            reject(new Error(this.lastError));
           }
         });
 
@@ -246,11 +283,19 @@ class ProgramRecorder {
         });
 
         this.isRecording = true;
+        this.state = 'RECORDING';
         started = true;
-        console.log(`[ProgramRecorder] Started recording to ${outputPath} (${width}x${height} @ ${fps}fps using ${encoder})`);
-        resolve({ ok: true, outputPath });
+        console.log(`[ProgramRecorder] Started recording ${this.recordingId} to ${outputPath} (${width}x${height} @ ${fps}fps using ${encoder}, pid=${this.processPid})`);
+        resolve({
+          ok: true,
+          recordingId: this.recordingId,
+          outputPath,
+          state: this.state
+        });
       } catch (err) {
         this.isRecording = false;
+        this.state = 'FAILED';
+        this.lastError = err.message;
         reject(err);
       }
     });
@@ -275,12 +320,16 @@ class ProgramRecorder {
     try {
       const canAcceptMore = this.ffmpegProcess.stdin.write(buffer);
       this.framesRecorded++;
+      this.encodedFrames = this.framesRecorded;
+      this.lastFrameAt = Date.now();
+      this.durationMs = this.lastFrameAt - (this.startTime || this.lastFrameAt);
       if (!canAcceptMore) {
         this._isBackpressured = true;
       }
       return canAcceptMore;
     } catch (err) {
       console.error('[ProgramRecorder] Frame write error:', err.message);
+      this.lastError = err.message;
       return false;
     }
   }
@@ -299,9 +348,11 @@ class ProgramRecorder {
     try {
       const canAcceptMore = this.ffmpegProcess.stdio[3].write(buffer);
       this.audioBytesRecorded += buffer.length;
+      this.lastAudioAt = Date.now();
       return canAcceptMore;
     } catch (err) {
       console.error('[ProgramRecorder] Audio write error:', err.message);
+      this.lastError = err.message;
       return false;
     }
   }
@@ -309,19 +360,23 @@ class ProgramRecorder {
   /**
    * Stops recording and finalizes the MP4 file.
    *
-   * @returns {Promise<{ok: boolean, outputPath: string, durationSec: number, bytesWritten: number, framesRecorded: number}>}
+   * @returns {Promise<{ok: boolean, recordingId: string, state: string, outputPath: string, durationSec: number, bytesWritten: number, framesRecorded: number}>}
    */
   stop() {
     if (!this.isRecording || !this.ffmpegProcess) {
       return Promise.resolve({
         ok: false,
         reason: 'Not currently recording',
+        recordingId: this.recordingId,
+        state: this.state,
         outputPath: this.outputPath
       });
     }
 
+    this.state = 'STOPPING';
     const proc = this.ffmpegProcess;
     const outputPath = this.outputPath;
+    const recordingId = this.recordingId;
     const framesRecorded = this.framesRecorded;
     const durationSec = ((Date.now() - this.startTime) / 1000).toFixed(2);
 
@@ -333,9 +388,12 @@ class ProgramRecorder {
         } catch (_) {}
       }, 10000);
 
-      proc.once('exit', () => {
+      proc.once('exit', (code, signal) => {
         clearTimeout(finalizeTimeout);
         this.isRecording = false;
+        this.processExitTime = Date.now();
+        this.exitCode = code;
+        this.exitSignal = signal;
         this.ffmpegProcess = null;
 
         let bytesWritten = 0;
@@ -345,9 +403,22 @@ class ProgramRecorder {
           }
         } catch (_) {}
 
-        console.log(`[ProgramRecorder] Finalized recording: ${outputPath} (${bytesWritten} bytes, ${framesRecorded} frames, ${durationSec}s)`);
+        this.outputBytes = bytesWritten;
+        this.durationMs = Math.round(Number(durationSec) * 1000);
+
+        // State Machine validation: COMPLETED only if file exists and bytesWritten > 0
+        if (bytesWritten > 0 && (code === 0 || code === null)) {
+          this.state = 'COMPLETED';
+        } else {
+          this.state = 'FAILED';
+          this.lastError = `Recording finalization failed: exitCode=${code}, bytesWritten=${bytesWritten}`;
+        }
+
+        console.log(`[ProgramRecorder] Finalized recording ${recordingId}: state=${this.state}, ${outputPath} (${bytesWritten} bytes, ${framesRecorded} frames, ${durationSec}s)`);
         resolve({
-          ok: true,
+          ok: this.state === 'COMPLETED',
+          recordingId,
+          state: this.state,
           outputPath,
           durationSec: Number(durationSec),
           bytesWritten,
@@ -379,14 +450,37 @@ class ProgramRecorder {
   }
 
   /**
-   * Retrieves live recording metrics.
+   * Retrieves live recording metrics conforming to Stage 9.9 Section 7 Telemetry contract (14 fields).
    */
   getStatus() {
-    const elapsedSec = this.isRecording ? ((Date.now() - this.startTime) / 1000) : 0;
+    const elapsedSec = this.isRecording ? ((Date.now() - this.startTime) / 1000) : (this.durationMs / 1000);
     const freeDiskBytes = this.outputPath ? ProgramRecorder.getAvailableDiskSpace(path.dirname(this.outputPath)) : null;
+    let currentFileBytes = this.outputBytes;
+    if (this.isRecording && this.outputPath && fs.existsSync(this.outputPath)) {
+      try {
+        currentFileBytes = fs.statSync(this.outputPath).size;
+      } catch (_) {}
+    }
+
     return {
-      isRecording: this.isRecording,
+      // Stage 9.9 Section 7: 14 Required Telemetry Fields
+      recordingId: this.recordingId,
+      state: this.state,
+      processPid: this.processPid,
+      processStartTime: this.processStartTime,
+      processExitTime: this.processExitTime,
       outputPath: this.outputPath,
+      outputBytes: currentFileBytes,
+      encodedFrames: this.encodedFrames,
+      lastFrameAt: this.lastFrameAt,
+      lastAudioAt: this.lastAudioAt,
+      lastError: this.lastError,
+      exitCode: this.exitCode,
+      exitSignal: this.exitSignal,
+      durationMs: this.isRecording ? (Date.now() - this.startTime) : this.durationMs,
+
+      // Legacy/UI convenience compatibility
+      isRecording: this.isRecording,
       framesRecorded: this.framesRecorded,
       audioBytesRecorded: this.audioBytesRecorded,
       elapsedSec: Math.round(elapsedSec),

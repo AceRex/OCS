@@ -713,7 +713,7 @@ contextBridge.exposeInMainWorld("electron", {
     start: (config) => ipcRenderer.invoke('broadcast:start', config),
     stop: () => ipcRenderer.invoke('broadcast:stop'),
     getStatus: () => ipcRenderer.invoke('broadcast:status'),
-    pushVideoFrame: (buffer) => ipcRenderer.send('broadcast:push-video-frame', buffer),
+    pushVideoFrame: (buffer, metadata) => ipcRenderer.send('broadcast:push-video-frame', buffer, metadata),
     pushAudioChunk: (buffer) => ipcRenderer.send('broadcast:push-audio-chunk', buffer),
     // Multi-destination simulstreaming (Stage 8)
     startMulti: (destinations, baseConfig) => ipcRenderer.invoke('broadcast:start-multi', destinations, baseConfig),

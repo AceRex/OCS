@@ -29,6 +29,8 @@ export default function SwitcherProgramCanvas({
   isMirrored = false,
   broadcastConfig,
   isBroadcastActive = false, // true when streaming or recording — triggers continuous 30fps frame push
+  isStreamingActive = false,
+  isRecordingActive = false,
   outputWidth = 1280,
   outputHeight = 720,
 }) {
@@ -366,8 +368,8 @@ export default function SwitcherProgramCanvas({
 
       // 2. High-performance raw RGBA extraction for Program Recorder & Broadcast Supervisor
       // If either native recorder or native broadcast supervisor is active, deliver raw pixel buffer
-      const hasRecorder = typeof window.electron?.Recorder?.pushVideoFrame === "function";
-      const hasBroadcast = typeof window.electron?.Broadcast?.pushVideoFrame === "function";
+      const hasRecorder = isRecordingActive && typeof window.electron?.Recorder?.pushVideoFrame === "function";
+      const hasBroadcast = isStreamingActive && typeof window.electron?.Broadcast?.pushVideoFrame === "function";
 
       if (hasRecorder || hasBroadcast) {
         const cw = outputWidth || canvas.width || 1280;
@@ -377,17 +379,18 @@ export default function SwitcherProgramCanvas({
           // IMPORTANT: ArrayBuffer.transfer() is destructive — the first receiver
           // neuterates the buffer, making it zero-length for subsequent consumers.
           // We must create independent copies so each IPC send gets its own buffer.
+          const frameMeta = { captureTimestamp: Date.now() };
           if (hasRecorder && hasBroadcast) {
             // Two consumers: copy once, slice into two independent ArrayBuffers
             const shared = imgData.data.buffer;
             const recBuf = shared.slice(0);   // independent copy for recorder
             const bcastBuf = shared.slice(0); // independent copy for broadcast
             window.electron.Recorder.pushVideoFrame(recBuf);
-            window.electron.Broadcast.pushVideoFrame(bcastBuf);
+            window.electron.Broadcast.pushVideoFrame(bcastBuf, frameMeta);
           } else if (hasRecorder) {
             window.electron.Recorder.pushVideoFrame(imgData.data.buffer);
           } else {
-            window.electron.Broadcast.pushVideoFrame(imgData.data.buffer);
+            window.electron.Broadcast.pushVideoFrame(imgData.data.buffer, frameMeta);
           }
         }
       }

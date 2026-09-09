@@ -992,12 +992,12 @@ class BroadcastSupervisor {
    * @param {Buffer} buffer - Raw RGBA frame
    * @returns {number} Number of destinations that received the frame
    */
-  writeVideoFrameAll(buffer) {
+  writeVideoFrameAll(buffer, metadata = {}) {
     if (this._workers && this._workers.size > 0) {
       let count = 0;
       for (const worker of this._workers.values()) {
         try {
-          if (worker.writeVideoFrame && worker.writeVideoFrame(buffer)) count++;
+          if (worker.writeVideoFrame && worker.writeVideoFrame(buffer, metadata)) count++;
         } catch (_) {}
       }
       return count;

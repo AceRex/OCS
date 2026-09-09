@@ -213,7 +213,8 @@ export default function LiveSwitcherController() {
   const [destinations, setDestinations] = useState(loadDestinations);
   const [multiStreamStatus, setMultiStreamStatus] = useState({});
   const [isRecordingProgram, setIsRecordingProgram] = useState(false);
-  const [recorderStats, setRecorderStats] = useState({ elapsedSec: 0, framesRecorded: 0 });
+  const [activeRecordingPath, setActiveRecordingPath] = useState(null);
+  const [recorderStats, setRecorderStats] = useState({ elapsedSec: 0, framesRecorded: 0, outputPath: null, state: 'IDLE' });
   const [audioDelayMs, setAudioDelayMs] = useState(0);
   const [streamBitrate, setStreamBitrate] = useState(4500);
   const [streamWidth, setStreamWidth] = useState(1280);
@@ -276,7 +277,13 @@ export default function LiveSwitcherController() {
           const r = await window.electron.Recorder.getStatus();
           if (r) {
             setIsRecordingProgram(Boolean(r.isRecording));
-            setRecorderStats({ elapsedSec: r.elapsedSec || 0, framesRecorded: r.framesRecorded || 0 });
+            if (r.outputPath) setActiveRecordingPath(r.outputPath);
+            setRecorderStats({
+              elapsedSec: r.elapsedSec || 0,
+              framesRecorded: r.framesRecorded || 0,
+              outputPath: r.outputPath || null,
+              state: r.state || (r.isRecording ? 'RECORDING' : 'IDLE')
+            });
           }
         }
       } catch (_) {}
@@ -336,6 +343,19 @@ export default function LiveSwitcherController() {
         const enabledDests = destinations.filter(d => d.enabled && (d.url || d.key));
         if (enabledDests.length === 0) return;
 
+        // Human Operator Safeguard: Validate that cloud destinations requiring a stream key have one entered
+        const missingKeyDest = enabledDests.find(d => {
+          const url = (d.url || '').toLowerCase();
+          const isCloudService = url.includes('youtube') || url.includes('facebook') || url.includes('twitch') || url.includes('tiktok') || url.includes('instagram');
+          return isCloudService && (!d.key || !d.key.trim());
+        });
+
+        if (missingKeyDest) {
+          setFeedback({ text: `Please enter a Stream Key for ${missingKeyDest.label || 'destination'} before starting.`, ok: false });
+          setShowBroadcastModal(true);
+          return;
+        }
+
         saveDestinations(destinations);
 
         const destConfigs = enabledDests.map(d => ({
@@ -364,17 +384,20 @@ export default function LiveSwitcherController() {
   const toggleRecording = async () => {
     if (isRecordingProgram) {
       try {
-        await window.electron?.Recorder?.stop();
+        const res = await window.electron?.Recorder?.stop();
         setIsRecordingProgram(false);
         stopAudioStreamingIfIdle();
+        if (res?.outputPath) {
+          setActiveRecordingPath(res.outputPath);
+          setFeedback?.(`Recording saved: ${res.outputPath}`);
+        }
       } catch (e) {
         console.error("Failed to stop recording:", e);
       }
     } else {
       try {
-        const outPath = `recordings/program_${Date.now()}.mp4`;
+        // Calling start without hardcoded outputPath lets main.js generate deterministic path
         const res = await window.electron?.Recorder?.start({
-          outputPath: outPath,
           width: streamWidth,
           height: streamHeight,
           fps: 30,
@@ -382,6 +405,10 @@ export default function LiveSwitcherController() {
         });
         if (res && res.ok) {
           setIsRecordingProgram(true);
+          if (res.outputPath) {
+            setActiveRecordingPath(res.outputPath);
+            setFeedback?.(`Recording started: ${res.outputPath}`);
+          }
           await ensureAudioStreaming();
         }
       } catch (e) {
@@ -1536,9 +1563,10 @@ export default function LiveSwitcherController() {
               mixProgress={mixProgress}
               transitionSetting={transitionSetting}
               isSharingActive={isSharingActive}
-              isMirrored={isProgramMirrored}
               broadcastConfig={cfg}
               isBroadcastActive={isAnyStreaming || isRecordingProgram}
+              isStreamingActive={isAnyStreaming}
+              isRecordingActive={isRecordingProgram}
               outputWidth={streamWidth}
               outputHeight={streamHeight}
             />
@@ -3787,32 +3815,52 @@ export default function LiveSwitcherController() {
               </div>
 
               {/* ── Local Program MP4 Recorder (P0-05) ── */}
-              <div className="flex items-center justify-between p-4 rounded-[12px] bg-black/40 border border-white/10">
-                <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-[12px] border flex items-center justify-center ${
-                    isRecordingProgram ? "bg-red-600 text-white border-red-500 animate-pulse" : "bg-white/5 border-white/10 text-white/40"
-                  }`}>
-                    <PiCircle size={14} className={isRecordingProgram ? "fill-white" : ""} />
+              <div className="flex flex-col gap-2 p-4 rounded-[12px] bg-black/40 border border-white/10">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className={`w-8 h-8 rounded-[12px] border flex items-center justify-center ${
+                      isRecordingProgram ? "bg-red-600 text-white border-red-500 animate-pulse" : "bg-white/5 border-white/10 text-white/40"
+                    }`}>
+                      <PiCircle size={14} className={isRecordingProgram ? "fill-white" : ""} />
+                    </div>
+                    <div>
+                      <span className="text-xs font-bold text-white block">Program MP4 Recorder</span>
+                      <span className="text-[10px] text-white/40 block">
+                        {isRecordingProgram
+                          ? `Recording: ${recorderStats.elapsedSec}s · ${recorderStats.framesRecorded} frames · Crash-Resilient`
+                          : "Record composite program output to crash-resilient fragmented MP4"}
+                      </span>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-xs font-bold text-white block">Program MP4 Recorder</span>
-                    <span className="text-[10px] text-white/40 block">
-                      {isRecordingProgram
-                        ? `Recording: ${recorderStats.elapsedSec}s · ${recorderStats.framesRecorded} frames · Crash-Resilient`
-                        : "Record composite program output to crash-resilient fragmented MP4"}
-                    </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={async () => {
+                        try {
+                          await window.electron?.Recorder?.showInFolder(activeRecordingPath);
+                        } catch (_) {}
+                      }}
+                      className="px-2.5 py-1.5 rounded-[12px] text-xs font-medium border border-white/10 bg-white/5 text-white/70 hover:bg-white/10 hover:text-white transition-all"
+                      title="Open recording destination folder"
+                    >
+                      Open Folder
+                    </button>
+                    <button
+                      onClick={toggleRecording}
+                      className={`px-3 py-1.5 rounded-[12px] text-xs font-bold border transition-all ${
+                        isRecordingProgram
+                          ? "bg-red-500/20 border-red-500/50 text-red-300 hover:bg-red-500/30"
+                          : "bg-white/10 border-white/10 text-white hover:bg-white/20"
+                      }`}
+                    >
+                      {isRecordingProgram ? "Stop Recording" : "Record Local MP4"}
+                    </button>
                   </div>
                 </div>
-                <button
-                  onClick={toggleRecording}
-                  className={`px-3 py-1.5 rounded-[12px] text-xs font-bold border transition-all ${
-                    isRecordingProgram
-                      ? "bg-red-500/20 border-red-500/50 text-red-300 hover:bg-red-500/30"
-                      : "bg-white/10 border-white/10 text-white hover:bg-white/20"
-                  }`}
-                >
-                  {isRecordingProgram ? "Stop Recording" : "Record Local MP4"}
-                </button>
+                {(activeRecordingPath || recorderStats.outputPath) && (
+                  <div className="text-[10px] text-white/40 truncate font-mono bg-black/50 px-2 py-1 rounded-[12px] border border-white/5">
+                    Path: {activeRecordingPath || recorderStats.outputPath}
+                  </div>
+                )}
               </div>
 
             </div>

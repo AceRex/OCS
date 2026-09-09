@@ -1,18 +1,16 @@
 /**
- * OCS Destination Worker — Architecture Closure (Stage 9.3)
+ * OCS Destination Worker — Architecture Closure & Live Stability (Stage 9.7)
  *
- * Implements an isolated, destination-agnostic streaming adapter.
- * Each destination (YouTube, Facebook, Twitch, TikTok, Instagram, Mixlr, Custom RTMP/SRT)
- * is managed by its own independent DestinationWorker instance.
- *
- * Key Invariants:
- * 1. Bounded Backpressure: HighWaterMark monitored. If a destination is slow, stale frames
- *    are dropped locally rather than buffering in Node heap (prevents 110 MB/s heap bloat).
- * 2. True Destination Isolation: Failure, backpressure, or reconnect of one worker NEVER
- *    blocks, starves, or affects other destination workers.
- * 3. Truthful Telemetry: Differentiates inputFrames, encodedFrames, outputBytes, fps, bitrate.
- * 4. Structural Prohibition: LIVE with FPS = 0 or Bitrate = 0 is impossible.
- * 5. Active Output Watchdog: Revokes LIVE to DEGRADED if media stalls for > 4.0s.
+ * Implements an isolated, destination-agnostic streaming adapter with:
+ * 1. Line-buffered FFmpeg stderr chunk reconstruction (handles split tokens across chunk boundaries and \r).
+ * 2. Objective Monotonic Forward-Progress Tracking: Measures real frame/byte advancement rather than
+ *    demanding simultaneous positive fps and bitrateKbps in every chunk.
+ * 3. Conservative Watchdog: Distinguishes telemetry latency from actual transport stalls. Stalls trigger
+ *    orderly auto-reconnects without killing healthy streaming on static frames.
+ * 4. Single-Process Invariant & Zero-Orphan Guarantee: Ensures only ONE FFmpeg instance exists per destination.
+ * 5. Bounded Backpressure & Frame-Age Telemetry: Zero stale queue backlog replayed after reconnect;
+ *    atomic complete frame drops under backpressure.
+ * 6. True Destination Isolation: Failure of one destination never starves or blocks others.
  */
 
 const { spawn } = require('child_process');
@@ -37,8 +35,17 @@ const LIVE_SUSTAIN_MS = 3000;
 // If confirmed output stalls for this long while LIVE/TRANSMITTING, downgrade to DEGRADED
 const STALE_MEDIA_TIMEOUT_MS = 4000;
 
-// If output is completely stalled for this long, trigger automatic reconnection
-const STALL_RECONNECT_TIMEOUT_MS = 10000;
+// If output is completely stalled for this long (zero frames and zero bytes advanced), trigger automatic reconnection
+const STALL_RECONNECT_TIMEOUT_MS = 25000;
+
+// Stage 9.9 Section 14 — Queue Policy Limits:
+// Justification:
+// 1 frame = 8,294,400 bytes at 1080p RGBA (30 FPS = ~248.8 MB/s uncompressed).
+// Allowing stdin buffering of > 2 frames creates ~16.6 MB heap queue and >66ms input lag.
+// A maximum staleness window of 250ms (≈7 frames) prevents old video replay under network backpressure.
+const MAX_QUEUE_FRAMES = 1;
+const MAX_QUEUE_BYTES = 8294400 * 2; // Up to 2 uncompressed frames
+const MAX_FRAME_AGE_MS = 250; // Frames older than 250ms are considered stale and dropped to maintain current-frame priority
 
 class DestinationWorker {
   /**
@@ -73,6 +80,18 @@ class DestinationWorker {
     this._watchdogInterval = null;
     this._transmittingStartTime = null;
 
+    // Stderr line-buffer & tail ring buffer for diagnostic forensics
+    this._stderrBuffer = '';
+    this._stderrTail = [];
+
+    // Monotonic forward-progress counters
+    this._lastEncodedFrames = 0;
+    this._lastOutputBytes = 0;
+    this._lastMonotonicProgressAt = null;
+
+    // Concurrency guard
+    this._isSpawning = false;
+
     // Independent telemetry
     this.telemetry = {
       state: DESTINATION_STATES.IDLE,
@@ -84,6 +103,7 @@ class DestinationWorker {
       outputBytes: 0,
       fps: null,
       bitrateKbps: null,
+      speedFactor: 1.0,
       droppedFrames: 0,
       duplicatedFrames: 0,
       reconnectCount: 0,
@@ -92,8 +112,27 @@ class DestinationWorker {
       backpressureEvents: 0,
       ffmpegPid: null,
       ffmpegExitCode: null,
+      lastExitCode: null,
+      lastExitSignal: null,
+      lastReconnectReason: null,
+      lastFFmpegError: null,
+      processStartTime: null,
+      processExitTime: null,
       transportConnected: false,
       transportError: null,
+      currentFrameAgeMs: 0,
+      maxFrameAgeMs: 0,
+      avgFrameAgeMs: 0,
+      queueFrames: 0,
+      queueBytes: 0,
+      oldestFrameAgeMs: 0,
+      newestFrameAgeMs: 0,
+      // Stage 9.9 Section 19 Latency Telemetry Contract
+      frameCaptureAt: null,
+      frameQueuedAt: null,
+      frameWrittenAt: null,
+      frameAgeMs: 0,
+      queueDelayMs: 0,
     };
 
     this._startTime = null;
@@ -121,11 +160,18 @@ class DestinationWorker {
   }
 
   /**
-   * Spawns the FFmpeg worker process.
+   * Spawns the FFmpeg worker process with single-process guarantee.
    */
-  start() {
+  async start() {
     if (this.state === DESTINATION_STATES.TRANSMITTING || this.state === DESTINATION_STATES.LIVE) {
-      return Promise.resolve({ ok: true, state: this.state });
+      return { ok: true, state: this.state };
+    }
+
+    // SINGLE PROCESS INVARIANT: Ensure any prior process is completely terminated before spawning new one
+    if (this.proc) {
+      console.warn(`[DestinationWorker/${this.id}] Lingering FFmpeg (PID ${this.proc.pid}) detected before start. Terminating cleanly.`);
+      await this._killProcessCleanly(this.proc);
+      this.proc = null;
     }
 
     this.isIntentionalStop = false;
@@ -137,15 +183,18 @@ class DestinationWorker {
       const c = this.config;
       const ffmpegBin = c.ffmpegBin || 'ffmpeg';
       const encoder = c.encoder || 'h264_videotoolbox';
-      const gopSize = c.fps * 2;
+      const width = c.width || 1280;
+      const height = c.height || 720;
+      const fps = c.fps || 30;
+      const gopSize = fps * 2;
       const isMpegTs = c.streamUrl.startsWith('srt://') || c.streamUrl.startsWith('tcp://') || c.streamUrl.startsWith('udp://');
       const format = isMpegTs ? 'mpegts' : 'flv';
 
       const args = [
         '-y',
         '-f', 'rawvideo', '-pix_fmt', 'rgba',
-        '-s', `${c.width}x${c.height}`,
-        '-r', `${c.fps}`,
+        '-s', `${width}x${height}`,
+        '-r', `${fps}`,
         '-i', 'pipe:0',
       ];
 
@@ -201,6 +250,12 @@ class DestinationWorker {
         args.push('-flvflags', 'no_duration_filesize');
       }
 
+      // Network transport resilience
+      if (c.streamUrl.startsWith('rtmp://') || c.streamUrl.startsWith('rtmps://')) {
+        args.push('-tcp_nodelay', '1');
+      }
+      args.push('-max_interleave_delta', '1000000');
+      args.push('-rw_timeout', '15000000'); // 15s socket timeout
       args.push('-flush_packets', '1', '-f', format, c.streamUrl);
 
       try {
@@ -212,7 +267,11 @@ class DestinationWorker {
         this.telemetry.state = this.state;
         this.proc = spawn(ffmpegBin, args, { stdio });
         this.telemetry.ffmpegPid = this.proc.pid;
+        this.telemetry.processStartTime = Date.now();
+        this.telemetry.processExitTime = null;
         this._startTime = Date.now();
+        this._lastMonotonicProgressAt = Date.now();
+        this._stderrBuffer = '';
 
         console.log(`[DestinationWorker/${this.id}] Spawned (PID ${this.proc.pid}) → ${this.getSanitizedUrl()}`);
 
@@ -235,6 +294,9 @@ class DestinationWorker {
         // Setup backpressure drain listener
         this.proc.stdin.on('drain', () => {
           this.isBackpressured = false;
+          this.telemetry.queueFrames = 0;
+          this.telemetry.queueBytes = 0;
+          this.telemetry.oldestFrameAgeMs = 0;
         });
 
         this.proc.stdin.on('error', (err) => {
@@ -272,8 +334,7 @@ class DestinationWorker {
 
         this.proc.stderr.on('data', (data) => {
           const text = data.toString();
-          if (process.env.DEBUG_BROADCAST) console.log(`[FFmpeg/${this.id}]`, text.trim());
-          this._parseStderr(text);
+          this._handleStderrData(text);
 
           if (this.telemetry.encodedFrames > 0 && !resolved) {
             clearTimeout(spawnTimer);
@@ -289,10 +350,19 @@ class DestinationWorker {
           this._clearIntervals();
 
           this.telemetry.ffmpegExitCode = code;
+          this.telemetry.lastExitCode = code;
+          this.telemetry.lastExitSignal = signal;
+          this.telemetry.processExitTime = Date.now();
+          if (this._stderrTail.length > 0) {
+            this.telemetry.lastFFmpegError = this._stderrTail.slice(-1)[0];
+          }
           this.proc = null;
           this.isBackpressured = false;
 
-          console.warn(`[DestinationWorker/${this.id}] FFmpeg exited (code=${code}, signal=${signal})`);
+          const stderrTailMsg = this._stderrTail.length > 0
+            ? `\n  Last FFmpeg output:\n  ` + this._stderrTail.slice(-5).join('\n  ')
+            : '';
+          console.warn(`[DestinationWorker/${this.id}] FFmpeg exited (code=${code}, signal=${signal})${stderrTailMsg}`);
 
           if (this.isIntentionalStop) {
             this.state = DESTINATION_STATES.STOPPED;
@@ -300,10 +370,13 @@ class DestinationWorker {
             this.telemetry.health = 'offline';
             if (!resolved) resolve({ ok: true, stopped: true });
           } else {
-            this._handleUnexpectedExit(code);
+            if (!this.telemetry.lastReconnectReason) {
+              this.telemetry.lastReconnectReason = `process_exit (code=${code}, signal=${signal})`;
+            }
+            this._handleUnexpectedExit(code, signal);
             if (!resolved) {
               resolved = true;
-              reject(new Error(`[${this.id}] FFmpeg exited prematurely (code=${code})`));
+              reject(new Error(`[${this.id}] FFmpeg exited prematurely (code=${code}, signal=${signal})`));
             }
           }
         });
@@ -329,11 +402,35 @@ class DestinationWorker {
   }
 
   /**
-   * Parses stderr lines from FFmpeg.
+   * Reconstructs stderr chunks into complete lines across buffer boundaries and carriage returns.
    */
-  _parseStderr(text) {
-    // 1. Parse encoded frames (must be strictly positive integer)
-    const frameMatch = text.match(/frame=\s*(\d+)/);
+  _handleStderrData(text) {
+    this._stderrBuffer += text;
+
+    // Split on \r or \n to handle FFmpeg carriage-return progress lines & chunk boundaries
+    const lines = this._stderrBuffer.split(/[\r\n]+/);
+    // Retain the unclosed trailing slice
+    this._stderrBuffer = lines.pop() || '';
+
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+
+      // Keep ring buffer of last 40 lines for forensic analysis
+      this._stderrTail.push(trimmed);
+      if (this._stderrTail.length > 40) this._stderrTail.shift();
+
+      if (process.env.DEBUG_BROADCAST) console.log(`[FFmpeg/${this.id}]`, trimmed);
+      this._parseStderrLine(trimmed);
+    }
+  }
+
+  /**
+   * Parses a complete reconstructed stderr line from FFmpeg.
+   */
+  _parseStderrLine(line) {
+    // 1. Encoded frames (strictly positive integer)
+    const frameMatch = line.match(/frame=\s*(\d+)/);
     if (frameMatch) {
       const frames = parseInt(frameMatch[1], 10);
       if (frames > 0) {
@@ -342,14 +439,15 @@ class DestinationWorker {
       }
     }
 
-    // 2. Parse encoding FPS
-    const fpsMatch = text.match(/fps=\s*([\d.]+)/);
+    // 2. Encoding FPS
+    const fpsMatch = line.match(/fps=\s*([\d.]+)/);
     if (fpsMatch) {
-      this.telemetry.fps = parseFloat(fpsMatch[1]);
+      const fps = parseFloat(fpsMatch[1]);
+      if (fps > 0) this.telemetry.fps = fps;
     }
 
-    // 3. Parse output size / bytes
-    const sizeMatch = text.match(/size=\s*(\d+)\s*(kB|KiB|mB|MiB|B)?/i);
+    // 3. Output size / bytes
+    const sizeMatch = line.match(/size=\s*(\d+)\s*(kB|KiB|mB|MiB|B)?/i);
     if (sizeMatch) {
       const val = parseInt(sizeMatch[1], 10);
       const unit = (sizeMatch[2] || 'kB').toLowerCase();
@@ -361,42 +459,54 @@ class DestinationWorker {
       }
     }
 
-    // 4. Parse transmission bitrate
-    const bitrateMatch = text.match(/bitrate=\s*([\d.]+)kbits\/s/);
+    // 4. Transmission bitrate
+    const bitrateMatch = line.match(/bitrate=\s*([\d.]+)kbits\/s/);
     if (bitrateMatch) {
       const br = parseFloat(bitrateMatch[1]);
       if (br > 0) this.telemetry.bitrateKbps = br;
     }
 
-    // 5. Parse dropped frames reported by encoder
-    const dropMatch = text.match(/drop=\s*(\d+)/);
+    // 5. Dropped / duplicated frames
+    const dropMatch = line.match(/drop=\s*(\d+)/);
     if (dropMatch) {
       this.telemetry.duplicatedFrames = parseInt(dropMatch[1], 10);
     }
 
-    // 6. Forward progress check: If frames and bytes advanced with positive metrics
-    const hasMediaProgress = this.telemetry.encodedFrames > 0 &&
-                             this.telemetry.fps > 0 &&
-                             this.telemetry.bitrateKbps > 0;
+    // 6. Encoding speed factor (e.g. speed=1.05x)
+    const speedMatch = line.match(/speed=\s*([\d.]+)x/);
+    if (speedMatch) {
+      this.telemetry.speedFactor = parseFloat(speedMatch[1]);
+    }
 
-    if (hasMediaProgress) {
+    // 7. OBJECTIVE MONOTONIC FORWARD-PROGRESS CHECK
+    // Measured by actual frame advancement OR output byte advancement.
+    // Does NOT require fps and bitrateKbps to appear together in every chunk!
+    const frameAdvanced = this.telemetry.encodedFrames > this._lastEncodedFrames;
+    const byteAdvanced = this.telemetry.outputBytes > this._lastOutputBytes;
+
+    if (frameAdvanced || byteAdvanced) {
+      if (frameAdvanced) this._lastEncodedFrames = this.telemetry.encodedFrames;
+      if (byteAdvanced) this._lastOutputBytes = this.telemetry.outputBytes;
+
+      this._lastMonotonicProgressAt = Date.now();
       this.telemetry.lastOutputAt = Date.now();
       this.telemetry.transportConnected = true;
       this.telemetry.health = 'good';
 
-      // State progression: CONNECTING -> ENCODING -> TRANSMITTING
+      // State progression: CONNECTING -> ENCODING
       if (this.state === DESTINATION_STATES.CONNECTING || this.state === DESTINATION_STATES.STARTING) {
         this.state = DESTINATION_STATES.ENCODING;
         this.telemetry.state = this.state;
       }
 
+      // ENCODING / DEGRADED -> TRANSMITTING
       if (this.state === DESTINATION_STATES.ENCODING || this.state === DESTINATION_STATES.DEGRADED) {
         this.state = DESTINATION_STATES.TRANSMITTING;
         this.telemetry.state = this.state;
-        this._transmittingStartTime = Date.now();
+        if (!this._transmittingStartTime) this._transmittingStartTime = Date.now();
       }
 
-      // Promote to LIVE after sustaining TRANSMITTING with continuous positive media
+      // Promote to LIVE after sustaining TRANSMITTING
       if (this.state === DESTINATION_STATES.TRANSMITTING && this._transmittingStartTime) {
         if (Date.now() - this._transmittingStartTime >= LIVE_SUSTAIN_MS) {
           this.state = DESTINATION_STATES.LIVE;
@@ -404,6 +514,13 @@ class DestinationWorker {
         }
       }
     }
+  }
+
+  /**
+   * Backwards-compatible parser entry point for tests.
+   */
+  _parseStderr(text) {
+    this._handleStderrData(text);
   }
 
   /**
@@ -429,14 +546,13 @@ class DestinationWorker {
 
     if (!isStreamingState) return;
 
-    const timeSinceLastOutput = this.telemetry.lastOutputAt
-      ? Date.now() - this.telemetry.lastOutputAt
-      : Date.now() - this._startTime;
+    const lastProgress = this.telemetry.lastOutputAt || this._lastMonotonicProgressAt || this._startTime;
+    const timeSinceLastProgress = Date.now() - lastProgress;
 
-    // Check 1: Output Stale (> 4000ms) -> REVOKE LIVE to DEGRADED
-    if (timeSinceLastOutput >= STALE_MEDIA_TIMEOUT_MS) {
+    // Check 1: Output Stale (>= 4000ms) -> REVOKE LIVE to DEGRADED
+    if (timeSinceLastProgress >= STALE_MEDIA_TIMEOUT_MS) {
       if (this.state === DESTINATION_STATES.LIVE) {
-        console.warn(`[DestinationWorker/${this.id}] Media output stalled (${timeSinceLastOutput}ms) — REVOKING LIVE to DEGRADED`);
+        console.warn(`[DestinationWorker/${this.id}] Media output stalled (${timeSinceLastProgress}ms) — REVOKING LIVE to DEGRADED`);
         this.state = DESTINATION_STATES.DEGRADED;
         this.telemetry.state = this.state;
       }
@@ -445,12 +561,28 @@ class DestinationWorker {
       this.telemetry.bitrateKbps = null;
     }
 
-    // Check 2: Total Stalled Transport (> 10000ms) -> Trigger Reconnect
-    if (timeSinceLastOutput >= STALL_RECONNECT_TIMEOUT_MS && !this.isIntentionalStop) {
-      console.error(`[DestinationWorker/${this.id}] Transport completely stalled (${timeSinceLastOutput}ms) — triggering auto-reconnect`);
-      try {
-        if (this.proc) this.proc.kill('SIGKILL');
-      } catch (_) {}
+    // Check 2: Total Stalled Transport (> 25000ms) -> Controlled Auto-Reconnect
+    // Only triggers if ZERO frames and ZERO bytes advanced for 25 seconds!
+    if (timeSinceLastProgress >= STALL_RECONNECT_TIMEOUT_MS && !this.isIntentionalStop) {
+      console.error(`[DestinationWorker/${this.id}] Transport completely stalled (${timeSinceLastProgress}ms with zero frame/byte advance) — triggering auto-reconnect`);
+      this._triggerWatchdogReconnect();
+    }
+  }
+
+  _triggerWatchdogReconnect() {
+    if (!this.proc || this.isIntentionalStop) return;
+    const proc = this.proc;
+    const timeSinceLastProgress = Date.now() - (this.telemetry.lastOutputAt || this._lastMonotonicProgressAt || this._startTime || Date.now());
+    this.telemetry.lastReconnectReason = `watchdog_stall (zero frame/byte advance for ${timeSinceLastProgress}ms)`;
+    try {
+      proc.kill('SIGTERM');
+      setTimeout(() => {
+        try {
+          if (proc && !proc.killed) proc.kill('SIGKILL');
+        } catch (_) {}
+      }, 3000);
+    } catch (_) {
+      try { proc.kill('SIGKILL'); } catch (_) {}
     }
   }
 
@@ -458,10 +590,15 @@ class DestinationWorker {
    * Writes a raw composite video frame into FFmpeg stdin with bounded backpressure.
    *
    * @param {Buffer} buffer - Raw RGBA frame buffer
+   * @param {Object} [metadata] - Optional frame metadata { captureTimestamp, sequence }
    * @returns {boolean} True if written, false if dropped due to backpressure
    */
-  writeVideoFrame(buffer) {
+  writeVideoFrame(buffer, metadata = {}) {
     if (!this.proc || !this.proc.stdin || this.proc.killed) {
+      this.telemetry.droppedFrames++;
+      this.telemetry.queueFrames = 0;
+      this.telemetry.queueBytes = 0;
+      this.telemetry.oldestFrameAgeMs = 0;
       return false;
     }
 
@@ -475,17 +612,59 @@ class DestinationWorker {
       return false;
     }
 
+    // Frame Age Telemetry Calculation (Stage 9.9 Section 19)
+    const now = Date.now();
+    const captureTimestamp = metadata.captureTimestamp || now;
+    const queuedTimestamp = metadata.queuedTimestamp || now;
+    const frameAgeMs = Math.max(0, now - captureTimestamp);
+    const queueDelayMs = Math.max(0, now - queuedTimestamp);
+
     this.telemetry.inputFrames++;
     this.telemetry.inputBytes += buffer.length;
-    this.telemetry.lastFrameAt = Date.now();
+    this.telemetry.lastFrameAt = now;
+    this.telemetry.currentFrameAgeMs = frameAgeMs;
+    this.telemetry.maxFrameAgeMs = Math.max(this.telemetry.maxFrameAgeMs || 0, frameAgeMs);
+    this.telemetry.newestFrameAgeMs = frameAgeMs;
 
-    // BOUNDED BACKPRESSURE INVARIANT:
-    // If pipe is full, DROP stale frame immediately to prevent heap buffering and latency buildup.
+    // Stage 9.9 Section 19 Latency Telemetry
+    this.telemetry.frameCaptureAt = captureTimestamp;
+    this.telemetry.frameQueuedAt = queuedTimestamp;
+    this.telemetry.frameWrittenAt = now;
+    this.telemetry.frameAgeMs = frameAgeMs;
+    this.telemetry.queueDelayMs = queueDelayMs;
+
+    // Rolling average frame age
+    const count = this.telemetry.inputFrames;
+    this.telemetry.avgFrameAgeMs = Math.round(
+      ((this.telemetry.avgFrameAgeMs * (count - 1)) + frameAgeMs) / count
+    );
+
+    // CURRENT-FRAME PRIORITY INVARIANT (Stage 9.9 Section 13 & 14):
+    // If incoming frame is already stale (age > MAX_FRAME_AGE_MS), DROP IT immediately
+    // rather than queueing old frames, preserving freshness and avoiding replay of past minutes.
+    if (frameAgeMs > MAX_FRAME_AGE_MS) {
+      this.telemetry.droppedFrames++;
+      this.telemetry.queueFrames = 0;
+      this.telemetry.queueBytes = 0;
+      this.telemetry.oldestFrameAgeMs = frameAgeMs;
+      return false;
+    }
+
+    // BOUNDED BACKPRESSURE INVARIANT (Stage 9.9 Section 11 & 12):
+    // If pipe is full, DROP stale complete frame immediately to prevent heap buffering and latency buildup.
+    // Atomically drops exactly ONE full frame (8,294,400 bytes); NEVER slices arbitrary rawvideo bytes.
     if (this.isBackpressured) {
       this.telemetry.droppedFrames++;
       this.telemetry.backpressureEvents++;
+      this.telemetry.queueFrames = 1;
+      this.telemetry.queueBytes = buffer.length;
+      this.telemetry.oldestFrameAgeMs = frameAgeMs;
       return false;
     }
+
+    this.telemetry.queueFrames = 0;
+    this.telemetry.queueBytes = 0;
+    this.telemetry.oldestFrameAgeMs = 0;
 
     try {
       const canAcceptMore = this.proc.stdin.write(buffer);
@@ -525,12 +704,20 @@ class DestinationWorker {
   /**
    * Handles unexpected exits with isolated exponential backoff auto-reconnect.
    */
-  _handleUnexpectedExit(code) {
+  _handleUnexpectedExit(code, signal) {
     this.state = DESTINATION_STATES.STOPPED;
     this.telemetry.state = this.state;
     this.telemetry.health = 'offline';
     this.telemetry.fps = null;
     this.telemetry.bitrateKbps = null;
+    this.isBackpressured = false;
+    this.telemetry.queueFrames = 0;
+    this.telemetry.queueBytes = 0;
+    this.telemetry.currentFrameAgeMs = 0;
+    this.telemetry.oldestFrameAgeMs = 0;
+    this.telemetry.newestFrameAgeMs = 0;
+    this.telemetry.frameAgeMs = 0;
+    this.telemetry.queueDelayMs = 0;
 
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
       console.error(`[DestinationWorker/${this.id}] Max reconnects (${this.maxReconnectAttempts}) reached. Marking FAILED.`);
@@ -554,6 +741,38 @@ class DestinationWorker {
         });
       }
     }, backoffMs);
+  }
+
+  /**
+   * Cleanly kills a process with SIGTERM followed by SIGKILL if needed.
+   */
+  _killProcessCleanly(proc) {
+    if (!proc || proc.killed) return Promise.resolve();
+    return new Promise((resolve) => {
+      let resolved = false;
+      const done = () => {
+        if (!resolved) {
+          resolved = true;
+          resolve();
+        }
+      };
+      const forceKillTimer = setTimeout(() => {
+        try { proc.kill('SIGKILL'); } catch (_) {}
+        done();
+      }, 3000);
+
+      proc.once('exit', () => {
+        clearTimeout(forceKillTimer);
+        done();
+      });
+
+      try {
+        if (proc.stdin) proc.stdin.end();
+        if (proc.stdio && proc.stdio[3]) proc.stdio[3].end();
+      } catch (_) {
+        try { proc.kill('SIGTERM'); } catch (_) {}
+      }
+    });
   }
 
   /**
@@ -582,7 +801,7 @@ class DestinationWorker {
     return new Promise((resolve) => {
       const forceKillTimer = setTimeout(() => {
         try { proc.kill('SIGKILL'); } catch (_) {}
-      }, 3000);
+      }, 8000);
 
       proc.once('exit', () => {
         clearTimeout(forceKillTimer);
@@ -614,29 +833,61 @@ class DestinationWorker {
    * Returns current status with strict metric gating and null guarantees.
    */
   getStatus() {
+    const isStreaming = this.state === DESTINATION_STATES.LIVE ||
+                        this.state === DESTINATION_STATES.TRANSMITTING ||
+                        this.state === DESTINATION_STATES.DEGRADED;
+
     const isTransmitting = (this.state === DESTINATION_STATES.TRANSMITTING || this.state === DESTINATION_STATES.LIVE) &&
-                           this.telemetry.encodedFrames > 0 &&
-                           this.telemetry.fps > 0 &&
-                           this.telemetry.bitrateKbps > 0;
+                           this.telemetry.encodedFrames > 0;
 
     return {
+      destinationId: this.id,
       id: this.id,
       label: this.label,
       state: this.state,
-      isStreaming: this.state === DESTINATION_STATES.LIVE || this.state === DESTINATION_STATES.TRANSMITTING || this.state === DESTINATION_STATES.DEGRADED,
+      isStreaming,
       health: this.telemetry.health,
       uptimeSec: this.telemetry.uptimeSec,
       inputFrames: this.telemetry.inputFrames,
       inputBytes: this.telemetry.inputBytes,
       encodedFrames: this.telemetry.encodedFrames,
+      lastEncodedFrame: this.telemetry.encodedFrames,
       outputBytes: this.telemetry.outputBytes,
-      // Strict invariant: Metrics are strictly positive during LIVE/TRANSMITTING, otherwise null
+      lastOutputAt: this.telemetry.lastOutputAt,
+      // Strict invariant: Metrics are reported when actively streaming, otherwise null
       fps: isTransmitting ? this.telemetry.fps : null,
       bitrateKbps: isTransmitting ? this.telemetry.bitrateKbps : null,
+      speedFactor: isTransmitting ? this.telemetry.speedFactor : null,
       droppedFrames: this.telemetry.droppedFrames,
+      duplicatedFrames: this.telemetry.duplicatedFrames,
       backpressureEvents: this.telemetry.backpressureEvents,
       reconnects: this.telemetry.reconnectCount,
+      reconnectCount: this.telemetry.reconnectCount,
       sanitizedUrl: this.getSanitizedUrl(),
+      // Frame Age & Queue Telemetry
+      currentFrameAgeMs: this.telemetry.currentFrameAgeMs,
+      maxFrameAgeMs: this.telemetry.maxFrameAgeMs,
+      avgFrameAgeMs: this.telemetry.avgFrameAgeMs,
+      queueFrames: this.telemetry.queueFrames,
+      queueBytes: this.telemetry.queueBytes,
+      oldestFrameAgeMs: this.telemetry.oldestFrameAgeMs,
+      newestFrameAgeMs: this.telemetry.newestFrameAgeMs,
+      // Stage 9.9 Section 19 Latency Telemetry
+      frameCaptureAt: this.telemetry.frameCaptureAt,
+      frameQueuedAt: this.telemetry.frameQueuedAt,
+      frameWrittenAt: this.telemetry.frameWrittenAt,
+      frameAgeMs: this.telemetry.frameAgeMs,
+      queueDelayMs: this.telemetry.queueDelayMs,
+      ffmpegPid: this.telemetry.ffmpegPid,
+      processPid: this.telemetry.ffmpegPid,
+      processStartTime: this.telemetry.processStartTime,
+      processExitTime: this.telemetry.processExitTime,
+      // Forensic lifecycle telemetry (Stage 9.8 Section 9)
+      lastReconnectReason: this.telemetry.lastReconnectReason || null,
+      lastExitCode: this.telemetry.lastExitCode ?? this.telemetry.ffmpegExitCode ?? null,
+      lastExitSignal: this.telemetry.lastExitSignal || null,
+      lastTransportError: this.telemetry.transportError || null,
+      lastFFmpegError: this.telemetry.lastFFmpegError || (this._stderrTail.length > 0 ? this._stderrTail.slice(-1)[0] : null),
     };
   }
 }
