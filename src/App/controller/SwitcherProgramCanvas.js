@@ -372,12 +372,20 @@ export default function SwitcherProgramCanvas({
         const ch = canvas.height || 720;
         const imgData = ctx.getImageData(0, 0, cw, ch);
         if (imgData && imgData.data) {
-          const rawBuffer = imgData.data.buffer; // Transferable ArrayBuffer
-          if (hasRecorder) {
-            window.electron.Recorder.pushVideoFrame(rawBuffer);
-          }
-          if (hasBroadcast) {
-            window.electron.Broadcast.pushVideoFrame(rawBuffer);
+          // IMPORTANT: ArrayBuffer.transfer() is destructive — the first receiver
+          // neuterates the buffer, making it zero-length for subsequent consumers.
+          // We must create independent copies so each IPC send gets its own buffer.
+          if (hasRecorder && hasBroadcast) {
+            // Two consumers: copy once, slice into two independent ArrayBuffers
+            const shared = imgData.data.buffer;
+            const recBuf = shared.slice(0);   // independent copy for recorder
+            const bcastBuf = shared.slice(0); // independent copy for broadcast
+            window.electron.Recorder.pushVideoFrame(recBuf);
+            window.electron.Broadcast.pushVideoFrame(bcastBuf);
+          } else if (hasRecorder) {
+            window.electron.Recorder.pushVideoFrame(imgData.data.buffer);
+          } else {
+            window.electron.Broadcast.pushVideoFrame(imgData.data.buffer);
           }
         }
       }
