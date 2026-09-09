@@ -28,6 +28,7 @@ export default function SwitcherProgramCanvas({
   isSharingActive = false,
   isMirrored = false,
   broadcastConfig,
+  isBroadcastActive = false, // true when streaming or recording — triggers continuous 30fps frame push
 }) {
   const broadcastConfigRef = useRef(broadcastConfig);
   useEffect(() => {
@@ -456,8 +457,11 @@ export default function SwitcherProgramCanvas({
           }
         }
       } else if (stream && videoRef.current && videoRef.current.readyState >= 2 && canvasRef.current) {
-        // Continuous WebRTC stream playing: copy frame to canvas & broadcast if sharing
-        if (isSharingActive) {
+        // Continuous WebRTC stream playing: copy frame to canvas.
+        // Always render to canvas when sharing OR when broadcast is active (P0-01 fix:
+        // previously gated on isSharingActive, which starved FFmpeg of video frames during
+        // normal presentation mode and caused RTMP streams to be rejected by platforms).
+        if (isSharingActive || isBroadcastActive) {
           const canvas = canvasRef.current;
           const ctx = canvas.getContext("2d", { alpha: false });
           if (ctx) {
@@ -481,14 +485,18 @@ export default function SwitcherProgramCanvas({
             maybeEmitLiveOutputFrame(canvas);
           }
         }
-      } else if (!stream && isDirtyRef.current && canvasRef.current) {
+      } else if (!stream && canvasRef.current) {
+        // Static frame path (slides, Bible, presentations).
+        // When broadcast is active, we must emit frames continuously at ~30fps — not just on
+        // content changes — because RTMP requires a steady video bitstream. Previously only
+        // fired on isDirtyRef which produced a 1-2fps trickle causing platform rejection.
         const bitmap = lastRenderedBitmapRef.current;
         const img = latestImgRef.current;
         const source = bitmap || img;
         if (source) {
           const w = source.width || source.naturalWidth;
           const h = source.height || source.naturalHeight;
-          if (w > 0 && h > 0) {
+          if (w > 0 && h > 0 && (isDirtyRef.current || isBroadcastActive)) {
             const canvas = canvasRef.current;
             const ctx = canvas.getContext("2d", { alpha: false });
             if (ctx) {
@@ -550,7 +558,7 @@ export default function SwitcherProgramCanvas({
       if (animRef.current) cancelAnimationFrame(animRef.current);
       clearInterval(statsInterval);
     };
-  }, [stream, programSourceId, previewSourceId, mixProgress, transitionSetting, isSharingActive]);
+  }, [stream, programSourceId, previewSourceId, mixProgress, transitionSetting, isSharingActive, isBroadcastActive]);
 
   // Frame subscribers
   useEffect(() => {

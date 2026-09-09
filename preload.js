@@ -696,6 +696,7 @@ contextBridge.exposeInMainWorld("electron", {
     start: (options) => ipcRenderer.invoke('recorder:start', options),
     stop: () => ipcRenderer.invoke('recorder:stop'),
     getStatus: () => ipcRenderer.invoke('recorder:status'),
+    showInFolder: (targetPath) => ipcRenderer.invoke('recorder:show-in-folder', targetPath),
     pushVideoFrame: (buffer) => ipcRenderer.send('recorder:push-video-frame', buffer),
     pushAudioChunk: (buffer) => ipcRenderer.send('recorder:push-audio-chunk', buffer),
   },
@@ -708,10 +709,16 @@ contextBridge.exposeInMainWorld("electron", {
     getMeters: () => ipcRenderer.invoke('audio-bus:get-meters'),
   },
   Broadcast: {
+    // Single-destination (backward compat)
     start: (config) => ipcRenderer.invoke('broadcast:start', config),
     stop: () => ipcRenderer.invoke('broadcast:stop'),
     getStatus: () => ipcRenderer.invoke('broadcast:status'),
     pushVideoFrame: (buffer) => ipcRenderer.send('broadcast:push-video-frame', buffer),
     pushAudioChunk: (buffer) => ipcRenderer.send('broadcast:push-audio-chunk', buffer),
+    // Multi-destination simulstreaming (Stage 8)
+    startMulti: (destinations, baseConfig) => ipcRenderer.invoke('broadcast:start-multi', destinations, baseConfig),
+    stopAll: () => ipcRenderer.invoke('broadcast:stop-all'),
+    getMultiStatus: () => ipcRenderer.invoke('broadcast:status-multi'),
+    isAnyStreaming: () => ipcRenderer.invoke('broadcast:is-any-streaming'),
   },
 });

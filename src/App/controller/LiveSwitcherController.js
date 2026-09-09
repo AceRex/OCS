@@ -186,29 +186,59 @@ export default function LiveSwitcherController() {
 
   // ── Native RTMP / SRT Broadcast Engine (P0-01) & Recording (P0-05) ────────
   const [showBroadcastModal, setShowBroadcastModal] = useState(false);
-  const [streamUrl, setStreamUrl] = useState(() => {
-    try { return localStorage.getItem('ocs_stream_url') || 'rtmp://a.rtmp.youtube.com/live2'; } catch (_) { return 'rtmp://a.rtmp.youtube.com/live2'; }
-  });
-  const [streamKey, setStreamKey] = useState(() => {
-    try { return localStorage.getItem('ocs_stream_key') || ''; } catch (_) { return ''; }
-  });
-  const [showStreamKey, setShowStreamKey] = useState(false);
-  const [streamBitrate, setStreamBitrate] = useState(4500);
-  const [isStreaming, setIsStreaming] = useState(false);
-  const [streamStats, setStreamStats] = useState({ fps: 0, bitrateKbps: 0, health: 'offline', uptimeSec: 0, droppedFrames: 0 });
+
+  // Multi-destination simulstreaming state (Stage 8)
+  const PLATFORM_PRESETS = [
+    { label: 'YouTube Live',    url: 'rtmp://a.rtmp.youtube.com/live2' },
+    { label: 'Facebook Live',   url: 'rtmps://live-api-s.facebook.com:443/rtmp/' },
+    { label: 'Restream.io',     url: 'rtmp://live.restream.io/live' },
+    { label: 'Custom',          url: '' },
+  ];
+
+  const loadDestinations = () => {
+    try {
+      const saved = localStorage.getItem('ocs_stream_destinations_v2');
+      if (saved) return JSON.parse(saved);
+    } catch (_) {}
+    return [
+      { id: 'primary',   label: 'YouTube Live', url: 'rtmp://a.rtmp.youtube.com/live2', key: '', enabled: true,  bitrate: 4500, showKey: false },
+      { id: 'secondary', label: 'Disabled',      url: '',                                 key: '', enabled: false, bitrate: 4500, showKey: false },
+    ];
+  };
+
+  const [destinations, setDestinations] = useState(loadDestinations);
+  const [multiStreamStatus, setMultiStreamStatus] = useState({});
   const [isRecordingProgram, setIsRecordingProgram] = useState(false);
   const [recorderStats, setRecorderStats] = useState({ elapsedSec: 0, framesRecorded: 0 });
   const [audioDelayMs, setAudioDelayMs] = useState(0);
+  const [streamBitrate, setStreamBitrate] = useState(4500);
+  const [streamWidth, setStreamWidth] = useState(1280);
+  const [streamHeight, setStreamHeight] = useState(720);
 
+  // Derived: true if any destination is currently streaming
+  const isAnyStreaming = Object.values(multiStreamStatus).some(s => s?.isStreaming);
+  // Legacy compat alias used in some places
+  const isStreaming = isAnyStreaming;
+
+  const saveDestinations = (dests) => {
+    try { localStorage.setItem('ocs_stream_destinations_v2', JSON.stringify(dests)); } catch (_) {}
+  };
+
+  const updateDestination = (id, patch) => {
+    setDestinations(prev => {
+      const updated = prev.map(d => d.id === id ? { ...d, ...patch } : d);
+      saveDestinations(updated);
+      return updated;
+    });
+  };
+
+  // Poll multi-stream status and recorder status every second
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
-        if (window.electron?.Broadcast?.getStatus) {
-          const s = await window.electron.Broadcast.getStatus();
-          if (s) {
-            setIsStreaming(Boolean(s.isStreaming));
-            if (s.stats) setStreamStats(s.stats);
-          }
+        if (window.electron?.Broadcast?.getMultiStatus) {
+          const status = await window.electron.Broadcast.getMultiStatus();
+          if (status) setMultiStreamStatus(status);
         }
         if (window.electron?.Recorder?.getStatus) {
           const r = await window.electron.Recorder.getStatus();
@@ -253,43 +283,48 @@ export default function LiveSwitcherController() {
 
   const stopAudioStreamingIfIdle = () => {
     // Only stop if neither stream nor recording is active
-    if (!isStreaming && !isRecordingProgram && audioUnsubRef.current) {
+    if (!isAnyStreaming && !isRecordingProgram && audioUnsubRef.current) {
       audioUnsubRef.current();
       audioUnsubRef.current = null;
     }
   };
 
-  const toggleStream = async () => {
-    if (isStreaming) {
+  // Start simulstream — spawns one FFmpeg process per enabled destination
+  const toggleSimulstream = async () => {
+    if (isAnyStreaming) {
       try {
-        await window.electron?.Broadcast?.stop();
-        setIsStreaming(false);
+        await window.electron?.Broadcast?.stopAll();
+        setMultiStreamStatus({});
         stopAudioStreamingIfIdle();
       } catch (e) {
-        console.error("Failed to stop stream:", e);
+        console.error('Failed to stop simulstream:', e);
       }
     } else {
       try {
-        try {
-          localStorage.setItem('ocs_stream_url', streamUrl);
-          localStorage.setItem('ocs_stream_key', streamKey);
-        } catch (_) {}
-        const fullUrl = streamKey
-          ? (streamUrl.endsWith('/') ? `${streamUrl}${streamKey}` : `${streamUrl}/${streamKey}`)
-          : streamUrl;
-        const res = await window.electron?.Broadcast?.start({
-          streamUrl: fullUrl,
-          videoBitrateKbps: streamBitrate,
-          width: 1280,
-          height: 720,
-          fps: 30
-        });
+        const enabledDests = destinations.filter(d => d.enabled && (d.url || d.key));
+        if (enabledDests.length === 0) return;
+
+        saveDestinations(destinations);
+
+        const destConfigs = enabledDests.map(d => ({
+          id: d.id,
+          label: d.label,
+          streamUrl: d.key
+            ? (d.url.endsWith('/') ? `${d.url}${d.key}` : `${d.url}/${d.key}`)
+            : d.url,
+          videoBitrateKbps: d.bitrate || streamBitrate,
+        }));
+
+        const res = await window.electron?.Broadcast?.startMulti(
+          destConfigs,
+          { width: streamWidth, height: streamHeight, fps: 30 }
+        );
+
         if (res && res.ok) {
-          setIsStreaming(true);
           await ensureAudioStreaming();
         }
       } catch (e) {
-        console.error("Failed to start stream:", e);
+        console.error('Failed to start simulstream:', e);
       }
     }
   };
@@ -308,8 +343,8 @@ export default function LiveSwitcherController() {
         const outPath = `recordings/program_${Date.now()}.mp4`;
         const res = await window.electron?.Recorder?.start({
           outputPath: outPath,
-          width: 1280,
-          height: 720,
+          width: streamWidth,
+          height: streamHeight,
           fps: 30,
           withAudio: true
         });
@@ -1471,6 +1506,7 @@ export default function LiveSwitcherController() {
               isSharingActive={isSharingActive}
               isMirrored={isProgramMirrored}
               broadcastConfig={cfg}
+              isBroadcastActive={isAnyStreaming || isRecordingProgram}
             />
           </div>
 
@@ -3429,7 +3465,7 @@ export default function LiveSwitcherController() {
         document.body
       )}
 
-      {/* ── Native Broadcast & Recording Studio Modal (P0-01 & P0-05) ───────────── */}
+      {/* ── Native Broadcast & Recording Studio Modal (P0-01 & P0-05) — Stage 8 Simulstream ───────────── */}
       {showBroadcastModal && createPortal(
         <div className="fixed inset-0 z-[99999] bg-black/85 backdrop-blur-md flex items-center justify-center p-4 select-none">
           <div className="bg-[#12141a] border border-white/10 rounded-[12px] w-full max-w-2xl shadow-2xl flex flex-col overflow-hidden text-white animate-in fade-in zoom-in-95 duration-150">
@@ -3437,20 +3473,20 @@ export default function LiveSwitcherController() {
             <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/[0.02]">
               <div className="flex items-center gap-3">
                 <div className={`w-9 h-9 rounded-[12px] border flex items-center justify-center ${
-                  isStreaming ? "bg-rose-500 text-white border-rose-400 animate-pulse" : "bg-purple-600/20 text-purple-300 border-purple-500/30"
+                  isAnyStreaming ? "bg-rose-500 text-white border-rose-400 animate-pulse" : "bg-purple-600/20 text-purple-300 border-purple-500/30"
                 }`}>
                   <PiBroadcast size={20} />
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                    Broadcast & Recording Studio
-                    {isStreaming && (
-                      <span className="text-[10px] font-black px-2 py-0.5 rounded-[12px] bg-rose-500 text-white uppercase tracking-wider">
+                    Simulstream Broadcast Studio
+                    {isAnyStreaming && (
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded-[12px] bg-rose-500 text-white uppercase tracking-wider animate-pulse">
                         ● ON AIR
                       </span>
                     )}
                   </h3>
-                  <p className="text-[11px] text-white/40">Native FFmpeg Hardware-Accelerated RTMP / SRT Streaming & MP4 Recording</p>
+                  <p className="text-[11px] text-white/40">FFmpeg Hardware-Accelerated RTMP/SRT · Up to 2 simultaneous destinations</p>
                 </div>
               </div>
               <button
@@ -3463,94 +3499,149 @@ export default function LiveSwitcherController() {
 
             {/* Modal Body */}
             <div className="p-6 flex flex-col gap-5 overflow-y-auto max-h-[75vh]">
-              {/* Service Quick Presets */}
-              <div className="flex flex-col gap-2">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-white/40">Destination Service</span>
-                <div className="grid grid-cols-4 gap-2">
-                  {[
-                    { label: "YouTube Live", url: "rtmp://a.rtmp.youtube.com/live2" },
-                    { label: "Facebook Live", url: "rtmps://live-api-s.facebook.com:443/rtmp/" },
-                    { label: "Restream.io", url: "rtmp://live.restream.io/live" },
-                    { label: "Custom SRT / RTMP", url: "" },
-                  ].map((preset) => {
-                    const isSelected = preset.url && streamUrl.startsWith(preset.url);
-                    return (
-                      <button
-                        key={preset.label}
-                        onClick={() => {
-                          if (preset.url) setStreamUrl(preset.url);
-                        }}
-                        className={`p-2.5 rounded-[12px] border text-xs font-bold transition-all text-center ${
-                          isSelected
-                            ? "bg-purple-600/30 border-purple-500 text-white"
-                            : "bg-white/[0.03] border-white/10 text-white/60 hover:text-white hover:bg-white/[0.06]"
-                        }`}
-                      >
-                        {preset.label}
-                      </button>
-                    );
-                  })}
-                </div>
+
+              {/* ── Destination Cards ── */}
+              <div className="flex flex-col gap-3">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-white/40">Stream Destinations</span>
+                {destinations.map((dest, idx) => {
+                  const status = multiStreamStatus[dest.id] || {};
+                  const isLive = status.isStreaming;
+                  const health = status.health || 'offline';
+                  return (
+                    <div key={dest.id} className={`flex flex-col gap-3 p-4 rounded-[12px] border transition-all ${
+                      isLive
+                        ? 'border-rose-500/50 bg-rose-950/10'
+                        : dest.enabled
+                        ? 'border-purple-500/30 bg-purple-950/5'
+                        : 'border-white/10 bg-white/[0.02]'
+                    }`}>
+                      {/* Destination header row */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-black text-white/50 uppercase tracking-widest">
+                            {idx === 0 ? 'Primary' : 'Secondary'} Destination
+                          </span>
+                          {isLive && (
+                            <span className="flex items-center gap-1 text-[9px] font-black text-rose-300 bg-rose-500/15 border border-rose-500/30 px-2 py-0.5 rounded-[12px] uppercase tracking-wider">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping inline-block" />
+                              LIVE
+                            </span>
+                          )}
+                          {!isLive && health === 'connecting' && (
+                            <span className="text-[9px] font-black text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-[12px] uppercase">Connecting…</span>
+                          )}
+                        </div>
+                        {/* Enable toggle */}
+                        <button
+                          disabled={isAnyStreaming}
+                          onClick={() => updateDestination(dest.id, { enabled: !dest.enabled })}
+                          className={`px-3 py-1 rounded-[12px] text-[10px] font-bold border transition-all ${
+                            dest.enabled
+                              ? 'bg-purple-600/25 border-purple-500/50 text-purple-200'
+                              : 'bg-white/5 border-white/10 text-white/40 hover:text-white hover:bg-white/10'
+                          } disabled:opacity-40`}
+                        >
+                          {dest.enabled ? 'Enabled' : 'Disabled'}
+                        </button>
+                      </div>
+
+                      {/* Platform presets */}
+                      <div className="grid grid-cols-4 gap-1.5">
+                        {PLATFORM_PRESETS.map(p => {
+                          const isSel = p.url && dest.url.startsWith(p.url);
+                          return (
+                            <button
+                              key={p.label}
+                              disabled={isAnyStreaming}
+                              onClick={() => updateDestination(dest.id, { label: p.label, url: p.url })}
+                              className={`p-2 rounded-[12px] border text-[10px] font-bold transition-all text-center ${
+                                isSel
+                                  ? 'bg-purple-600/30 border-purple-500 text-white'
+                                  : 'bg-white/[0.02] border-white/10 text-white/50 hover:text-white hover:bg-white/[0.05]'
+                              } disabled:opacity-40`}
+                            >
+                              {p.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {/* URL + Key row */}
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] font-bold text-white/50">RTMP / SRT URL</label>
+                          <input
+                            type="text"
+                            value={dest.url}
+                            disabled={isAnyStreaming}
+                            onChange={e => updateDestination(dest.id, { url: e.target.value })}
+                            placeholder="rtmp://a.rtmp.youtube.com/live2"
+                            className="px-2.5 py-1.5 bg-black/40 border border-white/10 rounded-[12px] text-[11px] text-white placeholder-white/20 focus:outline-none focus:border-purple-500 disabled:opacity-50"
+                          />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <label className="text-[10px] font-bold text-white/50">Stream Key</label>
+                          <div className="relative">
+                            <input
+                              type={dest.showKey ? 'text' : 'password'}
+                              value={dest.key}
+                              disabled={isAnyStreaming}
+                              onChange={e => updateDestination(dest.id, { key: e.target.value })}
+                              placeholder="Paste stream key…"
+                              className="w-full px-2.5 py-1.5 pr-8 bg-black/40 border border-white/10 rounded-[12px] text-[11px] text-white placeholder-white/20 focus:outline-none focus:border-purple-500 disabled:opacity-50"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => updateDestination(dest.id, { showKey: !dest.showKey })}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 text-white/40 hover:text-white"
+                            >
+                              {dest.showKey ? <PiEyeSlash size={13} /> : <PiEye size={13} />}
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Live telemetry for this destination */}
+                      {isLive && (
+                        <div className="grid grid-cols-4 gap-1.5 pt-1 text-center border-t border-white/5 mt-1">
+                          {[
+                            { label: 'Uptime', val: `${status.uptimeSec || 0}s` },
+                            { label: 'FPS', val: status.fps || 0 },
+                            { label: 'Bitrate', val: `${(status.bitrateKbps || 0).toFixed(0)}k` },
+                            { label: 'Drops', val: status.droppedFrames || 0 },
+                          ].map(m => (
+                            <div key={m.label} className="p-1.5 rounded-[12px] bg-black/40 border border-white/5">
+                              <span className="text-[9px] text-white/40 block">{m.label}</span>
+                              <span className="text-[11px] font-bold text-white">{m.val}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
 
-              {/* Stream URL & Stream Key */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[11px] font-bold text-white/70">RTMP / SRT Server URL</label>
-                  <input
-                    type="text"
-                    value={streamUrl}
-                    disabled={isStreaming}
-                    onChange={(e) => setStreamUrl(e.target.value)}
-                    placeholder="rtmp://a.rtmp.youtube.com/live2"
-                    className="w-full px-3 py-2 bg-black/40 border border-white/10 rounded-[12px] text-xs text-white placeholder-white/20 focus:outline-none focus:border-purple-500 disabled:opacity-50"
-                  />
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-[11px] font-bold text-white/70">Stream Key</label>
-                  <div className="relative">
-                    <input
-                      type={showStreamKey ? "text" : "password"}
-                      value={streamKey}
-                      disabled={isStreaming}
-                      onChange={(e) => setStreamKey(e.target.value)}
-                      placeholder="Paste stream key here..."
-                      className="w-full px-3 py-2 pr-10 bg-black/40 border border-white/10 rounded-[12px] text-xs text-white placeholder-white/20 focus:outline-none focus:border-purple-500 disabled:opacity-50"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowStreamKey(!showStreamKey)}
-                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white text-sm"
-                    >
-                      {showStreamKey ? <PiEyeSlash size={16} /> : <PiEye size={16} />}
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Encoding Quality Settings */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 rounded-[12px] bg-white/[0.02] border border-white/10">
+              {/* ── Encoding Quality ── */}
+              <div className="grid grid-cols-2 gap-4 p-4 rounded-[12px] bg-white/[0.02] border border-white/10">
                 <div className="flex flex-col gap-2">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-white/40">Video Target Bitrate</span>
-                  <div className="grid grid-cols-3 gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-white/40">Output Resolution</span>
+                  <div className="grid grid-cols-2 gap-2">
                     {[
-                      { label: "2500k", val: 2500, desc: "720p" },
-                      { label: "4500k", val: 4500, desc: "1080p (Rec)" },
-                      { label: "6000k", val: 6000, desc: "1080p60" },
-                    ].map((b) => (
+                      { label: '720p', w: 1280, h: 720 },
+                      { label: '1080p', w: 1920, h: 1080 },
+                    ].map(r => (
                       <button
-                        key={b.val}
-                        disabled={isStreaming}
-                        onClick={() => setStreamBitrate(b.val)}
-                        className={`p-2 rounded-[12px] border text-xs font-bold transition-all flex flex-col items-center ${
-                          streamBitrate === b.val
-                            ? "bg-purple-600/30 border-purple-500 text-white"
-                            : "bg-white/[0.03] border-white/10 text-white/60 hover:text-white"
-                        }`}
+                        key={r.label}
+                        disabled={isAnyStreaming}
+                        onClick={() => { setStreamWidth(r.w); setStreamHeight(r.h); }}
+                        className={`p-2 rounded-[12px] border text-xs font-bold transition-all ${
+                          streamWidth === r.w
+                            ? 'bg-purple-600/30 border-purple-500 text-white'
+                            : 'bg-white/[0.03] border-white/10 text-white/60 hover:text-white'
+                        } disabled:opacity-40`}
                       >
-                        <span>{b.label}</span>
-                        <span className="text-[9px] text-white/40 font-normal">{b.desc}</span>
+                        {r.label}
                       </button>
                     ))}
                   </div>
@@ -3570,11 +3661,11 @@ export default function LiveSwitcherController() {
                     onChange={handleAudioDelayChange}
                     className="w-full accent-purple-500 cursor-pointer"
                   />
-                  <p className="text-[10px] text-white/40">Compensates HDMI capture card latency by buffering audio</p>
+                  <p className="text-[10px] text-white/30">Compensates HDMI capture card latency</p>
                 </div>
               </div>
 
-              {/* Local Program MP4 Recorder (P0-05) */}
+              {/* ── Local Program MP4 Recorder (P0-05) ── */}
               <div className="flex items-center justify-between p-4 rounded-[12px] bg-black/40 border border-white/10">
                 <div className="flex items-center gap-3">
                   <div className={`w-8 h-8 rounded-[12px] border flex items-center justify-center ${
@@ -3583,11 +3674,11 @@ export default function LiveSwitcherController() {
                     <PiCircle size={14} className={isRecordingProgram ? "fill-white" : ""} />
                   </div>
                   <div>
-                    <span className="text-xs font-bold text-white block">Program Video Recorder (Fragmented MP4)</span>
+                    <span className="text-xs font-bold text-white block">Program MP4 Recorder</span>
                     <span className="text-[10px] text-white/40 block">
                       {isRecordingProgram
-                        ? `Recording: ${recorderStats.elapsedSec}s (${recorderStats.framesRecorded} frames) · Crash-Resilient`
-                        : "Record composite Program output to local disk in crash-resilient MP4"}
+                        ? `Recording: ${recorderStats.elapsedSec}s · ${recorderStats.framesRecorded} frames · Crash-Resilient`
+                        : "Record composite program output to crash-resilient fragmented MP4"}
                     </span>
                   </div>
                 </div>
@@ -3603,63 +3694,36 @@ export default function LiveSwitcherController() {
                 </button>
               </div>
 
-              {/* Live Stream Telemetry when active */}
-              {isStreaming && (
-                <div className="p-4 rounded-[12px] bg-rose-950/20 border border-rose-500/30 flex flex-col gap-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold uppercase tracking-wider text-rose-300 flex items-center gap-1.5">
-                      <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping inline-block" />
-                      Live Stream Telemetry
-                    </span>
-                    <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded-[12px] ${
-                      streamStats.health === "good"
-                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                        : "bg-amber-500/20 text-amber-300 border border-amber-500/30"
-                    }`}>
-                      Network: {streamStats.health || "good"}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-4 gap-2 pt-1 text-center">
-                    <div className="p-2 rounded-[12px] bg-black/40 border border-white/5">
-                      <span className="text-[10px] text-white/40 block">Uptime</span>
-                      <span className="text-xs font-bold text-white">{streamStats.uptimeSec || 0}s</span>
-                    </div>
-                    <div className="p-2 rounded-[12px] bg-black/40 border border-white/5">
-                      <span className="text-[10px] text-white/40 block">FPS</span>
-                      <span className="text-xs font-bold text-white">{streamStats.fps || 30}</span>
-                    </div>
-                    <div className="p-2 rounded-[12px] bg-black/40 border border-white/5">
-                      <span className="text-[10px] text-white/40 block">Bitrate</span>
-                      <span className="text-xs font-bold text-white">{(streamStats.bitrateKbps || streamBitrate).toFixed(0)} kbps</span>
-                    </div>
-                    <div className="p-2 rounded-[12px] bg-black/40 border border-white/5">
-                      <span className="text-[10px] text-white/40 block">Dropped</span>
-                      <span className="text-xs font-bold text-white">{streamStats.droppedFrames || 0}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
 
             {/* Modal Footer */}
-            <div className="px-6 py-4 border-t border-white/10 bg-white/[0.02] flex items-center justify-between">
+            <div className="px-6 py-4 border-t border-white/10 bg-white/[0.02] flex items-center justify-between gap-3">
               <button
                 onClick={() => setShowBroadcastModal(false)}
                 className="px-4 py-2 rounded-[12px] bg-white/5 border border-white/10 text-xs font-bold text-white/60 hover:text-white hover:bg-white/10 transition-all"
               >
                 Close
               </button>
-              <button
-                onClick={toggleStream}
-                className={`px-6 py-2.5 rounded-[12px] text-xs font-bold border flex items-center gap-2 transition-all shadow-lg ${
-                  isStreaming
-                    ? "bg-red-600 border-red-500 text-white hover:bg-red-500 shadow-red-950/40"
-                    : "bg-purple-600 border-purple-500 text-white hover:bg-purple-500 shadow-purple-950/40"
-                }`}
-              >
-                <PiRadio size={16} />
-                {isStreaming ? "Stop Live Broadcast" : "Start Live Broadcast"}
-              </button>
+              <div className="flex items-center gap-2">
+                {isAnyStreaming && (
+                  <span className="text-[10px] text-white/40 font-mono">
+                    {Object.values(multiStreamStatus).filter(s => s?.isStreaming).length} destination(s) live ·{' '}
+                    {Object.values(multiStreamStatus).reduce((sum, s) => sum + (s?.bitrateKbps || 0), 0).toFixed(0)} kbps total
+                  </span>
+                )}
+                <button
+                  onClick={toggleSimulstream}
+                  disabled={!isAnyStreaming && !destinations.some(d => d.enabled && (d.url || d.key))}
+                  className={`px-6 py-2.5 rounded-[12px] text-xs font-bold border flex items-center gap-2 transition-all shadow-lg disabled:opacity-40 ${
+                    isAnyStreaming
+                      ? "bg-red-600 border-red-500 text-white hover:bg-red-500 shadow-red-950/40"
+                      : "bg-purple-600 border-purple-500 text-white hover:bg-purple-500 shadow-purple-950/40"
+                  }`}
+                >
+                  <PiRadio size={16} />
+                  {isAnyStreaming ? "Stop All Streams" : "Start Simulstream"}
+                </button>
+              </div>
             </div>
           </div>
         </div>,
@@ -3668,3 +3732,5 @@ export default function LiveSwitcherController() {
     </div>
   );
 }
+
+

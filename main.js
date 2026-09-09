@@ -4436,7 +4436,15 @@ ipcMain.handle("session:get-recovery-state", async () => {
 // Program Video Canvas Recorder (P0-05)
 ipcMain.handle("recorder:start", async (_e, options) => {
   try {
-    return await programRecorder.start(options);
+    let opts = { ...(options || {}) };
+    if (!opts.outputPath) {
+      const defaultRecDir = path.join(app.getPath("userData"), "recordings");
+      opts.outputPath = path.join(defaultRecDir, `program_${Date.now()}.mp4`);
+    } else if (!path.isAbsolute(opts.outputPath)) {
+      const defaultRecDir = path.join(app.getPath("userData"), "recordings");
+      opts.outputPath = path.join(defaultRecDir, opts.outputPath);
+    }
+    return await programRecorder.start(opts);
   } catch (err) {
     console.error("[IPC recorder:start] error:", err.message);
     return { ok: false, error: err.message };
@@ -4454,6 +4462,24 @@ ipcMain.handle("recorder:stop", async () => {
 
 ipcMain.handle("recorder:status", () => {
   return programRecorder.getStatus();
+});
+
+ipcMain.handle("recorder:show-in-folder", async (_e, targetPath) => {
+  try {
+    const fileToReveal = targetPath || programRecorder.outputPath;
+    if (fileToReveal && fs.existsSync(fileToReveal)) {
+      shell.showItemInFolder(fileToReveal);
+      return { ok: true, path: fileToReveal };
+    }
+    const defaultDir = path.join(app.getPath("userData"), "recordings");
+    if (fs.existsSync(defaultDir)) {
+      await shell.openPath(defaultDir);
+      return { ok: true, path: defaultDir };
+    }
+    return { ok: false, error: "No recordings directory found" };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
 });
 
 ipcMain.on("recorder:push-video-frame", (_e, buffer) => {
@@ -4498,7 +4524,7 @@ ipcMain.handle("audio-bus:get-meters", () => {
   return broadcastAudioBus.getMeterData();
 });
 
-// Broadcast RTMP/SRT Supervisor (P0-01)
+// Broadcast RTMP/SRT Supervisor (P0-01) — Single-destination (backward compat)
 ipcMain.handle("broadcast:start", async (_e, config) => {
   try {
     return await broadcastSupervisor.start(config);
@@ -4521,15 +4547,46 @@ ipcMain.handle("broadcast:status", () => {
   return broadcastSupervisor.getStatus();
 });
 
+// Broadcast RTMP/SRT Supervisor — Multi-Destination Simulstreaming (Stage 8)
+ipcMain.handle("broadcast:start-multi", async (_e, destinations, baseConfig) => {
+  try {
+    return await broadcastSupervisor.startMulti(destinations, baseConfig || {});
+  } catch (err) {
+    console.error("[IPC broadcast:start-multi] error:", err.message);
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle("broadcast:stop-all", async () => {
+  try {
+    return await broadcastSupervisor.stopAll();
+  } catch (err) {
+    console.error("[IPC broadcast:stop-all] error:", err.message);
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle("broadcast:status-multi", () => {
+  return broadcastSupervisor.getMultiStatus();
+});
+
+ipcMain.handle("broadcast:is-any-streaming", () => {
+  return broadcastSupervisor.isAnyStreaming();
+});
+
+// Frame/audio push — fans out to ALL active destinations (single and multi)
 ipcMain.on("broadcast:push-video-frame", (_e, buffer) => {
   if (buffer) {
-    broadcastSupervisor.writeVideoFrame(Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer));
+    const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+    // Use fanout if multi-destinations are active; fall back to single otherwise
+    broadcastSupervisor.writeVideoFrameAll(buf);
   }
 });
 
 ipcMain.on("broadcast:push-audio-chunk", (_e, buffer) => {
   if (buffer) {
-    broadcastSupervisor.writeAudioChunk(Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer));
+    const buf = Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+    broadcastSupervisor.writeAudioChunkAll(buf);
   }
 });
 

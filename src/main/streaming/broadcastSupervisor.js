@@ -483,6 +483,356 @@ class BroadcastSupervisor {
       encoder: this._cachedEncoder || 'unknown'
     };
   }
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // Simulstreaming — Multi-Destination RTMP Engine (Stage 8)
+  // Supports up to N simultaneous FFmpeg processes, one per destination.
+  // Each destination runs its own reconnect loop independently.
+  // ─────────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Spawns one FFmpeg process per enabled destination and begins streaming.
+   *
+   * @param {Array<{id: string, label: string, streamUrl: string, videoBitrateKbps?: number, audioBitrateKbps?: number}>} destinations
+   * @param {object} [baseConfig] - Shared video dimensions/fps settings
+   * @returns {Promise<{ ok: boolean, results: Array<{id, ok, error?}> }>}
+   */
+  async startMulti(destinations, baseConfig = {}) {
+    if (!Array.isArray(destinations) || destinations.length === 0) {
+      return { ok: false, error: 'destinations array is required' };
+    }
+
+    // Initialize per-destination tracking maps if not present
+    if (!this._multiProcesses) this._multiProcesses = new Map();
+    if (!this._multiStats) this._multiStats = new Map();
+    if (!this._multiConfig) this._multiConfig = new Map();
+    if (!this._multiReconnect) this._multiReconnect = new Map();
+
+    const results = [];
+    const encoder = this.detectHardwareEncoder();
+    const ffmpegBin = this.getFfmpegPath();
+
+    for (const dest of destinations) {
+      if (!dest || !dest.id || !dest.streamUrl) {
+        results.push({ id: dest?.id || 'unknown', ok: false, error: 'Missing id or streamUrl' });
+        continue;
+      }
+
+      // Stop any existing process for this id before restarting
+      await this._stopDestination(dest.id);
+
+      const c = {
+        width: baseConfig.width || 1280,
+        height: baseConfig.height || 720,
+        fps: baseConfig.fps || 30,
+        videoBitrateKbps: dest.videoBitrateKbps || baseConfig.videoBitrateKbps || 4500,
+        audioBitrateKbps: dest.audioBitrateKbps || baseConfig.audioBitrateKbps || 192,
+        sampleRate: baseConfig.sampleRate || 48000,
+        channels: baseConfig.channels || 2,
+        withAudio: baseConfig.withAudio !== false,
+        streamUrl: dest.streamUrl,
+        id: dest.id,
+        label: dest.label || dest.id,
+      };
+      this._multiConfig.set(dest.id, c);
+      this._multiStats.set(dest.id, {
+        fps: 0, bitrateKbps: 0, framesSent: 0, droppedFrames: 0,
+        speedFactor: 1.0, health: 'connecting', reconnects: 0,
+        isStreaming: false, uptimeSec: 0, startTime: Date.now()
+      });
+
+      try {
+        const result = await this._spawnDestinationProcess(dest.id, c, encoder, ffmpegBin);
+        results.push({ id: dest.id, ok: result.ok });
+      } catch (err) {
+        console.error(`[BroadcastSupervisor] Failed to start destination "${dest.id}":`, err.message);
+        results.push({ id: dest.id, ok: false, error: err.message });
+      }
+    }
+
+    const anyOk = results.some(r => r.ok);
+    return { ok: anyOk, results };
+  }
+
+  /**
+   * Internal: Spawns a single FFmpeg process for one destination.
+   */
+  _spawnDestinationProcess(id, c, encoder, ffmpegBin) {
+    return new Promise((resolve, reject) => {
+      const gopSize = c.fps * 2;
+      const isMpegTs = c.streamUrl.startsWith('srt://') || c.streamUrl.startsWith('tcp://') || c.streamUrl.startsWith('udp://');
+      const format = isMpegTs ? 'mpegts' : 'flv';
+
+      const args = [
+        '-y',
+        '-f', 'rawvideo', '-pix_fmt', 'rgba',
+        '-s', `${c.width}x${c.height}`,
+        '-r', `${c.fps}`,
+        '-i', 'pipe:0',
+      ];
+
+      if (c.withAudio) {
+        args.push('-f', 's16le', '-ar', `${c.sampleRate}`, '-ac', `${c.channels}`, '-i', 'pipe:3');
+      }
+
+      args.push('-c:v', encoder);
+      if (encoder === 'libx264') {
+        args.push('-preset', 'veryfast', '-b:v', `${c.videoBitrateKbps}k`,
+          '-maxrate', `${c.videoBitrateKbps}k`, '-bufsize', `${c.videoBitrateKbps * 2}k`, '-profile:v', 'main');
+      } else if (encoder === 'h264_videotoolbox') {
+        args.push('-b:v', `${c.videoBitrateKbps}k`, '-maxrate', `${c.videoBitrateKbps}k`, '-realtime', '1');
+      } else if (encoder === 'h264_nvenc') {
+        args.push('-preset', 'p3', '-b:v', `${c.videoBitrateKbps}k`,
+          '-maxrate', `${c.videoBitrateKbps}k`, '-bufsize', `${c.videoBitrateKbps * 2}k`);
+      }
+
+      args.push('-g', String(gopSize), '-keyint_min', String(gopSize), '-pix_fmt', 'yuv420p');
+
+      if (c.withAudio) {
+        args.push('-c:a', 'aac', '-b:a', `${c.audioBitrateKbps}k`, '-ar', `${c.sampleRate}`);
+      }
+      if (!isMpegTs) args.push('-flvflags', 'no_duration_filesize');
+      args.push('-flush_packets', '1', '-f', format, c.streamUrl);
+
+      try {
+        const stdio = c.withAudio ? ['pipe', 'ignore', 'pipe', 'pipe'] : ['pipe', 'ignore', 'pipe'];
+        const proc = spawn(ffmpegBin, args, { stdio });
+
+        // Prime pipes
+        try {
+          const blankFrame = Buffer.alloc(c.width * c.height * 4);
+          proc.stdin.write(blankFrame);
+          if (c.withAudio && proc.stdio && proc.stdio[3]) {
+            const blankAudio = Buffer.alloc(Math.floor((c.sampleRate / c.fps) * c.channels * 2));
+            proc.stdio[3].write(blankAudio);
+          }
+        } catch (_) {}
+
+        this._multiProcesses.set(id, proc);
+        let resolved = false;
+        const stat = this._multiStats.get(id);
+
+        proc.stderr.on('data', (data) => {
+          const text = data.toString();
+          if (process.env.DEBUG_BROADCAST) console.log(`[FFmpeg/${id}]`, text.trim());
+          this._parseDestStats(id, text);
+          if (!resolved && (text.includes('frame=') || text.includes('bitrate='))) {
+            resolved = true;
+            if (stat) { stat.isStreaming = true; stat.health = 'good'; }
+            console.log(`[BroadcastSupervisor] Destination "${id}" connected to ${this.sanitizeEndpoint(c.streamUrl)}`);
+            resolve({ ok: true });
+          }
+        });
+
+        proc.stdin.on('error', (err) => {
+          if (err.code === 'EPIPE' || err.code === 'ECONNRESET') return;
+          console.error(`[BroadcastSupervisor/${id}] Stdin error:`, err.message);
+        });
+
+        if (c.withAudio && proc.stdio && proc.stdio[3]) {
+          proc.stdio[3].on('error', (err) => {
+            if (err.code === 'EPIPE' || err.code === 'ECONNRESET') return;
+          });
+        }
+
+        proc.on('exit', (code, signal) => {
+          console.warn(`[BroadcastSupervisor/${id}] FFmpeg exited (code=${code}, signal=${signal})`);
+          this._multiProcesses.delete(id);
+          const s = this._multiStats.get(id);
+          if (s) { s.isStreaming = false; s.health = 'offline'; }
+
+          const reconnectCount = (this._multiReconnect.get(id) || 0);
+          if (!this._isIntentionalStop && reconnectCount < 5 && this._multiConfig.has(id)) {
+            const backoffMs = Math.min(1000 * Math.pow(2, reconnectCount), 16000);
+            this._multiReconnect.set(id, reconnectCount + 1);
+            console.warn(`[BroadcastSupervisor/${id}] Reconnecting in ${backoffMs}ms (attempt ${reconnectCount + 1}/5)...`);
+            setTimeout(() => {
+              if (!this._isIntentionalStop && this._multiConfig.has(id)) {
+                this._spawnDestinationProcess(id, this._multiConfig.get(id), encoder, ffmpegBin).catch(e => {
+                  console.error(`[BroadcastSupervisor/${id}] Reconnect failed:`, e.message);
+                });
+              }
+            }, backoffMs);
+          }
+
+          if (!resolved) reject(new Error(`FFmpeg/${id} exited prematurely (code=${code})`));
+        });
+
+        proc.on('error', (err) => {
+          console.error(`[BroadcastSupervisor/${id}] Process error:`, err.message);
+          if (!resolved) reject(err);
+        });
+
+        // Resolve after 1200ms if process is healthy
+        setTimeout(() => {
+          if (!resolved && this._multiProcesses.has(id)) {
+            resolved = true;
+            if (stat) { stat.isStreaming = true; stat.health = 'good'; }
+            resolve({ ok: true });
+          }
+        }, 1200);
+
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  /**
+   * Parses FFmpeg stderr telemetry for a specific destination.
+   */
+  _parseDestStats(id, text) {
+    const stat = this._multiStats.get(id);
+    if (!stat) return;
+
+    const fpsMatch = text.match(/fps=\s*([\d.]+)/);
+    if (fpsMatch) stat.fps = parseFloat(fpsMatch[1]);
+
+    const bitrateMatch = text.match(/bitrate=\s*([\d.]+)kbits\/s/);
+    if (bitrateMatch) stat.bitrateKbps = parseFloat(bitrateMatch[1]);
+
+    const framesMatch = text.match(/frame=\s*(\d+)/);
+    if (framesMatch) stat.framesSent = parseInt(framesMatch[1], 10);
+
+    const dropMatch = text.match(/drop=\s*(\d+)/);
+    if (dropMatch) stat.droppedFrames = parseInt(dropMatch[1], 10);
+
+    const speedMatch = text.match(/speed=\s*([\d.]+)x/);
+    if (speedMatch) {
+      stat.speedFactor = parseFloat(speedMatch[1]);
+      if (stat.speedFactor < 0.85) stat.health = 'poor';
+      else if (stat.speedFactor < 0.96) stat.health = 'fair';
+      else stat.health = 'good';
+    }
+
+    if (stat.isStreaming) {
+      stat.uptimeSec = Math.round((Date.now() - stat.startTime) / 1000);
+    }
+  }
+
+  /**
+   * Stops a single destination process.
+   */
+  async _stopDestination(id) {
+    const proc = this._multiProcesses ? this._multiProcesses.get(id) : null;
+    if (!proc) return;
+    this._multiProcesses.delete(id);
+    if (this._multiConfig) this._multiConfig.delete(id);
+    if (this._multiReconnect) this._multiReconnect.set(id, 99); // prevent reconnect
+
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => { try { proc.kill('SIGTERM'); } catch (_) {} }, 4000);
+      proc.once('exit', () => {
+        clearTimeout(timer);
+        const s = this._multiStats ? this._multiStats.get(id) : null;
+        if (s) { s.isStreaming = false; s.health = 'offline'; }
+        resolve();
+      });
+      try {
+        if (proc.stdin) proc.stdin.end();
+        if (proc.stdio && proc.stdio[3]) proc.stdio[3].end();
+      } catch (_) {
+        try { proc.kill('SIGTERM'); } catch (_) {}
+      }
+    });
+  }
+
+  /**
+   * Stops all active multi-destination streams cleanly.
+   *
+   * @returns {Promise<{ ok: boolean, stopped: number }>}
+   */
+  async stopAll() {
+    this._isIntentionalStop = true;
+    const ids = this._multiProcesses ? [...this._multiProcesses.keys()] : [];
+    await Promise.all(ids.map(id => this._stopDestination(id)));
+    // Reset intentional stop after all are terminated so future starts work
+    this._isIntentionalStop = false;
+    console.log(`[BroadcastSupervisor] All ${ids.length} destinations stopped.`);
+    return { ok: true, stopped: ids.length };
+  }
+
+  /**
+   * Writes a composite video frame to ALL active destination FFmpeg processes.
+   *
+   * @param {Buffer} buffer - Raw RGBA frame
+   * @returns {number} Number of destinations that received the frame
+   */
+  writeVideoFrameAll(buffer) {
+    if (!this._multiProcesses || this._multiProcesses.size === 0) {
+      // Fall back to single-destination write for backward compat
+      return this.writeVideoFrame(buffer) ? 1 : 0;
+    }
+    let count = 0;
+    for (const [id, proc] of this._multiProcesses) {
+      if (proc && proc.stdin && !proc.killed) {
+        try {
+          proc.stdin.write(buffer);
+          count++;
+        } catch (_) {}
+      }
+    }
+    return count;
+  }
+
+  /**
+   * Writes mixed broadcast audio PCM to ALL active destination FFmpeg processes.
+   *
+   * @param {Buffer} buffer - Raw PCM s16le audio
+   * @returns {number} Number of destinations that received the chunk
+   */
+  writeAudioChunkAll(buffer) {
+    if (!this._multiProcesses || this._multiProcesses.size === 0) {
+      // Fall back to single-destination write for backward compat
+      return this.writeAudioChunk(buffer) ? 1 : 0;
+    }
+    let count = 0;
+    for (const [id, proc] of this._multiProcesses) {
+      if (proc && proc.stdio && proc.stdio[3] && !proc.killed) {
+        try {
+          proc.stdio[3].write(buffer);
+          count++;
+        } catch (_) {}
+      }
+    }
+    return count;
+  }
+
+  /**
+   * Returns per-destination telemetry for all active multi-stream destinations.
+   *
+   * @returns {Object<id, {isStreaming, health, fps, bitrateKbps, uptimeSec, droppedFrames, framesSent}>}
+   */
+  getMultiStatus() {
+    if (!this._multiStats || this._multiStats.size === 0) {
+      return {};
+    }
+    const result = {};
+    for (const [id, stat] of this._multiStats) {
+      result[id] = {
+        isStreaming: stat.isStreaming || false,
+        health: stat.health || 'offline',
+        fps: stat.fps || 0,
+        bitrateKbps: stat.bitrateKbps || 0,
+        uptimeSec: stat.uptimeSec || 0,
+        droppedFrames: stat.droppedFrames || 0,
+        framesSent: stat.framesSent || 0,
+        reconnects: stat.reconnects || 0,
+      };
+    }
+    return result;
+  }
+
+  /**
+   * Returns true if any multi-destination stream is currently active.
+   */
+  isAnyStreaming() {
+    if (!this._multiStats) return this.isStreaming;
+    for (const stat of this._multiStats.values()) {
+      if (stat.isStreaming) return true;
+    }
+    return this.isStreaming;
+  }
 }
 
 const broadcastSupervisor = new BroadcastSupervisor();
