@@ -586,7 +586,7 @@ class BroadcastSupervisor {
       const proc = this.ffmpegProcess;
       const forceKillTimer = setTimeout(() => {
         try { proc.kill('SIGKILL'); } catch (_) {}
-      }, 3000);
+      }, 10000);
 
       proc.once('exit', () => {
         clearTimeout(forceKillTimer);

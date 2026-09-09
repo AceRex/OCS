@@ -56,7 +56,7 @@ async function runStage7Suite() {
   console.log('--- [STAGE 7 - TEST 1] Hardware Compatibility: Audio & HDMI Displays ---');
   let audioDevReport = '';
   try {
-    const audioOut = spawnSync('system_profiler', ['SPAudioDataType'], { encoding: 'utf8', timeout: 5000 });
+    const audioOut = spawnSync('system_profiler', ['SPAudioDataType'], { encoding: 'utf8', timeout: 25000 });
     audioDevReport = audioOut.stdout || '';
   } catch (_) {}
 
@@ -66,7 +66,7 @@ async function runStage7Suite() {
 
   let displayReport = '';
   try {
-    const dispOut = spawnSync('system_profiler', ['SPDisplaysDataType'], { encoding: 'utf8', timeout: 5000 });
+    const dispOut = spawnSync('system_profiler', ['SPDisplaysDataType'], { encoding: 'utf8', timeout: 25000 });
     displayReport = dispOut.stdout || '';
   } catch (_) {}
 

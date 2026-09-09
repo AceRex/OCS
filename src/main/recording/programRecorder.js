@@ -331,7 +331,7 @@ class ProgramRecorder {
           console.warn('[ProgramRecorder] Finalize timeout, sending SIGTERM to FFmpeg');
           proc.kill('SIGTERM');
         } catch (_) {}
-      }, 5000);
+      }, 10000);
 
       proc.once('exit', () => {
         clearTimeout(finalizeTimeout);

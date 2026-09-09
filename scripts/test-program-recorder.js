@@ -142,8 +142,14 @@ async function runProgramRecorderTests() {
     crashRecorder.ffmpegProcess.stdio[3].end();
   }
 
-  // Wait 600ms for FFmpeg to write fragments
-  await new Promise(r => setTimeout(r, 600));
+  // Wait for FFmpeg to write initial fragments before sending SIGKILL
+  const waitStart = Date.now();
+  while (Date.now() - waitStart < 4000) {
+    if (fs.existsSync(outCrash) && fs.statSync(outCrash).size > 500) {
+      break;
+    }
+    await new Promise(r => setTimeout(r, 100));
+  }
 
   // Unceremoniously SIGKILL FFmpeg process if still alive
   if (crashRecorder.ffmpegProcess) {
