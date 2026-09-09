@@ -1,3 +1,4 @@
+import ActionButton, { reportActionError } from "../components/feedback/ActionButton";
 import React, { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -336,7 +337,7 @@ export default function LiveSwitcherController() {
         setMultiStreamStatus({});
         stopAudioStreamingIfIdle();
       } catch (e) {
-        console.error('Failed to stop simulstream:', e);
+        reportActionError(e);
       }
     } else {
       try {
@@ -372,11 +373,12 @@ export default function LiveSwitcherController() {
           { width: streamWidth, height: streamHeight, fps: 30 }
         );
 
+        if (!res?.ok) throw new Error(res?.error || "Broadcast could not start.");
         if (res && res.ok) {
           await ensureAudioStreaming();
         }
       } catch (e) {
-        console.error('Failed to start simulstream:', e);
+        reportActionError(e);
       }
     }
   };
@@ -385,14 +387,15 @@ export default function LiveSwitcherController() {
     if (isRecordingProgram) {
       try {
         const res = await window.electron?.Recorder?.stop();
+        if (!res?.ok) throw new Error(res?.error || res?.reason || "Recording could not be finalized. Check the recording status before retrying.");
         setIsRecordingProgram(false);
         stopAudioStreamingIfIdle();
         if (res?.outputPath) {
           setActiveRecordingPath(res.outputPath);
-          setFeedback?.(`Recording saved: ${res.outputPath}`);
+          setFeedback({ text: `Recording saved: ${res.outputPath}`, ok: true });
         }
       } catch (e) {
-        console.error("Failed to stop recording:", e);
+        reportActionError(e);
       }
     } else {
       try {
@@ -403,16 +406,17 @@ export default function LiveSwitcherController() {
           fps: 30,
           withAudio: true
         });
+        if (!res?.ok) throw new Error(res?.error || "Recording could not start.");
         if (res && res.ok) {
           setIsRecordingProgram(true);
           if (res.outputPath) {
             setActiveRecordingPath(res.outputPath);
-            setFeedback?.(`Recording started: ${res.outputPath}`);
+            setFeedback({ text: `Recording started: ${res.outputPath}`, ok: true });
           }
           await ensureAudioStreaming();
         }
       } catch (e) {
-        console.error("Failed to start recording:", e);
+        reportActionError(e);
       }
     }
   };
@@ -1365,7 +1369,7 @@ export default function LiveSwitcherController() {
               />
 
               {/* Studio Overlays & Scaling Button Card (Replacing Stage Screen) */}
-              <button
+              <ActionButton
                 type="button"
                 onClick={() => setIsStudioModalOpen(true)}
                 className="relative w-full aspect-video rounded-[12px] bg-gradient-to-br from-[#161226] via-[#100d1d] to-[#0c0a17] border border-purple-500/40 hover:border-purple-400/80 p-3 flex flex-col justify-between text-left transition-all group shadow-lg hover:shadow-purple-950/40 cursor-pointer overflow-hidden active:scale-[0.99]"
@@ -1422,7 +1426,7 @@ export default function LiveSwitcherController() {
                     Open Studio Modal ↗
                   </span>
                 </div>
-              </button>
+              </ActionButton>
             </div>
           </div>
 
@@ -1480,23 +1484,23 @@ export default function LiveSwitcherController() {
               <div className="flex flex-col gap-2 p-3 rounded-[12px] bg-black/40 border border-white/5 h-full justify-between">
                 {/* CUT and AUTO Take Action Buttons */}
                 <div className="grid grid-cols-2 gap-2">
-                  <button
+                  <ActionButton
                     onClick={handleCut}
                     disabled={!isDesktopController}
                     className="py-2 px-3 rounded-[12px] border border-red-500/50 bg-red-600/30 hover:bg-red-600/40 active:scale-[0.98] text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-[0_0_12px_rgba(239,68,68,0.2)] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                   >
                     <PiLightning size={14} className="text-red-400" />
                     CUT [C]
-                  </button>
+                  </ActionButton>
 
-                  <button
+                  <ActionButton
                     onClick={handleAuto}
                     disabled={!isDesktopController}
                     className="py-2 px-3 rounded-[12px] border border-emerald-500/50 bg-emerald-600/30 hover:bg-emerald-600/40 active:scale-[0.98] text-white font-black text-xs flex items-center justify-center gap-1.5 shadow-[0_0_12px_rgba(16,185,129,0.2)] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
                   >
                     <PiPlay size={14} className="text-emerald-400" />
                     AUTO [Space]
-                  </button>
+                  </ActionButton>
                 </div>
 
                 {/* Effect and Duration Settings */}
@@ -1504,7 +1508,7 @@ export default function LiveSwitcherController() {
                   {/* Effects */}
                   <div className="flex items-center gap-1">
                     {["fade", "wipe", "cut"].map((type) => (
-                      <button
+                      <ActionButton
                         key={type}
                         onClick={() => updateTransitionSetting({ type })}
                         className={`px-2 py-0.5 rounded-[12px] text-[9px] font-bold uppercase transition-all border ${
@@ -1514,7 +1518,7 @@ export default function LiveSwitcherController() {
                         }`}
                       >
                         {type}
-                      </button>
+                      </ActionButton>
                     ))}
                   </div>
 
@@ -1522,7 +1526,7 @@ export default function LiveSwitcherController() {
                   {transitionSetting.type !== "cut" && (
                     <div className="flex items-center gap-1">
                       {[250, 500, 750, 1000].map((ms) => (
-                        <button
+                        <ActionButton
                           key={ms}
                           onClick={() => updateTransitionSetting({ duration: ms })}
                           className={`px-1.5 py-0.5 rounded-[12px] text-[9px] font-mono font-bold transition-all border ${
@@ -1532,7 +1536,7 @@ export default function LiveSwitcherController() {
                           }`}
                         >
                           {ms}ms
-                        </button>
+                        </ActionButton>
                       ))}
                     </div>
                   )}
@@ -1627,7 +1631,7 @@ export default function LiveSwitcherController() {
                 </select>
 
                 {/* Take Display 1 Button */}
-                <button
+                <ActionButton
                   onClick={() => handleSetActiveDisplay("display1")}
                   disabled={!isDesktopController}
                   className={`w-full py-2 px-3 rounded-[12px] border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
@@ -1638,7 +1642,7 @@ export default function LiveSwitcherController() {
                 >
                   <PiMonitor size={14} />
                   {activeDisplay === "display1" ? "SHOWING DISPLAY 1" : "SHOW DISPLAY 1 [1]"}
-                </button>
+                </ActionButton>
               </div>
 
               {/* DISPLAY 2 CHANNEL */}
@@ -1680,7 +1684,7 @@ export default function LiveSwitcherController() {
                 </select>
 
                 {/* Take Display 2 Button */}
-                <button
+                <ActionButton
                   onClick={() => handleSetActiveDisplay("display2")}
                   disabled={!isDesktopController}
                   className={`w-full py-2 px-3 rounded-[12px] border text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${
@@ -1691,12 +1695,12 @@ export default function LiveSwitcherController() {
                 >
                   <PiVideoCamera size={14} />
                   {activeDisplay === "display2" ? "SHOWING DISPLAY 2" : "SHOW DISPLAY 2 [2]"}
-                </button>
+                </ActionButton>
               </div>
             </div>
 
             {/* Quick Swap Displays Button */}
-            <button
+            <ActionButton
               onClick={() => handleSetActiveDisplay(activeDisplay === "display1" ? "display2" : "display1")}
               disabled={!isDesktopController}
               className="w-full py-2 px-3 rounded-[12px] bg-gradient-to-r from-sky-500/20 via-white/10 to-violet-500/20 hover:from-sky-500/30 hover:to-violet-500/30 border border-white/15 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all shadow-md active:scale-[0.99] disabled:opacity-40 disabled:cursor-not-allowed"
@@ -1708,7 +1712,7 @@ export default function LiveSwitcherController() {
               <span className="text-[10px] font-mono text-white/50 bg-black/40 px-1.5 py-0.5 rounded-[12px] border border-white/10">
                 Space
               </span>
-            </button>
+            </ActionButton>
           </div>
 
 
@@ -1728,7 +1732,7 @@ export default function LiveSwitcherController() {
 
             <div className="flex flex-col gap-2">
               {/* Share to General Screen Toggle */}
-              <button
+              <ActionButton
                 onClick={() => handleRouteToggle("general")}
                 disabled={!isDesktopController}
                 className={`flex items-center justify-between p-3 rounded-[12px] border transition-all text-left ${
@@ -1759,10 +1763,10 @@ export default function LiveSwitcherController() {
                 }`}>
                   {routeGeneral ? "● ON AIR" : "OFF"}
                 </span>
-              </button>
+              </ActionButton>
 
               {/* Share to Speaker Screen Toggle */}
-              <button
+              <ActionButton
                 onClick={() => handleRouteToggle("speaker")}
                 disabled={!isDesktopController}
                 className={`flex items-center justify-between p-3 rounded-[12px] border transition-all text-left ${
@@ -1793,7 +1797,7 @@ export default function LiveSwitcherController() {
                 }`}>
                   {routeSpeaker ? "● ON AIR" : "OFF"}
                 </span>
-              </button>
+              </ActionButton>
 
               {/* Share to Social Media & Live Stream */}
               <div
@@ -1889,25 +1893,25 @@ export default function LiveSwitcherController() {
                     <option key={dev.id} value={dev.id}>{dev.name || dev.id}</option>
                   ))}
                 </select>
-                <button
+                <ActionButton
                   onClick={handleGrantControl}
                   disabled={!grantTarget}
                   className="px-3 py-1.5 rounded-[12px] bg-white/10 hover:bg-white/20 text-white text-xs font-semibold border border-white/15 disabled:opacity-40 transition-all"
                 >
                   Grant
-                </button>
+                </ActionButton>
               </div>
             )}
 
             {/* Reclaim control */}
             {!isDesktopController && (
-              <button
+              <ActionButton
                 onClick={handleReclaimControl}
                 className="w-full py-2 px-3 rounded-[12px] bg-red-600/30 hover:bg-red-600/40 border border-red-500/40 text-red-200 text-xs font-semibold flex items-center justify-center gap-1.5 transition-all shadow-md"
               >
                 <PiArrowCounterClockwise size={14} />
                 Reclaim Control Immediately
-              </button>
+              </ActionButton>
             )}
           </div>
         </div>
@@ -1935,18 +1939,18 @@ export default function LiveSwitcherController() {
                   </p>
                 </div>
               </div>
-              <button
+              <ActionButton
                 onClick={handleCloseAssignModal}
                 className="p-1.5 rounded-[12px] text-white/50 hover:text-white hover:bg-white/10 transition-colors"
                 title="Close Modal"
               >
                 <PiX size={18} />
-              </button>
+              </ActionButton>
             </div>
 
             {/* Tabs */}
             <div className="flex items-center gap-2 px-6 pt-4 pb-2 border-b border-white/10 bg-black/20">
-              <button
+              <ActionButton
                 onClick={() => setActiveAssignTab("camcorder")}
                 className={`flex items-center gap-2 px-3.5 py-2 rounded-[12px] text-xs font-bold transition-all border ${
                   activeAssignTab === "camcorder"
@@ -1959,9 +1963,9 @@ export default function LiveSwitcherController() {
                 <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-[12px] bg-black/40 text-white/70">
                   {localVideoDevices.length}
                 </span>
-              </button>
+              </ActionButton>
 
-              <button
+              <ActionButton
                 onClick={() => setActiveAssignTab("mobile")}
                 className={`flex items-center gap-2 px-3.5 py-2 rounded-[12px] text-xs font-bold transition-all border ${
                   activeAssignTab === "mobile"
@@ -1974,7 +1978,7 @@ export default function LiveSwitcherController() {
                 <span className="text-[10px] font-mono px-1.5 py-0.2 rounded-[12px] bg-black/40 text-white/70">
                   {pairedDevices.filter((d) => d && (d.paired !== false || d.id)).length}
                 </span>
-              </button>
+              </ActionButton>
             </div>
 
             {/* Modal Content Body */}
@@ -1985,14 +1989,14 @@ export default function LiveSwitcherController() {
                     <span className="text-[10px] uppercase font-bold tracking-widest text-white/40">
                       Detected Hardware Devices
                     </span>
-                    <button
+                    <ActionButton
                       onClick={refreshLocalDevices}
                       disabled={isScanningDevices}
                       className="flex items-center gap-1.5 text-[11px] font-semibold text-sky-400 hover:text-sky-300 disabled:opacity-50 px-2 py-1 rounded-[12px] bg-sky-500/10 border border-sky-500/20 transition-all"
                     >
                       <PiArrowsClockwise size={12} className={isScanningDevices ? "animate-spin" : ""} />
                       <span>{isScanningDevices ? "Scanning..." : "Rescan Devices"}</span>
-                    </button>
+                    </ActionButton>
                   </div>
 
                   {localVideoDevices.length === 0 ? (
@@ -2028,12 +2032,12 @@ export default function LiveSwitcherController() {
                             </div>
                           </div>
 
-                          <button
+                          <ActionButton
                             onClick={() => handleAssignCamcorder(selectedAssignSlotIndex, dev.deviceId, dev.label)}
                             className="px-3.5 py-1.5 rounded-[12px] bg-emerald-600/80 hover:bg-emerald-500 text-white font-bold text-xs shrink-0 transition-all shadow-md active:scale-95"
                           >
                             {isCurrentlyAssigned ? `Move to Slot ${selectedAssignSlotIndex}` : "Connect & Assign"}
-                          </button>
+                          </ActionButton>
                         </div>
                       );
                     })
@@ -2045,14 +2049,14 @@ export default function LiveSwitcherController() {
                     <span className="text-[10px] uppercase font-bold tracking-widest text-white/40">
                       Connected Mobile Companions
                     </span>
-                    <button
+                    <ActionButton
                       onClick={refreshMobileDevices}
                       disabled={isScanningMobiles}
                       className="flex items-center gap-1.5 text-[11px] font-semibold text-sky-400 hover:text-sky-300 disabled:opacity-50 px-2 py-1 rounded-[12px] bg-sky-500/10 border border-sky-500/20 transition-all"
                     >
                       <PiArrowsClockwise size={12} className={isScanningMobiles ? "animate-spin" : ""} />
                       <span>{isScanningMobiles ? "Scanning..." : "Rescan Mobile"}</span>
-                    </button>
+                    </ActionButton>
                   </div>
 
                   {pairedDevices.filter((d) => d && (d.paired !== false || d.id)).length === 0 ? (
@@ -2099,12 +2103,12 @@ export default function LiveSwitcherController() {
                               </div>
                             </div>
 
-                            <button
+                            <ActionButton
                               onClick={() => handleAssignMobile(selectedAssignSlotIndex, dev)}
                               className="px-3.5 py-1.5 rounded-[12px] bg-sky-600/80 hover:bg-sky-500 text-white font-bold text-xs shrink-0 transition-all shadow-md active:scale-95"
                             >
                               {isCurrentlyAssigned ? `Move to Slot ${selectedAssignSlotIndex}` : `Assign to Slot ${selectedAssignSlotIndex}`}
-                            </button>
+                            </ActionButton>
                           </div>
                         );
                       })
@@ -2115,12 +2119,12 @@ export default function LiveSwitcherController() {
 
             {/* Modal Footer */}
             <div className="flex items-center justify-end px-6 py-3.5 border-t border-white/10 bg-white/[0.02]">
-              <button
+              <ActionButton
                 onClick={handleCloseAssignModal}
                 className="px-4 py-2 rounded-[12px] bg-white/10 hover:bg-white/15 text-white/80 hover:text-white text-xs font-bold transition-all"
               >
                 Cancel
-              </button>
+              </ActionButton>
             </div>
           </div>
         </div>,
@@ -2159,20 +2163,20 @@ export default function LiveSwitcherController() {
                   <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                   <span>Live Air Compositor Active • Synchronized</span>
                 </div>
-                <button
+                <ActionButton
                   onClick={() => setIsStudioModalOpen(false)}
                   className="px-5 py-2 rounded-[12px] bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md active:scale-95 flex items-center gap-1.5"
                 >
                   <PiCheck size={14} />
                   <span>Done</span>
-                </button>
-                <button
+                </ActionButton>
+                <ActionButton
                   onClick={() => setIsStudioModalOpen(false)}
                   className="p-2 rounded-[12px] bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-all"
                   title="Close Studio Editor"
                 >
                   <PiX size={16} />
-                </button>
+                </ActionButton>
               </div>
             </div>
 
@@ -2431,7 +2435,7 @@ export default function LiveSwitcherController() {
                                 { label: "BR", x: 85, y: 85 },
                                 { label: "Center", x: 50, y: 50 },
                               ].map(({ label, x, y }) => (
-                                <button
+                                <ActionButton
                                   key={label}
                                   onClick={() => {
                                     const nextLayers = (cfg.layers || []).map((l) =>
@@ -2442,16 +2446,16 @@ export default function LiveSwitcherController() {
                                   className="px-2 py-1 rounded-[12px] bg-white/5 hover:bg-white/15 text-white/70 hover:text-white text-[10px] font-bold transition-all border border-white/5"
                                 >
                                   {label}
-                                </button>
+                                </ActionButton>
                               ))}
 
-                              <button
+                              <ActionButton
                                 onClick={() => handleRemoveStudioLayer(curLayer.id)}
                                 className="ml-2 px-2.5 py-1 rounded-[12px] bg-red-500/15 hover:bg-red-500/25 text-red-300 text-[10px] font-bold transition-all border border-red-500/30 flex items-center gap-1"
                               >
                                 <PiTrash size={12} />
                                 <span>Delete</span>
-                              </button>
+                              </ActionButton>
                             </div>
                           </div>
 
@@ -2513,7 +2517,7 @@ export default function LiveSwitcherController() {
                         </div>
 
                         <div className="flex items-center gap-2">
-                          <button
+                          <ActionButton
                             onClick={() => {
                               setStudioModalTab("designer");
                               setIsStudioModalOpen(true);
@@ -2522,14 +2526,14 @@ export default function LiveSwitcherController() {
                           >
                             <PiPaintBrush size={13} />
                             <span>🎨 Open Designer</span>
-                          </button>
-                          <button
+                          </ActionButton>
+                          <ActionButton
                             onClick={() => handleUpdateBroadcastConfig({ lowerThird: { ...cfg.lowerThird, x: 22, y: 88, width: 36 } })}
                             className="px-2.5 py-1 rounded-[12px] bg-white/5 hover:bg-white/15 text-white/70 text-[10px] font-bold transition-all border border-white/5"
                           >
                             Reset (Compact)
-                          </button>
-                          <button
+                          </ActionButton>
+                          <ActionButton
                             onClick={() => handleUpdateBroadcastConfig({ lowerThird: { ...cfg.lowerThird, enabled: !cfg.lowerThird.enabled } })}
                             className={`px-3 py-1 rounded-[12px] text-xs font-bold transition-all border ${
                               cfg.lowerThird.enabled
@@ -2538,7 +2542,7 @@ export default function LiveSwitcherController() {
                             }`}
                           >
                             {cfg.lowerThird.enabled ? "Hide From Air" : "Show On Air"}
-                          </button>
+                          </ActionButton>
                         </div>
                       </div>
 
@@ -2585,7 +2589,7 @@ export default function LiveSwitcherController() {
                               { id: "gradient", label: "Gold" },
                               { id: "minimal", label: "Dark" },
                             ].map(({ id, label }) => (
-                              <button
+                              <ActionButton
                                 key={id}
                                 onClick={() => handleUpdateBroadcastConfig({ lowerThird: { ...cfg.lowerThird, theme: id } })}
                                 className={`py-1 rounded-[12px] text-[10px] font-bold border transition-all ${
@@ -2595,7 +2599,7 @@ export default function LiveSwitcherController() {
                                 }`}
                               >
                                 {label}
-                              </button>
+                              </ActionButton>
                             ))}
                           </div>
                         </div>
@@ -2627,7 +2631,7 @@ export default function LiveSwitcherController() {
                             <span>Auto-Trigger on Scripture Mention</span>
                           </label>
 
-                          <button
+                          <ActionButton
                             onClick={() => handleUpdateBroadcastConfig({ bibleLowerThird: { ...cfg.bibleLowerThird, isShowing: !cfg.bibleLowerThird.isShowing } })}
                             className={`px-4 py-1.5 rounded-[12px] text-xs font-black transition-all border shadow-md active:scale-95 ${
                               cfg.bibleLowerThird.isShowing
@@ -2636,7 +2640,7 @@ export default function LiveSwitcherController() {
                             }`}
                           >
                             {cfg.bibleLowerThird.isShowing ? "Hide From Air" : "Show Scripture On Air Now"}
-                          </button>
+                          </ActionButton>
                         </div>
                       </div>
 
@@ -2669,7 +2673,7 @@ export default function LiveSwitcherController() {
                               { sec: 15, label: "15s" },
                               { sec: 0, label: "Manual" },
                             ].map(({ sec, label }) => (
-                              <button
+                              <ActionButton
                                 key={sec}
                                 onClick={() => handleUpdateBroadcastConfig({ bibleLowerThird: { ...cfg.bibleLowerThird, autoDismissSec: sec } })}
                                 className={`py-1 rounded-[12px] text-[10px] font-bold border transition-all ${
@@ -2679,7 +2683,7 @@ export default function LiveSwitcherController() {
                                 }`}
                               >
                                 {label}
-                              </button>
+                              </ActionButton>
                             ))}
                           </div>
                         </div>
@@ -2699,12 +2703,12 @@ export default function LiveSwitcherController() {
                             {cfg.ticker.enabled ? "ENABLED" : "DISABLED"}
                           </span>
                         </div>
-                        <button
+                        <ActionButton
                           onClick={() => handleUpdateBroadcastConfig({ ticker: { ...cfg.ticker, enabled: !cfg.ticker.enabled } })}
                           className="px-3 py-1 rounded-[12px] bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all"
                         >
                           {cfg.ticker.enabled ? "Disable Ticker" : "Enable Ticker"}
-                        </button>
+                        </ActionButton>
                       </div>
                       <input
                         type="text"
@@ -2717,12 +2721,12 @@ export default function LiveSwitcherController() {
                   ) : (
                     <div className="flex items-center justify-between py-1 px-2 text-white/50 text-xs font-medium">
                       <span>💡 Click any graphic overlay or lower third on the screen to reposition & resize, or select from the right panel.</span>
-                      <button
+                      <ActionButton
                         onClick={() => setStudioModalTab("media")}
                         className="px-3 py-1 rounded-[12px] bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 text-xs font-bold transition-all border border-purple-500/40"
                       >
                         + Add Image Layer
-                      </button>
+                      </ActionButton>
                     </div>
                   )}
                 </div>
@@ -2740,7 +2744,7 @@ export default function LiveSwitcherController() {
                   ].map(({ id, label, icon: Icon }) => {
                     const active = studioModalTab === id;
                     return (
-                      <button
+                      <ActionButton
                         key={id}
                         onClick={() => setStudioModalTab(id)}
                         className={`py-2.5 flex flex-col items-center gap-1 text-[11px] font-bold transition-all border-b-2 ${
@@ -2751,7 +2755,7 @@ export default function LiveSwitcherController() {
                       >
                         <Icon size={16} />
                         <span>{label}</span>
-                      </button>
+                      </ActionButton>
                     );
                   })}
                 </div>
@@ -2765,12 +2769,12 @@ export default function LiveSwitcherController() {
                         <span className="text-[10px] uppercase font-bold tracking-widest text-white/40">
                           Active Layers ({(cfg.layers || []).length + 3})
                         </span>
-                        <button
+                        <ActionButton
                           onClick={() => setStudioModalTab("media")}
                           className="text-[10px] font-bold text-purple-400 hover:text-purple-300 flex items-center gap-1 px-2 py-0.5 rounded-[12px] bg-purple-500/10 border border-purple-500/20"
                         >
                           <PiPlus size={11} /> Add Image
-                        </button>
+                        </ActionButton>
                       </div>
 
                       {/* Custom Image Layers */}
@@ -2799,7 +2803,7 @@ export default function LiveSwitcherController() {
                             </div>
 
                             <div className="flex items-center gap-1 shrink-0">
-                              <button
+                              <ActionButton
                                 disabled={idx === 0}
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -2809,8 +2813,8 @@ export default function LiveSwitcherController() {
                                 title="Move Forward"
                               >
                                 <PiArrowUp size={11} />
-                              </button>
-                              <button
+                              </ActionButton>
+                              <ActionButton
                                 disabled={idx === cfg.layers.length - 1}
                                 onClick={(e) => {
                                   e.stopPropagation();
@@ -2820,8 +2824,8 @@ export default function LiveSwitcherController() {
                                 title="Move Backward"
                               >
                                 <PiArrowDown size={11} />
-                              </button>
-                              <button
+                              </ActionButton>
+                              <ActionButton
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   handleRemoveStudioLayer(layer.id);
@@ -2830,7 +2834,7 @@ export default function LiveSwitcherController() {
                                 title="Delete Layer"
                               >
                                 <PiTrash size={12} />
-                              </button>
+                              </ActionButton>
                             </div>
                           </div>
                         );
@@ -2854,7 +2858,7 @@ export default function LiveSwitcherController() {
                             </span>
                           </div>
                         </div>
-                        <button
+                        <ActionButton
                           onClick={(e) => {
                             e.stopPropagation();
                             handleUpdateBroadcastConfig({ lowerThird: { ...cfg.lowerThird, enabled: !cfg.lowerThird.enabled } });
@@ -2866,7 +2870,7 @@ export default function LiveSwitcherController() {
                           }`}
                         >
                           {cfg.lowerThird.enabled ? <PiEye size={13} /> : <PiEyeSlash size={13} />}
-                        </button>
+                        </ActionButton>
                       </div>
 
                       {/* Bible Scripture Layer Item */}
@@ -2914,7 +2918,7 @@ export default function LiveSwitcherController() {
                             </span>
                           </div>
                         </div>
-                        <button
+                        <ActionButton
                           onClick={(e) => {
                             e.stopPropagation();
                             handleUpdateBroadcastConfig({ ticker: { ...cfg.ticker, enabled: !cfg.ticker.enabled } });
@@ -2926,7 +2930,7 @@ export default function LiveSwitcherController() {
                           }`}
                         >
                           {cfg.ticker.enabled ? <PiEye size={13} /> : <PiEyeSlash size={13} />}
-                        </button>
+                        </ActionButton>
                       </div>
                     </div>
                   )}
@@ -3044,7 +3048,7 @@ export default function LiveSwitcherController() {
                               {lt.enabled ? "ON AIR" : "OFF AIR"}
                             </span>
                           </div>
-                          <button
+                          <ActionButton
                             onClick={() => handleUpdateBroadcastConfig({ lowerThird: { ...lt, enabled: !lt.enabled } })}
                             className={`px-3 py-1 rounded-[12px] text-xs font-bold transition-all border shadow-sm active:scale-95 ${
                               lt.enabled
@@ -3053,7 +3057,7 @@ export default function LiveSwitcherController() {
                             }`}
                           >
                             {lt.enabled ? "Hide From Air" : "Show On Air"}
-                          </button>
+                          </ActionButton>
                         </div>
 
                         {/* Quick Presets Swatches */}
@@ -3062,7 +3066,7 @@ export default function LiveSwitcherController() {
                             <span className="text-[10px] uppercase font-bold tracking-widest text-white/40">
                               Design Templates
                             </span>
-                            <button
+                            <ActionButton
                               onClick={() => {
                                 handleUpdateBroadcastConfig({
                                   lowerThird: {
@@ -3078,11 +3082,11 @@ export default function LiveSwitcherController() {
                               className="text-[9px] text-white/40 hover:text-white transition-colors"
                             >
                               Reset Defaults
-                            </button>
+                            </ActionButton>
                           </div>
                           <div className="grid grid-cols-2 gap-1.5">
                             {PRESET_TEMPLATES.map((tmpl) => (
-                              <button
+                              <ActionButton
                                 key={tmpl.name}
                                 onClick={() => {
                                   updateStyle(tmpl.style);
@@ -3098,7 +3102,7 @@ export default function LiveSwitcherController() {
                                   />
                                 </div>
                                 <p className="text-[9px] text-white/40 leading-tight truncate">{tmpl.desc}</p>
-                              </button>
+                              </ActionButton>
                             ))}
                           </div>
                         </div>
@@ -3122,7 +3126,7 @@ export default function LiveSwitcherController() {
                                 { id: "minimal-bar", label: "Minimal Floating Bar" },
                                 { id: "pill", label: "Modern Pill" },
                               ].map(({ id, label }) => (
-                                <button
+                                <ActionButton
                                   key={id}
                                   onClick={() => updateStyle({ shape: id })}
                                   className={`py-1.5 px-2 rounded-[12px] text-[10px] font-bold border transition-all text-center ${
@@ -3132,7 +3136,7 @@ export default function LiveSwitcherController() {
                                   }`}
                                 >
                                   {label}
-                                </button>
+                                </ActionButton>
                               ))}
                             </div>
                           </div>
@@ -3150,7 +3154,7 @@ export default function LiveSwitcherController() {
                                 { id: "rect", label: "12px Rect", icon: PiRectangle },
                                 { id: "none", label: "None", icon: PiX },
                               ].map(({ id, label, icon: Icon }) => (
-                                <button
+                                <ActionButton
                                   key={id}
                                   onClick={() => updateStyle({ badgeShape: id })}
                                   className={`py-1 rounded-[12px] text-[10px] font-bold border transition-all flex flex-col items-center gap-0.5 ${
@@ -3161,7 +3165,7 @@ export default function LiveSwitcherController() {
                                 >
                                   <Icon size={12} />
                                   <span>{label}</span>
-                                </button>
+                                </ActionButton>
                               ))}
                             </div>
                           </div>
@@ -3181,7 +3185,7 @@ export default function LiveSwitcherController() {
                                   { id: "star", label: "⭐" },
                                   { id: "bible", label: "📖" },
                                 ].map(({ id, label }) => (
-                                  <button
+                                  <ActionButton
                                     key={id}
                                     onClick={() => updateStyle({ badgeIcon: id })}
                                     className={`py-1 rounded-[12px] text-xs font-bold border transition-all text-center ${
@@ -3191,7 +3195,7 @@ export default function LiveSwitcherController() {
                                     }`}
                                   >
                                     {label}
-                                  </button>
+                                  </ActionButton>
                                 ))}
                               </div>
                             </div>
@@ -3203,7 +3207,7 @@ export default function LiveSwitcherController() {
                               <PiTriangle size={12} className="text-amber-400" />
                               <span className="text-[10px] font-bold text-white/70">Triangular Accent Divider</span>
                             </div>
-                            <button
+                            <ActionButton
                               onClick={() => updateStyle({ showAccentSlash: !st.showAccentSlash })}
                               className={`px-2.5 py-0.5 rounded-[12px] text-[10px] font-bold border transition-all ${
                                 st.showAccentSlash
@@ -3212,7 +3216,7 @@ export default function LiveSwitcherController() {
                               }`}
                             >
                               {st.showAccentSlash ? "ACTIVE" : "OFF"}
-                            </button>
+                            </ActionButton>
                           </div>
                         </div>
 
@@ -3225,7 +3229,7 @@ export default function LiveSwitcherController() {
                           {/* Swatches */}
                           <div className="grid grid-cols-6 gap-1">
                             {COLOR_SWATCHES.map((sw) => (
-                              <button
+                              <ActionButton
                                 key={sw.label}
                                 onClick={() => updateStyle({
                                   primaryColor: sw.primary,
@@ -3324,7 +3328,7 @@ export default function LiveSwitcherController() {
                             <div className="flex items-center gap-1">
                               <span className="text-[10px] font-bold text-white/50">Font Size:</span>
                               {["small", "medium", "large"].map((sz) => (
-                                <button
+                                <ActionButton
                                   key={sz}
                                   onClick={() => updateStyle({ fontSize: sz })}
                                   className={`px-2 py-0.5 rounded-[12px] text-[9px] font-bold capitalize border transition-all ${
@@ -3334,10 +3338,10 @@ export default function LiveSwitcherController() {
                                   }`}
                                 >
                                   {sz}
-                                </button>
+                                </ActionButton>
                               ))}
                             </div>
-                            <button
+                            <ActionButton
                               onClick={() => updateStyle({ uppercaseTitle: !st.uppercaseTitle })}
                               className={`px-2 py-0.5 rounded-[12px] text-[9px] font-bold border transition-all ${
                                 st.uppercaseTitle
@@ -3346,7 +3350,7 @@ export default function LiveSwitcherController() {
                               }`}
                             >
                               ALL CAPS
-                            </button>
+                            </ActionButton>
                           </div>
                         </div>
 
@@ -3384,7 +3388,7 @@ export default function LiveSwitcherController() {
                             ].map((pos) => {
                               const isCur = Math.abs((lt.x ?? 22) - pos.x) < 2 && Math.abs((lt.y ?? 88) - pos.y) < 2;
                               return (
-                                <button
+                                <ActionButton
                                   key={pos.label}
                                   onClick={() => handleUpdateBroadcastConfig({ lowerThird: { ...lt, x: pos.x, y: pos.y } })}
                                   className={`py-1 rounded-[12px] text-[9px] font-bold border transition-all text-center ${
@@ -3394,7 +3398,7 @@ export default function LiveSwitcherController() {
                                   }`}
                                 >
                                   {pos.label}
-                                </button>
+                                </ActionButton>
                               );
                             })}
                           </div>
@@ -3413,12 +3417,12 @@ export default function LiveSwitcherController() {
                           </span>
                           <p className="text-[10px] text-white/40">Click any image to add as an overlay layer</p>
                         </div>
-                        <button
+                        <ActionButton
                           onClick={handleImportMediaForStudio}
                           className="text-[10px] font-bold text-sky-400 hover:text-sky-300 flex items-center gap-1 px-2.5 py-1 rounded-[12px] bg-sky-500/10 border border-sky-500/20 transition-all"
                         >
                           <PiPlus size={11} /> Import Image
-                        </button>
+                        </ActionButton>
                       </div>
 
                       {isLoadingStudioMedia ? (
@@ -3433,12 +3437,12 @@ export default function LiveSwitcherController() {
                           <p className="text-[10px] text-white/40 max-w-xs">
                             Import event logos, speaker headshots, sponsor logos, or background graphics into the church library.
                           </p>
-                          <button
+                          <ActionButton
                             onClick={handleImportMediaForStudio}
                             className="mt-1 px-3 py-1.5 rounded-[12px] bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md"
                           >
                             + Import First Image
-                          </button>
+                          </ActionButton>
                         </div>
                       ) : (
                         <div className="grid grid-cols-2 gap-2 max-h-[420px] overflow-y-auto pr-0.5">
@@ -3490,7 +3494,7 @@ export default function LiveSwitcherController() {
                         ].map(({ scale, label }) => {
                           const isCur = Math.abs((cfg.scale || 1.0) - scale) < 0.02;
                           return (
-                            <button
+                            <ActionButton
                               key={scale}
                               onClick={() => handleUpdateBroadcastConfig({ scale })}
                               className={`p-2.5 rounded-[12px] border text-xs font-bold transition-all text-center ${
@@ -3500,7 +3504,7 @@ export default function LiveSwitcherController() {
                               }`}
                             >
                               {label}
-                            </button>
+                            </ActionButton>
                           );
                         })}
                       </div>
@@ -3516,7 +3520,7 @@ export default function LiveSwitcherController() {
                           ].map(({ mode, label }) => {
                             const isCur = (cfg.fitMode || "cover") === mode;
                             return (
-                              <button
+                              <ActionButton
                                 key={mode}
                                 onClick={() => handleUpdateBroadcastConfig({ fitMode: mode })}
                                 className={`p-2 rounded-[12px] border text-xs font-bold transition-all ${
@@ -3526,7 +3530,7 @@ export default function LiveSwitcherController() {
                                 }`}
                               >
                                 {label}
-                              </button>
+                              </ActionButton>
                             );
                           })}
                         </div>
@@ -3565,12 +3569,12 @@ export default function LiveSwitcherController() {
                   <p className="text-[11px] text-white/40">FFmpeg Hardware-Accelerated RTMP/SRT · Up to 2 simultaneous destinations</p>
                 </div>
               </div>
-              <button
+              <ActionButton
                 onClick={() => setShowBroadcastModal(false)}
                 className="w-8 h-8 rounded-[12px] bg-white/5 border border-white/10 flex items-center justify-center text-white/60 hover:text-white hover:bg-white/10 transition-all"
               >
                 <PiX size={16} />
-              </button>
+              </ActionButton>
             </div>
 
             {/* Modal Body */}
@@ -3638,16 +3642,16 @@ export default function LiveSwitcherController() {
                         {/* Enable toggle & Delete */}
                         <div className="flex items-center gap-2">
                           {destinations.length > 1 && (
-                            <button
+                            <ActionButton
                               disabled={isAnyStreaming}
                               onClick={() => removeDestination(dest.id)}
                               className="p-1 rounded-[12px] text-white/30 hover:text-red-400 hover:bg-white/5 transition-all disabled:opacity-30"
                               title="Remove Destination"
                             >
                               <PiTrash size={14} />
-                            </button>
+                            </ActionButton>
                           )}
-                          <button
+                          <ActionButton
                             disabled={isAnyStreaming}
                             onClick={() => updateDestination(dest.id, { enabled: !dest.enabled })}
                             className={`px-3 py-1 rounded-[12px] text-[10px] font-bold border transition-all ${
@@ -3657,7 +3661,7 @@ export default function LiveSwitcherController() {
                             } disabled:opacity-40`}
                           >
                             {dest.enabled ? 'Enabled' : 'Disabled'}
-                          </button>
+                          </ActionButton>
                         </div>
                       </div>
 
@@ -3666,7 +3670,7 @@ export default function LiveSwitcherController() {
                         {PLATFORM_PRESETS.map(p => {
                           const isSel = p.url && dest.url.startsWith(p.url);
                           return (
-                            <button
+                            <ActionButton
                               key={p.label}
                               disabled={isAnyStreaming}
                               onClick={() => updateDestination(dest.id, { label: p.label, url: p.url })}
@@ -3677,7 +3681,7 @@ export default function LiveSwitcherController() {
                               } disabled:opacity-40`}
                             >
                               {p.label}
-                            </button>
+                            </ActionButton>
                           );
                         })}
                       </div>
@@ -3706,13 +3710,13 @@ export default function LiveSwitcherController() {
                               placeholder="Paste stream key…"
                               className="w-full px-2.5 py-1.5 pr-8 bg-black/40 border border-white/10 rounded-[12px] text-[11px] text-white placeholder-white/20 focus:outline-none focus:border-purple-500 disabled:opacity-50"
                             />
-                            <button
+                            <ActionButton
                               type="button"
                               onClick={() => updateDestination(dest.id, { showKey: !dest.showKey })}
                               className="absolute right-2 top-1/2 -translate-y-1/2 text-white/40 hover:text-white"
                             >
                               {dest.showKey ? <PiEyeSlash size={13} /> : <PiEye size={13} />}
-                            </button>
+                            </ActionButton>
                           </div>
                         </div>
                       </div>
@@ -3739,14 +3743,14 @@ export default function LiveSwitcherController() {
 
                 {/* Add Destination Button (Up to 6) */}
                 {destinations.length < 6 && (
-                  <button
+                  <ActionButton
                     disabled={isAnyStreaming}
                     onClick={addDestination}
                     className="flex items-center justify-center gap-1.5 p-2.5 rounded-[12px] border border-dashed border-white/20 hover:border-purple-500/50 bg-white/[0.01] hover:bg-purple-950/10 text-white/60 hover:text-white text-xs font-bold transition-all disabled:opacity-40"
                   >
                     <PiPlus size={14} />
                     Add Broadcast Destination (Simulstream)
-                  </button>
+                  </ActionButton>
                 )}
 
                 {/* Outbound Bandwidth Network Capacity Audit */}
@@ -3780,7 +3784,7 @@ export default function LiveSwitcherController() {
                       { label: '720p', w: 1280, h: 720 },
                       { label: '1080p', w: 1920, h: 1080 },
                     ].map(r => (
-                      <button
+                      <ActionButton
                         key={r.label}
                         disabled={isAnyStreaming}
                         onClick={() => { setStreamWidth(r.w); setStreamHeight(r.h); }}
@@ -3791,7 +3795,7 @@ export default function LiveSwitcherController() {
                         } disabled:opacity-40`}
                       >
                         {r.label}
-                      </button>
+                      </ActionButton>
                     ))}
                   </div>
                 </div>
@@ -3833,7 +3837,7 @@ export default function LiveSwitcherController() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <button
+                    <ActionButton
                       onClick={async () => {
                         try {
                           await window.electron?.Recorder?.showInFolder(activeRecordingPath);
@@ -3843,9 +3847,9 @@ export default function LiveSwitcherController() {
                       title="Open recording destination folder"
                     >
                       Open Folder
-                    </button>
-                    <button
-                      onClick={toggleRecording}
+                    </ActionButton>
+                    <ActionButton
+                      onClick={toggleRecording} loadingLabel={isRecordingProgram ? "Saving recording…" : "Starting recording…"}
                       className={`px-3 py-1.5 rounded-[12px] text-xs font-bold border transition-all ${
                         isRecordingProgram
                           ? "bg-red-500/20 border-red-500/50 text-red-300 hover:bg-red-500/30"
@@ -3853,7 +3857,7 @@ export default function LiveSwitcherController() {
                       }`}
                     >
                       {isRecordingProgram ? "Stop Recording" : "Record Local MP4"}
-                    </button>
+                    </ActionButton>
                   </div>
                 </div>
                 {(activeRecordingPath || recorderStats.outputPath) && (
@@ -3867,12 +3871,12 @@ export default function LiveSwitcherController() {
 
             {/* Modal Footer */}
             <div className="px-6 py-4 border-t border-white/10 bg-white/[0.02] flex items-center justify-between gap-3">
-              <button
+              <ActionButton
                 onClick={() => setShowBroadcastModal(false)}
                 className="px-4 py-2 rounded-[12px] bg-white/5 border border-white/10 text-xs font-bold text-white/60 hover:text-white hover:bg-white/10 transition-all"
               >
                 Close
-              </button>
+              </ActionButton>
               <div className="flex items-center gap-2">
                 {isAnyStreaming && (
                   <span className="text-[10px] text-white/40 font-mono">
@@ -3880,8 +3884,8 @@ export default function LiveSwitcherController() {
                     {Object.values(multiStreamStatus).reduce((sum, s) => sum + (s?.bitrateKbps || 0), 0).toFixed(0)} kbps total
                   </span>
                 )}
-                <button
-                  onClick={toggleSimulstream}
+                <ActionButton
+                  onClick={toggleSimulstream} loadingLabel={isAnyStreaming ? "Stopping broadcast…" : "Starting broadcast…"}
                   disabled={!isAnyStreaming && !destinations.some(d => d.enabled && (d.url || d.key))}
                   className={`px-6 py-2.5 rounded-[12px] text-xs font-bold border flex items-center gap-2 transition-all shadow-lg disabled:opacity-40 ${
                     isAnyStreaming
@@ -3891,7 +3895,7 @@ export default function LiveSwitcherController() {
                 >
                   <PiRadio size={16} />
                   {isAnyStreaming ? "Stop All Streams" : "Start Simulstream"}
-                </button>
+                </ActionButton>
               </div>
             </div>
           </div>

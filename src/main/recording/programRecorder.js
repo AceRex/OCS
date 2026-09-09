@@ -407,11 +407,13 @@ class ProgramRecorder {
         this.durationMs = Math.round(Number(durationSec) * 1000);
 
         // State Machine validation: COMPLETED only if file exists and bytesWritten > 0
-        if (bytesWritten > 0 && (code === 0 || code === null)) {
+        // Note: FFmpeg exited via SIGTERM typically yields code 255, null, or 0.
+        const isCleanExit = code === 0 || code === null || code === 255 || signal === 'SIGTERM';
+        if (bytesWritten > 0 && isCleanExit) {
           this.state = 'COMPLETED';
         } else {
           this.state = 'FAILED';
-          this.lastError = `Recording finalization failed: exitCode=${code}, bytesWritten=${bytesWritten}`;
+          this.lastError = `Recording finalization failed: exitCode=${code}, exitSignal=${signal}, bytesWritten=${bytesWritten}`;
         }
 
         console.log(`[ProgramRecorder] Finalized recording ${recordingId}: state=${this.state}, ${outputPath} (${bytesWritten} bytes, ${framesRecorded} frames, ${durationSec}s)`);

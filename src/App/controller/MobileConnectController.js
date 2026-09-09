@@ -1,3 +1,4 @@
+import ActionButton, { reportActionError } from "../components/feedback/ActionButton";
 import React, { useEffect, useState, useRef } from "react";
 import {
   PiDeviceMobile,
@@ -68,7 +69,7 @@ function MobileConnectPanel() {
 
   const refreshInfo = () => {
     if (window.electron?.Network) {
-      window.electron.Network.getServerInfo().then(applyInfo);
+      return window.electron.Network.getServerInfo().then(applyInfo);
     }
   };
 
@@ -87,7 +88,8 @@ function MobileConnectPanel() {
   const saveRename = async (deviceId) => {
     const trimmed = editNameText.trim();
     if (trimmed && window.electron?.Network?.renameDevice) {
-      await window.electron.Network.renameDevice(deviceId, trimmed);
+      const result = await window.electron.Network.renameDevice(deviceId, trimmed);
+      if (result?.ok === false) throw new Error(result.error || "Could not rename device.");
       setConnectedDevices((prev) =>
         prev.map((d) => (d.id === deviceId ? { ...d, name: trimmed } : d))
       );
@@ -96,9 +98,10 @@ function MobileConnectPanel() {
   };
 
   const setRole = async (device, role) => {
-    setActiveMenuDeviceId(null);
     if (window.electron?.Network?.setDeviceRole) {
-      await window.electron.Network.setDeviceRole(device.id, role);
+      const result = await window.electron.Network.setDeviceRole(device.id, role);
+      if (result?.ok === false) throw new Error(result.error || "Could not update role.");
+      setActiveMenuDeviceId(null);
       setConnectedDevices((prev) =>
         prev.map((d) =>
           d.id === device.id ? { ...d, deviceRole: role, isAdmin: role === "admin" } : d
@@ -110,14 +113,15 @@ function MobileConnectPanel() {
   const handleDisconnect = (deviceId) => {
     setActiveMenuDeviceId(null);
     if (window.electron?.Network?.disconnectDevice) {
-      window.electron.Network.disconnectDevice(deviceId);
+      return window.electron.Network.disconnectDevice(deviceId);
     }
   };
 
   const handleRemoveUser = async (deviceId) => {
-    setActiveMenuDeviceId(null);
     if (window.electron?.Network?.removeDevice) {
-      await window.electron.Network.removeDevice(deviceId);
+      const result = await window.electron.Network.removeDevice(deviceId);
+      if (result?.ok === false) throw new Error(result.error || "Could not remove device.");
+      setActiveMenuDeviceId(null);
       setConnectedDevices((prev) => prev.filter((d) => d.id !== deviceId));
     }
   };
@@ -131,10 +135,10 @@ function MobileConnectPanel() {
         // UI feedback (no local state needed; switcher-state-update will sync)
         console.log('[MobileConnect] Switcher control granted to:', dev?.name || deviceId);
       } else {
-        console.warn('[MobileConnect] Grant switcher control failed:', res?.error);
+        reportActionError(res?.error || 'Could not grant switcher control.');
       }
     } catch (e) {
-      console.error('[MobileConnect] Grant switcher control IPC error:', e);
+      reportActionError(e);
     }
   };
 
@@ -149,7 +153,7 @@ function MobileConnectPanel() {
   }, []);
 
   useEffect(() => {
-    refreshInfo();
+    refreshInfo()?.catch(reportActionError);
 
     const cleanupDevicesUpdated = window.electron?.Network?.onDevicesUpdated
       ? window.electron.Network.onDevicesUpdated((devices) => {
@@ -274,13 +278,14 @@ function MobileConnectPanel() {
                 </div>
               </div>
 
-              <button
+              <ActionButton
                 onClick={rotatePairing}
+                loadingLabel="Refreshing pairing code…"
                 className="flex items-center gap-2 text-xs px-4 py-2 rounded-xl border border-white/10 text-white/50 hover:text-white hover:bg-white/[0.08] hover:border-white/20 transition-all"
               >
                 <PiArrowsClockwise size={13} />
                 Rotate pairing code
-              </button>
+              </ActionButton>
 
               {rejectedAttempts > 0 && (
                 <div className="w-full flex items-center gap-2 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2 text-xs text-amber-300">
@@ -331,13 +336,13 @@ function MobileConnectPanel() {
                   {connectedDevices.length}
                 </span>
               </div>
-              <button
+              <ActionButton
                 onClick={refreshInfo}
                 className="flex items-center gap-1.5 text-[11px] text-white/30 hover:text-white/70 px-3 py-1.5 rounded-xl border border-white/[0.08] hover:bg-white/5 transition-all"
               >
                 <PiArrowsClockwise size={12} />
                 Refresh
-              </button>
+              </ActionButton>
             </div>
 
             {connectedDevices.length === 0 ? (
@@ -396,16 +401,16 @@ function MobileConnectPanel() {
                               type="text"
                               value={editNameText}
                               onChange={(e) => setEditNameText(e.target.value)}
-                              onKeyDown={(e) => e.key === "Enter" && saveRename(device.id)}
+                              onKeyDown={(e) => e.key === "Enter" && saveRename(device.id).catch(reportActionError)}
                               autoFocus
                               className="bg-black/40 border border-assent-200/40 text-white px-2.5 py-1 rounded-lg text-sm font-bold w-44 focus:outline-none focus:ring-1 focus:ring-assent-200/60"
                             />
-                            <button
+                            <ActionButton
                               onClick={() => saveRename(device.id)}
                               className="p-1.5 bg-assent-200/80 hover:bg-assent-200 text-white rounded-lg transition-colors"
                             >
                               <PiCheck size={13} />
-                            </button>
+                            </ActionButton>
                           </div>
                         ) : (
                           <div className="flex items-center gap-2 group">
@@ -417,12 +422,12 @@ function MobileConnectPanel() {
                                 {roleStyle.label}
                               </span>
                             )}
-                            <button
+                            <ActionButton
                               onClick={() => startRename(device)}
                               className="opacity-0 group-hover:opacity-100 text-white/30 hover:text-white/80 p-0.5 transition-all"
                             >
                               <PiPencilSimple size={13} />
-                            </button>
+                            </ActionButton>
                           </div>
                         )}
                         <div className="flex items-center gap-2 mt-0.5 text-[11px] text-white/30 font-mono">
@@ -444,7 +449,7 @@ function MobileConnectPanel() {
                         )}
                         <StatusDot active={!isPending} pulse={isPending} />
                         <div className="relative">
-                          <button
+                          <ActionButton
                             type="button"
                             onClick={() => setActiveMenuDeviceId(isMenuOpen ? null : device.id)}
                             className={`w-8 h-8 flex items-center justify-center rounded-xl border transition-all ${
@@ -454,7 +459,7 @@ function MobileConnectPanel() {
                             }`}
                           >
                             <PiDotsThreeVertical size={16} />
-                          </button>
+                          </ActionButton>
 
                           {isMenuOpen && (
                             <div className="absolute right-0 top-10 w-52 bg-[#16131F]/96 backdrop-blur-xl border border-white/12 rounded-2xl shadow-2xl z-50 py-2 animate-in fade-in zoom-in-95 duration-150">
@@ -467,7 +472,7 @@ function MobileConnectPanel() {
                                 ].map(({ role: r, label, icon, desc }) => {
                                   const isActive = (device.deviceRole || (device.isAdmin ? "admin" : "speaker")) === r;
                                   return (
-                                    <button
+                                    <ActionButton
                                       key={r}
                                       type="button"
                                       onClick={() => setRole(device, r)}
@@ -481,14 +486,14 @@ function MobileConnectPanel() {
                                         <div className="text-[10px] text-white/35 mt-0.5">{desc}</div>
                                       </div>
                                       {isActive && <PiCheck size={12} className="text-emerald-400 flex-shrink-0" />}
-                                    </button>
+                                    </ActionButton>
                                   );
                                 })}
                               </div>
                               <div className="mx-3 border-t border-white/[0.08] my-1" />
                               {/* Grant Switcher Control */}
                               {device.paired && (
-                                <button
+                                <ActionButton
                                   type="button"
                                   onClick={() => handleGrantSwitcherControl(device.id)}
                                   className="w-full px-3.5 py-2 text-left text-xs font-semibold flex items-center gap-2.5 hover:bg-red-500/10 text-red-300/70 hover:text-red-300 transition-colors"
@@ -496,26 +501,26 @@ function MobileConnectPanel() {
                                 >
                                   <PiVideoCamera size={14} className="text-red-400" />
                                   Grant Switcher Control
-                                </button>
+                                </ActionButton>
                               )}
                               <div className="mx-3 border-t border-white/[0.08] my-1" />
-                              <button
+                              <ActionButton
                                 type="button"
                                 onClick={() => handleDisconnect(device.id)}
                                 className="w-full px-3.5 py-2 text-left text-xs font-semibold flex items-center gap-2.5 hover:bg-amber-500/10 text-amber-300/80 hover:text-amber-300 transition-colors"
                               >
                                 <PiPower size={14} className="text-amber-400" />
                                 Disconnect
-                              </button>
+                              </ActionButton>
                               <div className="mx-3 border-t border-white/[0.08] my-1" />
-                              <button
+                              <ActionButton
                                 type="button"
                                 onClick={() => handleRemoveUser(device.id)}
                                 className="w-full px-3.5 py-2 text-left text-xs font-semibold flex items-center gap-2.5 hover:bg-red-500/15 text-red-400/70 hover:text-red-400 transition-colors"
                               >
                                 <PiTrash size={14} className="text-red-400" />
                                 Remove Device
-                              </button>
+                              </ActionButton>
                             </div>
                           )}
                         </div>

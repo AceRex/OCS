@@ -1,3 +1,4 @@
+import ActionButton, { reportActionError } from "../components/feedback/ActionButton";
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
     PiFolder, PiImage, PiShapes, PiTextT,
@@ -237,7 +238,8 @@ function SceneTab({
     onLoadToPreview,
 }) {
     const handleDeleteScene = async (sceneId) => {
-        await window.electron?.Scene?.delete(sceneId).catch(() => {});
+        if (!window.electron?.Scene?.delete) throw new Error("Scene deletion is unavailable.");
+        await window.electron.Scene.delete(sceneId);
         setScenes(prev => prev.filter(s => s.id !== sceneId));
         if (activeSceneId === sceneId) {
             handleStopScene();
@@ -253,13 +255,13 @@ function SceneTab({
             <div className="flex flex-col gap-3 flex-1 overflow-y-auto p-3">
                 <div className="flex justify-between items-center">
                     <span className="text-[10px] uppercase text-white/40 font-bold tracking-widest">Scenes & Songs</span>
-                    <button
+                    <ActionButton
                         onClick={() => onOpenModal(newScene(`Song ${scenes.length + 1}`, "song"))}
                         className="text-orange-400 hover:text-orange-300 bg-orange-400/10 p-1.5 rounded transition-colors flex items-center gap-1 text-xs font-bold"
                         title="Add Scene"
                     >
                         <PiPlus size={14} /> Add
-                    </button>
+                    </ActionButton>
                 </div>
 
                 {/* Live Scene Floating Banner if presenting */}
@@ -270,7 +272,7 @@ function SceneTab({
                                 <span className="text-[10px] font-bold uppercase tracking-wider text-orange-400">
                                     ● Live: {activeScene.name}
                                 </span>
-                                <button
+                                <ActionButton
                                     type="button"
                                     onClick={onToggleLiveNavMode}
                                     title="Click to toggle between Voice-tracking (Sing/Read-Along) and Manual Navigation"
@@ -283,11 +285,11 @@ function SceneTab({
                                     {activeScene.navMode !== 'manual' && (activeScene.navMode === 'read_along' || activeScene.sceneType === 'song')
                                         ? (activeScene.sceneType === 'song' ? '🎤 Sing-Along' : '📖 Read-Along')
                                         : '✋ Manual'}
-                                </button>
+                                </ActionButton>
                             </div>
-                            <button onClick={handleStopScene} className="text-[10px] text-red-400 hover:text-red-300 bg-red-500/10 px-2 py-0.5 rounded transition-colors font-bold">
+                            <ActionButton onClick={handleStopScene} className="text-[10px] text-red-400 hover:text-red-300 bg-red-500/10 px-2 py-0.5 rounded transition-colors font-bold">
                                 Stop
-                            </button>
+                            </ActionButton>
                         </div>
 
                         {/* Live voice tracking meter */}
@@ -316,33 +318,33 @@ function SceneTab({
                                 <span className="text-[11px] font-bold text-white">
                                     {suggestPrompt.label || "Advance to Next?"}
                                 </span>
-                                <button
+                                <ActionButton
                                     onClick={handleNextPage}
                                     className="text-[10px] font-bold uppercase px-2 py-1 rounded bg-white/20 hover:bg-white/30 text-white border border-white/30 transition-colors"
                                 >
                                     Advance Now →
-                                </button>
+                                </ActionButton>
                             </div>
                         )}
 
                         <div className="flex items-center gap-2">
-                            <button
+                            <ActionButton
                                 onClick={handlePrevPage}
                                 disabled={activeSequenceIndex === 0}
                                 className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white disabled:opacity-30 transition-all text-xs font-bold"
                             >
                                 <PiArrowLeft size={14} /> Prev
-                            </button>
+                            </ActionButton>
                             <span className="text-[10px] text-white/40 tabular-nums font-mono">
                                 {activeSequenceIndex + 1} / {activeSequence.length}
                             </span>
-                            <button
+                            <ActionButton
                                 onClick={handleNextPage}
                                 disabled={activeSequenceIndex >= activeSequence.length - 1}
                                 className="flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white disabled:opacity-30 transition-all text-xs font-bold"
                             >
                                 Next <PiArrowRight size={14} />
-                            </button>
+                            </ActionButton>
                         </div>
                     </div>
                 )}
@@ -391,20 +393,20 @@ function SceneTab({
                                     </span>
                                 </div>
                                 <div className="flex items-center gap-1 shrink-0">
-                                    <button
+                                    <ActionButton
                                         onClick={(e) => { e.stopPropagation(); onOpenModal(scene); }}
                                         className="p-1.5 text-white/30 hover:text-blue-400 rounded transition-colors"
                                         title="Edit Scene"
                                     >
                                         <PiPencil size={13} />
-                                    </button>
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); handleDeleteScene(scene.id); }}
+                                    </ActionButton>
+                                    <ActionButton
+                                        onClick={(e) => { e.stopPropagation(); return handleDeleteScene(scene.id); }}
                                         className="p-1.5 text-white/30 hover:text-red-400 rounded transition-colors"
                                         title="Delete"
                                     >
                                         <PiTrash size={13} />
-                                    </button>
+                                    </ActionButton>
                                 </div>
                             </div>
 
@@ -914,7 +916,8 @@ export default function PresentationController() {
     };
 
     const handleSaveSceneFromModal = async (updatedScene) => {
-        await window.electron?.Scene?.save(updatedScene).catch(() => {});
+        if (!window.electron?.Scene?.save) throw new Error("Scene saving is unavailable.");
+        await window.electron.Scene.save(updatedScene);
         setScenes(prev => {
             const exists = prev.some(s => s.id === updatedScene.id);
             if (exists) return prev.map(s => s.id === updatedScene.id ? updatedScene : s);
@@ -967,7 +970,7 @@ export default function PresentationController() {
     }, []);
 
     const handleImport = () => {
-        window.electron?.Media?.import?.().then(result => {
+        return window.electron?.Media?.import?.().then(result => {
             if (!result) return;
             const newFiles = Array.isArray(result) ? result : [result];
             setMediaFiles(prev => {
@@ -975,14 +978,14 @@ export default function PresentationController() {
                 return Array.from(new Set(combined));
             });
         }).catch((err) => {
-            console.error("Media import error:", err);
+            reportActionError(err);
         });
     };
 
     const handleImportPresentation = () => {
         const importFn = window.electron?.Presentation?.importPresentation || window.electron?.Media?.importPresentation;
         if (typeof importFn === 'function') {
-            importFn().then(deck => {
+            return importFn().then(deck => {
                 if (deck) {
                     setPresentations(prev => {
                         if (!canMultiPptx) {
@@ -1000,7 +1003,8 @@ export default function PresentationController() {
                     setActiveSlideIndex(0);
                 }
             }).catch(err => {
-                console.error("Presentation import error:", err);
+                setImportProgress(null);
+                reportActionError(err);
             });
         }
     };
@@ -1061,7 +1065,7 @@ export default function PresentationController() {
                 setSelectedPresentation(null);
             }
         } catch (err) {
-            console.error("Failed to delete presentation deck:", err);
+            reportActionError(err);
         }
     };
 
@@ -1463,12 +1467,12 @@ export default function PresentationController() {
                         <PiStack size={12} /> Layers ({layers.length + (background.url ? 1 : 0)})
                     </span>
                     {layers.length > 0 && (
-                        <button
+                        <ActionButton
                             onClick={() => setLayers([])}
                             className="text-[10px] text-red-400 hover:text-red-300 transition-colors font-bold"
                         >
                             Clear Layers
-                        </button>
+                        </ActionButton>
                     )}
                 </div>
 
@@ -1511,7 +1515,7 @@ export default function PresentationController() {
                                     )}
                                 </div>
                                 <div className="flex items-center gap-0.5 shrink-0">
-                                    <button
+                                    <ActionButton
                                         type="button"
                                         disabled={idx === 0}
                                         onClick={(e) => { e.stopPropagation(); moveLayerToFront(idx); }}
@@ -1519,8 +1523,8 @@ export default function PresentationController() {
                                         title="Bring Forward (Towards Front)"
                                     >
                                         <PiArrowUp size={11} />
-                                    </button>
-                                    <button
+                                    </ActionButton>
+                                    <ActionButton
                                         type="button"
                                         disabled={idx === layers.length - 1}
                                         onClick={(e) => { e.stopPropagation(); moveLayerToBack(idx); }}
@@ -1528,15 +1532,15 @@ export default function PresentationController() {
                                         title="Send Backward (Towards Back)"
                                     >
                                         <PiArrowDown size={11} />
-                                    </button>
-                                    <button
+                                    </ActionButton>
+                                    <ActionButton
                                         type="button"
                                         onClick={(e) => { e.stopPropagation(); removeLayer(layer.id); }}
                                         className="text-white/30 hover:text-red-400 p-1 rounded hover:bg-red-500/10 transition-colors"
                                         title="Delete Layer"
                                     >
                                         <PiTrash size={12} />
-                                    </button>
+                                    </ActionButton>
                                 </div>
                             </div>
                         );
@@ -1556,13 +1560,13 @@ export default function PresentationController() {
                                 {background.type === 'video' ? <PiVideo size={13} className="text-white" /> : <PiImage size={13} className="text-white" />}
                                 <span className="font-semibold truncate">Background (Base)</span>
                             </div>
-                            <button
+                            <ActionButton
                                 onClick={(e) => { e.stopPropagation(); clearBg(); }}
                                 className="text-white/30 hover:text-red-400 p-0.5 rounded"
                                 title="Remove Background"
                             >
                                 <PiTrash size={12} />
-                            </button>
+                            </ActionButton>
                         </div>
                     )}
 
@@ -1591,17 +1595,17 @@ export default function PresentationController() {
                             <span className="text-xs font-bold uppercase tracking-widest text-white/50 flex items-center gap-2">
                                 <PiMonitorPlay size={16} /> Main Preview
                             </span>
-                            <button
+                            <ActionButton
                                 onClick={handleOpenNewScene}
                                 className="flex items-center gap-1.5 px-3 py-1 bg-gradient-to-r from-orange-500/20 to-purple-500/20 hover:from-orange-500/30 hover:to-purple-500/30 text-orange-300 rounded-lg text-xs font-bold uppercase tracking-wider border border-orange-500/30 transition-all shadow-sm active:scale-95"
                             >
                                 <PiPlus size={13} /> Add Scene
-                            </button>
+                            </ActionButton>
                         </div>
                         {/* Target Toggles — Controls General and Speaker output for All Content (Media, Text, Scenes, & Slides) */}
                         <div className="flex gap-2">
                             {['general', 'speaker'].map(t => (
-                                <button
+                                <ActionButton
                                     key={t}
                                     onClick={() => toggleTarget(t)}
                                     className={`px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-wider transition-all flex items-center gap-2 ${
@@ -1611,7 +1615,7 @@ export default function PresentationController() {
                                     }`}
                                 >
                                     {targets[t] ? <PiCheckSquare size={14} /> : <PiSquare size={14} />} {t}
-                                </button>
+                                </ActionButton>
                             ))}
                         </div>
                     </div>
@@ -1920,50 +1924,50 @@ export default function PresentationController() {
                             {/* Bottom Row: Controls */}
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-3 text-white/80">
-                                    <button
+                                    <ActionButton
                                         type="button"
                                         onClick={toggleVideoPlay}
                                         className="hover:text-white transition-colors p-1"
                                         title={videoPlaying ? "Pause" : "Play"}
                                     >
                                         {videoPlaying ? <PiPause size={16} /> : <PiPlay size={16} />}
-                                    </button>
+                                    </ActionButton>
 
-                                    <button
+                                    <ActionButton
                                         type="button"
                                         onClick={restartVideo}
                                         className="hover:text-white transition-colors p-1"
                                         title="Restart (Jump to Start)"
                                     >
                                         <PiSkipBack size={16} />
-                                    </button>
+                                    </ActionButton>
 
-                                    <button
+                                    <ActionButton
                                         type="button"
                                         onClick={jumpToEndVideo}
                                         className="hover:text-white transition-colors p-1"
                                         title="Jump to End"
                                     >
                                         <PiSkipForward size={16} />
-                                    </button>
+                                    </ActionButton>
 
-                                    <button
+                                    <ActionButton
                                         type="button"
                                         onClick={stopVideo}
                                         className="hover:text-white transition-colors p-1"
                                         title="Stop (Reset to 0)"
                                     >
                                         <PiStop size={16} />
-                                    </button>
+                                    </ActionButton>
 
-                                    <button
+                                    <ActionButton
                                         type="button"
                                         onClick={toggleVideoMute}
                                         className="hover:text-white transition-colors p-1 ml-1"
                                         title={videoMuted || videoVolume === 0 ? "Unmute Sound" : "Mute Sound"}
                                     >
                                         {videoMuted || videoVolume === 0 ? <PiSpeakerSlash size={16} /> : <PiSpeakerHigh size={16} />}
-                                    </button>
+                                    </ActionButton>
 
                                     <input
                                         type="range"
@@ -1994,14 +1998,14 @@ export default function PresentationController() {
                                         <PiCaretDownBold size={10} className="absolute right-2 top-1/2 -translate-y-1/2 pointer-events-none text-white/50" />
                                     </div>
 
-                                    <button
+                                    <ActionButton
                                         type="button"
                                         onClick={() => setBackground(prev => ({ ...prev, width: 100, height: 100, x: 50, y: 50 }))}
                                         className="text-white/80 hover:text-white p-1 rounded hover:bg-white/5 transition-colors"
                                         title="Fit to Screen"
                                     >
                                         <PiCornersOut size={16} />
-                                    </button>
+                                    </ActionButton>
                                 </div>
                             </div>
                         </div>
@@ -2012,14 +2016,14 @@ export default function PresentationController() {
                         <div className="flex items-center gap-3">
                             {activeTab === 'presentation' && selectedPresentation ? (
                                 <>
-                                    <button onClick={() => setSelectedPresentation(null)} className="text-white/50 hover:text-white text-xs flex items-center gap-1.5 transition-colors">
+                                    <ActionButton onClick={() => setSelectedPresentation(null)} className="text-white/50 hover:text-white text-xs flex items-center gap-1.5 transition-colors">
                                         <PiX size={14} /> Close Deck
-                                    </button>
+                                    </ActionButton>
                                     <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5 border border-white/10 pl-2">
                                         <span className="text-xs text-purple-300 font-bold pr-2 truncate max-w-[160px]">
                                             {selectedPresentation.name}
                                         </span>
-                                        <button
+                                        <ActionButton
                                             type="button"
                                             onClick={handlePrevSlide}
                                             disabled={activeSlideIndex === 0}
@@ -2027,11 +2031,11 @@ export default function PresentationController() {
                                             title="Previous Slide"
                                         >
                                             <PiArrowLeft size={13} />
-                                        </button>
+                                        </ActionButton>
                                         <span className="text-xs font-mono font-bold text-white/70 px-1">
                                             {activeSlideIndex + 1} / {selectedPresentation.slides?.length || 0}
                                         </span>
-                                        <button
+                                        <ActionButton
                                             type="button"
                                             onClick={handleNextSlide}
                                             disabled={activeSlideIndex >= (selectedPresentation.slides?.length || 0) - 1}
@@ -2039,19 +2043,19 @@ export default function PresentationController() {
                                             title="Next Slide"
                                         >
                                             <PiArrowRight size={13} />
-                                        </button>
+                                        </ActionButton>
                                     </div>
                                 </>
                             ) : previewScene ? (
                                 <>
-                                    <button onClick={() => setPreviewScene(null)} className="text-white/50 hover:text-white text-xs flex items-center gap-1.5 transition-colors">
+                                    <ActionButton onClick={() => setPreviewScene(null)} className="text-white/50 hover:text-white text-xs flex items-center gap-1.5 transition-colors">
                                         <PiX size={14} /> Clear Preview
-                                    </button>
+                                    </ActionButton>
                                     <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5 border border-white/10 pl-2">
                                         <span className="text-xs text-orange-300 font-bold pr-2 truncate max-w-[160px]">
                                             {previewScene.scene.name}
                                         </span>
-                                        <button
+                                        <ActionButton
                                             type="button"
                                             onClick={() => {
                                                 const prevSeqIdx = Math.max(0, (previewScene.sequenceIndex || 0) - 1);
@@ -2063,11 +2067,11 @@ export default function PresentationController() {
                                             title="Previous Part"
                                         >
                                             <PiArrowLeft size={13} />
-                                        </button>
+                                        </ActionButton>
                                         <span className="text-xs font-mono font-bold text-white/70 px-1">
                                             {previewItem.label} ({(previewScene.sequenceIndex || 0) + 1}/{previewSequence.length})
                                         </span>
-                                        <button
+                                        <ActionButton
                                             type="button"
                                             onClick={() => {
                                                 const nextSeqIdx = Math.min(previewSequence.length - 1, (previewScene.sequenceIndex || 0) + 1);
@@ -2079,14 +2083,14 @@ export default function PresentationController() {
                                             title="Next Part"
                                         >
                                             <PiArrowRight size={13} />
-                                        </button>
+                                        </ActionButton>
                                     </div>
                                 </>
                             ) : (
                                 <>
-                                    <button onClick={clearBg} className="text-red-400/80 hover:text-red-400 text-xs font-bold flex items-center gap-1.5 bg-red-500/10 hover:bg-red-500/20 px-2.5 py-1.5 rounded-lg transition-colors">
+                                    <ActionButton onClick={clearBg} className="text-red-400/80 hover:text-red-400 text-xs font-bold flex items-center gap-1.5 bg-red-500/10 hover:bg-red-500/20 px-2.5 py-1.5 rounded-lg transition-colors">
                                         <PiTrash size={13} /> Clear Slide
-                                    </button>
+                                    </ActionButton>
                                     <span className="text-xs text-white/40 border-l border-white/10 pl-3">
                                         {layers.length + (background.url ? 1 : 0)} Layers Active
                                     </span>
@@ -2097,7 +2101,7 @@ export default function PresentationController() {
                         {/* Action Buttons Right Side */}
                         <div className="flex items-center gap-2">
                             {activeTab === 'presentation' ? (
-                                <button
+                                <ActionButton
                                     onClick={() => {
                                         const deck = selectedPresentation || presentations[0];
                                         if (deck) {
@@ -2116,9 +2120,9 @@ export default function PresentationController() {
                                 >
                                     <PiBroadcast size={15} />
                                     {isPresentingSlide ? 'Stop Slides' : 'Present Slide Now'}
-                                </button>
+                                </ActionButton>
                             ) : activeTab === 'scene' ? (
-                                <button
+                                <ActionButton
                                     onClick={() => {
                                         if (isPresentingScene) {
                                             handleStopScene();
@@ -2137,12 +2141,12 @@ export default function PresentationController() {
                                 >
                                     <PiBroadcast size={15} />
                                     {isPresentingScene ? 'Stop Scene' : (previewScene?.scene?.sceneType === 'song' ? 'Present Song Now' : 'Present Scene Now')}
-                                </button>
+                                </ActionButton>
                             ) : (
                                 <>
                                     {isPresentingCustom ? (
                                         <>
-                                            <button
+                                            <ActionButton
                                                 type="button"
                                                 onClick={handleUpdatePresentation}
                                                 className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white px-4 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-md active:scale-95 border border-emerald-400/30"
@@ -2150,25 +2154,25 @@ export default function PresentationController() {
                                             >
                                                 <PiArrowClockwise size={15} />
                                                 Update Display
-                                            </button>
-                                            <button
+                                            </ActionButton>
+                                            <ActionButton
                                                 type="button"
                                                 onClick={handleStopCustomPresentation}
                                                 className="bg-red-600 hover:bg-red-500 text-white px-5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all shadow-md active:scale-95"
                                             >
                                                 <PiBroadcast size={15} />
                                                 Stop Presenting
-                                            </button>
+                                            </ActionButton>
                                         </>
                                     ) : (
-                                        <button
+                                        <ActionButton
                                             type="button"
                                             onClick={handlePresent}
                                             className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white px-6 py-2 rounded-xl text-xs font-bold uppercase tracking-wider flex items-center gap-2 transition-all shadow-lg active:scale-95"
                                         >
                                             <PiBroadcast size={16} />
                                             Present Now
-                                        </button>
+                                        </ActionButton>
                                     )}
                                 </>
                             )}
@@ -2196,27 +2200,27 @@ export default function PresentationController() {
                                     </span>
                                 </div>
                                 <div className="flex items-center gap-1.5">
-                                    <button
+                                    <ActionButton
                                         type="button"
                                         onClick={() => setBackground(prev => ({ ...prev, width: 100, height: 100, x: 50, y: 50 }))}
                                         className="px-2 py-0.5 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] font-semibold transition-all border border-white/10"
                                     >
                                         Fit (100%)
-                                    </button>
-                                    <button
+                                    </ActionButton>
+                                    <ActionButton
                                         type="button"
                                         onClick={() => setBackground(prev => ({ ...prev, x: 50, y: 50 }))}
                                         className="px-2 py-0.5 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] font-semibold transition-all border border-white/10"
                                     >
                                         Center
-                                    </button>
-                                    <button
+                                    </ActionButton>
+                                    <ActionButton
                                         type="button"
                                         onClick={clearBg}
                                         className="px-2 py-0.5 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded text-[10px] font-semibold transition-colors flex items-center gap-1"
                                     >
                                         <PiTrash size={11} /> Clear
-                                    </button>
+                                    </ActionButton>
                                 </div>
                             </div>
                             <div className="grid grid-cols-2 gap-4 bg-black/30 px-3 py-1.5 rounded-lg border border-white/5">
@@ -2255,29 +2259,29 @@ export default function PresentationController() {
                                         <PiSlidersHorizontal size={12} /> Image Layer
                                     </span>
                                     <div className="flex items-center gap-1 ml-2">
-                                        <button
+                                        <ActionButton
                                             type="button"
                                             onClick={() => updateLayer(selectedLayer.id, { style: { ...selectedLayer.style, width: 100 }, x: 50, y: 50 })}
                                             className="px-2 py-0.5 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] font-semibold transition-all border border-white/10"
                                         >
                                             Fit (100%)
-                                        </button>
-                                        <button
+                                        </ActionButton>
+                                        <ActionButton
                                             type="button"
                                             onClick={() => updateLayer(selectedLayer.id, { x: 50, y: 50 })}
                                             className="px-2 py-0.5 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] font-semibold transition-all border border-white/10"
                                         >
                                             Center
-                                        </button>
+                                        </ActionButton>
                                     </div>
                                 </div>
-                                <button
+                                <ActionButton
                                     type="button"
                                     onClick={() => removeLayer(selectedLayer.id)}
                                     className="px-2 py-0.5 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded text-[10px] font-semibold transition-colors flex items-center gap-1"
                                 >
                                     <PiTrash size={11} /> Remove
-                                </button>
+                                </ActionButton>
                             </div>
                             <div className="grid grid-cols-3 gap-3 bg-black/30 px-3 py-1.5 rounded-lg border border-white/5">
                                 <div className="flex items-center gap-2">
@@ -2327,29 +2331,29 @@ export default function PresentationController() {
                                         <PiSlidersHorizontal size={12} /> Video Layer
                                     </span>
                                     <div className="flex items-center gap-1 ml-2">
-                                        <button
+                                        <ActionButton
                                             type="button"
                                             onClick={() => updateLayer(selectedLayer.id, { style: { ...selectedLayer.style, width: 100 }, x: 50, y: 50 })}
                                             className="px-2 py-0.5 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] font-semibold transition-all border border-white/10"
                                         >
                                             Fit (100%)
-                                        </button>
-                                        <button
+                                        </ActionButton>
+                                        <ActionButton
                                             type="button"
                                             onClick={() => updateLayer(selectedLayer.id, { x: 50, y: 50 })}
                                             className="px-2 py-0.5 bg-white/10 hover:bg-white/20 text-white rounded text-[10px] font-semibold transition-all border border-white/10"
                                         >
                                             Center
-                                        </button>
+                                        </ActionButton>
                                     </div>
                                 </div>
-                                <button
+                                <ActionButton
                                     type="button"
                                     onClick={() => removeLayer(selectedLayer.id)}
                                     className="px-2 py-0.5 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded text-[10px] font-semibold transition-colors flex items-center gap-1"
                                 >
                                     <PiTrash size={11} /> Remove
-                                </button>
+                                </ActionButton>
                             </div>
                             <div className="grid grid-cols-3 gap-3 bg-black/30 px-3 py-1.5 rounded-lg border border-white/5">
                                 <div className="flex items-center gap-2">
@@ -2410,13 +2414,13 @@ export default function PresentationController() {
                                             className="w-24 accent-blue-500 h-1 bg-white/20 rounded cursor-pointer"
                                         />
                                     </div>
-                                    <button
+                                    <ActionButton
                                         type="button"
                                         onClick={() => removeLayer(selectedLayer.id)}
                                         className="px-2 py-0.5 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded text-[10px] font-semibold transition-colors flex items-center gap-1"
                                     >
                                         <PiTrash size={11} /> Remove
-                                    </button>
+                                    </ActionButton>
                                 </div>
                             </div>
                             <input
@@ -2444,7 +2448,7 @@ export default function PresentationController() {
                     {/* Top 4 Tabs Bar */}
                     <div className="flex border-b border-white/5 bg-[#1a1a1a] shrink-0">
                         {TABS.map(tab => (
-                            <button
+                            <ActionButton
                                 key={tab.id}
                                 onClick={() => {
                                     setActiveTab(tab.id);
@@ -2462,7 +2466,7 @@ export default function PresentationController() {
                                 }`}
                             >
                                 <tab.icon size={14} /> {tab.label}
-                            </button>
+                            </ActionButton>
                         ))}
                     </div>
 
@@ -2477,22 +2481,22 @@ export default function PresentationController() {
                                             Imported Assets ({mediaFiles.length})
                                         </span>
                                         {mediaFiles.length > 0 && (
-                                            <button
+                                            <ActionButton
                                                 type="button"
                                                 onClick={handleSelectAllAssets}
                                                 className="text-[10px] font-bold text-blue-400 hover:text-blue-300 transition-colors"
                                             >
                                                 {selectedAssetUrls.length === mediaFiles.length ? 'Deselect All' : 'Select All'}
-                                            </button>
+                                            </ActionButton>
                                         )}
                                     </div>
-                                    <button
-                                        onClick={handleImport}
+                                    <ActionButton
+                                        onClick={handleImport} loadingLabel="Importing media…"
                                         className="text-blue-400 hover:text-blue-300 bg-blue-400/10 hover:bg-blue-400/20 px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all"
                                         title="Import Images or Videos"
                                     >
                                         <PiPlus size={13} /> Import
-                                    </button>
+                                    </ActionButton>
                                 </div>
 
                                 {/* Selected Assets Action Bar (Single or Multi-Select Menu) */}
@@ -2502,30 +2506,30 @@ export default function PresentationController() {
                                             {selectedAssetUrls.length} Selected
                                         </span>
                                         <div className="flex items-center gap-1.5">
-                                            <button
+                                            <ActionButton
                                                 type="button"
                                                 onClick={handleSetFirstSelectedAsBg}
                                                 className="px-2 py-0.5 bg-white/15 hover:bg-white/25 text-white rounded text-[10px] font-bold transition-all border border-white/20"
                                                 title="Set as Background"
                                             >
                                                 Set Background
-                                            </button>
-                                            <button
+                                            </ActionButton>
+                                            <ActionButton
                                                 type="button"
                                                 onClick={handleAddSelectedAsLayers}
                                                 className="px-2 py-0.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded text-[10px] font-bold transition-all"
                                                 title="Add as Layer"
                                             >
                                                 Add Layer
-                                            </button>
-                                            <button
+                                            </ActionButton>
+                                            <ActionButton
                                                 type="button"
                                                 onClick={handleDeleteSelectedAssets}
                                                 className="px-1.5 py-0.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded text-[10px] font-bold transition-all"
                                                 title="Delete Selected"
                                             >
                                                 <PiTrash size={12} />
-                                            </button>
+                                            </ActionButton>
                                         </div>
                                     </div>
                                 )}
@@ -2617,7 +2621,7 @@ export default function PresentationController() {
                                     <div className="text-center py-6 text-white/30 text-xs flex flex-col items-center gap-1.5 border border-dashed border-white/10 rounded-xl p-4">
                                         <PiImage size={24} />
                                         <span>No imported assets yet</span>
-                                        <button onClick={handleImport} className="text-blue-400 hover:underline text-[11px] font-bold">Import Media</button>
+                                        <ActionButton onClick={handleImport} loadingLabel="Importing media…" className="text-blue-400 hover:underline text-[11px] font-bold">Import Media</ActionButton>
                                     </div>
                                 )}
                             </div>
@@ -2625,9 +2629,9 @@ export default function PresentationController() {
 
                         {activeTab === 'text' && (
                             <div className="flex flex-col gap-4">
-                                <button onClick={() => addLayer('text', 'New Text Element')} className="w-full flex items-center justify-center gap-2 text-xs font-bold uppercase bg-blue-500 hover:bg-blue-600 text-white p-3 rounded-xl transition-all shadow-lg active:scale-95">
+                                <ActionButton onClick={() => addLayer('text', 'New Text Element')} className="w-full flex items-center justify-center gap-2 text-xs font-bold uppercase bg-blue-500 hover:bg-blue-600 text-white p-3 rounded-xl transition-all shadow-lg active:scale-95">
                                     <PiTextT size={16} /> Add New Text
-                                </button>
+                                </ActionButton>
                                 {selectedLayer && selectedLayer.type === 'text' ? (
                                     <div className="flex flex-col gap-4 border-t border-white/10 pt-4">
                                         <span className="text-[10px] uppercase text-white/40 font-bold tracking-widest">Edit Selected Text</span>
@@ -2682,12 +2686,12 @@ export default function PresentationController() {
                                             </span>
                                         )}
                                     </div>
-                                    <button
-                                        onClick={handleImportPresentation}
+                                    <ActionButton
+                                        onClick={handleImportPresentation} loadingLabel="Importing slides…"
                                         className="flex items-center gap-1.5 px-2.5 py-1 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-lg text-xs font-bold uppercase tracking-wider border border-purple-500/30 transition-all shadow-sm active:scale-95"
                                     >
                                         <PiPlus size={13} /> {!canMultiPptx && presentations.length >= 1 ? "Replace PPTX" : "Import PPTX"}
-                                    </button>
+                                    </ActionButton>
                                 </div>
 
                                 {presentations.length === 0 ? (
@@ -2746,7 +2750,7 @@ export default function PresentationController() {
                                                         </div>
 
                                                         <div className="flex items-center gap-1">
-                                                            <button
+                                                            <ActionButton
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
                                                                     setShowFontAdvisoryModal(deck);
@@ -2755,17 +2759,17 @@ export default function PresentationController() {
                                                                 title="Font Info & Advisory"
                                                             >
                                                                 <PiTextT size={14} />
-                                                            </button>
-                                                            <button
+                                                            </ActionButton>
+                                                            <ActionButton
                                                                 onClick={(e) => {
                                                                     e.stopPropagation();
-                                                                    handleDeletePresentation(deck.id);
+                                                                    return handleDeletePresentation(deck.id);
                                                                 }}
                                                                 className="p-1.5 text-white/30 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
                                                                 title="Delete Deck"
                                                             >
                                                                 <PiTrash size={14} />
-                                                            </button>
+                                                            </ActionButton>
                                                         </div>
                                                     </div>
 
@@ -2847,7 +2851,7 @@ export default function PresentationController() {
                     style={{ left: Math.min(window.innerWidth - 180, contextMenu.x), top: Math.min(window.innerHeight - 150, contextMenu.y) }}
                     onClick={(e) => e.stopPropagation()}
                 >
-                    <button
+                    <ActionButton
                         type="button"
                         onClick={() => {
                             setMediaAsBackground(contextMenu.url, contextMenu.isVideo);
@@ -2856,8 +2860,8 @@ export default function PresentationController() {
                         className="flex items-center gap-2 px-2.5 py-1.5 text-xs text-yellow-300 hover:bg-yellow-500/20 rounded-lg text-left font-semibold transition-colors"
                     >
                         <PiImage size={14} /> Set as Background
-                    </button>
-                    <button
+                    </ActionButton>
+                    <ActionButton
                         type="button"
                         onClick={() => {
                             addLayer(contextMenu.isVideo ? 'video' : 'image', contextMenu.url);
@@ -2866,9 +2870,9 @@ export default function PresentationController() {
                         className="flex items-center gap-2 px-2.5 py-1.5 text-xs text-blue-300 hover:bg-blue-500/20 rounded-lg text-left font-semibold transition-colors"
                     >
                         <PiStack size={14} /> Add as Layer
-                    </button>
+                    </ActionButton>
                     <div className="h-px bg-white/10 my-0.5" />
-                    <button
+                    <ActionButton
                         type="button"
                         onClick={() => {
                             handleDeleteSelectedAssets();
@@ -2876,7 +2880,7 @@ export default function PresentationController() {
                         className="flex items-center gap-2 px-2.5 py-1.5 text-xs text-red-400 hover:bg-red-500/20 rounded-lg text-left font-semibold transition-colors"
                     >
                         <PiTrash size={14} /> Delete Asset{selectedAssetUrls.length > 1 ? ` (${selectedAssetUrls.length})` : ''}
-                    </button>
+                    </ActionButton>
                 </div>
             )}
         </div>

@@ -1,0 +1,17 @@
+.ocs-action-button:not(.absolute):not(.fixed):not(.sticky) { position: relative; }
+.ocs-action-button { border-radius: 12px; transition: background-color 150ms, border-color 150ms, opacity 150ms, box-shadow 150ms; }
+.ocs-action-button:focus-visible { outline: 2px solid #60a5fa; outline-offset: 3px; }
+.ocs-action-button:disabled { cursor: not-allowed; opacity: .55; }
+.ocs-action-button[data-pending] { cursor: progress; }
+.ocs-action-button[data-pending] > :not(.ocs-action-progress):not(.sr-only) { opacity: .3; }
+.ocs-action-progress { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; border-radius: 12px; background: rgba(15, 15, 20, .8); }
+.ocs-action-spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,.25); border-top-color: currentColor; border-radius: 50%; animation: ocs-action-spin .75s linear infinite; }
+.ocs-action-feedback { position: fixed; bottom: 24px; right: 24px; z-index: 9999; display: flex; align-items: flex-start; gap: 20px; width: min(420px, calc(100vw - 48px)); padding: 18px; border: 1px solid rgba(251,191,36,.4); border-radius: 12px; color: #fef3c7; background: #242019; box-shadow: 0 12px 40px #0008; font-size: 13px; }
+.ocs-action-feedback p { margin-top: 6px; color: #e7ded0; overflow-wrap: anywhere; }
+.ocs-action-feedback button { border-radius: 12px; padding: 0 8px; font-size: 22px; }
+.ocs-action-feedback button:focus-visible { outline: 2px solid #60a5fa; }
+@keyframes ocs-action-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .ocs-action-button { transition: none; }
+  .ocs-action-spinner { animation: none; border-style: dotted; }
+}

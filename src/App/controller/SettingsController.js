@@ -1,3 +1,4 @@
+import ActionButton, { reportActionError } from "../components/feedback/ActionButton";
 function formatPlanDetails(
   planKey,
   rawDays,
@@ -538,17 +539,18 @@ export default function SettingsController() {
         await window.electron.Settings.setLoginItem(next);
         triggerSaveFeedback();
       } catch (e) {
-        console.error("Failed to update start at login:", e);
+        setStartAtLogin(!next);
+        reportActionError(e);
       }
     }
   };
 
   const handleResetToDefaults = async () => {
-    setShowResetModal(false);
     if (window.electron?.Settings?.resetDefaults) {
       try {
         const def = await window.electron.Settings.resetDefaults();
         if (def) {
+          setShowResetModal(false);
           if (def.styles) setStyles(def.styles);
           if (def.sleepPrevention) setSleepMode(def.sleepPrevention);
           setLiveTranscriptCorrection(!!def.liveTranscriptCorrection);
@@ -559,7 +561,7 @@ export default function SettingsController() {
           triggerSaveFeedback();
         }
       } catch (e) {
-        console.error("Failed to reset defaults:", e);
+        reportActionError(e);
       }
     }
   };
@@ -626,21 +628,21 @@ export default function SettingsController() {
               )}
             </div>
 
-            <button
+            <ActionButton
               onClick={() => setShowResetModal(true)}
               title="Reset all settings to defaults"
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-red-500/10 border border-white/10 hover:border-red-500/25 text-[#8882A4] hover:text-red-300 text-xs font-bold transition-colors"
             >
               <PiArrowCounterClockwise size={13} />
               <span>Reset Defaults</span>
-            </button>
+            </ActionButton>
           </div>
         </div>
 
         {/* Tab Navigation */}
         <div className="flex gap-2 overflow-x-auto no-scrollbar pb-0.5">
           {tabs.map((tab) => (
-            <button
+            <ActionButton
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${
@@ -650,7 +652,7 @@ export default function SettingsController() {
               }`}
             >
               {tab.icon} {tab.label}
-            </button>
+            </ActionButton>
           ))}
         </div>
       </div>
@@ -750,7 +752,7 @@ export default function SettingsController() {
                 </div>
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {COLOR_PRESETS.map((color) => (
-                    <button
+                    <ActionButton
                       key={color}
                       onClick={() => updateStyle("backgroundColor", color)}
                       style={{ backgroundColor: color }}
@@ -820,7 +822,7 @@ export default function SettingsController() {
                 </div>
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   {TEXT_COLOR_PRESETS.map((color) => (
-                    <button
+                    <ActionButton
                       key={color}
                       onClick={() => updateStyle("textColor", color)}
                       style={{ backgroundColor: color }}
@@ -843,33 +845,33 @@ export default function SettingsController() {
                   Display Typography & Alignment
                 </label>
                 <div className="flex items-center gap-2">
-                  <button
+                  <ActionButton
                     onClick={() => updateStyle("textAlign", "left")}
                     className={`p-2 rounded-xl border ${styles.textAlign === "left" ? "bg-[#A788FA]/20 border-[#A788FA] text-[#A788FA]" : "border-[#2E2542] text-[#8882A4]"}`}
                     title="Align Left"
                   >
                     <PiTextAlignLeft size={16} />
-                  </button>
-                  <button
+                  </ActionButton>
+                  <ActionButton
                     onClick={() => updateStyle("textAlign", "center")}
                     className={`p-2 rounded-xl border ${styles.textAlign === "center" ? "bg-[#A788FA]/20 border-[#A788FA] text-[#A788FA]" : "border-[#2E2542] text-[#8882A4]"}`}
                     title="Align Center"
                   >
                     <PiTextAlignCenter size={16} />
-                  </button>
-                  <button
+                  </ActionButton>
+                  <ActionButton
                     onClick={() => updateStyle("textAlign", "right")}
                     className={`p-2 rounded-xl border ${styles.textAlign === "right" ? "bg-[#A788FA]/20 border-[#A788FA] text-[#A788FA]" : "border-[#2E2542] text-[#8882A4]"}`}
                     title="Align Right"
                   >
                     <PiTextAlignRight size={16} />
-                  </button>
+                  </ActionButton>
                 </div>
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                 {FONT_OPTIONS.map((f) => (
-                  <button
+                  <ActionButton
                     key={f.id}
                     onClick={() => updateStyle("fontFamily", f.id)}
                     className={`px-4 py-3 rounded-2xl text-xs font-bold border transition-all text-left ${
@@ -887,7 +889,7 @@ export default function SettingsController() {
                     <span className="text-[10px] text-[#8882A4] block truncate">
                       {f.label}
                     </span>
-                  </button>
+                  </ActionButton>
                 ))}
               </div>
 
@@ -900,14 +902,14 @@ export default function SettingsController() {
                     Enhances legibility over live video backgrounds
                   </span>
                 </div>
-                <button
+                <ActionButton
                   onClick={() => updateStyle("textShadow", !styles.textShadow)}
                   className={`relative w-12 h-6 rounded-full transition-colors ${styles.textShadow ? "bg-[#A788FA]" : "bg-[#2E2542]"}`}
                 >
                   <div
                     className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${styles.textShadow ? "left-7" : "left-1"}`}
                   />
-                </button>
+                </ActionButton>
               </div>
             </div>
           </div>
@@ -1072,7 +1074,7 @@ export default function SettingsController() {
               </div>
 
               {/* Switch sample verse button */}
-              <button
+              <ActionButton
                 onClick={() =>
                   setPreviewVerseIdx(
                     (prev) => (prev + 1) % SAMPLE_VERSES.length,
@@ -1081,7 +1083,7 @@ export default function SettingsController() {
                 className="absolute top-4 right-4 text-[10px] font-bold uppercase tracking-wider bg-white/10 hover:bg-white/20 text-white px-3 py-1.5 rounded-xl backdrop-blur-sm border border-white/10 transition-colors"
               >
                 Next Sample
-              </button>
+              </ActionButton>
             </div>
 
             {/* Translation & Service Label Configuration */}
@@ -1093,7 +1095,7 @@ export default function SettingsController() {
                 </label>
                 <div className="flex flex-wrap gap-1.5">
                   {TRANSLATIONS.map((t) => (
-                    <button
+                    <ActionButton
                       key={t}
                       onClick={() => updateStyle("bibleTranslation", t)}
                       className={`px-3 py-1.5 rounded-xl text-[10px] font-black uppercase tracking-widest border transition-all ${
@@ -1103,7 +1105,7 @@ export default function SettingsController() {
                       }`}
                     >
                       {t}
-                    </button>
+                    </ActionButton>
                   ))}
                 </div>
               </div>
@@ -1137,7 +1139,7 @@ export default function SettingsController() {
                 </label>
                 <div className="grid grid-cols-2 gap-2">
                   {REF_POSITIONS.map((pos) => (
-                    <button
+                    <ActionButton
                       key={pos.value}
                       onClick={() => updateStyle("bibleRefPosition", pos.value)}
                       className={`px-3 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-wider border transition-all text-center ${
@@ -1147,7 +1149,7 @@ export default function SettingsController() {
                       }`}
                     >
                       {pos.label}
-                    </button>
+                    </ActionButton>
                   ))}
                 </div>
               </div>
@@ -1159,7 +1161,7 @@ export default function SettingsController() {
                 </label>
                 <div className="flex gap-2">
                   {BODY_POSITIONS.map((pos) => (
-                    <button
+                    <ActionButton
                       key={pos.value}
                       onClick={() =>
                         updateStyle("bibleBodyPosition", pos.value)
@@ -1171,7 +1173,7 @@ export default function SettingsController() {
                       }`}
                     >
                       {pos.label.replace(" (Default)", "")}
-                    </button>
+                    </ActionButton>
                   ))}
                 </div>
 
@@ -1184,7 +1186,7 @@ export default function SettingsController() {
                       Cyan & Purple atmospheric glow
                     </span>
                   </div>
-                  <button
+                  <ActionButton
                     onClick={() =>
                       updateStyle("bibleShowOrbs", !styles.bibleShowOrbs)
                     }
@@ -1193,7 +1195,7 @@ export default function SettingsController() {
                     <div
                       className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${styles.bibleShowOrbs ? "left-7" : "left-1"}`}
                     />
-                  </button>
+                  </ActionButton>
                 </div>
 
                 <div className="mt-2 pt-3 border-t border-[#2E2542] flex items-center justify-between">
@@ -1205,14 +1207,14 @@ export default function SettingsController() {
                       Teleprompt word-pop on Speaker View only
                     </span>
                   </div>
-                  <button
+                  <ActionButton
                     onClick={() => setReadAlong(!scriptureReadAlong)}
                     className={`relative w-12 h-6 rounded-full transition-colors shrink-0 ${scriptureReadAlong ? "bg-[#A788FA]" : "bg-[#2E2542]"}`}
                   >
                     <div
                       className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-all ${scriptureReadAlong ? "left-7" : "left-1"}`}
                     />
-                  </button>
+                  </ActionButton>
                 </div>
               </div>
             </div>
@@ -1234,7 +1236,7 @@ export default function SettingsController() {
                 {BIBLE_READ_ALONG_TRANSITIONS.map((trans) => {
                   const isSelected = (styles.bibleReadAlongTransition || "text-glow") === trans.value;
                   return (
-                    <button
+                    <ActionButton
                       key={trans.value}
                       onClick={() => updateStyle("bibleReadAlongTransition", trans.value)}
                       className={`flex flex-col items-start p-4 rounded-2xl border transition-all text-left relative overflow-hidden group ${
@@ -1255,7 +1257,7 @@ export default function SettingsController() {
                       {isSelected && (
                         <div className="absolute top-3 right-3 w-2.5 h-2.5 rounded-full bg-[#67E8F9] shadow-[0_0_10px_#67E8F9]" />
                       )}
-                    </button>
+                    </ActionButton>
                   );
                 })}
               </div>
@@ -1277,7 +1279,7 @@ export default function SettingsController() {
                   Motion backgrounds, loops & static graphics
                 </p>
               </div>
-              <button
+              <ActionButton
                 onClick={async () => {
                   if (!window.electron?.Media?.import) return;
                   const newFile = await window.electron.Media.import();
@@ -1289,7 +1291,7 @@ export default function SettingsController() {
                 className="flex items-center gap-2 text-xs bg-gradient-to-r from-[#A788FA] to-[#67E8F9] text-[#0B0814] px-5 py-2.5 rounded-full font-black uppercase hover:opacity-95 shadow-md shadow-purple-500/20 transition-all"
               >
                 <PiUploadSimple size={16} /> + Import Media
-              </button>
+              </ActionButton>
             </div>
 
             {/* Media Grid */}
@@ -1310,7 +1312,7 @@ export default function SettingsController() {
                         : "border-[#2E2542] hover:border-white/30"
                     }`}
                   >
-                    <button
+                    <ActionButton
                       onClick={() => {
                         updateStyles({
                           backgroundImage: isVideo ? null : url,
@@ -1331,11 +1333,11 @@ export default function SettingsController() {
                           alt="local"
                         />
                       )}
-                    </button>
+                    </ActionButton>
                     <div className="absolute bottom-1 left-1 bg-black/70 px-1.5 py-0.5 rounded text-[9px] font-mono text-white/80 uppercase">
                       {isVideo ? "Video" : "Image"}
                     </div>
-                    <button
+                    <ActionButton
                       onClick={async (e) => {
                         e.stopPropagation();
                         if (window.electron?.Media?.delete) {
@@ -1356,7 +1358,7 @@ export default function SettingsController() {
                       title="Delete Media"
                     >
                       ×
-                    </button>
+                    </ActionButton>
                   </div>
                 );
               })}
@@ -1374,7 +1376,7 @@ export default function SettingsController() {
                   Curated Sample Presets
                 </label>
                 {(styles.backgroundImage || styles.backgroundVideo) && (
-                  <button
+                  <ActionButton
                     onClick={() =>
                       updateStyles({
                         backgroundImage: null,
@@ -1384,7 +1386,7 @@ export default function SettingsController() {
                     className="text-[10px] text-red-400 hover:underline font-bold uppercase"
                   >
                     Clear Active Background
-                  </button>
+                  </ActionButton>
                 )}
               </div>
 
@@ -1407,7 +1409,7 @@ export default function SettingsController() {
                     url: "https://images.unsplash.com/photo-1438232992991-995b7058bbb3?q=80&w=500&auto=format&fit=crop",
                   },
                 ].map((item, i) => (
-                  <button
+                  <ActionButton
                     key={i}
                     onClick={() =>
                       updateStyles({
@@ -1427,7 +1429,7 @@ export default function SettingsController() {
                         Apply {item.title}
                       </span>
                     </div>
-                  </button>
+                  </ActionButton>
                 ))}
               </div>
             </div>
@@ -1484,12 +1486,12 @@ export default function SettingsController() {
               {bumperError && (
                 <div className="p-4 rounded-2xl bg-red-500/10 border border-red-500/20 text-xs text-red-300 flex items-center justify-between">
                   <span>{bumperError}</span>
-                  <button
+                  <ActionButton
                     onClick={() => setBumperError(null)}
                     className="text-red-400 font-bold hover:underline"
                   >
                     Dismiss
-                  </button>
+                  </ActionButton>
                 </div>
               )}
 
@@ -1559,23 +1561,23 @@ export default function SettingsController() {
                   </div>
 
                   <div className="flex items-center gap-3 pt-2">
-                    <button
+                    <ActionButton
                       disabled={bumperBusy}
                       onClick={() => handleUploadBumper("intro")}
                       className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-[#A788FA] text-[#0B0814] text-xs font-black uppercase tracking-wider hover:opacity-90 transition-all disabled:opacity-50"
                     >
                       <PiUploadSimple size={16} />{" "}
                       {bumpers.intro ? "Replace Intro" : "Upload Intro"}
-                    </button>
+                    </ActionButton>
                     {bumpers.intro && (
-                      <button
+                      <ActionButton
                         disabled={bumperBusy}
                         onClick={() => handleRemoveBumper("intro")}
                         className="px-4 py-3 rounded-2xl bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 text-xs font-bold transition-all disabled:opacity-50"
                         title="Remove Intro"
                       >
                         <PiTrash size={16} />
-                      </button>
+                      </ActionButton>
                     )}
                   </div>
                 </div>
@@ -1644,23 +1646,23 @@ export default function SettingsController() {
                   </div>
 
                   <div className="flex items-center gap-3 pt-2">
-                    <button
+                    <ActionButton
                       disabled={bumperBusy}
                       onClick={() => handleUploadBumper("outro")}
                       className="flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-[#A788FA] text-[#0B0814] text-xs font-black uppercase tracking-wider hover:opacity-90 transition-all disabled:opacity-50"
                     >
                       <PiUploadSimple size={16} />{" "}
                       {bumpers.outro ? "Replace Outro" : "Upload Outro"}
-                    </button>
+                    </ActionButton>
                     {bumpers.outro && (
-                      <button
+                      <ActionButton
                         disabled={bumperBusy}
                         onClick={() => handleRemoveBumper("outro")}
                         className="px-4 py-3 rounded-2xl bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 text-xs font-bold transition-all disabled:opacity-50"
                         title="Remove Outro"
                       >
                         <PiTrash size={16} />
-                      </button>
+                      </ActionButton>
                     )}
                   </div>
                 </div>
@@ -1823,7 +1825,7 @@ export default function SettingsController() {
                   { id: "always", label: "Always Awake (Recommended)" },
                   { id: "live", label: "Only While Live Timer Running" },
                 ].map((opt) => (
-                  <button
+                  <ActionButton
                     key={opt.id}
                     type="button"
                     onClick={() => setSleepPreventionMode(opt.id)}
@@ -1834,7 +1836,7 @@ export default function SettingsController() {
                     }`}
                   >
                     {opt.label}
-                  </button>
+                  </ActionButton>
                 ))}
               </div>
             </div>
@@ -1848,7 +1850,7 @@ export default function SettingsController() {
                     OCS Service Startup
                   </h3>
                 </div>
-                <button
+                <ActionButton
                   type="button"
                   onClick={toggleStartAtLogin}
                   className={`w-12 h-6 rounded-full transition-colors relative flex items-center px-0.5 ${
@@ -1860,7 +1862,7 @@ export default function SettingsController() {
                       startAtLogin ? "translate-x-6" : "translate-x-0"
                     }`}
                   />
-                </button>
+                </ActionButton>
               </div>
               <p className="text-xs text-[#8882A4] leading-relaxed">
                 Automatically launches the OCS Presentation, Remote, and ASR
@@ -2005,26 +2007,26 @@ export default function SettingsController() {
 
                     <div className="flex items-center gap-3 pt-1">
                       {!authContext.isAuthenticated ? (
-                        <button
+                        <ActionButton
                           onClick={() => authContext.login()}
                           className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-purple-900/30"
                         >
                           Log In to Activate 60-Day Free Trial
-                        </button>
+                        </ActionButton>
                       ) : (
                         <>
-                          <button
+                          <ActionButton
                             onClick={() => authContext.login()}
                             className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 text-white text-xs font-bold transition-colors"
                           >
                             Manage / Refresh Plan
-                          </button>
-                          <button
+                          </ActionButton>
+                          <ActionButton
                             onClick={() => authContext.logout()}
                             className="px-4 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-300 text-xs font-bold transition-colors"
                           >
                             Log Out
-                          </button>
+                          </ActionButton>
                         </>
                       )}
                     </div>
@@ -2093,7 +2095,7 @@ export default function SettingsController() {
               {/* Update Action Controls */}
               <div className="flex flex-wrap items-center gap-3 pt-1">
                 {updater.status === "available" ? (
-                  <button
+                  <ActionButton
                     type="button"
                     onClick={() => updater.downloadUpdate()}
                     className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-[#A788FA] to-[#818cf8] hover:from-[#9570f5] hover:to-[#6366f1] text-[#0B0814] text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-purple-500/25 flex items-center gap-2"
@@ -2102,18 +2104,18 @@ export default function SettingsController() {
                     <span>
                       Download Update (v{updater.updateInfo?.version})
                     </span>
-                  </button>
+                  </ActionButton>
                 ) : updater.status === "downloaded" ? (
-                  <button
+                  <ActionButton
                     type="button"
                     onClick={() => updater.quitAndInstall()}
                     className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-[#0B0814] text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-emerald-500/25 flex items-center gap-2"
                   >
                     <PiCheckCircle size={16} />
                     <span>Restart & Install Update</span>
-                  </button>
+                  </ActionButton>
                 ) : (
-                  <button
+                  <ActionButton
                     type="button"
                     disabled={
                       updater.status === "checking" ||
@@ -2133,7 +2135,7 @@ export default function SettingsController() {
                         ? "Checking for updates..."
                         : "Check for Updates"}
                     </span>
-                  </button>
+                  </ActionButton>
                 )}
               </div>
             </div>
@@ -2147,12 +2149,12 @@ export default function SettingsController() {
                 Restores all display styles, scripture alignments, bumper paths,
                 and audio preferences to their default states.
               </p>
-              <button
+              <ActionButton
                 onClick={() => setShowResetModal(true)}
                 className="px-5 py-2.5 rounded-2xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-300 text-xs font-bold transition-colors"
               >
                 Reset All Settings to Factory Defaults
-              </button>
+              </ActionButton>
             </div>
           </div>
         )}
@@ -2169,12 +2171,12 @@ export default function SettingsController() {
                   Confirm Factory Reset
                 </h3>
               </div>
-              <button
+              <ActionButton
                 onClick={() => setShowResetModal(false)}
                 className="text-[#8882A4] hover:text-white"
               >
                 <PiX size={20} />
-              </button>
+              </ActionButton>
             </div>
             <p className="text-xs text-[#C8C2DC] leading-relaxed">
               Are you sure you want to reset all display styles and application
@@ -2182,18 +2184,18 @@ export default function SettingsController() {
               ASR settings to factory defaults.
             </p>
             <div className="flex gap-3 pt-2">
-              <button
+              <ActionButton
                 onClick={() => setShowResetModal(false)}
                 className="flex-1 px-4 py-2.5 rounded-2xl bg-white/10 text-white text-xs font-bold hover:bg-white/15 transition-colors"
               >
                 Cancel
-              </button>
-              <button
+              </ActionButton>
+              <ActionButton
                 onClick={handleResetToDefaults}
                 className="flex-1 px-4 py-2.5 rounded-2xl bg-red-600 hover:bg-red-500 text-white text-xs font-black uppercase tracking-wider transition-colors shadow-lg shadow-red-600/30"
               >
                 Reset Now
-              </button>
+              </ActionButton>
             </div>
           </div>
         </div>

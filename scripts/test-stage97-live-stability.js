@@ -550,10 +550,12 @@ async function runStage97Suite() {
     await worker8.start();
 
     // Stream 90 1080p frames (3.0 seconds of raw video = 746.5 MB)
+    // Reuse test frame to avoid 750MB V8 buffer churn in a 2-second test window
+    const sharedFrame = createTest1080pFrame(0);
     const tStart = Date.now();
     for (let i = 0; i < 90; i++) {
-      worker8.writeVideoFrame(createTest1080pFrame(i));
-      await new Promise(r => setTimeout(r, 15)); // Feed faster than realtime to test encoder capacity
+      worker8.writeVideoFrame(sharedFrame);
+      await new Promise(r => setTimeout(r, 10)); // Feed faster than realtime to test encoder capacity
     }
     const durationSec = (Date.now() - tStart) / 1000;
     const throughputFps = 90 / durationSec;

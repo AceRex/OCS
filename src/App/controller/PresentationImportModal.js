@@ -1,3 +1,4 @@
+import ActionButton from "../components/feedback/ActionButton";
 import React from 'react';
 import { PiCheckCircle, PiWarningCircle, PiDownloadSimple, PiX, PiFilePpt, PiTextT, PiArrowSquareOut } from 'react-icons/pi';
 
@@ -31,17 +32,23 @@ export function PresentationImportProgressModal({
     >
       <div className="bg-[#18181b] border border-white/10 rounded-2xl shadow-2xl p-6 max-w-sm w-full flex flex-col items-center gap-4 text-center relative">
         {isFailed && (
-          <button
+          <ActionButton
             onClick={onDismiss}
             className="absolute top-3 right-3 text-white/40 hover:text-white p-1 rounded-lg transition-colors"
             aria-label="Close"
           >
             <PiX size={18} />
-          </button>
+          </ActionButton>
         )}
 
         {/* Circular Progress Indicator */}
         <div
+          role="progressbar"
+          aria-label="Importing presentation"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={pct}
+          aria-valuetext={message || `${pct}% imported`}
           className="relative flex items-center justify-center rounded-full bg-[#27272a] shadow-inner"
           style={{ width: size + 24, height: size + 24 }}
         >
@@ -105,13 +112,13 @@ export function PresentationImportProgressModal({
         </div>
 
         {isFailed && (
-          <button
+          <ActionButton
             type="button"
             onClick={onDismiss}
             className="w-full mt-2 py-2 px-4 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/30 text-xs font-bold uppercase tracking-wider transition-all"
           >
             Dismiss
-          </button>
+          </ActionButton>
         )}
       </div>
     </div>
@@ -159,13 +166,13 @@ export function PresentationFontAdvisoryModal({
               <p className="text-[11px] text-white/50 truncate max-w-xs">{deck.name || deck.filename}</p>
             </div>
           </div>
-          <button
+          <ActionButton
             onClick={onClose}
             className="text-white/40 hover:text-white p-1.5 rounded-lg hover:bg-white/5 transition-colors"
             aria-label="Close"
           >
             <PiX size={18} />
-          </button>
+          </ActionButton>
         </div>
 
         {/* Content List */}
@@ -236,14 +243,14 @@ export function PresentationFontAdvisoryModal({
                       )}
 
                       {f.googleFontsUrl && (
-                        <button
+                        <ActionButton
                           type="button"
                           onClick={() => handleOpenUrl(f.googleFontsUrl)}
                           className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 text-[10px] font-bold uppercase tracking-wider transition-all"
                           title="Open Google Fonts"
                         >
                           <PiDownloadSimple size={12} /> Google Font <PiArrowSquareOut size={10} />
-                        </button>
+                        </ActionButton>
                       )}
                     </div>
                   </div>
@@ -255,13 +262,13 @@ export function PresentationFontAdvisoryModal({
 
         {/* Footer */}
         <div className="pt-3 border-t border-white/10 flex justify-end">
-          <button
+          <ActionButton
             type="button"
             onClick={onClose}
             className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold uppercase tracking-wider transition-all shadow-lg shadow-purple-600/20 active:scale-95"
           >
             Got It
-          </button>
+          </ActionButton>
         </div>
       </div>
     </div>

@@ -1,3 +1,4 @@
+import ActionButton from "../components/feedback/ActionButton";
 import React, { useState } from "react";
 import { PiSparkle, PiImage, PiTextT, PiPaintBrush, PiUploadSimple, PiCheckCircle, PiGear } from "react-icons/pi";
 import DisabledContainer from "../components/DisabledContainer";
@@ -15,7 +16,7 @@ function DesignLabPanel() {
         const file = await window.electron?.Media?.import?.();
         if (file) {
             setPoster(file);
-            analyzePoster(file);
+            await analyzePoster(file);
         }
     };
 
@@ -74,12 +75,12 @@ function DesignLabPanel() {
                         <PiSparkle className="text-blue-400" /> AI Design Lab
                     </h2>
                     {poster && (
-                        <button 
+                        <ActionButton 
                             onClick={() => window.electron?.Presentation?.setStyle?.({ backgroundImage: null, lowerThirdImage: null, target: ['general'] })}
                             className="bg-red/10 text-red-400 px-3 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider hover:bg-red/20 transition-all border border-red-500/20"
                         >
                             Clear Screen
-                        </button>
+                        </ActionButton>
                     )}
                 </div>
                 <div className="flex items-center gap-2 text-[10px] text-ash bg-white/5 px-3 py-1 rounded-full border border-white/10">
@@ -89,7 +90,8 @@ function DesignLabPanel() {
             </div>
 
             {!poster ? (
-                <div 
+                <ActionButton
+                    loadingLabel="Opening poster…"
                     onClick={handleUpload}
                     className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl hover:border-blue-500/50 hover:bg-blue-500/5 cursor-pointer transition-all p-12 group"
                 >
@@ -98,9 +100,9 @@ function DesignLabPanel() {
                     </div>
                     <h3 className="text-lg font-bold text-white mb-2">Upload Event Poster</h3>
                     <p className="text-ash text-sm text-center max-w-xs">
-                        Drag and drop your poster here, or click to browse. We'll analyze it to create matching graphics.
+                        Click to browse for a poster. We'll analyze it to create matching graphics.
                     </p>
-                </div>
+                </ActionButton>
             ) : (
                 <div className="flex flex-col gap-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
                     {/* Analysis Summary */}
@@ -110,12 +112,14 @@ function DesignLabPanel() {
                             <div className="aspect-[3/4] bg-black rounded-xl overflow-hidden border border-white/10 shadow-2xl">
                                 <img src={poster} className="w-full h-full object-contain" alt="Poster" />
                             </div>
-                            <button 
+                            <ActionButton 
                                 onClick={handleUpload}
+                                disabled={isAnalyzing}
+                                loadingLabel="Analyzing poster…"
                                 className="w-full mt-4 py-2 text-xs font-bold text-ash hover:text-white transition-colors"
                             >
                                 Change Image
-                            </button>
+                            </ActionButton>
                         </div>
 
                         <div className="col-span-2 flex flex-col gap-4">
@@ -189,13 +193,13 @@ function DesignLabPanel() {
                                                 <div className="aspect-video bg-black/40 relative">
                                                     <img src={`file://${path}`} className="w-full h-full object-cover" alt={`BG ${i+1}`} />
                                                     <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
-                                                        <button className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors"><PiImage size={24} /></button>
-                                                        <button 
+                                                        <ActionButton className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors"><PiImage size={24} /></ActionButton>
+                                                        <ActionButton 
                                                             onClick={() => handleApplyAsset(path, 'background')}
                                                             className="p-2 bg-blue-600 rounded-full hover:bg-blue-500 transition-colors"
                                                         >
                                                             <PiCheckCircle size={24} />
-                                                        </button>
+                                                        </ActionButton>
                                                     </div>
                                                 </div>
                                                 <div className="p-3 flex justify-between items-center">
@@ -216,12 +220,12 @@ function DesignLabPanel() {
                                                 <div className="h-24 bg-black/40 relative">
                                                     <img src={`file://${path}`} className="w-full h-full object-cover" alt={`LT ${i+1}`} />
                                                     <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
-                                                        <button 
+                                                        <ActionButton 
                                                             onClick={() => handleApplyAsset(path, 'lower_third')}
                                                             className="p-2 bg-purple-600 rounded-full hover:bg-purple-500 transition-colors"
                                                         >
                                                             <PiCheckCircle size={24} />
-                                                        </button>
+                                                        </ActionButton>
                                                     </div>
                                                 </div>
                                                 <div className="p-3 flex justify-between items-center">

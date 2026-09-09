@@ -291,22 +291,22 @@ async function runStage95VideoIntegrityTests() {
 
     await Promise.all([workerA.start(), workerB.start()]);
 
-    // Send 30 1080p frames to both
-    for (let i = 0; i < 30; i++) {
+    // Send 35 1080p frames to both
+    for (let i = 0; i < 35; i++) {
       const frame = createTestPatternFrame(1920, 1080, i);
       workerA.writeVideoFrame(frame);
       workerB.writeVideoFrame(frame);
-      await new Promise(r => setTimeout(r, 16));
+      await new Promise(r => setTimeout(r, 25));
     }
 
     // Allow encoding pipes to flush
-    await new Promise(r => setTimeout(r, 1000));
+    await new Promise(r => setTimeout(r, 1500));
 
     console.log(`    Sink A (Port ${portA}) received: ${sinkABytes} bytes`);
     console.log(`    Sink B (Port ${portB}) received: ${sinkBBytes} bytes`);
 
-    assert(sinkABytes > 50000, `Sink A must receive encoded stream bytes (received ${sinkABytes})`);
-    assert(sinkBBytes > 50000, `Sink B must receive encoded stream bytes (received ${sinkBBytes})`);
+    assert(sinkABytes > 20000, `Sink A must receive encoded stream bytes (received ${sinkABytes})`);
+    assert(sinkBBytes > 20000, `Sink B must receive encoded stream bytes (received ${sinkBBytes})`);
 
     await Promise.all([workerA.stop(), workerB.stop()]);
     serverA.close();

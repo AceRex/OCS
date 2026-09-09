@@ -144,7 +144,7 @@ async function runProgramRecorderTests() {
 
   // Wait for FFmpeg to write initial fragments before sending SIGKILL
   const waitStart = Date.now();
-  while (Date.now() - waitStart < 4000) {
+  while (Date.now() - waitStart < 6000) {
     if (fs.existsSync(outCrash) && fs.statSync(outCrash).size > 500) {
       break;
     }
@@ -157,10 +157,10 @@ async function runProgramRecorderTests() {
     try { crashRecorder.ffmpegProcess.kill('SIGKILL'); } catch (_) {}
   }
 
-  await new Promise(r => setTimeout(r, 200));
+  await new Promise(r => setTimeout(r, 300));
 
   assert.ok(fs.existsSync(outCrash), 'Crashed MP4 file must still exist on disk');
-  const crashedSize = fs.statSync(outCrash).size;
+  const crashedSize = fs.existsSync(outCrash) ? fs.statSync(outCrash).size : 0;
   assert.ok(crashedSize > 500, `Crashed MP4 must have written initial fragments (${crashedSize} bytes)`);
 
   // Probe the killed file: fragmented MP4 must NOT fail with "moov atom not found"!

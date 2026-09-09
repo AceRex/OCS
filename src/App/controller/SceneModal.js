@@ -1,3 +1,4 @@
+import ActionButton from "../components/feedback/ActionButton";
 import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
     PiFileText, PiBookmarkSimple, PiDeviceMobile,
@@ -549,8 +550,8 @@ export default function SceneModal({
         }
     };
 
-    const handleSave = () => {
-        onSave(currentScene);
+    const handleSave = async () => {
+        await onSave(currentScene);
         onClose();
     };
 
@@ -582,7 +583,7 @@ export default function SceneModal({
                                 Content Type
                             </label>
                             <div className="bg-[#1b1b22] border border-white/10 rounded-2xl p-1 flex gap-1">
-                                <button
+                                <ActionButton
                                     type="button"
                                     onClick={() => handleSceneTypeChange("song")}
                                     className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs font-bold transition-all ${
@@ -592,8 +593,8 @@ export default function SceneModal({
                                     }`}
                                 >
                                     <PiMusicNotes size={14} /> Song
-                                </button>
-                                <button
+                                </ActionButton>
+                                <ActionButton
                                     type="button"
                                     onClick={() => handleSceneTypeChange("text")}
                                     className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs font-bold transition-all ${
@@ -603,7 +604,7 @@ export default function SceneModal({
                                     }`}
                                 >
                                     <PiFileText size={14} /> Text Only
-                                </button>
+                                </ActionButton>
                             </div>
                         </div>
 
@@ -633,7 +634,7 @@ export default function SceneModal({
                                             </span>
                                         )}
                                     </span>
-                                    <button
+                                    <ActionButton
                                         type="button"
                                         disabled={!canChorusFlow}
                                         onClick={() => {
@@ -647,7 +648,7 @@ export default function SceneModal({
                                         title={canChorusFlow ? "Toggle Chorus Flow" : "Chorus Flow requires Large Setup or Premium plan"}
                                     >
                                         <div className={`w-3 h-3 rounded-full bg-white transition-transform ${canChorusFlow && currentScene.autoChorus ? "translate-x-3" : "translate-x-0"}`} />
-                                    </button>
+                                    </ActionButton>
                                 </div>
                                 <span className="text-[9px] text-white/40 leading-relaxed">
                                     {canChorusFlow
@@ -674,7 +675,7 @@ export default function SceneModal({
                                 ].map(mode => {
                                     const isSelected = currentScene.navMode === mode.id && !mode.isLocked;
                                     return (
-                                        <button
+                                        <ActionButton
                                             key={mode.id}
                                             type="button"
                                             disabled={mode.isLocked}
@@ -699,7 +700,7 @@ export default function SceneModal({
                                             <span className="text-[9px] font-bold tracking-tight mt-1 uppercase leading-none">
                                                 {mode.label}
                                             </span>
-                                        </button>
+                                        </ActionButton>
                                     );
                                 })}
                             </div>
@@ -711,13 +712,13 @@ export default function SceneModal({
                                 <label className="text-[10px] uppercase font-bold text-white/40 tracking-wider">
                                     {isSong ? `Song Parts (${currentScene.pages.length})` : `Pages (${currentScene.pages.length})`}
                                 </label>
-                                <button
+                                <ActionButton
                                     type="button"
                                     onClick={() => handleAddPage(isSong ? "verse" : "page")}
                                     className="text-orange-400 hover:text-orange-300 text-xs font-bold flex items-center gap-1 bg-orange-400/10 px-2 py-0.5 rounded-lg transition-colors"
                                 >
                                     <PiPlus size={12} /> Add
-                                </button>
+                                </ActionButton>
                             </div>
 
                             <div className="flex flex-col gap-1.5">
@@ -758,7 +759,7 @@ export default function SceneModal({
                                             </div>
 
                                             {currentScene.pages.length > 1 && (
-                                                <button
+                                                <ActionButton
                                                     type="button"
                                                     onClick={(e) => handleDeletePage(idx, e)}
                                                     className={`p-1 rounded transition-colors ${
@@ -769,7 +770,7 @@ export default function SceneModal({
                                                     title="Delete"
                                                 >
                                                     <PiTrash size={13} />
-                                                </button>
+                                                </ActionButton>
                                             )}
                                         </div>
                                     );
@@ -782,29 +783,29 @@ export default function SceneModal({
                     <div className="pt-3 border-t border-white/5 flex gap-1.5">
                         {isSong ? (
                             <>
-                                <button
+                                <ActionButton
                                     type="button"
                                     onClick={() => handleAddPage("verse")}
                                     className="flex-1 bg-[#1c1c22] hover:bg-[#25252c] text-white/90 text-xs font-bold py-2.5 px-2 rounded-xl border border-white/10 flex items-center justify-center gap-1 transition-all active:scale-98"
                                 >
                                     <PiPlus size={13} /> Add Verse
-                                </button>
-                                <button
+                                </ActionButton>
+                                <ActionButton
                                     type="button"
                                     onClick={() => handleAddPage("chorus")}
                                     className="bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 text-xs font-bold py-2.5 px-3 rounded-xl border border-purple-500/30 flex items-center justify-center gap-1 transition-all active:scale-98"
                                 >
                                     <PiPlus size={13} /> Chorus
-                                </button>
+                                </ActionButton>
                             </>
                         ) : (
-                            <button
+                            <ActionButton
                                 type="button"
                                 onClick={() => handleAddPage("page")}
                                 className="w-full bg-[#1c1c22] hover:bg-[#25252c] text-white/90 text-xs font-bold py-2.5 px-4 rounded-2xl border border-white/10 flex items-center justify-center gap-2 transition-all active:scale-98 shadow-sm"
                             >
                                 <PiPlus size={14} /> Add Page
-                            </button>
+                            </ActionButton>
                         )}
                     </div>
                 </div>
@@ -816,7 +817,7 @@ export default function SceneModal({
                     <div className="flex items-center justify-between mb-3 shrink-0 flex-wrap gap-2">
                         <div className="flex items-center gap-3 flex-wrap">
                             <div className="flex items-center gap-1 bg-white/5 rounded-xl p-1 border border-white/5">
-                                <button
+                                <ActionButton
                                     type="button"
                                     onClick={() => setActivePageIdx(prev => Math.max(0, prev - 1))}
                                     disabled={activePageIdx === 0}
@@ -824,11 +825,11 @@ export default function SceneModal({
                                     title="Previous"
                                 >
                                     <PiArrowLeft size={14} />
-                                </button>
+                                </ActionButton>
                                 <span className="text-xs font-bold text-white/70 px-2 font-mono">
                                     {activePage.label || `Page ${activePageIdx + 1}`} ({activePageIdx + 1}/{currentScene.pages.length})
                                 </span>
-                                <button
+                                <ActionButton
                                     type="button"
                                     onClick={() => setActivePageIdx(prev => Math.min(currentScene.pages.length - 1, prev + 1))}
                                     disabled={activePageIdx >= currentScene.pages.length - 1}
@@ -836,14 +837,14 @@ export default function SceneModal({
                                     title="Next"
                                 >
                                     <PiArrowRight size={14} />
-                                </button>
+                                </ActionButton>
                             </div>
 
                             {/* If Song: Part Type Selector Pills for active page */}
                             {isSong && (
                                 <div className="flex items-center bg-[#1b1b22] border border-white/10 rounded-xl p-0.5 text-xs">
                                     {["verse", "chorus", "bridge"].map(sec => (
-                                        <button
+                                        <ActionButton
                                             key={sec}
                                             type="button"
                                             onClick={() => handleSectionTypeChange(sec)}
@@ -854,7 +855,7 @@ export default function SceneModal({
                                             }`}
                                         >
                                             {sec}
-                                        </button>
+                                        </ActionButton>
                                     ))}
                                 </div>
                             )}
@@ -869,7 +870,7 @@ export default function SceneModal({
                                     const isRepeatLocked = num > 1 && !canRepeat;
                                     const isSelected = (activePage.repeatCount || 1) === num;
                                     return (
-                                        <button
+                                        <ActionButton
                                             key={num}
                                             type="button"
                                             disabled={isRepeatLocked}
@@ -888,36 +889,36 @@ export default function SceneModal({
                                             title={isRepeatLocked ? `Repeat ${num}x requires Large Setup or Premium plan` : `Sing/repeat this part ${num} time${num !== 1 ? 's' : ''}`}
                                         >
                                             {num}x
-                                        </button>
+                                        </ActionButton>
                                     );
                                 })}
                             </div>
 
-                            <button
+                            <ActionButton
                                 type="button"
                                 onClick={() => handleSplitToNextPage()}
                                 className="bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs font-bold px-3 py-1.5 rounded-xl border border-white/10 flex items-center gap-1.5 transition-all"
                                 title="Split text at cursor into next page (Shift+Enter)"
                             >
                                 <PiScissors size={13} className="text-orange-400" /> Split Next
-                            </button>
+                            </ActionButton>
                         </div>
 
                         <div className="flex items-center gap-3">
-                            <button
+                            <ActionButton
                                 type="button"
-                                onClick={handleSave}
+                                onClick={handleSave} loadingLabel="Saving scene…"
                                 className="bg-gradient-to-r from-orange-500 to-purple-600 hover:from-orange-400 hover:to-purple-500 text-white text-xs font-bold px-5 py-2 rounded-xl flex items-center gap-2 shadow-lg transition-all active:scale-95"
                             >
                                 <PiFloppyDisk size={15} /> Save Scene
-                            </button>
-                            <button
+                            </ActionButton>
+                            <ActionButton
                                 type="button"
                                 onClick={onClose}
                                 className="text-white/40 hover:text-white p-2 rounded-xl hover:bg-white/5 transition-colors"
                             >
                                 <PiX size={18} />
-                            </button>
+                            </ActionButton>
                         </div>
                     </div>
 
@@ -1084,7 +1085,7 @@ export default function SceneModal({
                                         </span>
                                         <span className="text-[10px] text-cyan-400 font-mono">Hover to live preview</span>
                                     </div>
-                                    <button
+                                    <ActionButton
                                         type="button"
                                         onClick={() => {
                                             setIsAnimMenuOpen(false);
@@ -1093,14 +1094,14 @@ export default function SceneModal({
                                         className="p-1 text-white/40 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
                                     >
                                         <PiX size={14} />
-                                    </button>
+                                    </ActionButton>
                                 </div>
 
                                 <div className="flex-1 overflow-y-auto flex flex-col gap-1 pr-1 no-scrollbar">
                                     {(isSong ? LYRIC_ANIMATIONS : READ_ALONG_ANIMATIONS).map((anim) => {
                                         const isSelected = (currentScene.style.animation || (isSong ? "karaoke" : "word-highlight")) === anim.id;
                                         return (
-                                            <button
+                                            <ActionButton
                                                 key={anim.id}
                                                 type="button"
                                                 onMouseEnter={() => setHoveredAnimation(anim.id)}
@@ -1125,7 +1126,7 @@ export default function SceneModal({
                                                 <p className="text-[10px] text-white/40 group-hover:text-white/70 leading-tight">
                                                     {anim.description}
                                                 </p>
-                                            </button>
+                                            </ActionButton>
                                         );
                                     })}
                                 </div>
@@ -1229,7 +1230,7 @@ export default function SceneModal({
 
                             {/* Animation Palette Toggle Button */}
                             <div className="relative flex items-center">
-                                <button
+                                <ActionButton
                                     type="button"
                                     disabled={!canAnimate}
                                     onClick={() => {
@@ -1256,14 +1257,14 @@ export default function SceneModal({
                                     {canAnimate && (
                                         <PiCaretDown size={12} className={`transition-transform duration-200 ${isAnimMenuOpen ? "rotate-180 text-white" : "text-white/40"}`} />
                                     )}
-                                </button>
+                                </ActionButton>
                             </div>
 
                             <div className="h-4 w-px bg-white/10" />
 
                             {/* Background Image Trigger (Opens Asset Selection Modal) */}
                             <div className="flex items-center gap-1.5">
-                                <button
+                                <ActionButton
                                     type="button"
                                     onClick={() => {
                                         loadMediaAssets();
@@ -1278,17 +1279,17 @@ export default function SceneModal({
                                 >
                                     <PiImage size={14} />
                                     {currentScene.style.backgroundImage ? "BG Set" : "Add BG"}
-                                </button>
+                                </ActionButton>
 
                                 {currentScene.style.backgroundImage && (
-                                    <button
+                                    <ActionButton
                                         type="button"
                                         onClick={() => updateStyle("backgroundImage", null)}
                                         className="p-1 text-white/40 hover:text-red-400 rounded-lg hover:bg-white/5 transition-colors"
                                         title="Remove Background Image"
                                     >
                                         <PiX size={12} />
-                                    </button>
+                                    </ActionButton>
                                 )}
                             </div>
 
@@ -1296,22 +1297,22 @@ export default function SceneModal({
 
                             {/* List Formatting */}
                             <div className="flex items-center gap-1">
-                                <button
+                                <ActionButton
                                     type="button"
                                     onClick={toggleBulletList}
                                     className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors text-white/70 hover:text-white hover:bg-white/10"
                                     title="Bullet List (•)"
                                 >
                                     <PiListBullets size={15} />
-                                </button>
-                                <button
+                                </ActionButton>
+                                <ActionButton
                                     type="button"
                                     onClick={toggleNumberedList}
                                     className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors text-white/70 hover:text-white hover:bg-white/10"
                                     title="Numbered List (1, 2, 3)"
                                 >
                                     <PiListNumbers size={15} />
-                                </button>
+                                </ActionButton>
                             </div>
 
                             <div className="h-4 w-px bg-white/10" />
@@ -1355,7 +1356,7 @@ export default function SceneModal({
 
                             {/* Style Toggles: B, I, U */}
                             <div className="flex items-center gap-1">
-                                <button
+                                <ActionButton
                                     type="button"
                                     onClick={() => updateStyle("fontWeight", currentScene.style.fontWeight === "700" ? "400" : "700")}
                                     className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs transition-colors ${
@@ -1363,8 +1364,8 @@ export default function SceneModal({
                                     }`}
                                 >
                                     B
-                                </button>
-                                <button
+                                </ActionButton>
+                                <ActionButton
                                     type="button"
                                     onClick={() => updateStyle("isItalic", !currentScene.style.isItalic)}
                                     className={`w-7 h-7 rounded-lg flex items-center justify-center italic font-serif text-xs transition-colors ${
@@ -1372,8 +1373,8 @@ export default function SceneModal({
                                     }`}
                                 >
                                     I
-                                </button>
-                                <button
+                                </ActionButton>
+                                <ActionButton
                                     type="button"
                                     onClick={() => updateStyle("isUnderline", !currentScene.style.isUnderline)}
                                     className={`w-7 h-7 rounded-lg flex items-center justify-center underline text-xs transition-colors ${
@@ -1381,7 +1382,7 @@ export default function SceneModal({
                                     }`}
                                 >
                                     U
-                                </button>
+                                </ActionButton>
                             </div>
 
                             <div className="h-4 w-px bg-white/10" />
@@ -1393,7 +1394,7 @@ export default function SceneModal({
                                     { id: "center", icon: PiTextAlignCenter },
                                     { id: "right", icon: PiTextAlignRight },
                                 ].map((a) => (
-                                    <button
+                                    <ActionButton
                                         key={a.id}
                                         type="button"
                                         onClick={() => updateStyle("textAlign", a.id)}
@@ -1404,7 +1405,7 @@ export default function SceneModal({
                                         }`}
                                     >
                                         <a.icon size={14} />
-                                    </button>
+                                    </ActionButton>
                                 ))}
                             </div>
 
@@ -1429,28 +1430,28 @@ export default function SceneModal({
                                     <p className="text-xs text-white/50">Select an existing image asset or upload a new one</p>
                                 </div>
                             </div>
-                            <button
+                            <ActionButton
                                 type="button"
                                 onClick={() => setIsBgModalOpen(false)}
                                 className="text-white/40 hover:text-white p-2 rounded-xl hover:bg-white/5 transition-colors"
                             >
                                 <PiX size={18} />
-                            </button>
+                            </ActionButton>
                         </div>
 
                         {/* Top Actions: Upload New & Clear */}
                         <div className="flex items-center gap-3">
-                            <button
+                            <ActionButton
                                 type="button"
                                 onClick={handleUploadNewBg}
                                 className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 text-xs transition-all shadow-lg shadow-blue-600/20"
                             >
                                 <PiUploadSimple size={16} />
                                 Upload New Image
-                            </button>
+                            </ActionButton>
 
                             {currentScene.style.backgroundImage && (
-                                <button
+                                <ActionButton
                                     type="button"
                                     onClick={() => {
                                         updateStyle("backgroundImage", null);
@@ -1460,7 +1461,7 @@ export default function SceneModal({
                                 >
                                     <PiTrash size={14} />
                                     Clear BG
-                                </button>
+                                </ActionButton>
                             )}
                         </div>
 
@@ -1470,7 +1471,7 @@ export default function SceneModal({
                                 <span className="text-xs font-semibold text-white/60">Position:</span>
                                 <div className="flex items-center bg-[#24242a] rounded-lg p-0.5 border border-white/10">
                                     {["top", "center", "bottom"].map((pos) => (
-                                        <button
+                                        <ActionButton
                                             key={pos}
                                             type="button"
                                             onClick={() => updateStyle("backgroundPosition", pos)}
@@ -1481,7 +1482,7 @@ export default function SceneModal({
                                             }`}
                                         >
                                             {pos}
-                                        </button>
+                                        </ActionButton>
                                     ))}
                                 </div>
                             </div>
@@ -1548,13 +1549,13 @@ export default function SceneModal({
 
                         {/* Modal Footer */}
                         <div className="flex justify-end gap-2 pt-2 border-t border-white/10">
-                            <button
+                            <ActionButton
                                 type="button"
                                 onClick={() => setIsBgModalOpen(false)}
                                 className="px-4 py-2 text-xs font-semibold text-white/60 hover:text-white rounded-xl hover:bg-white/5 transition-colors"
                             >
                                 Done
-                            </button>
+                            </ActionButton>
                         </div>
                     </div>
                 </div>

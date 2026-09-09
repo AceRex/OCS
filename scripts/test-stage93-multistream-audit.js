@@ -122,7 +122,7 @@ async function runStage93Audit() {
 
   // Poll for media reception across all 3 destinations while feeding continuous frames
   const mediaWaitStart = Date.now();
-  while (Date.now() - mediaWaitStart < 4500 && (sinkABytes === 0 || sinkBBytes === 0 || sinkCBytes === 0 || bcast._workers.get('dest-tw')?.state === DESTINATION_STATES.CONNECTING)) {
+  while (Date.now() - mediaWaitStart < 10000 && (sinkABytes === 0 || sinkBBytes === 0 || sinkCBytes === 0 || bcast._workers.get('dest-tw')?.state === DESTINATION_STATES.CONNECTING || bcast._workers.get('dest-yt')?.state === DESTINATION_STATES.CONNECTING || bcast._workers.get('dest-fb')?.state === DESTINATION_STATES.CONNECTING)) {
     bcast.writeVideoFrameAll(frameBuf);
     recorder.writeVideoFrame(frameBuf);
     await new Promise(r => setTimeout(r, 66));

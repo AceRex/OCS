@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import ActionButton from "../components/feedback/ActionButton";
+import React, { useEffect, useRef, useState } from "react";
 import {
   PiCheck,
   PiX,
@@ -8,7 +9,10 @@ import {
 import FileTypeBadge from "./FileTypeBadge";
 
 export default function IncomingAssetModal() {
-  const [request, setRequest] = useState(null);
+  const [requests, setRequests] = useState([]);
+  const request = requests[0];
+  const busyRef = useRef(false);
+  const [error, setError] = useState(null);
   const [audioRole, setAudioRole] = useState("intro"); // 'intro' | 'outro' | 'media'
   const [applyToCanvas, setApplyToCanvas] = useState(false);
   const [processing, setProcessing] = useState(false);
@@ -17,34 +21,43 @@ export default function IncomingAssetModal() {
     const onAssetRequest = window.electron?.Remote?.onAssetRequest || window.electron?.Network?.onAssetRequest;
     if (!onAssetRequest) return;
     const unsub = onAssetRequest((req) => {
-      setRequest(req);
-      setProcessing(false);
-      // Default selections by type
-      if (req.fileType === "audio") setAudioRole("intro");
-      setApplyToCanvas(false);
+      setRequests((pending) => [...pending, req]);
+
     });
     return () => unsub?.();
   }, []);
 
+  useEffect(() => {
+    setAudioRole("intro");
+    setApplyToCanvas(false);
+    setError(null);
+  }, [request?.transferId]);
+
   if (!request) return null;
 
   const handleRespond = async (accepted) => {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setProcessing(true);
+    setError(null);
     try {
       const respond = window.electron?.Remote?.respondAsset || window.electron?.Network?.respondAsset;
-      if (respond) {
-        await respond({
+      if (!respond) throw new Error("Asset transfer is unavailable. Please ask the sender to reconnect.");
+      {
+        const result = await respond({
           transferId: request.transferId,
           accepted,
           targetRole: request.fileType === "audio" ? audioRole : undefined,
           applyToCanvas: (request.fileType === "image" || request.fileType === "video") ? applyToCanvas : false,
         });
+        if (result?.ok === false) throw new Error(result.error || "The asset could not be saved. Ask the sender to resend it.");
+        setRequests((pending) => pending.slice(1));
       }
     } catch (err) {
-      console.error("Failed to respond to asset transfer:", err);
+      setError(err.message || "The asset could not be saved. Ask the sender to resend it.");
     } finally {
       setProcessing(false);
-      setRequest(null);
+      busyRef.current = false;
     }
   };
 
@@ -63,11 +76,11 @@ export default function IncomingAssetModal() {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 animate-fade-in">
-      <div className="bg-[#18181b] border border-white/15 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col">
+      <div className="bg-[#18181b] border border-white/15 rounded-xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col">
         {/* Header */}
         <div className="p-6 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-blue-500/15 border border-blue-500/30 rounded-2xl">
+            <div className="p-2.5 bg-blue-500/15 border border-blue-500/30 rounded-xl">
               <PiDeviceMobile size={22} className="text-blue-400" />
             </div>
             <div>
@@ -77,19 +90,21 @@ export default function IncomingAssetModal() {
               </p>
             </div>
           </div>
-          <button
+          <ActionButton
+            loadingLabel="Declining request…"
+            aria-label="Decline asset request"
             onClick={() => handleRespond(false)}
             disabled={processing}
             className="p-1.5 text-white/40 hover:text-white rounded-full hover:bg-white/10 transition-colors"
           >
             <PiX size={18} />
-          </button>
+          </ActionButton>
         </div>
 
         {/* Content Body */}
         <div className="p-6 flex flex-col gap-5">
           {/* File Card with Figma FileTypeBadge Preview */}
-          <div className="bg-white/5 border border-white/10 rounded-2xl p-4 flex items-center gap-4">
+          <div className="bg-white/5 border border-white/10 rounded-xl p-4 flex items-center gap-4">
             {isImage && request.previewDataUrl ? (
               <img
                 src={request.previewDataUrl}
@@ -117,7 +132,7 @@ export default function IncomingAssetModal() {
 
           {/* Type-Specific Routing Options */}
           {isAudio && (
-            <div className="bg-amber-500/10 border border-amber-500/20 rounded-2xl p-4 flex flex-col gap-2.5">
+            <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-4 flex flex-col gap-2.5">
               <div className="text-amber-300 font-bold text-xs uppercase tracking-wider">
                 Audio Asset Routing
               </div>
@@ -125,8 +140,9 @@ export default function IncomingAssetModal() {
                 Choose how this audio track should be assigned in the system:
               </p>
               <div className="grid grid-cols-3 gap-2 mt-1">
-                <button
+                <ActionButton
                   type="button"
+                  disabled={processing}
                   onClick={() => setAudioRole("intro")}
                   className={`py-2 px-3 rounded-xl border text-xs font-semibold transition-all ${
                     audioRole === "intro"
@@ -135,9 +151,10 @@ export default function IncomingAssetModal() {
                   }`}
                 >
                   Set as Intro
-                </button>
-                <button
+                </ActionButton>
+                <ActionButton
                   type="button"
+                  disabled={processing}
                   onClick={() => setAudioRole("outro")}
                   className={`py-2 px-3 rounded-xl border text-xs font-semibold transition-all ${
                     audioRole === "outro"
@@ -146,9 +163,10 @@ export default function IncomingAssetModal() {
                   }`}
                 >
                   Set as Outro
-                </button>
-                <button
+                </ActionButton>
+                <ActionButton
                   type="button"
+                  disabled={processing}
                   onClick={() => setAudioRole("media")}
                   className={`py-2 px-3 rounded-xl border text-xs font-semibold transition-all ${
                     audioRole === "media"
@@ -157,19 +175,20 @@ export default function IncomingAssetModal() {
                   }`}
                 >
                   Save as Media
-                </button>
+                </ActionButton>
               </div>
             </div>
           )}
 
           {(isImage || isVideo) && (
-            <div className="bg-blue-500/10 border border-blue-500/20 rounded-2xl p-4 flex flex-col gap-2.5">
+            <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex flex-col gap-2.5">
               <div className="text-blue-300 font-bold text-xs uppercase tracking-wider">
                 Media Library Placement
               </div>
               <label className="flex items-center gap-3 cursor-pointer select-none">
                 <input
                   type="checkbox"
+                  disabled={processing}
                   checked={applyToCanvas}
                   onChange={(e) => setApplyToCanvas(e.target.checked)}
                   className="w-4 h-4 rounded border-white/20 text-blue-600 focus:ring-0 bg-black/40"
@@ -185,7 +204,7 @@ export default function IncomingAssetModal() {
           )}
 
           {isPptx && (
-            <div className="bg-orange-500/10 border border-orange-500/20 rounded-2xl p-4 flex items-center gap-3">
+            <div className="bg-orange-500/10 border border-orange-500/20 rounded-xl p-4 flex items-center gap-3">
               <PiSparkle size={20} className="text-orange-400 flex-shrink-0" />
               <p className="text-white/70 text-xs leading-relaxed">
                 Accepting this presentation will automatically convert all slides via the Presentation Pipeline with OpenXML notes extraction.
@@ -194,19 +213,26 @@ export default function IncomingAssetModal() {
           )}
         </div>
 
+        {error && <div role="alert" className="mx-6 mb-4 rounded-xl border border-red-400/30 bg-red-500/10 p-3 text-sm text-red-200">
+          {error}
+          <ActionButton className="block mt-2 underline" onClick={() => setRequests((pending) => pending.slice(1))}>Dismiss request</ActionButton>
+        </div>}
         {/* Footer Actions */}
         <div className="p-6 bg-black/30 border-t border-white/10 flex items-center justify-end gap-3">
-          <button
+          <ActionButton
             type="button"
+            loadingLabel="Declining request…"
+            aria-label="Decline asset request"
             onClick={() => handleRespond(false)}
             disabled={processing || request.uploading}
             className="px-5 py-2.5 rounded-xl border border-red-500/30 bg-red-500/10 hover:bg-red-500/20 text-red-300 font-semibold text-xs transition-colors flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <PiX size={16} />
             Decline
-          </button>
-          <button
+          </ActionButton>
+          <ActionButton
             type="button"
+            loadingLabel="Saving asset…"
             onClick={() => handleRespond(true)}
             disabled={processing || request.uploading}
             className={`px-6 py-2.5 rounded-xl font-bold text-xs shadow-lg transition-all flex items-center gap-1.5 ${
@@ -221,7 +247,7 @@ export default function IncomingAssetModal() {
               : request.uploading
                 ? "Uploading to Controller…"
                 : "Accept & Save"}
-          </button>
+          </ActionButton>
         </div>
       </div>
     </div>

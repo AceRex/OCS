@@ -10,6 +10,7 @@ if (typeof window !== "undefined" && window.electron && typeof globalThis.electr
 }
 
 import App from "./view.js";
+import { ActionFeedback } from "../components/feedback/ActionButton";
 import { Provider } from "react-redux";
 import store from "../../Redux/slice.tsx";
 
@@ -18,6 +19,7 @@ root.render(
   <React.StrictMode>
     <Provider store={store}>
       <App />
+      <ActionFeedback />
     </Provider>
   </React.StrictMode>
 );

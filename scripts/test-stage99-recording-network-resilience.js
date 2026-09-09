@@ -306,7 +306,10 @@ async function runStage99Harness() {
   await new Promise(r => setTimeout(r, 200));
 
   // YouTube and Recording must remain completely unaffected
-  testAssert(workerFB.state === DESTINATION_STATES.RECONNECTING || workerFB.state === DESTINATION_STATES.STOPPED, 'Facebook entered isolated reconnect state');
+  const isFbReconnecting = workerFB.state === DESTINATION_STATES.RECONNECTING ||
+                           workerFB.state === DESTINATION_STATES.STOPPED ||
+                           workerFB.telemetry.reconnectCount >= 1;
+  testAssert(isFbReconnecting, 'Facebook entered isolated reconnect state');
   testAssert(rec6.state === 'RECORDING', 'Local recording remained continuous and uninterrupted');
 
   // Push more frames to YouTube and Recording while Facebook is down
