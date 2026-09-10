@@ -129,8 +129,14 @@ class ProgramRecorder {
     }
 
     const dir = path.dirname(outputPath);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
+    try {
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+    } catch (err) {
+      this.state = 'FAILED';
+      this.lastError = `Failed to create output directory: ${err.message}`;
+      return Promise.reject(new Error(this.lastError));
     }
 
     // Storage preflight check (mandated by Stage 7 Section 13)

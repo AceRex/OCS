@@ -32,6 +32,7 @@ const TEST_SUITES = [
   { name: 'Stage 9.7 Real 1080p Streaming Stability, Reconnect & Latency Audit', script: 'scripts/test-stage97-live-stability.js' },
   { name: 'Stage 9.8 External Platform & Field Production Validation', script: 'scripts/test-stage98-external-validation.js' },
   { name: 'Stage 9.9 Local Recording & Network Resilience Audit', script: 'scripts/test-stage99-recording-network-resilience.js' },
+  { name: 'Stage 10 Production Rehearsal & Live Recovery Validation', script: 'scripts/test-stage10-production-rehearsal.js' },
 ];
 
 console.log('====================================================');

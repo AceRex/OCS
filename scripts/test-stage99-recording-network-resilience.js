@@ -16,6 +16,15 @@ const fs = require('fs');
 const { spawnSync } = require('child_process');
 const { DestinationWorker, DESTINATION_STATES } = require('../src/main/streaming/destinationWorker');
 const { ProgramRecorder } = require('../src/main/recording/programRecorder');
+const { getDeterministicRecordingPath } = require('../src/main/recording/recordingPath');
+
+function getFfprobePath() {
+  const possible = ['/opt/homebrew/bin/ffprobe', '/usr/local/bin/ffprobe', '/usr/bin/ffprobe'];
+  for (const p of possible) {
+    if (fs.existsSync(p)) return p;
+  }
+  return 'ffprobe';
+}
 
 function createMockSink() {
   return new Promise((resolve) => {
@@ -90,8 +99,11 @@ async function runStage99Harness() {
   const year = String(d.getFullYear());
   const month = String(d.getMonth() + 1).padStart(2, '0');
   const day = String(d.getDate()).padStart(2, '0');
-  const deterministicDir = path.join(scratchDir, 'recordings', year, month, day);
-  const recOutPath = path.join(deterministicDir, `OCS_${year}-${month}-${day}_test.mp4`);
+
+  // Verify the production getDeterministicRecordingPath resolver builds the date hierarchy
+  const testBaseRecordings = path.join(scratchDir, 'recordings');
+  const recOutPath = getDeterministicRecordingPath(testBaseRecordings, `OCS_${year}-${month}-${day}_test.mp4`);
+  const deterministicDir = path.dirname(recOutPath);
 
   const rec = new ProgramRecorder();
   const startRes = await rec.start({
@@ -106,7 +118,8 @@ async function runStage99Harness() {
 
   testAssert(startRes.ok === true, 'ProgramRecorder.start returns ok: true');
   testAssert(rec.state === 'RECORDING', 'State transitions to RECORDING');
-  testAssert(fs.existsSync(deterministicDir), 'Deterministic date-partitioned directory created automatically');
+  testAssert(fs.existsSync(deterministicDir), 'Deterministic date-partitioned directory created automatically by resolver');
+  testAssert(recOutPath.includes(path.join(year, month, day)), 'Recording path strictly follows YYYY/MM/DD date partition');
 
   const status = rec.getStatus();
   const required14Fields = [
@@ -141,12 +154,30 @@ async function runStage99Harness() {
   testAssert(fs.existsSync(recOutPath), 'Recorded MP4 file exists on disk');
   testAssert(stopRes.bytesWritten > 1000, `Output file size > 1000 bytes (size: ${stopRes.bytesWritten} bytes)`);
 
-  const ffmpegBin = rec.getFfmpegPath();
-  const probeRes = spawnSync(ffmpegBin, ['-i', recOutPath], { encoding: 'utf8' });
-  const probeOutput = (probeRes.stderr || '') + (probeRes.stdout || '');
-  testAssert(probeOutput.includes('Video: h264'), 'Valid H.264 video stream detected');
-  testAssert(probeOutput.includes('Audio: aac'), 'Valid AAC audio stream detected');
-  testAssert(probeOutput.includes('640x360'), 'Video stream matches configured 640x360 resolution');
+  const ffprobeBin = getFfprobePath();
+  const probeRes = spawnSync(ffprobeBin, [
+    '-v', 'error',
+    '-select_streams', 'v:0',
+    '-show_entries', 'stream=codec_name,width,height',
+    '-of', 'json',
+    recOutPath
+  ], { encoding: 'utf8' });
+  const videoProbe = JSON.parse(probeRes.stdout || '{}');
+  const vStream = videoProbe.streams && videoProbe.streams[0];
+
+  const audioProbeRes = spawnSync(ffprobeBin, [
+    '-v', 'error',
+    '-select_streams', 'a:0',
+    '-show_entries', 'stream=codec_name,sample_rate,channels',
+    '-of', 'json',
+    recOutPath
+  ], { encoding: 'utf8' });
+  const audioProbe = JSON.parse(audioProbeRes.stdout || '{}');
+  const aStream = audioProbe.streams && audioProbe.streams[0];
+
+  testAssert(vStream && vStream.codec_name === 'h264', 'Valid H.264 video stream detected via ffprobe');
+  testAssert(aStream && aStream.codec_name === 'aac', 'Valid AAC audio stream detected via ffprobe');
+  testAssert(vStream && vStream.width === 640 && vStream.height === 360, 'Video stream matches configured 640x360 resolution via ffprobe');
 
   // ──────────────────────────────────────────────────────────────────────────
   // GATE 3: Bounded Frame Queue, Frame Atomicity & Stale Frame Dropping
@@ -211,7 +242,7 @@ async function runStage99Harness() {
   // Trigger watchdog tick manually with static slide metrics
   worker4._auditHealth();
   testAssert(worker4.reconnectAttempts === 0, 'Watchdog does not trigger false reconnect on static slide');
-  testAssert(worker4.telemetry.encodedFrames >= 0, 'Objective monotonic frame advancement tracked');
+  testAssert(worker4.telemetry.encodedFrames > 0 || worker4.telemetry.outputBytes > 0, 'Objective non-zero monotonic forward progress verified');
 
   await worker4.stop();
   await sink4.close();
@@ -233,12 +264,26 @@ async function runStage99Harness() {
   });
   await worker5.start();
 
-  // Simulate unexpected process exit (e.g. network stall forced termination)
-  worker5._handleUnexpectedExit(1, 'SIGTERM');
+  // Verify real process signal termination (simulating network drop / watchdog abort)
+  const initialPid = worker5.proc ? worker5.proc.pid : null;
+  testAssert(initialPid !== null, `Worker 5 spawned with active PID ${initialPid}`);
+
+  if (worker5.proc) {
+    worker5.proc.kill('SIGKILL');
+  }
+  await new Promise(r => setTimeout(r, 200));
+
   testAssert(worker5.telemetry.queueFrames === 0, 'Queue frames immediately purged to 0 upon exit');
   testAssert(worker5.telemetry.queueBytes === 0, 'Queue bytes immediately purged to 0 upon exit');
   testAssert(worker5.telemetry.currentFrameAgeMs === 0, 'Frame age reset to 0; no stale backlog replayed');
-  testAssert(worker5.telemetry.state === DESTINATION_STATES.RECONNECTING, 'State transitioned to RECONNECTING');
+  testAssert(worker5.state === DESTINATION_STATES.RECONNECTING || worker5.state === DESTINATION_STATES.CONNECTING, 'State transitioned to RECONNECTING');
+
+  // Await automatic reconnect and verify PID progression
+  const reconnectWaitStart = Date.now();
+  while (Date.now() - reconnectWaitStart < 4000 && (!worker5.proc || worker5.proc.pid === initialPid)) {
+    await new Promise(r => setTimeout(r, 100));
+  }
+  testAssert(worker5.proc && worker5.proc.pid !== initialPid, `True reconnection verified: fresh process spawned (new PID: ${worker5.proc ? worker5.proc.pid : 'none'})`);
 
   await worker5.stop();
   await sink5.close();
