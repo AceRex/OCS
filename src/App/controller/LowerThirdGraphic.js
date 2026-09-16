@@ -1,5 +1,4 @@
 import React from "react";
-import { PiMicrophone, PiStar, PiBookOpen, PiUser } from "react-icons/pi";
 
 export const DEFAULT_LOWER_THIRD_STYLE = {
   shape: "rounded-rect",     // "rounded-rect" | "angled-cut" | "minimal-bar" | "pill"
@@ -143,18 +142,10 @@ export const renderCustomLowerThirdUI = (lt) => {
             <svg width="20" height="20" viewBox="0 0 24 24" fill={accent}>
               <path d="M12 2L2 22h20L12 2z" />
             </svg>
-          ) : badgeIcon === "cross" ? (
-            <span className="text-sm font-black text-white">✝</span>
-          ) : badgeIcon === "dove" ? (
-            <span className="text-sm">🕊</span>
-          ) : badgeIcon === "mic" ? (
-            <PiMicrophone size={15} className="text-white" />
-          ) : badgeIcon === "star" ? (
-            <PiStar size={15} className="text-amber-300" />
-          ) : badgeIcon === "bible" ? (
-            <PiBookOpen size={15} className="text-white" />
           ) : (
-            <PiUser size={15} className="text-white" />
+            <span className="text-xs font-black text-white tracking-wider uppercase">
+              {(title && title.trim().length > 0) ? title.trim()[0] : "•"}
+            </span>
           )}
         </div>
       )}

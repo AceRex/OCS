@@ -2,6 +2,9 @@ const path = require('path');
 
 module.exports = {
   mode: "development",
+  output: {
+    hashFunction: "sha256",
+  },
   module: {
     rules: [
       {

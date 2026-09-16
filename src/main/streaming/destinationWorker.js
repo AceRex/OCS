@@ -145,7 +145,7 @@ class DestinationWorker {
     const url = this.config.streamUrl;
     if (!url || typeof url !== 'string') return '';
     try {
-      let s = url.replace(/([?&]passphrase=)([^&]+)/gi, '$1[REDACTED]');
+      let s = url.replace(/([?&](?:passphrase|key|secret|token|stream_key|secret_key|password)=)([^&]+)/gi, '$1[REDACTED]');
       if (s.startsWith('rtmp://') || s.startsWith('rtmps://')) {
         const parts = s.split('/');
         if (parts.length > 4) {
@@ -175,6 +175,11 @@ class DestinationWorker {
     }
 
     this.isIntentionalStop = false;
+    this.isBackpressured = false;
+    this._audioBytesWritten = 0;
+    this._expectedAudioBytesPerSec = ((this.config.sampleRate || 48000) * (this.config.channels || 2) * 2);
+    this.telemetry.queueFrames = 0;
+    this.telemetry.queueBytes = 0;
     this.state = DESTINATION_STATES.STARTING;
     this.telemetry.state = this.state;
     this.telemetry.health = 'connecting';
@@ -207,6 +212,14 @@ class DestinationWorker {
         );
       }
 
+      // Check if destination is Facebook to isolate strict CBR/GOP constraints
+      const isFacebook = Boolean(
+        c.isFacebook ||
+        c.platform === 'facebook' ||
+        (typeof c.label === 'string' && /facebook/i.test(c.label)) ||
+        (typeof c.streamUrl === 'string' && /(?:live-api-s\.facebook\.com|facebook\.com|fbcdn\.net)/i.test(c.streamUrl))
+      );
+
       args.push('-c:v', encoder);
       if (encoder === 'libx264') {
         args.push(
@@ -214,15 +227,30 @@ class DestinationWorker {
           '-tune', 'zerolatency',
           '-b:v', `${c.videoBitrateKbps || 4500}k`,
           '-maxrate', `${c.videoBitrateKbps || 4500}k`,
-          '-bufsize', `${(c.videoBitrateKbps || 4500) * 2}k`,
-          '-profile:v', 'main'
+          '-bufsize', `${(c.videoBitrateKbps || 4500) * 2}k`
         );
+        if (isFacebook) {
+          args.push('-profile:v', 'main', '-sc_threshold', '0');
+        }
       } else if (encoder === 'h264_videotoolbox') {
-        args.push(
-          '-b:v', `${c.videoBitrateKbps || 4500}k`,
-          '-maxrate', `${c.videoBitrateKbps || 4500}k`,
-          '-realtime', '1'
-        );
+        if (isFacebook) {
+          // Facebook Live strictly requires CBR, 2s VBV buffer, and Main profile
+          args.push(
+            '-b:v', `${c.videoBitrateKbps || 4500}k`,
+            '-maxrate', `${c.videoBitrateKbps || 4500}k`,
+            '-bufsize', `${(c.videoBitrateKbps || 4500) * 2}k`,
+            '-constant_bit_rate', '1',
+            '-realtime', '1',
+            '-profile:v', 'main'
+          );
+        } else {
+          // Standard working parameters for YouTube and general destinations
+          args.push(
+            '-b:v', `${c.videoBitrateKbps || 4500}k`,
+            '-maxrate', `${c.videoBitrateKbps || 4500}k`,
+            '-realtime', '1'
+          );
+        }
       } else if (encoder === 'h264_nvenc') {
         args.push(
           '-preset', 'p3',
@@ -230,6 +258,9 @@ class DestinationWorker {
           '-maxrate', `${c.videoBitrateKbps || 4500}k`,
           '-bufsize', `${(c.videoBitrateKbps || 4500) * 2}k`
         );
+        if (isFacebook) {
+          args.push('-profile:v', 'main');
+        }
       }
 
       args.push(
@@ -251,11 +282,14 @@ class DestinationWorker {
       }
 
       // Network transport resilience
-      if (c.streamUrl.startsWith('rtmp://') || c.streamUrl.startsWith('rtmps://')) {
+      const isRtmp = c.streamUrl.startsWith('rtmp://') || c.streamUrl.startsWith('rtmps://');
+      if (isRtmp) {
         args.push('-tcp_nodelay', '1');
       }
       args.push('-max_interleave_delta', '1000000');
-      args.push('-rw_timeout', '15000000'); // 15s socket timeout
+      // Facebook RTMPS needs 30s timeout for TLS renegotiation; standard destinations retain 15s
+      const rwTimeout = isFacebook ? '30000000' : '15000000';
+      args.push('-rw_timeout', rwTimeout);
       args.push('-flush_packets', '1', '-f', format, c.streamUrl);
 
       try {
@@ -277,19 +311,25 @@ class DestinationWorker {
 
         // Set dynamic highWaterMark on stdin to accommodate full frame boundaries
         if (this.proc.stdin && this.proc.stdin._writableState) {
-          const expectedFrameBytes = (c.width || 1280) * (c.height || 720) * 4;
+          const expectedFrameBytes = width * height * 4;
           this.proc.stdin._writableState.highWaterMark = Math.max(16 * 1024 * 1024, expectedFrameBytes * 2);
         }
 
         // Prime input pipes with initial frame so FFmpeg connects output socket immediately
         try {
-          const blankFrame = Buffer.alloc(c.width * c.height * 4);
+          const expectedFrameBytes = width * height * 4;
+          const blankFrame = Buffer.alloc(expectedFrameBytes);
           this.proc.stdin.write(blankFrame);
           if (c.withAudio !== false && this.proc.stdio && this.proc.stdio[3]) {
-            const blankAudio = Buffer.alloc(Math.floor(((c.sampleRate || 48000) / (c.fps || 30)) * (c.channels || 2) * 2));
+            const sampleRate = c.sampleRate || 48000;
+            const channels = c.channels || 2;
+            const blankAudioBytes = Math.floor((sampleRate / fps) * channels * 2);
+            const blankAudio = Buffer.alloc(blankAudioBytes);
             this.proc.stdio[3].write(blankAudio);
           }
-        } catch (_) {}
+        } catch (primerErr) {
+          console.warn(`[DestinationWorker/${this.id}] Pipe priming error:`, primerErr.message);
+        }
 
         // Setup backpressure drain listener
         this.proc.stdin.on('drain', () => {
@@ -667,10 +707,26 @@ class DestinationWorker {
     this.telemetry.oldestFrameAgeMs = 0;
 
     try {
+      // Lockstep Audio Pacing: Ensure audio stream does not starve FFmpeg muxer
+      if (this.config.withAudio !== false && this.proc?.stdio && this.proc.stdio[3] && !this.proc.killed) {
+        const fps = this.config.fps || 30;
+        const expectedAudioBytes = Math.floor((this.telemetry.inputFrames * (this._expectedAudioBytesPerSec || 192000)) / fps);
+        const deficit = expectedAudioBytes - (this._audioBytesWritten || 0);
+        if (deficit > 0) {
+          const injectionSize = Math.min(deficit, this._expectedAudioBytesPerSec || 192000);
+          try {
+            const silence = Buffer.alloc(injectionSize);
+            this.proc.stdio[3].write(silence);
+            this._audioBytesWritten = (this._audioBytesWritten || 0) + injectionSize;
+          } catch (_) {}
+        }
+      }
+
       const canAcceptMore = this.proc.stdin.write(buffer);
       if (!canAcceptMore) {
         this.isBackpressured = true;
       }
+
       return true;
     } catch (_) {
       return false;
@@ -688,7 +744,9 @@ class DestinationWorker {
       return false;
     }
     try {
-      return this.proc.stdio[3].write(buffer);
+      const ok = this.proc.stdio[3].write(buffer);
+      this._audioBytesWritten = (this._audioBytesWritten || 0) + buffer.length;
+      return ok;
     } catch (_) {
       return false;
     }
@@ -705,6 +763,14 @@ class DestinationWorker {
    * Handles unexpected exits with isolated exponential backoff auto-reconnect.
    */
   _handleUnexpectedExit(code, signal) {
+    // Guard: If stop() was called, do not enter reconnect logic from a late exit event
+    if (this.isIntentionalStop) {
+      this.state = DESTINATION_STATES.STOPPED;
+      this.telemetry.state = this.state;
+      this.telemetry.health = 'offline';
+      return;
+    }
+
     this.state = DESTINATION_STATES.STOPPED;
     this.telemetry.state = this.state;
     this.telemetry.health = 'offline';
@@ -785,6 +851,11 @@ class DestinationWorker {
     if (this._reconnectTimer) {
       clearTimeout(this._reconnectTimer);
       this._reconnectTimer = null;
+    }
+
+    if (this._connectTimeoutTimer) {
+      clearTimeout(this._connectTimeoutTimer);
+      this._connectTimeoutTimer = null;
     }
 
     this.state = DESTINATION_STATES.STOPPING;

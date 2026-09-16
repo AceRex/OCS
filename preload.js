@@ -376,7 +376,40 @@ contextBridge.exposeInMainWorld("electron", {
   },
   Design: {
     analyzePoster: (imagePath) => ipcRenderer.invoke("design-analyze", imagePath),
-    generateAsset: (prompt) => ipcRenderer.invoke("design-generate", prompt)
+    generateAsset: (prompt) => ipcRenderer.invoke("design-generate", prompt),
+  },
+  DesignStudio: {
+    listDesigns: () => ipcRenderer.invoke("design:list"),
+    saveDesign: (design) => ipcRenderer.invoke("design:save", design),
+    deleteDesign: (id) => ipcRenderer.invoke("design:delete", id),
+    importImage: (sourcePath) => ipcRenderer.invoke("design:import-image", sourcePath),
+    present: (design, target) => ipcRenderer.invoke("design:present", { design, target }),
+    hide: () => ipcRenderer.invoke("design:hide"),
+    getLiveState: () => ipcRenderer.invoke("design:get-live-state"),
+    captureUi: (outPath) => ipcRenderer.invoke("design:capture-ui", outPath),
+    saveProcessedAsset: (payload) => ipcRenderer.invoke("design:save-processed-asset", payload),
+    listLiveControls: () => ipcRenderer.invoke("design:list-live-controls"),
+    saveLiveControl: (control) => ipcRenderer.invoke("design:save-live-control", control),
+    deleteLiveControl: (id) => ipcRenderer.invoke("design:delete-live-control", id),
+    clearAllLiveControls: () => ipcRenderer.invoke("design:clear-all-live-controls"),
+    setActiveControlsOverlays: (overlays) => ipcRenderer.invoke("design:set-active-controls-overlays", overlays),
+    getRoleAssignments: () => ipcRenderer.invoke("design:get-role-assignments"),
+    setRoleAssignment: (role, templateId) => ipcRenderer.invoke("design:set-role-assignment", { role, templateId }),
+    onLiveStateChange: (callback) => {
+      const listener = (_event, state) => callback(state);
+      ipcRenderer.on("design:live-changed", listener);
+      return () => ipcRenderer.removeListener("design:live-changed", listener);
+    },
+    onLiveControlsChanged: (callback) => {
+      const listener = (_event, controls) => callback(controls);
+      ipcRenderer.on("design:live-controls-changed", listener);
+      return () => ipcRenderer.removeListener("design:live-controls-changed", listener);
+    },
+    onRoleAssignmentsChanged: (callback) => {
+      const listener = (_event, assignments) => callback(assignments);
+      ipcRenderer.on("design:role-assignments-changed", listener);
+      return () => ipcRenderer.removeListener("design:role-assignments-changed", listener);
+    },
   },
   AI: {
     /** Returns { ok, vosk, piper, ollama: { running, models, model } } */

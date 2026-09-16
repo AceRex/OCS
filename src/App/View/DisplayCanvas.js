@@ -6,6 +6,183 @@ import { renderAnimatedLyrics } from "../controller/LyricAnimationEngine";
 // can always target the same canvas element even when the component re-renders.
 const _liveCameraImgCache = {}; // keyed by deviceId
 
+function getShadowRgba(color = "#000000", opacity = 60) {
+  const alpha = typeof opacity === "number" ? Math.max(0, Math.min(100, opacity)) / 100 : 0.6;
+  if (!color) return `rgba(0,0,0,${alpha})`;
+  let c = String(color).trim();
+  if (c.startsWith("#")) {
+    let hex = c.slice(1);
+    if (hex.length === 3) hex = hex.split("").map((x) => x + x).join("");
+    if (hex.length === 6) {
+      const r = parseInt(hex.substring(0, 2), 16) || 0;
+      const g = parseInt(hex.substring(2, 4), 16) || 0;
+      const b = parseInt(hex.substring(4, 6), 16) || 0;
+      return `rgba(${r},${g},${b},${alpha})`;
+    }
+  }
+  return c;
+}
+
+function formatLayerShadow(layer) {
+  if (!layer || !layer.shadowEnabled) return "none";
+  const ox = typeof layer.shadowOffsetX === "number" ? layer.shadowOffsetX : 0;
+  const oy = typeof layer.shadowOffsetY === "number" ? layer.shadowOffsetY : 4;
+  const blur = typeof layer.shadowBlur === "number" ? layer.shadowBlur : 10;
+  const rgba = getShadowRgba(layer.shadowColor, layer.shadowOpacity);
+  return `${ox}px ${oy}px ${blur}px ${rgba}`;
+}
+
+function renderLiveDesignShape(layer) {
+  if (!layer) return null;
+  const shape = layer.shape || "rounded-rect";
+  const isLine = shape === "line";
+  const isArrow = shape === "arrow";
+  const isLineOrArrow = isLine || isArrow;
+  const sw = typeof layer.strokeWidth === "number" ? layer.strokeWidth : (isLineOrArrow ? 3 : 2);
+  const strokeColor = sw > 0 && layer.stroke && layer.stroke !== "transparent" ? layer.stroke : "none";
+  const strokeW = sw > 0 ? sw : 0;
+  const fillColor = isLineOrArrow ? "transparent" : (layer.fill || "#581c87");
+  const shadowFilter = layer.shadowEnabled ? `drop-shadow(${formatLayerShadow(layer)})` : "none";
+  const shadowBox = layer.shadowEnabled ? formatLayerShadow(layer) : "none";
+  const gradientCss = layer.gradient && Array.isArray(layer.gradient.stops) && layer.gradient.stops.length >= 2
+    ? (layer.gradient.type === "radial"
+        ? `radial-gradient(circle at ${layer.gradient.radialCenter?.x ?? 50}% ${layer.gradient.radialCenter?.y ?? 50}%, ${layer.gradient.stops.map(s => `${getShadowRgba(s.color, Math.round((s.opacity ?? 1) * 100))} ${s.position}%`).join(", ")})`
+        : `linear-gradient(${layer.gradient.angle ?? 90}deg, ${layer.gradient.stops.map(s => `${getShadowRgba(s.color, Math.round((s.opacity ?? 1) * 100))} ${s.position}%`).join(", ")})`)
+    : null;
+  const bgFill = gradientCss || fillColor;
+  const gradId = `disp_grad_${layer.id || Math.random().toString(36).substr(2, 6)}`;
+
+  if (shape === "rectangle" || shape === "square") {
+    return (
+      <div
+        data-studio-shape-content="true"
+        style={{
+          width: "100%",
+          height: `${(layer.height || 12) * 4}px`,
+          background: bgFill,
+          border: strokeW > 0 && strokeColor !== "none" ? `${strokeW}px solid ${strokeColor}` : "none",
+          borderRadius: "0px",
+          boxShadow: shadowBox,
+          opacity,
+        }}
+      />
+    );
+  }
+
+  if (shape === "rounded-rect") {
+    const radius = typeof layer.borderRadius === "number" ? layer.borderRadius : 12;
+    return (
+      <div
+        data-studio-shape-content="true"
+        style={{
+          width: "100%",
+          height: `${(layer.height || 12) * 4}px`,
+          background: bgFill,
+          border: strokeW > 0 && strokeColor !== "none" ? `${strokeW}px solid ${strokeColor}` : "none",
+          borderRadius: `${radius}px`,
+          boxShadow: shadowBox,
+          opacity,
+        }}
+      />
+    );
+  }
+
+  if (shape === "line") {
+    return (
+      <div data-studio-shape-content="true" style={{ width: "100%", height: `${Math.max(12, (layer.height || 4) * 4)}px`, filter: shadowFilter, opacity }}>
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full overflow-visible">
+          {strokeW > 0 && strokeColor !== "none" && (
+            <line x1="0" y1="50" x2="100" y2="50" stroke={strokeColor} strokeWidth={strokeW} vectorEffect="non-scaling-stroke" />
+          )}
+        </svg>
+      </div>
+    );
+  }
+
+  if (shape === "arrow") {
+    return (
+      <div data-studio-shape-content="true" style={{ width: "100%", height: `${Math.max(16, (layer.height || 8) * 4)}px`, filter: shadowFilter, opacity }}>
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full overflow-visible">
+          {strokeW > 0 && strokeColor !== "none" && (
+            <>
+              <line x1="0" y1="50" x2="80" y2="50" stroke={strokeColor} strokeWidth={strokeW} vectorEffect="non-scaling-stroke" />
+              <polygon points="76,28 100,50 76,72" fill={strokeColor} stroke={strokeColor} strokeWidth={Math.max(1, Math.round(strokeW / 2))} strokeLinejoin="round" />
+            </>
+          )}
+        </svg>
+      </div>
+    );
+  }
+
+  if (shape === "bracket-left") {
+    return (
+      <div data-studio-shape-content="true" style={{ width: "100%", height: `${(layer.height || 12) * 4}px`, filter: shadowFilter, opacity }}>
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full overflow-visible">
+          {strokeW > 0 && strokeColor !== "none" && (
+            <polyline points="35,2 4,2 4,98 35,98" fill="none" stroke={strokeColor} strokeWidth={strokeW} strokeLinecap="square" strokeLinejoin="miter" vectorEffect="non-scaling-stroke" />
+          )}
+        </svg>
+      </div>
+    );
+  }
+
+  if (shape === "bracket-right") {
+    return (
+      <div data-studio-shape-content="true" style={{ width: "100%", height: `${(layer.height || 12) * 4}px`, filter: shadowFilter, opacity }}>
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full overflow-visible">
+          {strokeW > 0 && strokeColor !== "none" && (
+            <polyline points="65,2 96,2 96,98 65,98" fill="none" stroke={strokeColor} strokeWidth={strokeW} strokeLinecap="square" strokeLinejoin="miter" vectorEffect="non-scaling-stroke" />
+          )}
+        </svg>
+      </div>
+    );
+  }
+
+  const svgFill = gradientCss ? `url(#${gradId})` : fillColor;
+
+  let svgBody = null;
+  if (shape === "circle" || shape === "ellipse") {
+    svgBody = <ellipse cx="50" cy="50" rx="49" ry="49" fill={svgFill} stroke={strokeColor} strokeWidth={strokeW} vectorEffect="non-scaling-stroke" />;
+  } else if (shape === "parallelogram") {
+    svgBody = <polygon points="12,2 98,2 86,98 0,98" fill={svgFill} stroke={strokeColor} strokeWidth={strokeW} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
+  } else if (shape === "triangle") {
+    svgBody = <polygon points="50,2 98,98 2,98" fill={svgFill} stroke={strokeColor} strokeWidth={strokeW} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
+  } else if (shape === "diamond") {
+    svgBody = <polygon points="50,2 98,50 50,98 2,50" fill={svgFill} stroke={strokeColor} strokeWidth={strokeW} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
+  } else if (shape === "pentagon") {
+    svgBody = <polygon points="50,2 97.55,36.5 79.39,94 20.61,94 2.45,36.5" fill={svgFill} stroke={strokeColor} strokeWidth={strokeW} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
+  } else if (shape === "hexagon") {
+    svgBody = <polygon points="50,2 96,26.5 96,73.5 50,98 4,73.5 4,26.5" fill={svgFill} stroke={strokeColor} strokeWidth={strokeW} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
+  } else if (shape === "star") {
+    svgBody = <polygon points="50,2 61.8,36.5 98,36.5 68.7,57.8 79.9,93.5 50,71.8 20.1,93.5 31.3,57.8 2,36.5 38.2,36.5" fill={svgFill} stroke={strokeColor} strokeWidth={strokeW} strokeLinejoin="round" vectorEffect="non-scaling-stroke" />;
+  }
+
+  return (
+    <div data-studio-shape-content="true" style={{ width: "100%", height: `${(layer.height || 12) * 4}px`, filter: shadowFilter, opacity }}>
+      <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="w-full h-full overflow-visible">
+        {gradientCss && layer.gradient && (
+          <defs>
+            {layer.gradient.type === "radial" ? (
+              <radialGradient id={gradId} cx={`${layer.gradient.radialCenter?.x ?? 50}%`} cy={`${layer.gradient.radialCenter?.y ?? 50}%`} r="50%">
+                {(layer.gradient.stops || []).map((s, idx) => (
+                  <stop key={idx} offset={`${s.position}%`} stopColor={s.color} stopOpacity={s.opacity ?? 1} />
+                ))}
+              </radialGradient>
+            ) : (
+              <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="0%">
+                {(layer.gradient.stops || []).map((s, idx) => (
+                  <stop key={idx} offset={`${s.position}%`} stopColor={s.color} stopOpacity={s.opacity ?? 1} />
+                ))}
+              </linearGradient>
+            )}
+          </defs>
+        )}
+        {svgBody}
+      </svg>
+    </div>
+  );
+}
+
 /**
  * Render text with real-time word tracking — ONE WORD AHEAD model.
  *
@@ -867,9 +1044,9 @@ export default function DisplayCanvas({
     return (
       <div className="absolute inset-0 z-30 pointer-events-none overflow-hidden">
         {pinnedLayers.map((layer) => {
-          const xPct = `${(layer.x ?? 0.5) * 100}%`;
-          const yPct = `${(layer.y ?? 0.5) * 100}%`;
-          const wPct = `${(layer.width ?? 0.2) * 100}%`;
+          const xPct = typeof layer.x === 'number' ? (layer.x > 1 ? `${layer.x}%` : `${layer.x * 100}%`) : '50%';
+          const yPct = typeof layer.y === 'number' ? (layer.y > 1 ? `${layer.y}%` : `${layer.y * 100}%`) : '50%';
+          const wPct = typeof layer.width === 'number' ? (layer.width > 1 ? `${layer.width}%` : `${layer.width * 100}%`) : (layer.style?.width ? `${layer.style.width}%` : '20%');
           const isSelected = selectedLayerId === layer.id;
 
           return (
@@ -888,25 +1065,44 @@ export default function DisplayCanvas({
               }}
             >
               {isSelected && isEditable && (
-                <div className="absolute -inset-2 border-2 border-yellow-500 border-dashed rounded-lg pointer-events-none z-50" />
+                <div className="absolute -inset-2 border-2 border-yellow-500 border-dashed rounded-[12px] pointer-events-none z-50" />
               )}
 
               {layer.type === "image" ? (
-                <img
-                  src={layer.url || layer.content}
-                  alt="pinned"
-                  className={`w-full h-auto rounded ${
-                    isSelected ? "ring-2 ring-purple-500" : ""
-                  }`}
-                  style={{ opacity: layer.opacity ?? 1 }}
-                />
+                layer.url || layer.content ? (
+                  <img
+                    src={layer.url || layer.content}
+                    alt="pinned"
+                    className={`w-full h-auto ${isSelected ? "ring-2 ring-purple-500" : ""}`}
+                    style={{
+                      opacity: layer.opacity ?? 1,
+                      borderRadius: layer.mask === "circle" ? "50%" : layer.mask === "diamond" ? "0px" : `${layer.borderRadius ?? 12}px`,
+                      clipPath: layer.mask === "diamond" ? "polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)" : "none",
+                    }}
+                  />
+                ) : (
+                  <div
+                    className={`w-full aspect-square flex items-center justify-center bg-zinc-900 ${isSelected ? "ring-2 ring-purple-500" : ""}`}
+                    style={{
+                      opacity: layer.opacity ?? 1,
+                      borderRadius: layer.mask === "circle" ? "50%" : layer.mask === "diamond" ? "0px" : `${layer.borderRadius ?? 12}px`,
+                      clipPath: layer.mask === "diamond" ? "polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)" : "none",
+                    }}
+                  >
+                    <svg viewBox="0 0 100 100" className="w-full h-full text-zinc-400">
+                      <rect width="100" height="100" fill="#1f242d" />
+                      <circle cx="50" cy="38" r="17" fill="#64748b" />
+                      <path d="M22,86 C22,66 35,58 50,58 C65,58 78,66 78,86 Z" fill="#64748b" />
+                    </svg>
+                  </div>
+                )
               ) : layer.type === "video" ? (
                 <video
                   src={layer.url || layer.content}
                   autoPlay
                   loop
                   muted
-                  className={`w-full h-auto rounded ${
+                  className={`w-full h-auto rounded-[12px] ${
                     isSelected ? "ring-2 ring-purple-500" : ""
                   }`}
                   style={{ opacity: layer.opacity ?? 1 }}
@@ -921,10 +1117,13 @@ export default function DisplayCanvas({
                     fontSize: layer.fontSize || "2vw",
                     fontFamily: layer.fontFamily || "sans-serif",
                     textAlign: layer.textAlign || "center",
+                    textShadow: layer.shadowEnabled ? formatLayerShadow(layer) : "none",
                   }}
                 >
                   {layer.text || layer.content || ""}
                 </div>
+              ) : layer.type === "shape" ? (
+                renderLiveDesignShape(layer)
               ) : null}
             </div>
           );

@@ -50,6 +50,8 @@ import {
 import SwitcherCameraTile from "./SwitcherCameraTile";
 import SwitcherMonitorTile from "./SwitcherMonitorTile";
 import SwitcherProgramCanvas from "./SwitcherProgramCanvas";
+import LiveDesignStudioModal from "./LiveDesignStudioModal";
+import LiveStudioControlsRack from "./LiveStudioControlsRack";
 import localCameraManager from "./LocalCameraManager";
 import { broadcastAudioBus } from "./broadcastAudioBus";
 
@@ -91,8 +93,8 @@ export const DEFAULT_BROADCAST_CONFIG = {
     style: DEFAULT_LOWER_THIRD_STYLE,
   },
   bibleLowerThird: {
-    enabled: true,
-    autoTrigger: true,
+    enabled: false,
+    autoTrigger: false,
     currentRef: "John 3:16",
     currentText: "For God so loved the world, that he gave his only begotten Son, that whosoever believeth in him should not perish, but have everlasting life.",
     version: "KJV",
@@ -108,6 +110,7 @@ export const DEFAULT_BROADCAST_CONFIG = {
     speed: "medium",
   },
   layers: [],
+  activeStudioControls: [],
 };
 
 export const normalizeBroadcastConfig = (input) => {
@@ -131,12 +134,15 @@ export const normalizeBroadcastConfig = (input) => {
     bibleLowerThird: {
       ...DEFAULT_BROADCAST_CONFIG.bibleLowerThird,
       ...(cfg.bibleLowerThird && typeof cfg.bibleLowerThird === "object" ? cfg.bibleLowerThird : {}),
+      // Fresh config or load should never start with bible scripture pinned on screen
+      isShowing: Boolean(cfg.bibleLowerThird?.isShowing),
     },
     ticker: {
       ...DEFAULT_BROADCAST_CONFIG.ticker,
       ...(cfg.ticker && typeof cfg.ticker === "object" ? cfg.ticker : {}),
     },
     layers: Array.isArray(cfg.layers) ? cfg.layers : DEFAULT_BROADCAST_CONFIG.layers,
+    activeStudioControls: Array.isArray(cfg.activeStudioControls) ? cfg.activeStudioControls : DEFAULT_BROADCAST_CONFIG.activeStudioControls,
   };
 };
 
@@ -173,17 +179,6 @@ export default function LiveSwitcherController() {
   const [broadcastConfig, setBroadcastConfig] = useState(DEFAULT_BROADCAST_CONFIG);
   const cfg = useMemo(() => normalizeBroadcastConfig(broadcastConfig), [broadcastConfig]);
   const [isStudioModalOpen, setIsStudioModalOpen] = useState(false);
-  const [studioModalTab, setStudioModalTab] = useState("layers"); // "layers" | "designer" | "media" | "scale"
-  const [selectedStudioLayerId, setSelectedStudioLayerId] = useState("lowerThird");
-  const [studioMediaFiles, setStudioMediaFiles] = useState([]);
-  const [isLoadingStudioMedia, setIsLoadingStudioMedia] = useState(false);
-  const studioCanvasRef = useRef(null);
-
-  // Interactive dragging & resizing state (Presentation-style Canvas)
-  const [isStudioDragging, setIsStudioDragging] = useState(false);
-  const [studioResizeHandle, setStudioResizeHandle] = useState(null);
-  const [studioDragStart, setStudioDragStart] = useState({ mouseX: 0, mouseY: 0, objX: 50, objY: 50, initialWidth: 20 });
-  const [studioDraggingId, setStudioDraggingId] = useState(null);
 
   // ── Native RTMP / SRT Broadcast Engine (P0-01) & Recording (P0-05) ────────
   const [showBroadcastModal, setShowBroadcastModal] = useState(false);
@@ -221,7 +216,22 @@ export default function LiveSwitcherController() {
   const [streamWidth, setStreamWidth] = useState(1280);
   const [streamHeight, setStreamHeight] = useState(720);
 
-  // Derived: true if any destination is currently streaming
+  const [isBroadcastSessionActive, setIsBroadcastSessionActive] = useState(false);
+  const isBroadcastSessionActiveRef = useRef(false);
+  useEffect(() => {
+    isBroadcastSessionActiveRef.current = isBroadcastSessionActive;
+  }, [isBroadcastSessionActive]);
+
+  // States where FFmpeg is alive or attempting transport and requires video frame feeding
+  const ACTIVE_STREAM_STATES = ['starting', 'connecting', 'encoding', 'transmitting', 'live', 'degraded', 'reconnecting'];
+  const isAnyDestinationActive = Object.values(multiStreamStatus).some(s =>
+    s && (s.isStreaming || ACTIVE_STREAM_STATES.includes((s.state || '').toLowerCase()))
+  );
+
+  // Permission to feed the encoder: active while session is starting, connecting, transmitting, or reconnecting
+  const isStreamArmed = isBroadcastSessionActive || isAnyDestinationActive;
+
+  // Actual confirmed media transmission: true ONLY when media is confirmed actively transmitting
   const isAnyStreaming = Object.values(multiStreamStatus).some(s => s?.isStreaming);
   // Legacy compat alias used in some places
   const isStreaming = isAnyStreaming;
@@ -270,7 +280,7 @@ export default function LiveSwitcherController() {
   useEffect(() => {
     const interval = setInterval(async () => {
       try {
-        if (window.electron?.Broadcast?.getMultiStatus) {
+        if (window.electron?.Broadcast?.getMultiStatus && isBroadcastSessionActiveRef.current) {
           const status = await window.electron.Broadcast.getMultiStatus();
           if (status) setMultiStreamStatus(status);
         }
@@ -298,6 +308,9 @@ export default function LiveSwitcherController() {
   const ensureAudioStreaming = async () => {
     try {
       broadcastAudioBus.initWebAudio();
+      if (typeof broadcastAudioBus.resume === "function") {
+        await broadcastAudioBus.resume();
+      }
       // If microphone stream isn't connected yet, try acquiring default mic
       if (!audioUnsubRef.current) {
         try {
@@ -323,7 +336,7 @@ export default function LiveSwitcherController() {
 
   const stopAudioStreamingIfIdle = () => {
     // Only stop if neither stream nor recording is active
-    if (!isAnyStreaming && !isRecordingProgram && audioUnsubRef.current) {
+    if (!isStreamArmed && !isRecordingProgram && audioUnsubRef.current) {
       audioUnsubRef.current();
       audioUnsubRef.current = null;
     }
@@ -331,8 +344,9 @@ export default function LiveSwitcherController() {
 
   // Start simulstream — spawns one FFmpeg process per enabled destination
   const toggleSimulstream = async () => {
-    if (isAnyStreaming) {
+    if (isStreamArmed) {
       try {
+        setIsBroadcastSessionActive(false);
         await window.electron?.Broadcast?.stopAll();
         setMultiStreamStatus({});
         stopAudioStreamingIfIdle();
@@ -359,25 +373,41 @@ export default function LiveSwitcherController() {
 
         saveDestinations(destinations);
 
-        const destConfigs = enabledDests.map(d => ({
-          id: d.id,
-          label: d.label,
-          streamUrl: d.key
-            ? (d.url.endsWith('/') ? `${d.url}${d.key}` : `${d.url}/${d.key}`)
-            : d.url,
-          videoBitrateKbps: d.bitrate || streamBitrate,
-        }));
+        const destConfigs = enabledDests.map(d => {
+          const url = (d.url || '').toLowerCase();
+          const label = (d.label || '').toLowerCase();
+          const isFb = label.includes('facebook') || url.includes('facebook.com') || url.includes('fbcdn.net');
+          return {
+            id: d.id,
+            label: d.label,
+            platform: isFb ? 'facebook' : (url.includes('youtube') ? 'youtube' : 'custom'),
+            isFacebook: isFb,
+            streamUrl: d.key
+              ? (d.url.endsWith('/') ? `${d.url}${d.key}` : `${d.url}/${d.key}`)
+              : d.url,
+            videoBitrateKbps: d.bitrate || streamBitrate,
+          };
+        });
 
+        setIsBroadcastSessionActive(true);
         const res = await window.electron?.Broadcast?.startMulti(
           destConfigs,
           { width: streamWidth, height: streamHeight, fps: 30 }
         );
 
-        if (!res?.ok) throw new Error(res?.error || "Broadcast could not start.");
+        if (!res?.ok) {
+          setIsBroadcastSessionActive(false);
+          throw new Error(res?.error || "Broadcast could not start.");
+        }
         if (res && res.ok) {
+          if (window.electron?.Broadcast?.getMultiStatus) {
+            const status = await window.electron.Broadcast.getMultiStatus();
+            if (status) setMultiStreamStatus(status);
+          }
           await ensureAudioStreaming();
         }
       } catch (e) {
+        setIsBroadcastSessionActive(false);
         reportActionError(e);
       }
     }
@@ -681,6 +711,7 @@ export default function LiveSwitcherController() {
       if (patch.bibleLowerThird) next.bibleLowerThird = { ...base.bibleLowerThird, ...patch.bibleLowerThird };
       if (patch.ticker) next.ticker = { ...base.ticker, ...patch.ticker };
       if (patch.layers) next.layers = patch.layers;
+      if (patch.activeStudioControls) next.activeStudioControls = patch.activeStudioControls;
       return next;
     });
     if (window.electron?.Switcher?.updateBroadcastConfig) {
@@ -689,173 +720,9 @@ export default function LiveSwitcherController() {
   }, []);
 
   // ── Presentation-Style Media & Layer Handlers ────────────────────────────────
-  const refreshStudioMedia = useCallback(async () => {
-    if (window.electron?.Media?.list) {
-      try {
-        setIsLoadingStudioMedia(true);
-        const files = await window.electron.Media.list();
-        if (Array.isArray(files)) {
-          setStudioMediaFiles(files.filter((f) => {
-            const clean = String(f).toLowerCase().split("?")[0].split("#")[0];
-            return clean.endsWith(".png") || clean.endsWith(".jpg") || clean.endsWith(".jpeg") || clean.endsWith(".webp") || clean.endsWith(".gif") || clean.endsWith(".svg");
-          }));
-        }
-      } catch (err) {
-        console.warn("Failed to list studio media:", err);
-      } finally {
-        setIsLoadingStudioMedia(false);
-      }
-    }
-  }, []);
-
-  const handleImportMediaForStudio = useCallback(async () => {
-    if (window.electron?.Media?.import) {
-      try {
-        const result = await window.electron.Media.import();
-        if (result?.files && result.files.length > 0) {
-          const first = result.files[0];
-          handleAddImageLayer(first.url || first.path, first.name || "Imported Image");
-          await refreshStudioMedia();
-        }
-      } catch (err) {
-        console.warn("Import media error:", err);
-      }
-    }
-  }, [refreshStudioMedia]);
-
-  const handleAddImageLayer = useCallback((url, name) => {
-    const id = `img-${Date.now()}`;
-    const newLayer = {
-      id,
-      type: "image",
-      name: name || "Image Layer",
-      content: url,
-      x: 82,
-      y: 18,
-      style: {
-        width: 18,
-        opacity: 1,
-        borderRadius: 12,
-      },
-    };
-    const nextLayers = [newLayer, ...(cfg.layers || [])];
-    handleUpdateBroadcastConfig({ layers: nextLayers });
-    setSelectedStudioLayerId(id);
-    showFeedback(`Added "${newLayer.name}" to live screen`, true);
-  }, [cfg.layers, handleUpdateBroadcastConfig]);
-
-  const handleRemoveStudioLayer = useCallback((id) => {
-    const nextLayers = (cfg.layers || []).filter((l) => l.id !== id);
-    handleUpdateBroadcastConfig({ layers: nextLayers });
-    if (selectedStudioLayerId === id) {
-      setSelectedStudioLayerId(nextLayers[0]?.id || "lowerThird");
-    }
-    showFeedback("Layer removed", true);
-  }, [cfg.layers, selectedStudioLayerId, handleUpdateBroadcastConfig]);
-
-  const handleMoveStudioLayer = useCallback((index, direction) => {
-    const arr = [...(cfg.layers || [])];
-    const targetIdx = direction === "up" ? index - 1 : index + 1;
-    if (targetIdx < 0 || targetIdx >= arr.length) return;
-    const [moved] = arr.splice(index, 1);
-    arr.splice(targetIdx, 0, moved);
-    handleUpdateBroadcastConfig({ layers: arr });
-  }, [cfg.layers, handleUpdateBroadcastConfig]);
-
-  const handleStudioMouseDown = useCallback((e, id, handle = null) => {
-    e.stopPropagation();
-    setSelectedStudioLayerId(id);
-    setStudioDraggingId(id);
-
-    let targetObj = null;
-    let w = 20;
-    if (id.startsWith("img-")) {
-      targetObj = (cfg.layers || []).find((l) => l.id === id);
-      w = typeof targetObj?.style?.width === "number" ? targetObj.style.width : 18;
-    } else if (id === "lowerThird") {
-      targetObj = cfg.lowerThird;
-      w = typeof targetObj?.width === "number" ? targetObj.width : 55;
-    } else if (id === "bible") {
-      targetObj = cfg.bibleLowerThird;
-      w = typeof targetObj?.width === "number" ? targetObj.width : 90;
-    }
-
-    const curX = targetObj?.x ?? 50;
-    const curY = targetObj?.y ?? 50;
-
-    if (handle) {
-      setStudioResizeHandle(handle);
-      setIsStudioDragging(false);
-      setStudioDragStart({
-        mouseX: e.clientX,
-        mouseY: e.clientY,
-        initialWidth: w,
-        objX: curX,
-        objY: curY,
-      });
-    } else {
-      setStudioResizeHandle(null);
-      setIsStudioDragging(true);
-      setStudioDragStart({
-        mouseX: e.clientX,
-        mouseY: e.clientY,
-        objX: curX,
-        objY: curY,
-      });
-    }
-  }, [cfg.layers, cfg.lowerThird, cfg.bibleLowerThird]);
-
-  const handleStudioMouseMove = useCallback((e) => {
-    if (!studioDraggingId || !studioCanvasRef.current) return;
-    const rect = studioCanvasRef.current.getBoundingClientRect();
-    const deltaX = e.clientX - studioDragStart.mouseX;
-    const deltaXPct = (deltaX / rect.width) * 100;
-    const deltaYPct = ((e.clientY - studioDragStart.mouseY) / rect.height) * 100;
-
-    if (studioResizeHandle) {
-      const isLeft = studioResizeHandle.includes("w") || studioResizeHandle === "ml";
-      const mult = isLeft ? -1 : 1;
-      const baseW = studioDragStart.initialWidth || 20;
-      const newWidth = Math.max(5, Math.min(100, Math.round(baseW + deltaXPct * mult)));
-
-      if (studioDraggingId.startsWith("img-")) {
-        const nextLayers = (cfg.layers || []).map((l) =>
-          l.id === studioDraggingId ? { ...l, style: { ...l.style, width: newWidth } } : l
-        );
-        handleUpdateBroadcastConfig({ layers: nextLayers });
-      } else if (studioDraggingId === "lowerThird") {
-        handleUpdateBroadcastConfig({ lowerThird: { ...cfg.lowerThird, width: newWidth } });
-      } else if (studioDraggingId === "bible") {
-        handleUpdateBroadcastConfig({ bibleLowerThird: { ...cfg.bibleLowerThird, width: newWidth } });
-      }
-    } else if (isStudioDragging) {
-      const newX = Math.max(5, Math.min(95, Math.round(studioDragStart.objX + deltaXPct)));
-      const newY = Math.max(5, Math.min(95, Math.round(studioDragStart.objY + deltaYPct)));
-
-      if (studioDraggingId.startsWith("img-")) {
-        const nextLayers = (cfg.layers || []).map((l) =>
-          l.id === studioDraggingId ? { ...l, x: newX, y: newY } : l
-        );
-        handleUpdateBroadcastConfig({ layers: nextLayers });
-      } else if (studioDraggingId === "lowerThird") {
-        handleUpdateBroadcastConfig({ lowerThird: { ...cfg.lowerThird, x: newX, y: newY } });
-      } else if (studioDraggingId === "bible") {
-        handleUpdateBroadcastConfig({ bibleLowerThird: { ...cfg.bibleLowerThird, x: newX, y: newY } });
-      }
-    }
-  }, [studioDraggingId, studioResizeHandle, isStudioDragging, studioDragStart, cfg.layers, cfg.lowerThird, cfg.bibleLowerThird, handleUpdateBroadcastConfig]);
-
-  const handleStudioMouseUp = useCallback(() => {
-    setIsStudioDragging(false);
-    setStudioResizeHandle(null);
-    setStudioDraggingId(null);
-  }, []);
-
-  useEffect(() => {
-    if (isStudioModalOpen) {
-      refreshStudioMedia();
-    }
-  }, [isStudioModalOpen, refreshStudioMedia]);
+  // Program On-Air Overlay status
+  const isOverlayOnProgram = (Array.isArray(cfg.layers) && cfg.layers.length > 0) ||
+    (Array.isArray(cfg.activeStudioControls) && cfg.activeStudioControls.some(c => c && c.status !== "hidden"));
 
   const showFeedback = (text, ok) => {
     setFeedback({ text, ok });
@@ -1384,15 +1251,15 @@ export default function LiveSwitcherController() {
                       <PiTelevision size={14} />
                     </div>
                     <span className="text-[10px] font-black uppercase tracking-wider text-purple-300">
-                      STUDIO OVERLAYS
+                      LIVE DESIGN STUDIO
                     </span>
                   </div>
 
                   <div className="flex items-center gap-1">
-                    {(cfg.logo.enabled || cfg.lowerThird.enabled || cfg.bibleLowerThird.isShowing || cfg.ticker.enabled || cfg.scale < 1.0) ? (
+                    {(isOverlayOnProgram || cfg.logo.enabled || cfg.lowerThird.enabled || cfg.bibleLowerThird.isShowing || cfg.ticker.enabled || cfg.scale < 1.0) ? (
                       <span className="flex items-center gap-1 px-2 py-0.5 rounded-[12px] bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[8px] font-bold">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        ACTIVE
+                        ON AIR
                       </span>
                     ) : (
                       <span className="px-2 py-0.5 rounded-[12px] bg-white/5 border border-white/10 text-white/40 text-[8px] font-bold">
@@ -1405,10 +1272,10 @@ export default function LiveSwitcherController() {
                 {/* Center visual: Click action & description */}
                 <div className="my-auto z-10 flex flex-col items-center justify-center text-center px-2 py-1">
                   <span className="text-white font-black text-sm tracking-wide group-hover:text-purple-200 transition-colors">
-                    Broadcast Studio Engine
+                    Live Design Studio
                   </span>
                   <span className="text-white/50 text-[10px] mt-0.5">
-                    Screen Scaling · Logos · Scripture Auto-Trigger · Ticker
+                    Live Studio · Lower Thirds · Image Overlays · Live Output
                   </span>
                 </div>
 
@@ -1416,19 +1283,25 @@ export default function LiveSwitcherController() {
                 <div className="z-10 w-full pt-1.5 border-t border-white/10 flex items-center justify-between text-[9px]">
                   <div className="flex items-center gap-1.5">
                     <span className="px-1.5 py-0.5 rounded-[12px] bg-purple-500/20 text-purple-200 font-bold border border-purple-500/30">
-                      Scale: {Math.round(cfg.scale * 100)}%
+                      Air Layers: {cfg.layers?.length || 0}
                     </span>
-                    <span className={`px-1.5 py-0.5 rounded-[12px] font-bold border ${cfg.bibleLowerThird.autoTrigger ? "bg-amber-500/20 border-amber-500/30 text-amber-300" : "bg-white/5 border-white/10 text-white/40"}`}>
-                      ⚡ Bible: {cfg.bibleLowerThird.autoTrigger ? "Auto ON" : "Off"}
+                    <span className={`px-1.5 py-0.5 rounded-[12px] font-bold border ${isOverlayOnProgram ? "bg-emerald-500/20 border-emerald-500/30 text-emerald-300" : "bg-white/5 border-white/10 text-white/40"}`}>
+                      Air: {isOverlayOnProgram ? "Active" : "Hidden"}
                     </span>
                   </div>
                   <span className="px-2 py-0.5 rounded-[12px] bg-purple-600 text-white font-bold group-hover:bg-purple-500 transition-colors">
-                    Open Studio Modal ↗
+                    Open Live Studio ↗
                   </span>
                 </div>
               </ActionButton>
             </div>
           </div>
+
+          {/* ── Studio Live Controls Rack ────────────────────────────────────────── */}
+          <LiveStudioControlsRack
+            onOpenStudio={() => setIsStudioModalOpen(true)}
+            showFeedback={showFeedback}
+          />
 
           {/* ── Broadcast Mixing & T-Bar Fader Deck (Below Screens) ──────────── */}
           <div className="bg-white/[0.04] border border-white/10 rounded-[12px] p-3.5 flex flex-col gap-2.5 shrink-0 mt-1">
@@ -1568,8 +1441,8 @@ export default function LiveSwitcherController() {
               transitionSetting={transitionSetting}
               isSharingActive={isSharingActive}
               broadcastConfig={cfg}
-              isBroadcastActive={isAnyStreaming || isRecordingProgram}
-              isStreamingActive={isAnyStreaming}
+              isBroadcastActive={isStreamArmed || isRecordingProgram}
+              isStreamingActive={isStreamArmed}
               isRecordingActive={isRecordingProgram}
               outputWidth={streamWidth}
               outputHeight={streamHeight}
@@ -1822,6 +1695,9 @@ export default function LiveSwitcherController() {
                       {isStreaming && (
                         <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping inline-block" />
                       )}
+                      {!isStreaming && isStreamArmed && (
+                        <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse inline-block" />
+                      )}
                     </span>
                     <span className="text-[10px] text-white/40 block">
                       {isAnyStreaming
@@ -1840,6 +1716,14 @@ export default function LiveSwitcherController() {
                             const stateLabel = hasDegraded ? 'degraded' : hasLive ? 'live' : hasTransmitting ? 'transmitting' : 'active';
                             return `${activeCount} ${stateLabel} · ${avgFps != null ? avgFps + ' fps' : '— fps'} · ${totalKbps > 0 ? totalKbps.toFixed(0) + ' kbps' : '— kbps'}`;
                           })()
+                        : isStreamArmed
+                        ? (() => {
+                            const activeCount = Object.values(multiStreamStatus).filter(s => s && ACTIVE_STREAM_STATES.includes((s.state || '').toLowerCase())).length || 1;
+                            const isReconnecting = Object.values(multiStreamStatus).some(s => (s?.state || '').toLowerCase() === 'reconnecting');
+                            return isReconnecting
+                              ? `${activeCount} destination(s) reconnecting…`
+                              : `${activeCount} destination(s) connecting…`;
+                          })()
                         : "Configure RTMP/SRT Broadcast & Recording"}
                     </span>
                   </div>
@@ -1848,6 +1732,10 @@ export default function LiveSwitcherController() {
                   {isAnyStreaming ? (
                     <span className="text-[9px] font-black px-2.5 py-1 rounded-[12px] bg-rose-500 text-white uppercase tracking-wider animate-pulse shadow-md">
                       ● ON AIR
+                    </span>
+                  ) : isStreamArmed ? (
+                    <span className="text-[9px] font-bold px-2.5 py-1 rounded-[12px] bg-amber-500/20 border border-amber-500/40 text-amber-300 uppercase tracking-wider animate-pulse shadow-sm">
+                      CONNECTING
                     </span>
                   ) : (
                     <span className="text-[9px] font-bold px-2 py-1 rounded-[12px] bg-white/10 border border-white/20 text-white/80 uppercase tracking-wider hover:bg-white/20">
@@ -2131,1419 +2019,17 @@ export default function LiveSwitcherController() {
         document.body
       )}
 
-      {/* ── Broadcast Studio Engine & Presentation-Style Overlays Modal ──── */}
-      {isStudioModalOpen && typeof document !== "undefined" && createPortal(
-        <div
-          className="fixed inset-0 z-[9999] bg-black/90 backdrop-blur-md flex flex-col select-none animate-in fade-in duration-150"
-          onMouseUp={handleStudioMouseUp}
-          onMouseMove={handleStudioMouseMove}
-        >
-          <div className="w-full h-full bg-[#0d0b14] flex flex-col overflow-hidden">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-3 border-b border-white/10 bg-white/[0.02] shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-[12px] bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-400">
-                  <PiTelevision size={18} />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black text-white uppercase tracking-wider flex items-center gap-2">
-                    Live Broadcast Studio
-                    <span className="text-[9px] font-bold px-2 py-0.5 rounded-[12px] bg-purple-500/20 text-purple-300 border border-purple-500/30">
-                      PRESENTATION-STYLE OVERLAYS
-                    </span>
-                  </h3>
-                  <p className="text-[11px] text-white/40">
-                    Add images in layers, click & drag overlays on the screen, adjust speaker lower thirds, and scale frame.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 rounded-[12px] bg-emerald-500/10 border border-emerald-500/20 text-[11px] font-semibold text-emerald-300">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>Live Air Compositor Active • Synchronized</span>
-                </div>
-                <ActionButton
-                  onClick={() => setIsStudioModalOpen(false)}
-                  className="px-5 py-2 rounded-[12px] bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md active:scale-95 flex items-center gap-1.5"
-                >
-                  <PiCheck size={14} />
-                  <span>Done</span>
-                </ActionButton>
-                <ActionButton
-                  onClick={() => setIsStudioModalOpen(false)}
-                  className="p-2 rounded-[12px] bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-all"
-                  title="Close Studio Editor"
-                >
-                  <PiX size={16} />
-                </ActionButton>
-              </div>
-            </div>
-
-            {/* Modal Workspace Body (Row: Left Visual Canvas + Right Panels) */}
-            <div className="flex-1 min-h-0 flex gap-4 p-4 overflow-hidden">
-              {/* ── Left Column: 16:9 Canvas & Quick Adjuster ───────────────── */}
-              <div className="flex-1 flex flex-col min-w-0 min-h-0 gap-3">
-                {/* Max-sized 16:9 Canvas matching Presentation Screen */}
-                <div className="flex-1 min-h-0 relative flex items-center justify-center bg-black/40 rounded-[12px] border border-white/10 p-2 overflow-hidden">
-                  <div
-                    ref={studioCanvasRef}
-                    onMouseDown={() => setSelectedStudioLayerId(null)}
-                    className="aspect-video w-full max-h-full bg-black rounded-[12px] border border-white/10 relative overflow-hidden shadow-2xl flex items-center justify-center select-none"
-                    style={{ containerType: "size" }}
-                  >
-                  {/* Scaled Live Video Frame Container */}
-                  <div
-                    className="relative overflow-hidden transition-all duration-300 flex items-center justify-center bg-[#07060c]"
-                    style={{
-                      width: `${(cfg.scale || 1.0) * 100}%`,
-                      height: `${(cfg.scale || 1.0) * 100}%`,
-                      borderRadius: cfg.scale < 1.0 ? "12px" : "0px",
-                      border: cfg.scale < 1.0 ? "1.5px solid rgba(168, 85, 247, 0.4)" : "none",
-                      boxShadow: cfg.scale < 1.0 ? "0 0 30px rgba(0,0,0,0.8)" : "none",
-                    }}
-                  >
-                    {/* Live Screen Program Background / Video Stream */}
-                    {cameraStreams.get(effectiveProgramSourceId) ? (
-                      <video
-                        ref={(el) => {
-                          if (el && cameraStreams.get(effectiveProgramSourceId)) {
-                            el.srcObject = cameraStreams.get(effectiveProgramSourceId);
-                          }
-                        }}
-                        autoPlay
-                        playsInline
-                        muted
-                        className={`w-full h-full ${cfg.fitMode === "contain" ? "object-contain" : "object-cover"}`}
-                      />
-                    ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-[#100d1c] via-[#090812] to-black p-6 text-center">
-                        <div className="w-12 h-12 rounded-[12px] bg-white/[0.03] border border-white/10 flex items-center justify-center text-white/30 mb-2">
-                          <PiTelevision size={24} />
-                        </div>
-                        <p className="text-xs font-bold text-white/70 uppercase tracking-wider">
-                          Live Program Screen ({getSourceName(effectiveProgramSourceId)})
-                        </p>
-                        <p className="text-[10px] text-white/30 mt-1 max-w-sm">
-                          Drag and resize overlay layers directly on this 16:9 broadcast canvas.
-                        </p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* ── Custom Image Layers (Rendered & Draggable on Canvas) ───── */}
-                  {Array.isArray(cfg.layers) && cfg.layers.map((layer, idx) => {
-                    if (!layer || !layer.content) return null;
-                    const isSelected = selectedStudioLayerId === layer.id;
-                    const zIndex = isSelected ? 100 : 20 + idx;
-
-                    return (
-                      <div
-                        key={layer.id}
-                        onMouseDown={(e) => handleStudioMouseDown(e, layer.id)}
-                        className="absolute cursor-move select-none group"
-                        style={{
-                          left: `${layer.x ?? 50}%`,
-                          top: `${layer.y ?? 50}%`,
-                          transform: "translate(-50%, -50%)",
-                          width: `${layer.style?.width || 18}%`,
-                          opacity: layer.style?.opacity ?? 1,
-                          zIndex,
-                        }}
-                      >
-                        {/* 8-Point Transform Handles when selected */}
-                        {isSelected && (
-                          <>
-                            <div className="absolute -inset-2 border-2 border-purple-500 border-dashed rounded-[12px] pointer-events-none z-50 shadow-sm" />
-                            {["nw", "ne", "sw", "se", "ml", "mr", "mt", "mb"].map((h) => {
-                              const pos = {
-                                nw: "-top-2 -left-2 cursor-nwse-resize",
-                                ne: "-top-2 -right-2 cursor-nesw-resize",
-                                sw: "-bottom-2 -left-2 cursor-nesw-resize",
-                                se: "-bottom-2 -right-2 cursor-nwse-resize",
-                                ml: "top-1/2 -translate-y-1/2 -left-2 cursor-ew-resize",
-                                mr: "top-1/2 -translate-y-1/2 -right-2 cursor-ew-resize",
-                                mt: "left-1/2 -translate-x-1/2 -top-2 cursor-ns-resize",
-                                mb: "left-1/2 -translate-x-1/2 -bottom-2 cursor-ns-resize",
-                              }[h];
-                              return (
-                                <div
-                                  key={h}
-                                  onMouseDown={(e) => handleStudioMouseDown(e, layer.id, h)}
-                                  className={`absolute w-3.5 h-3.5 bg-purple-500 border-2 border-white rounded-full z-50 shadow-md ${pos}`}
-                                />
-                              );
-                            })}
-                          </>
-                        )}
-                        <img
-                          src={layer.content}
-                          alt={layer.name || "Layer"}
-                          className="w-full h-auto object-contain pointer-events-none select-none shadow-xl"
-                          style={{ borderRadius: "12px" }}
-                        />
-                      </div>
-                    );
-                  })}
-
-                  {/* ── Speaker Lower Third Layer on Canvas ─────────────────────── */}
-                  {cfg.lowerThird?.enabled && (
-                    <div
-                      onMouseDown={(e) => handleStudioMouseDown(e, "lowerThird")}
-                      className="absolute cursor-move select-none group"
-                      style={{
-                        left: `${cfg.lowerThird.x ?? 22}%`,
-                        top: `${cfg.lowerThird.y ?? 88}%`,
-                        transform: "translate(-50%, -50%)",
-                        width: `${cfg.lowerThird.width ?? 36}%`,
-                        zIndex: selectedStudioLayerId === "lowerThird" ? 100 : 35,
-                      }}
-                    >
-                      {selectedStudioLayerId === "lowerThird" && (
-                        <>
-                          <div className="absolute -inset-2 border-2 border-purple-500 border-dashed rounded-[12px] pointer-events-none z-50 shadow-sm" />
-                          {["nw", "ne", "sw", "se", "ml", "mr"].map((h) => {
-                            const pos = {
-                              nw: "-top-2 -left-2 cursor-nwse-resize",
-                              ne: "-top-2 -right-2 cursor-nesw-resize",
-                              sw: "-bottom-2 -left-2 cursor-nesw-resize",
-                              se: "-bottom-2 -right-2 cursor-nwse-resize",
-                              ml: "top-1/2 -translate-y-1/2 -left-2 cursor-ew-resize",
-                              mr: "top-1/2 -translate-y-1/2 -right-2 cursor-ew-resize",
-                            }[h];
-                            return (
-                              <div
-                                key={h}
-                                onMouseDown={(e) => handleStudioMouseDown(e, "lowerThird", h)}
-                                className={`absolute w-3.5 h-3.5 bg-purple-500 border-2 border-white rounded-full z-50 shadow-md ${pos}`}
-                              />
-                            );
-                          })}
-                        </>
-                      )}
-                      {renderCustomLowerThirdUI(cfg.lowerThird)}
-                    </div>
-                  )}
-
-                  {/* ── Bible Scripture Lower Third Layer on Canvas ─────────────── */}
-                  {cfg.bibleLowerThird?.enabled && cfg.bibleLowerThird?.isShowing && (
-                    <div
-                      onMouseDown={(e) => handleStudioMouseDown(e, "bible")}
-                      className="absolute cursor-move select-none group"
-                      style={{
-                        left: `${cfg.bibleLowerThird.x ?? 50}%`,
-                        top: `${cfg.bibleLowerThird.y ?? 85}%`,
-                        transform: "translate(-50%, -50%)",
-                        width: `${cfg.bibleLowerThird.width ?? 90}%`,
-                        zIndex: selectedStudioLayerId === "bible" ? 100 : 40,
-                      }}
-                    >
-                      {selectedStudioLayerId === "bible" && (
-                        <>
-                          <div className="absolute -inset-2 border-2 border-amber-500 border-dashed rounded-[12px] pointer-events-none z-50 shadow-sm" />
-                          {["nw", "ne", "sw", "se", "ml", "mr"].map((h) => {
-                            const pos = {
-                              nw: "-top-2 -left-2 cursor-nwse-resize",
-                              ne: "-top-2 -right-2 cursor-nesw-resize",
-                              sw: "-bottom-2 -left-2 cursor-nesw-resize",
-                              se: "-bottom-2 -right-2 cursor-nwse-resize",
-                              ml: "top-1/2 -translate-y-1/2 -left-2 cursor-ew-resize",
-                              mr: "top-1/2 -translate-y-1/2 -right-2 cursor-ew-resize",
-                            }[h];
-                            return (
-                              <div
-                                key={h}
-                                onMouseDown={(e) => handleStudioMouseDown(e, "bible", h)}
-                                className={`absolute w-3.5 h-3.5 bg-amber-500 border-2 border-white rounded-full z-50 shadow-md ${pos}`}
-                              />
-                            );
-                          })}
-                        </>
-                      )}
-                      <div className="flex flex-col rounded-[12px] bg-[#0c0a14]/95 border-2 border-amber-500/50 shadow-2xl p-3 backdrop-blur-md">
-                        <div className="flex items-center justify-between mb-1">
-                          <div className="flex items-center gap-2">
-                            <span className="text-amber-300 font-black text-xs tracking-wide">
-                              📖 {cfg.bibleLowerThird.currentRef || "Scripture Reference"}
-                            </span>
-                            <span className="text-[9px] font-bold px-1.5 py-0.2 rounded-[12px] bg-amber-400/20 text-amber-200 border border-amber-400/30">
-                              {cfg.bibleLowerThird.version || "KJV"}
-                            </span>
-                          </div>
-                          <span className="text-[9px] font-bold text-amber-400/80 uppercase">
-                            LIVE ON AIR
-                          </span>
-                        </div>
-                        <p className="text-[11px] font-medium text-white/95 leading-relaxed line-clamp-2">
-                          "{cfg.bibleLowerThird.currentText || "Scripture verse body text..."}"
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ── Live Announcement Ticker Banner on Canvas ───────────────── */}
-                  {cfg.ticker?.enabled && (
-                    <div
-                      onMouseDown={(e) => {
-                        e.stopPropagation();
-                        setSelectedStudioLayerId("ticker");
-                      }}
-                      className="absolute bottom-0 inset-x-0 bg-slate-950/95 border-t border-white/10 px-3 py-1.5 flex items-center gap-3 z-30 cursor-pointer"
-                    >
-                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded-[12px] bg-red-600 text-white tracking-wider">
-                        LIVE
-                      </span>
-                      <p className="text-xs font-semibold text-white/80 truncate">
-                        {cfg.ticker.text || "Live ticker announcement text..."}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-                {/* ── Selected Layer Adjuster Toolbar (Directly beneath canvas) ─ */}
-                <div className="bg-white/[0.03] border border-white/10 rounded-[12px] p-3 flex flex-col gap-2 shrink-0">
-                  {selectedStudioLayerId && selectedStudioLayerId.startsWith("img-") ? (
-                    (() => {
-                      const curLayer = (cfg.layers || []).find((l) => l.id === selectedStudioLayerId);
-                      if (!curLayer) return null;
-
-                      return (
-                        <div className="flex flex-col gap-2.5">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <div className="w-8 h-8 rounded-[12px] bg-black/50 border border-white/10 overflow-hidden flex items-center justify-center shrink-0">
-                                <img src={curLayer.content} alt="Thumb" className="w-full h-full object-contain" />
-                              </div>
-                              <div>
-                                <span className="text-xs font-bold text-white block truncate max-w-[200px]">
-                                  {curLayer.name || "Image Layer"}
-                                </span>
-                                <span className="text-[10px] text-white/40">
-                                  Position ({curLayer.x ?? 50}%, {curLayer.y ?? 50}%) • Width {curLayer.style?.width || 18}%
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Corner Snap Presets */}
-                            <div className="flex items-center gap-1">
-                              <span className="text-[10px] text-white/40 mr-1 font-semibold">Snap:</span>
-                              {[
-                                { label: "TL", x: 15, y: 15 },
-                                { label: "TR", x: 85, y: 15 },
-                                { label: "BL", x: 15, y: 85 },
-                                { label: "BR", x: 85, y: 85 },
-                                { label: "Center", x: 50, y: 50 },
-                              ].map(({ label, x, y }) => (
-                                <ActionButton
-                                  key={label}
-                                  onClick={() => {
-                                    const nextLayers = (cfg.layers || []).map((l) =>
-                                      l.id === curLayer.id ? { ...l, x, y } : l
-                                    );
-                                    handleUpdateBroadcastConfig({ layers: nextLayers });
-                                  }}
-                                  className="px-2 py-1 rounded-[12px] bg-white/5 hover:bg-white/15 text-white/70 hover:text-white text-[10px] font-bold transition-all border border-white/5"
-                                >
-                                  {label}
-                                </ActionButton>
-                              ))}
-
-                              <ActionButton
-                                onClick={() => handleRemoveStudioLayer(curLayer.id)}
-                                className="ml-2 px-2.5 py-1 rounded-[12px] bg-red-500/15 hover:bg-red-500/25 text-red-300 text-[10px] font-bold transition-all border border-red-500/30 flex items-center gap-1"
-                              >
-                                <PiTrash size={12} />
-                                <span>Delete</span>
-                              </ActionButton>
-                            </div>
-                          </div>
-
-                          {/* Sliders: Width & Opacity */}
-                          <div className="grid grid-cols-2 gap-4 pt-2 border-t border-white/5">
-                            <div className="flex items-center gap-2">
-                              <span className="text-[11px] text-white/50 w-24 shrink-0 font-semibold">
-                                Width: <b className="text-white font-mono">{curLayer.style?.width || 18}%</b>
-                              </span>
-                              <input
-                                type="range"
-                                min="5"
-                                max="100"
-                                value={curLayer.style?.width || 18}
-                                onChange={(e) => {
-                                  const nextLayers = (cfg.layers || []).map((l) =>
-                                    l.id === curLayer.id ? { ...l, style: { ...l.style, width: parseInt(e.target.value, 10) } } : l
-                                  );
-                                  handleUpdateBroadcastConfig({ layers: nextLayers });
-                                }}
-                                className="flex-1 accent-purple-500 h-1 bg-white/20 rounded-[12px] cursor-pointer"
-                              />
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-[11px] text-white/50 w-24 shrink-0 font-semibold">
-                                Opacity: <b className="text-white font-mono">{Math.round((curLayer.style?.opacity ?? 1) * 100)}%</b>
-                              </span>
-                              <input
-                                type="range"
-                                min="10"
-                                max="100"
-                                value={Math.round((curLayer.style?.opacity ?? 1) * 100)}
-                                onChange={(e) => {
-                                  const nextLayers = (cfg.layers || []).map((l) =>
-                                    l.id === curLayer.id ? { ...l, style: { ...l.style, opacity: parseInt(e.target.value, 10) / 100 } } : l
-                                  );
-                                  handleUpdateBroadcastConfig({ layers: nextLayers });
-                                }}
-                                className="flex-1 accent-purple-500 h-1 bg-white/20 rounded-[12px] cursor-pointer"
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })()
-                  ) : selectedStudioLayerId === "lowerThird" ? (
-                    <div className="flex flex-col gap-2.5">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <PiIdentificationCard size={18} className="text-purple-400" />
-                          <span className="text-xs font-bold text-white">Speaker Lower Third Overlay</span>
-                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-[12px] border ${
-                            cfg.lowerThird.enabled
-                              ? "bg-emerald-500/20 border-emerald-500/30 text-emerald-300"
-                              : "bg-white/5 border-white/10 text-white/40"
-                          }`}>
-                            {cfg.lowerThird.enabled ? "ON AIR" : "DISABLED"}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <ActionButton
-                            onClick={() => {
-                              setStudioModalTab("designer");
-                              setIsStudioModalOpen(true);
-                            }}
-                            className="px-3 py-1 rounded-[12px] bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-bold transition-all shadow-md shadow-purple-900/30 flex items-center gap-1.5"
-                          >
-                            <PiPaintBrush size={13} />
-                            <span>🎨 Open Designer</span>
-                          </ActionButton>
-                          <ActionButton
-                            onClick={() => handleUpdateBroadcastConfig({ lowerThird: { ...cfg.lowerThird, x: 22, y: 88, width: 36 } })}
-                            className="px-2.5 py-1 rounded-[12px] bg-white/5 hover:bg-white/15 text-white/70 text-[10px] font-bold transition-all border border-white/5"
-                          >
-                            Reset (Compact)
-                          </ActionButton>
-                          <ActionButton
-                            onClick={() => handleUpdateBroadcastConfig({ lowerThird: { ...cfg.lowerThird, enabled: !cfg.lowerThird.enabled } })}
-                            className={`px-3 py-1 rounded-[12px] text-xs font-bold transition-all border ${
-                              cfg.lowerThird.enabled
-                                ? "bg-red-500/20 border-red-500/40 text-red-300 hover:bg-red-500/30"
-                                : "bg-emerald-600 hover:bg-emerald-500 text-white"
-                            }`}
-                          >
-                            {cfg.lowerThird.enabled ? "Hide From Air" : "Show On Air"}
-                          </ActionButton>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-4 gap-2.5 pt-1">
-                        <div>
-                          <label className="text-[10px] font-bold text-white/50 block mb-0.5">Presenter Name</label>
-                          <input
-                            type="text"
-                            value={cfg.lowerThird.title}
-                            onChange={(e) => handleUpdateBroadcastConfig({ lowerThird: { ...cfg.lowerThird, title: e.target.value } })}
-                            placeholder="e.g. Pastor John Doe"
-                            className="w-full px-2.5 py-1.5 rounded-[12px] bg-black/40 border border-white/15 text-xs text-white placeholder-white/20 focus:outline-none focus:border-purple-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold text-white/50 block mb-0.5">Role / Subtitle</label>
-                          <input
-                            type="text"
-                            value={cfg.lowerThird.subtitle}
-                            onChange={(e) => handleUpdateBroadcastConfig({ lowerThird: { ...cfg.lowerThird, subtitle: e.target.value } })}
-                            placeholder="e.g. Senior Pastor"
-                            className="w-full px-2.5 py-1.5 rounded-[12px] bg-black/40 border border-white/15 text-xs text-white placeholder-white/20 focus:outline-none focus:border-purple-500"
-                          />
-                        </div>
-                        <div>
-                          <div className="flex items-center justify-between mb-0.5">
-                            <label className="text-[10px] font-bold text-white/50">Width</label>
-                            <span className="text-[10px] font-mono text-purple-300">{cfg.lowerThird.width || 36}%</span>
-                          </div>
-                          <input
-                            type="range"
-                            min="20"
-                            max="75"
-                            value={cfg.lowerThird.width || 36}
-                            onChange={(e) => handleUpdateBroadcastConfig({ lowerThird: { ...cfg.lowerThird, width: parseInt(e.target.value, 10) } })}
-                            className="w-full accent-purple-500 h-1 bg-white/20 rounded-[12px] cursor-pointer mt-2"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold text-white/50 block mb-0.5">Theme Quick Pick</label>
-                          <div className="grid grid-cols-3 gap-1">
-                            {[
-                              { id: "purple", label: "Purple" },
-                              { id: "gradient", label: "Gold" },
-                              { id: "minimal", label: "Dark" },
-                            ].map(({ id, label }) => (
-                              <ActionButton
-                                key={id}
-                                onClick={() => handleUpdateBroadcastConfig({ lowerThird: { ...cfg.lowerThird, theme: id } })}
-                                className={`py-1 rounded-[12px] text-[10px] font-bold border transition-all ${
-                                  cfg.lowerThird.theme === id
-                                    ? "bg-purple-600/30 border-purple-500/50 text-purple-200"
-                                    : "bg-white/[0.03] border-white/5 text-white/50"
-                                }`}
-                              >
-                                {label}
-                              </ActionButton>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : selectedStudioLayerId === "bible" ? (
-                    <div className="flex flex-col gap-2.5">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <PiBookOpen size={18} className="text-amber-400" />
-                          <span className="text-xs font-bold text-white">Bible Scripture Lower Third</span>
-                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-[12px] border ${
-                            cfg.bibleLowerThird.isShowing
-                              ? "bg-amber-500/20 border-amber-500/40 text-amber-300 animate-pulse"
-                              : "bg-white/5 border-white/10 text-white/40"
-                          }`}>
-                            {cfg.bibleLowerThird.isShowing ? "LIVE ON AIR" : "STANDBY"}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <label className="flex items-center gap-1.5 text-[11px] font-bold text-amber-200/90 cursor-pointer mr-2">
-                            <input
-                              type="checkbox"
-                              checked={cfg.bibleLowerThird.autoTrigger}
-                              onChange={(e) => handleUpdateBroadcastConfig({ bibleLowerThird: { ...cfg.bibleLowerThird, autoTrigger: e.target.checked } })}
-                              className="rounded accent-amber-500"
-                            />
-                            <span>Auto-Trigger on Scripture Mention</span>
-                          </label>
-
-                          <ActionButton
-                            onClick={() => handleUpdateBroadcastConfig({ bibleLowerThird: { ...cfg.bibleLowerThird, isShowing: !cfg.bibleLowerThird.isShowing } })}
-                            className={`px-4 py-1.5 rounded-[12px] text-xs font-black transition-all border shadow-md active:scale-95 ${
-                              cfg.bibleLowerThird.isShowing
-                                ? "bg-red-600 hover:bg-red-500 text-white border-red-400"
-                                : "bg-amber-600 hover:bg-amber-500 text-white border-amber-400"
-                            }`}
-                          >
-                            {cfg.bibleLowerThird.isShowing ? "Hide From Air" : "Show Scripture On Air Now"}
-                          </ActionButton>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-4 gap-2.5 pt-1">
-                        <div>
-                          <label className="text-[10px] font-bold text-white/50 block mb-0.5">Reference</label>
-                          <input
-                            type="text"
-                            value={cfg.bibleLowerThird.currentRef}
-                            onChange={(e) => handleUpdateBroadcastConfig({ bibleLowerThird: { ...cfg.bibleLowerThird, currentRef: e.target.value } })}
-                            placeholder="e.g. John 3:16"
-                            className="w-full px-2.5 py-1.5 rounded-[12px] bg-black/40 border border-white/15 text-xs text-white font-bold placeholder-white/20 focus:outline-none focus:border-amber-500"
-                          />
-                        </div>
-                        <div className="col-span-2">
-                          <label className="text-[10px] font-bold text-white/50 block mb-0.5">Verse Content</label>
-                          <input
-                            type="text"
-                            value={cfg.bibleLowerThird.currentText}
-                            onChange={(e) => handleUpdateBroadcastConfig({ bibleLowerThird: { ...cfg.bibleLowerThird, currentText: e.target.value } })}
-                            placeholder="Scripture verse body..."
-                            className="w-full px-2.5 py-1.5 rounded-[12px] bg-black/40 border border-white/15 text-xs text-white placeholder-white/20 focus:outline-none focus:border-amber-500"
-                          />
-                        </div>
-                        <div>
-                          <label className="text-[10px] font-bold text-white/50 block mb-0.5">Auto-Dismiss</label>
-                          <div className="grid grid-cols-3 gap-1">
-                            {[
-                              { sec: 10, label: "10s" },
-                              { sec: 15, label: "15s" },
-                              { sec: 0, label: "Manual" },
-                            ].map(({ sec, label }) => (
-                              <ActionButton
-                                key={sec}
-                                onClick={() => handleUpdateBroadcastConfig({ bibleLowerThird: { ...cfg.bibleLowerThird, autoDismissSec: sec } })}
-                                className={`py-1 rounded-[12px] text-[10px] font-bold border transition-all ${
-                                  cfg.bibleLowerThird.autoDismissSec === sec
-                                    ? "bg-amber-600/30 border-amber-500/50 text-amber-200"
-                                    : "bg-white/[0.03] border-white/5 text-white/50"
-                                }`}
-                              >
-                                {label}
-                              </ActionButton>
-                            ))}
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : selectedStudioLayerId === "ticker" ? (
-                    <div className="flex flex-col gap-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <PiMegaphone size={18} className="text-red-400" />
-                          <span className="text-xs font-bold text-white">Announcement Ticker</span>
-                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-[12px] border ${
-                            cfg.ticker.enabled
-                              ? "bg-emerald-500/20 border-emerald-500/30 text-emerald-300"
-                              : "bg-white/5 border-white/10 text-white/40"
-                          }`}>
-                            {cfg.ticker.enabled ? "ENABLED" : "DISABLED"}
-                          </span>
-                        </div>
-                        <ActionButton
-                          onClick={() => handleUpdateBroadcastConfig({ ticker: { ...cfg.ticker, enabled: !cfg.ticker.enabled } })}
-                          className="px-3 py-1 rounded-[12px] bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all"
-                        >
-                          {cfg.ticker.enabled ? "Disable Ticker" : "Enable Ticker"}
-                        </ActionButton>
-                      </div>
-                      <input
-                        type="text"
-                        value={cfg.ticker.text}
-                        onChange={(e) => handleUpdateBroadcastConfig({ ticker: { ...cfg.ticker, text: e.target.value } })}
-                        placeholder="e.g. Welcome to Church! • Offering & Tithing online at church.org/give"
-                        className="w-full px-2.5 py-1.5 rounded-[12px] bg-black/40 border border-white/15 text-xs text-white placeholder-white/20 focus:outline-none focus:border-red-500"
-                      />
-                    </div>
-                  ) : (
-                    <div className="flex items-center justify-between py-1 px-2 text-white/50 text-xs font-medium">
-                      <span>💡 Click any graphic overlay or lower third on the screen to reposition & resize, or select from the right panel.</span>
-                      <ActionButton
-                        onClick={() => setStudioModalTab("media")}
-                        className="px-3 py-1 rounded-[12px] bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 text-xs font-bold transition-all border border-purple-500/40"
-                      >
-                        + Add Image Layer
-                      </ActionButton>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* ── Right Column: Studio Tabs & Asset Panels ─────────────────── */}
-              <div className="w-88 shrink-0 flex flex-col min-h-0 bg-white/[0.02] border border-white/10 rounded-[12px] overflow-hidden">
-                {/* Right Panel Tab Bar */}
-                <div className="grid grid-cols-4 border-b border-white/10 bg-white/[0.01]">
-                  {[
-                    { id: "layers", label: "Layers", icon: PiStack },
-                    { id: "designer", label: "Designer", icon: PiPaintBrush },
-                    { id: "media", label: "Media", icon: PiImage },
-                    { id: "scale", label: "Frame", icon: PiCube },
-                  ].map(({ id, label, icon: Icon }) => {
-                    const active = studioModalTab === id;
-                    return (
-                      <ActionButton
-                        key={id}
-                        onClick={() => setStudioModalTab(id)}
-                        className={`py-2.5 flex flex-col items-center gap-1 text-[11px] font-bold transition-all border-b-2 ${
-                          active
-                            ? "border-purple-500 text-purple-300 bg-purple-500/10"
-                            : "border-transparent text-white/40 hover:text-white/80 hover:bg-white/[0.02]"
-                        }`}
-                      >
-                        <Icon size={16} />
-                        <span>{label}</span>
-                      </ActionButton>
-                    );
-                  })}
-                </div>
-
-                {/* Right Panel Tab Body */}
-                <div className="flex-1 min-h-0 overflow-y-auto p-3 flex flex-col gap-2">
-                  {/* ── TAB 1: LAYERS STACK ──────────────────────────────────── */}
-                  {studioModalTab === "layers" && (
-                    <div className="flex flex-col gap-2">
-                      <div className="flex items-center justify-between pb-1">
-                        <span className="text-[10px] uppercase font-bold tracking-widest text-white/40">
-                          Active Layers ({(cfg.layers || []).length + 3})
-                        </span>
-                        <ActionButton
-                          onClick={() => setStudioModalTab("media")}
-                          className="text-[10px] font-bold text-purple-400 hover:text-purple-300 flex items-center gap-1 px-2 py-0.5 rounded-[12px] bg-purple-500/10 border border-purple-500/20"
-                        >
-                          <PiPlus size={11} /> Add Image
-                        </ActionButton>
-                      </div>
-
-                      {/* Custom Image Layers */}
-                      {Array.isArray(cfg.layers) && cfg.layers.map((layer, idx) => {
-                        const isSelected = selectedStudioLayerId === layer.id;
-                        return (
-                          <div
-                            key={layer.id}
-                            onClick={() => setSelectedStudioLayerId(layer.id)}
-                            className={`p-2 rounded-[12px] flex items-center justify-between text-xs cursor-pointer transition-all border group ${
-                              isSelected
-                                ? "bg-purple-600/25 border-purple-500/60 text-purple-200 shadow-sm"
-                                : "bg-white/[0.03] border-white/5 text-white/70 hover:bg-white/[0.06]"
-                            }`}
-                          >
-                            <div className="flex items-center gap-2 min-w-0 pr-2">
-                              <div className="w-7 h-7 rounded-[12px] bg-black/50 border border-white/10 overflow-hidden shrink-0 flex items-center justify-center">
-                                <img src={layer.content} alt="Thumb" className="w-full h-full object-contain" />
-                              </div>
-                              <div className="min-w-0">
-                                <p className="font-bold text-xs truncate">{layer.name || "Image Layer"}</p>
-                                <span className="text-[9px] text-white/40 block">
-                                  Width {layer.style?.width || 18}% • Opacity {Math.round((layer.style?.opacity ?? 1) * 100)}%
-                                </span>
-                              </div>
-                            </div>
-
-                            <div className="flex items-center gap-1 shrink-0">
-                              <ActionButton
-                                disabled={idx === 0}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleMoveStudioLayer(idx, "up");
-                                }}
-                                className="p-1 rounded-[12px] text-white/30 hover:text-white disabled:opacity-20"
-                                title="Move Forward"
-                              >
-                                <PiArrowUp size={11} />
-                              </ActionButton>
-                              <ActionButton
-                                disabled={idx === cfg.layers.length - 1}
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleMoveStudioLayer(idx, "down");
-                                }}
-                                className="p-1 rounded-[12px] text-white/30 hover:text-white disabled:opacity-20"
-                                title="Move Backward"
-                              >
-                                <PiArrowDown size={11} />
-                              </ActionButton>
-                              <ActionButton
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleRemoveStudioLayer(layer.id);
-                                }}
-                                className="p-1 rounded-[12px] text-white/30 hover:text-red-400"
-                                title="Delete Layer"
-                              >
-                                <PiTrash size={12} />
-                              </ActionButton>
-                            </div>
-                          </div>
-                        );
-                      })}
-
-                      {/* Speaker Lower Third Layer Item */}
-                      <div
-                        onClick={() => setSelectedStudioLayerId("lowerThird")}
-                        className={`p-2.5 rounded-[12px] flex items-center justify-between text-xs cursor-pointer transition-all border ${
-                          selectedStudioLayerId === "lowerThird"
-                            ? "bg-purple-600/25 border-purple-500/60 text-purple-200 shadow-sm"
-                            : "bg-white/[0.03] border-white/5 text-white/70 hover:bg-white/[0.06]"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 min-w-0 pr-2">
-                          <PiIdentificationCard size={18} className="text-purple-400 shrink-0" />
-                          <div className="min-w-0">
-                            <p className="font-bold text-xs truncate">Speaker Lower Third</p>
-                            <span className="text-[9px] text-white/40 block truncate">
-                              {cfg.lowerThird.title || "No presenter title set"}
-                            </span>
-                          </div>
-                        </div>
-                        <ActionButton
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleUpdateBroadcastConfig({ lowerThird: { ...cfg.lowerThird, enabled: !cfg.lowerThird.enabled } });
-                          }}
-                          className={`p-1.5 rounded-[12px] text-[10px] font-bold border ${
-                            cfg.lowerThird.enabled
-                              ? "bg-emerald-500/20 border-emerald-500/30 text-emerald-300"
-                              : "bg-white/5 border-white/10 text-white/30"
-                          }`}
-                        >
-                          {cfg.lowerThird.enabled ? <PiEye size={13} /> : <PiEyeSlash size={13} />}
-                        </ActionButton>
-                      </div>
-
-                      {/* Bible Scripture Layer Item */}
-                      <div
-                        onClick={() => setSelectedStudioLayerId("bible")}
-                        className={`p-2.5 rounded-[12px] flex items-center justify-between text-xs cursor-pointer transition-all border ${
-                          selectedStudioLayerId === "bible"
-                            ? "bg-amber-500/20 border-amber-500/50 text-amber-200 shadow-sm"
-                            : "bg-white/[0.03] border-white/5 text-white/70 hover:bg-white/[0.06]"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 min-w-0 pr-2">
-                          <PiBookOpen size={18} className="text-amber-400 shrink-0" />
-                          <div className="min-w-0">
-                            <p className="font-bold text-xs truncate">Bible Scripture Card</p>
-                            <span className="text-[9px] text-white/40 block truncate">
-                              {cfg.bibleLowerThird.currentRef || "Auto-triggered on scripture"}
-                            </span>
-                          </div>
-                        </div>
-                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-[12px] border ${
-                          cfg.bibleLowerThird.isShowing
-                            ? "bg-amber-500/20 border-amber-500/40 text-amber-300"
-                            : "bg-white/5 border-white/10 text-white/30"
-                        }`}>
-                          {cfg.bibleLowerThird.isShowing ? "ON AIR" : "IDLE"}
-                        </span>
-                      </div>
-
-                      {/* Ticker Layer Item */}
-                      <div
-                        onClick={() => setSelectedStudioLayerId("ticker")}
-                        className={`p-2.5 rounded-[12px] flex items-center justify-between text-xs cursor-pointer transition-all border ${
-                          selectedStudioLayerId === "ticker"
-                            ? "bg-red-500/20 border-red-500/50 text-red-200 shadow-sm"
-                            : "bg-white/[0.03] border-white/5 text-white/70 hover:bg-white/[0.06]"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 min-w-0 pr-2">
-                          <PiMegaphone size={18} className="text-red-400 shrink-0" />
-                          <div className="min-w-0">
-                            <p className="font-bold text-xs truncate">Announcement Ticker</p>
-                            <span className="text-[9px] text-white/40 block truncate">
-                              {cfg.ticker.text || "Bottom news crawl banner"}
-                            </span>
-                          </div>
-                        </div>
-                        <ActionButton
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleUpdateBroadcastConfig({ ticker: { ...cfg.ticker, enabled: !cfg.ticker.enabled } });
-                          }}
-                          className={`p-1.5 rounded-[12px] text-[10px] font-bold border ${
-                            cfg.ticker.enabled
-                              ? "bg-emerald-500/20 border-emerald-500/30 text-emerald-300"
-                              : "bg-white/5 border-white/10 text-white/30"
-                          }`}
-                        >
-                          {cfg.ticker.enabled ? <PiEye size={13} /> : <PiEyeSlash size={13} />}
-                        </ActionButton>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ── TAB: LOWER THIRD CUSTOM DESIGNER ─────────────────────── */}
-                  {studioModalTab === "designer" && (() => {
-                    const lt = cfg.lowerThird;
-                    const st = lt?.style || DEFAULT_LOWER_THIRD_STYLE;
-
-                    const updateStyle = (patch) => {
-                      handleUpdateBroadcastConfig({
-                        lowerThird: {
-                          ...lt,
-                          style: { ...st, ...patch },
-                        },
-                      });
-                    };
-
-                    const PRESET_TEMPLATES = [
-                      {
-                        name: "Church Classic",
-                        desc: "Purple & gold, cross badge, accent slash",
-                        style: {
-                          shape: "rounded-rect",
-                          badgeShape: "circle",
-                          badgeIcon: "cross",
-                          primaryColor: "#581c87",
-                          secondaryColor: "#3b0764",
-                          accentColor: "#f59e0b",
-                          textColor: "#ffffff",
-                          subtitleColor: "#cbd5e1",
-                          opacity: 0.95,
-                          fontSize: "medium",
-                          uppercaseTitle: false,
-                          showAccentSlash: true,
-                        },
-                      },
-                      {
-                        name: "Royal Cathedral",
-                        desc: "Emerald & mint, dove badge, clean slash",
-                        style: {
-                          shape: "rounded-rect",
-                          badgeShape: "circle",
-                          badgeIcon: "dove",
-                          primaryColor: "#064e3b",
-                          secondaryColor: "#022c22",
-                          accentColor: "#10b981",
-                          textColor: "#ffffff",
-                          subtitleColor: "#a7f3d0",
-                          opacity: 0.95,
-                          fontSize: "medium",
-                          uppercaseTitle: false,
-                          showAccentSlash: true,
-                        },
-                      },
-                      {
-                        name: "Modern Broadcast",
-                        desc: "Sapphire blue, angled cut, mic badge",
-                        style: {
-                          shape: "angled-cut",
-                          badgeShape: "circle",
-                          badgeIcon: "mic",
-                          primaryColor: "#0f172a",
-                          secondaryColor: "#020617",
-                          accentColor: "#38bdf8",
-                          textColor: "#ffffff",
-                          subtitleColor: "#bae6fd",
-                          opacity: 0.92,
-                          fontSize: "medium",
-                          uppercaseTitle: true,
-                          showAccentSlash: true,
-                        },
-                      },
-                      {
-                        name: "Clean Minimal",
-                        desc: "Charcoal bar, no badge, crisp subtitle",
-                        style: {
-                          shape: "minimal-bar",
-                          badgeShape: "none",
-                          badgeIcon: "user",
-                          primaryColor: "#18181b",
-                          secondaryColor: "#09090b",
-                          accentColor: "#a855f7",
-                          textColor: "#ffffff",
-                          subtitleColor: "#94a3b8",
-                          opacity: 0.9,
-                          fontSize: "small",
-                          uppercaseTitle: false,
-                          showAccentSlash: false,
-                        },
-                      },
-                    ];
-
-                    const COLOR_SWATCHES = [
-                      { label: "Purple", primary: "#581c87", secondary: "#3b0764", accent: "#a855f7" },
-                      { label: "Gold", primary: "#78350f", secondary: "#451a03", accent: "#f59e0b" },
-                      { label: "Emerald", primary: "#064e3b", secondary: "#022c22", accent: "#10b981" },
-                      { label: "Sapphire", primary: "#0c4a6e", secondary: "#082f49", accent: "#38bdf8" },
-                      { label: "Crimson", primary: "#881337", secondary: "#4c0519", accent: "#f43f5e" },
-                      { label: "Slate", primary: "#18181b", secondary: "#09090b", accent: "#a1a1aa" },
-                    ];
-
-                    return (
-                      <div className="flex flex-col gap-3">
-                        {/* Live Air Action & Header */}
-                        <div className="flex items-center justify-between p-2.5 rounded-[12px] bg-white/[0.03] border border-white/10">
-                          <div className="flex items-center gap-2">
-                            <PiPaintBrush size={16} className="text-purple-400" />
-                            <span className="text-xs font-bold text-white">Lower Third Designer</span>
-                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-[12px] border ${
-                              lt.enabled
-                                ? "bg-emerald-500/20 border-emerald-500/30 text-emerald-300"
-                                : "bg-white/5 border-white/10 text-white/40"
-                            }`}>
-                              {lt.enabled ? "ON AIR" : "OFF AIR"}
-                            </span>
-                          </div>
-                          <ActionButton
-                            onClick={() => handleUpdateBroadcastConfig({ lowerThird: { ...lt, enabled: !lt.enabled } })}
-                            className={`px-3 py-1 rounded-[12px] text-xs font-bold transition-all border shadow-sm active:scale-95 ${
-                              lt.enabled
-                                ? "bg-red-500/20 border-red-500/40 text-red-300 hover:bg-red-500/30"
-                                : "bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-500"
-                            }`}
-                          >
-                            {lt.enabled ? "Hide From Air" : "Show On Air"}
-                          </ActionButton>
-                        </div>
-
-                        {/* Quick Presets Swatches */}
-                        <div>
-                          <div className="flex items-center justify-between mb-1.5">
-                            <span className="text-[10px] uppercase font-bold tracking-widest text-white/40">
-                              Design Templates
-                            </span>
-                            <ActionButton
-                              onClick={() => {
-                                handleUpdateBroadcastConfig({
-                                  lowerThird: {
-                                    ...lt,
-                                    x: 22,
-                                    y: 88,
-                                    width: 36,
-                                    style: DEFAULT_LOWER_THIRD_STYLE,
-                                  },
-                                });
-                                showFeedback("Reset to default design", true);
-                              }}
-                              className="text-[9px] text-white/40 hover:text-white transition-colors"
-                            >
-                              Reset Defaults
-                            </ActionButton>
-                          </div>
-                          <div className="grid grid-cols-2 gap-1.5">
-                            {PRESET_TEMPLATES.map((tmpl) => (
-                              <ActionButton
-                                key={tmpl.name}
-                                onClick={() => {
-                                  updateStyle(tmpl.style);
-                                  showFeedback(`Applied "${tmpl.name}" style`, true);
-                                }}
-                                className="p-2 rounded-[12px] bg-white/[0.02] border border-white/5 hover:border-purple-500/40 hover:bg-white/[0.05] text-left transition-all group"
-                              >
-                                <div className="flex items-center justify-between mb-1">
-                                  <p className="text-[11px] font-bold text-white group-hover:text-purple-300">{tmpl.name}</p>
-                                  <div
-                                    className="w-3 h-3 rounded-full border border-white/20"
-                                    style={{ backgroundColor: tmpl.style.primaryColor }}
-                                  />
-                                </div>
-                                <p className="text-[9px] text-white/40 leading-tight truncate">{tmpl.desc}</p>
-                              </ActionButton>
-                            ))}
-                          </div>
-                        </div>
-
-                        {/* Shape Tools: Rectangles, Circles, Triangles */}
-                        <div className="p-2.5 rounded-[12px] bg-white/[0.02] border border-white/10 flex flex-col gap-2.5">
-                          <span className="text-[10px] uppercase font-bold tracking-widest text-purple-400">
-                            Shape & Geometry Tools
-                          </span>
-
-                          {/* 1. Base Container Shape (Rectangles & Pills) */}
-                          <div>
-                            <label className="text-[10px] font-bold text-white/60 block mb-1 flex items-center gap-1.5">
-                              <PiRectangle size={12} className="text-white/40" />
-                              <span>Container Shape (Rectangles)</span>
-                            </label>
-                            <div className="grid grid-cols-2 gap-1.5">
-                              {[
-                                { id: "rounded-rect", label: "12px Rounded Rect" },
-                                { id: "angled-cut", label: "Angled Slash Cut" },
-                                { id: "minimal-bar", label: "Minimal Floating Bar" },
-                                { id: "pill", label: "Modern Pill" },
-                              ].map(({ id, label }) => (
-                                <ActionButton
-                                  key={id}
-                                  onClick={() => updateStyle({ shape: id })}
-                                  className={`py-1.5 px-2 rounded-[12px] text-[10px] font-bold border transition-all text-center ${
-                                    (st.shape || "rounded-rect") === id
-                                      ? "bg-purple-600/30 border-purple-500/60 text-purple-200"
-                                      : "bg-white/[0.02] border-white/5 text-white/50 hover:text-white"
-                                  }`}
-                                >
-                                  {label}
-                                </ActionButton>
-                              ))}
-                            </div>
-                          </div>
-
-                          {/* 2. Badge Element Shape (Circles, Triangles, Rectangles) */}
-                          <div>
-                            <label className="text-[10px] font-bold text-white/60 block mb-1 flex items-center gap-1.5">
-                              <PiCircle size={12} className="text-white/40" />
-                              <span>Badge Holder Shape (Circles & Geometries)</span>
-                            </label>
-                            <div className="grid grid-cols-4 gap-1">
-                              {[
-                                { id: "circle", label: "Circle", icon: PiCircle },
-                                { id: "triangle", label: "Triangle", icon: PiTriangle },
-                                { id: "rect", label: "12px Rect", icon: PiRectangle },
-                                { id: "none", label: "None", icon: PiX },
-                              ].map(({ id, label, icon: Icon }) => (
-                                <ActionButton
-                                  key={id}
-                                  onClick={() => updateStyle({ badgeShape: id })}
-                                  className={`py-1 rounded-[12px] text-[10px] font-bold border transition-all flex flex-col items-center gap-0.5 ${
-                                    (st.badgeShape || "circle") === id
-                                      ? "bg-purple-600/30 border-purple-500/60 text-purple-200"
-                                      : "bg-white/[0.02] border-white/5 text-white/50 hover:text-white"
-                                  }`}
-                                >
-                                  <Icon size={12} />
-                                  <span>{label}</span>
-                                </ActionButton>
-                              ))}
-                            </div>
-                          </div>
-
-                          {/* 3. Badge Icon Selection (When badge is enabled) */}
-                          {st.badgeShape !== "none" && st.badgeShape !== "triangle" && (
-                            <div>
-                              <label className="text-[10px] font-bold text-white/60 block mb-1">
-                                Badge Icon
-                              </label>
-                              <div className="grid grid-cols-6 gap-1">
-                                {[
-                                  { id: "cross", label: "✝" },
-                                  { id: "dove", label: "🕊" },
-                                  { id: "user", label: "👤" },
-                                  { id: "mic", label: "🎙" },
-                                  { id: "star", label: "⭐" },
-                                  { id: "bible", label: "📖" },
-                                ].map(({ id, label }) => (
-                                  <ActionButton
-                                    key={id}
-                                    onClick={() => updateStyle({ badgeIcon: id })}
-                                    className={`py-1 rounded-[12px] text-xs font-bold border transition-all text-center ${
-                                      (st.badgeIcon || "cross") === id
-                                        ? "bg-purple-600/30 border-purple-500/60 text-purple-200"
-                                        : "bg-white/[0.02] border-white/5 text-white/50 hover:text-white"
-                                    }`}
-                                  >
-                                    {label}
-                                  </ActionButton>
-                                ))}
-                              </div>
-                            </div>
-                          )}
-
-                          {/* 4. Triangular Accent Slash Divider */}
-                          <div className="flex items-center justify-between pt-1 border-t border-white/5">
-                            <div className="flex items-center gap-1.5">
-                              <PiTriangle size={12} className="text-amber-400" />
-                              <span className="text-[10px] font-bold text-white/70">Triangular Accent Divider</span>
-                            </div>
-                            <ActionButton
-                              onClick={() => updateStyle({ showAccentSlash: !st.showAccentSlash })}
-                              className={`px-2.5 py-0.5 rounded-[12px] text-[10px] font-bold border transition-all ${
-                                st.showAccentSlash
-                                  ? "bg-amber-500/20 border-amber-500/40 text-amber-300"
-                                  : "bg-white/5 border-white/10 text-white/40"
-                              }`}
-                            >
-                              {st.showAccentSlash ? "ACTIVE" : "OFF"}
-                            </ActionButton>
-                          </div>
-                        </div>
-
-                        {/* Color & Gradient Styling Engine */}
-                        <div className="p-2.5 rounded-[12px] bg-white/[0.02] border border-white/10 flex flex-col gap-2.5">
-                          <span className="text-[10px] uppercase font-bold tracking-widest text-purple-400">
-                            Colors & Styling
-                          </span>
-
-                          {/* Swatches */}
-                          <div className="grid grid-cols-6 gap-1">
-                            {COLOR_SWATCHES.map((sw) => (
-                              <ActionButton
-                                key={sw.label}
-                                onClick={() => updateStyle({
-                                  primaryColor: sw.primary,
-                                  secondaryColor: sw.secondary,
-                                  accentColor: sw.accent,
-                                })}
-                                className="h-6 rounded-[12px] border border-white/20 transition-transform hover:scale-105"
-                                style={{ background: `linear-gradient(135deg, ${sw.primary}, ${sw.secondary})` }}
-                                title={sw.label}
-                              />
-                            ))}
-                          </div>
-
-                          {/* Color Inputs */}
-                          <div className="grid grid-cols-3 gap-2">
-                            <div>
-                              <label className="text-[9px] font-bold text-white/50 block mb-0.5">Primary BG</label>
-                              <div className="flex items-center gap-1.5 bg-black/40 border border-white/10 rounded-[12px] p-1">
-                                <input
-                                  type="color"
-                                  value={st.primaryColor || "#581c87"}
-                                  onChange={(e) => updateStyle({ primaryColor: e.target.value })}
-                                  className="w-5 h-5 rounded-[12px] bg-transparent cursor-pointer border-0"
-                                />
-                                <span className="text-[9px] text-white/70 font-mono truncate">{st.primaryColor || "#581c87"}</span>
-                              </div>
-                            </div>
-                            <div>
-                              <label className="text-[9px] font-bold text-white/50 block mb-0.5">Secondary BG</label>
-                              <div className="flex items-center gap-1.5 bg-black/40 border border-white/10 rounded-[12px] p-1">
-                                <input
-                                  type="color"
-                                  value={st.secondaryColor || "#3b0764"}
-                                  onChange={(e) => updateStyle({ secondaryColor: e.target.value })}
-                                  className="w-5 h-5 rounded-[12px] bg-transparent cursor-pointer border-0"
-                                />
-                                <span className="text-[9px] text-white/70 font-mono truncate">{st.secondaryColor || "#3b0764"}</span>
-                              </div>
-                            </div>
-                            <div>
-                              <label className="text-[9px] font-bold text-white/50 block mb-0.5">Accent Line</label>
-                              <div className="flex items-center gap-1.5 bg-black/40 border border-white/10 rounded-[12px] p-1">
-                                <input
-                                  type="color"
-                                  value={st.accentColor || "#a855f7"}
-                                  onChange={(e) => updateStyle({ accentColor: e.target.value })}
-                                  className="w-5 h-5 rounded-[12px] bg-transparent cursor-pointer border-0"
-                                />
-                                <span className="text-[9px] text-white/70 font-mono truncate">{st.accentColor || "#a855f7"}</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Opacity Slider */}
-                          <div className="flex items-center gap-2 pt-1 border-t border-white/5">
-                            <span className="text-[10px] text-white/50 w-24 shrink-0 font-semibold">
-                              Opacity: <b className="text-white font-mono">{Math.round((st.opacity ?? 0.95) * 100)}%</b>
-                            </span>
-                            <input
-                              type="range"
-                              min="30"
-                              max="100"
-                              value={Math.round((st.opacity ?? 0.95) * 100)}
-                              onChange={(e) => updateStyle({ opacity: parseInt(e.target.value, 10) / 100 })}
-                              className="flex-1 accent-purple-500 h-1 bg-white/20 rounded-[12px] cursor-pointer"
-                            />
-                          </div>
-                        </div>
-
-                        {/* Content & Typography */}
-                        <div className="p-2.5 rounded-[12px] bg-white/[0.02] border border-white/10 flex flex-col gap-2">
-                          <span className="text-[10px] uppercase font-bold tracking-widest text-purple-400">
-                            Presenter & Content
-                          </span>
-                          <div>
-                            <label className="text-[9px] font-bold text-white/50 block mb-0.5">Presenter Name</label>
-                            <input
-                              type="text"
-                              value={lt.title || ""}
-                              onChange={(e) => handleUpdateBroadcastConfig({ lowerThird: { ...lt, title: e.target.value } })}
-                              placeholder="e.g. Pastor John Doe"
-                              className="w-full px-2 py-1.5 rounded-[12px] bg-black/40 border border-white/15 text-xs text-white placeholder-white/20 focus:outline-none focus:border-purple-500"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[9px] font-bold text-white/50 block mb-0.5">Role / Subtitle</label>
-                            <input
-                              type="text"
-                              value={lt.subtitle || ""}
-                              onChange={(e) => handleUpdateBroadcastConfig({ lowerThird: { ...lt, subtitle: e.target.value } })}
-                              placeholder="e.g. Senior Pastor"
-                              className="w-full px-2 py-1.5 rounded-[12px] bg-black/40 border border-white/15 text-xs text-white placeholder-white/20 focus:outline-none focus:border-purple-500"
-                            />
-                          </div>
-                          <div className="flex items-center justify-between pt-1">
-                            <div className="flex items-center gap-1">
-                              <span className="text-[10px] font-bold text-white/50">Font Size:</span>
-                              {["small", "medium", "large"].map((sz) => (
-                                <ActionButton
-                                  key={sz}
-                                  onClick={() => updateStyle({ fontSize: sz })}
-                                  className={`px-2 py-0.5 rounded-[12px] text-[9px] font-bold capitalize border transition-all ${
-                                    (st.fontSize || "medium") === sz
-                                      ? "bg-purple-600/30 border-purple-500/60 text-purple-200"
-                                      : "bg-white/[0.02] border-white/5 text-white/40"
-                                  }`}
-                                >
-                                  {sz}
-                                </ActionButton>
-                              ))}
-                            </div>
-                            <ActionButton
-                              onClick={() => updateStyle({ uppercaseTitle: !st.uppercaseTitle })}
-                              className={`px-2 py-0.5 rounded-[12px] text-[9px] font-bold border transition-all ${
-                                st.uppercaseTitle
-                                  ? "bg-purple-600/30 border-purple-500/60 text-purple-200"
-                                  : "bg-white/5 border-white/10 text-white/40"
-                              }`}
-                            >
-                              ALL CAPS
-                            </ActionButton>
-                          </div>
-                        </div>
-
-                        {/* Size & Position Adjuster */}
-                        <div className="p-2.5 rounded-[12px] bg-white/[0.02] border border-white/10 flex flex-col gap-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-[10px] uppercase font-bold tracking-widest text-purple-400">
-                              Size & Placement
-                            </span>
-                            <span className="text-[10px] font-mono text-purple-300 font-bold">
-                              {lt.width || 36}% width
-                            </span>
-                          </div>
-
-                          {/* Width Slider */}
-                          <div className="flex items-center gap-2">
-                            <span className="text-[10px] text-white/50 w-16 shrink-0 font-semibold">Width:</span>
-                            <input
-                              type="range"
-                              min="20"
-                              max="75"
-                              value={lt.width || 36}
-                              onChange={(e) => handleUpdateBroadcastConfig({ lowerThird: { ...lt, width: parseInt(e.target.value, 10) } })}
-                              className="flex-1 accent-purple-500 h-1 bg-white/20 rounded-[12px] cursor-pointer"
-                            />
-                            <span className="text-[10px] font-mono text-white/70 w-8 text-right">{lt.width || 36}%</span>
-                          </div>
-
-                          {/* Quick Position Snaps */}
-                          <div className="grid grid-cols-3 gap-1 pt-1">
-                            {[
-                              { label: "Bottom Left", x: 22, y: 88 },
-                              { label: "Bottom Center", x: 50, y: 88 },
-                              { label: "Bottom Right", x: 78, y: 88 },
-                            ].map((pos) => {
-                              const isCur = Math.abs((lt.x ?? 22) - pos.x) < 2 && Math.abs((lt.y ?? 88) - pos.y) < 2;
-                              return (
-                                <ActionButton
-                                  key={pos.label}
-                                  onClick={() => handleUpdateBroadcastConfig({ lowerThird: { ...lt, x: pos.x, y: pos.y } })}
-                                  className={`py-1 rounded-[12px] text-[9px] font-bold border transition-all text-center ${
-                                    isCur
-                                      ? "bg-purple-600/30 border-purple-500/60 text-purple-200"
-                                      : "bg-white/[0.02] border-white/5 text-white/40 hover:text-white"
-                                  }`}
-                                >
-                                  {pos.label}
-                                </ActionButton>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* ── TAB 2: CHURCH MEDIA LIBRARY ASSETS ────────────────────── */}
-                  {studioModalTab === "media" && (
-                    <div className="flex flex-col gap-2.5">
-                      <div className="flex items-center justify-between pb-1">
-                        <div>
-                          <span className="text-[10px] uppercase font-bold tracking-widest text-white/40">
-                            Church Media Library
-                          </span>
-                          <p className="text-[10px] text-white/40">Click any image to add as an overlay layer</p>
-                        </div>
-                        <ActionButton
-                          onClick={handleImportMediaForStudio}
-                          className="text-[10px] font-bold text-sky-400 hover:text-sky-300 flex items-center gap-1 px-2.5 py-1 rounded-[12px] bg-sky-500/10 border border-sky-500/20 transition-all"
-                        >
-                          <PiPlus size={11} /> Import Image
-                        </ActionButton>
-                      </div>
-
-                      {isLoadingStudioMedia ? (
-                        <div className="p-8 text-center text-xs text-white/40">
-                          <PiArrowsClockwise size={24} className="animate-spin mx-auto mb-2 text-white/20" />
-                          <span>Loading church media assets…</span>
-                        </div>
-                      ) : studioMediaFiles.length === 0 ? (
-                        <div className="p-6 rounded-[12px] bg-white/[0.02] border border-white/10 text-center flex flex-col items-center gap-2">
-                          <PiImage size={32} className="text-white/20" />
-                          <p className="text-xs font-bold text-white/70">No media images found</p>
-                          <p className="text-[10px] text-white/40 max-w-xs">
-                            Import event logos, speaker headshots, sponsor logos, or background graphics into the church library.
-                          </p>
-                          <ActionButton
-                            onClick={handleImportMediaForStudio}
-                            className="mt-1 px-3 py-1.5 rounded-[12px] bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md"
-                          >
-                            + Import First Image
-                          </ActionButton>
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-2 gap-2 max-h-[420px] overflow-y-auto pr-0.5">
-                          {studioMediaFiles.map((fileUrl, i) => {
-                            const name = fileUrl.split("/").pop()?.split("\\").pop() || `Image ${i + 1}`;
-                            return (
-                              <div
-                                key={fileUrl}
-                                onClick={() => handleAddImageLayer(fileUrl, name)}
-                                className="group relative rounded-[12px] bg-black/40 border border-white/10 hover:border-purple-500/50 overflow-hidden cursor-pointer flex flex-col transition-all p-1.5 hover:shadow-lg"
-                              >
-                                <div className="aspect-video w-full rounded-[12px] overflow-hidden bg-white/5 flex items-center justify-center relative">
-                                  <img src={fileUrl} alt={name} className="w-full h-full object-contain" />
-                                  <div className="absolute inset-0 bg-purple-600/30 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[10px] font-bold transition-opacity rounded-[12px]">
-                                    + Add Layer
-                                  </div>
-                                </div>
-                                <span className="text-[10px] font-medium text-white/70 truncate mt-1 px-1">
-                                  {name}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* ── TAB 4: FRAMING & CANVAS SCALING ──────────────────────── */}
-                  {studioModalTab === "scale" && (
-                    <div className="flex flex-col gap-3">
-                      <div>
-                        <span className="text-[10px] uppercase font-bold tracking-widest text-white/40">
-                          Canvas Scaling & Insets
-                        </span>
-                        <p className="text-[10px] text-white/40 mt-0.5">
-                          Scale down live camera feed to create margins for large graphics
-                        </p>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-2">
-                        {[
-                          { scale: 1.0, label: "100% Full Screen" },
-                          { scale: 0.95, label: "95% Safe Inset" },
-                          { scale: 0.9, label: "90% Frame Margin" },
-                          { scale: 0.85, label: "85% Studio Box" },
-                          { scale: 0.8, label: "80% PIP Window" },
-                          { scale: 0.75, label: "75% Inset" },
-                        ].map(({ scale, label }) => {
-                          const isCur = Math.abs((cfg.scale || 1.0) - scale) < 0.02;
-                          return (
-                            <ActionButton
-                              key={scale}
-                              onClick={() => handleUpdateBroadcastConfig({ scale })}
-                              className={`p-2.5 rounded-[12px] border text-xs font-bold transition-all text-center ${
-                                isCur
-                                  ? "bg-purple-600/25 border-purple-500/60 text-purple-200"
-                                  : "bg-white/[0.03] border-white/10 text-white/60 hover:text-white"
-                              }`}
-                            >
-                              {label}
-                            </ActionButton>
-                          );
-                        })}
-                      </div>
-
-                      <div className="mt-2">
-                        <span className="text-[10px] uppercase font-bold tracking-widest text-white/40">
-                          Fit Mode
-                        </span>
-                        <div className="grid grid-cols-2 gap-2 mt-1">
-                          {[
-                            { mode: "cover", label: "Cover (Fill Screen)" },
-                            { mode: "contain", label: "Contain (Safe Frame)" },
-                          ].map(({ mode, label }) => {
-                            const isCur = (cfg.fitMode || "cover") === mode;
-                            return (
-                              <ActionButton
-                                key={mode}
-                                onClick={() => handleUpdateBroadcastConfig({ fitMode: mode })}
-                                className={`p-2 rounded-[12px] border text-xs font-bold transition-all ${
-                                  isCur
-                                    ? "bg-purple-600/25 border-purple-500/60 text-purple-200"
-                                    : "bg-white/[0.03] border-white/10 text-white/60 hover:text-white"
-                                }`}
-                              >
-                                {label}
-                              </ActionButton>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
+      {/* ── Canva-Style Live Design Studio Modal ──── */}
+      <LiveDesignStudioModal
+        isOpen={isStudioModalOpen}
+        onClose={() => setIsStudioModalOpen(false)}
+        cameraStreams={cameraStreams}
+        effectiveProgramSourceId={effectiveProgramSourceId}
+        getSourceName={getSourceName}
+        liveBroadcastConfig={cfg}
+        onUpdateBroadcastConfig={handleUpdateBroadcastConfig}
+        showFeedback={showFeedback}
+      />
 
       {/* ── Native Broadcast & Recording Studio Modal (P0-01 & P0-05) — Stage 8 Simulstream ───────────── */}
       {showBroadcastModal && createPortal(
@@ -3553,18 +2039,22 @@ export default function LiveSwitcherController() {
             <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/[0.02]">
               <div className="flex items-center gap-3">
                 <div className={`w-9 h-9 rounded-[12px] border flex items-center justify-center ${
-                  isAnyStreaming ? "bg-rose-500 text-white border-rose-400 animate-pulse" : "bg-purple-600/20 text-purple-300 border-purple-500/30"
+                  isAnyStreaming ? "bg-rose-500 text-white border-rose-400 animate-pulse" : isStreamArmed ? "bg-amber-500 text-white border-amber-400 animate-pulse" : "bg-purple-600/20 text-purple-300 border-purple-500/30"
                 }`}>
                   <PiBroadcast size={20} />
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-white flex items-center gap-2">
                     Simulstream Broadcast Studio
-                    {isAnyStreaming && (
+                    {isAnyStreaming ? (
                       <span className="text-[10px] font-black px-2 py-0.5 rounded-[12px] bg-rose-500 text-white uppercase tracking-wider animate-pulse">
                         ● ON AIR
                       </span>
-                    )}
+                    ) : isStreamArmed ? (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-[12px] bg-amber-500/20 border border-amber-500/40 text-amber-300 uppercase tracking-wider animate-pulse">
+                        CONNECTING
+                      </span>
+                    ) : null}
                   </h3>
                   <p className="text-[11px] text-white/40">FFmpeg Hardware-Accelerated RTMP/SRT · Up to 2 simultaneous destinations</p>
                 </div>
@@ -3643,7 +2133,7 @@ export default function LiveSwitcherController() {
                         <div className="flex items-center gap-2">
                           {destinations.length > 1 && (
                             <ActionButton
-                              disabled={isAnyStreaming}
+                              disabled={isStreamArmed}
                               onClick={() => removeDestination(dest.id)}
                               className="p-1 rounded-[12px] text-white/30 hover:text-red-400 hover:bg-white/5 transition-all disabled:opacity-30"
                               title="Remove Destination"
@@ -3652,7 +2142,7 @@ export default function LiveSwitcherController() {
                             </ActionButton>
                           )}
                           <ActionButton
-                            disabled={isAnyStreaming}
+                            disabled={isStreamArmed}
                             onClick={() => updateDestination(dest.id, { enabled: !dest.enabled })}
                             className={`px-3 py-1 rounded-[12px] text-[10px] font-bold border transition-all ${
                               dest.enabled
@@ -3672,7 +2162,7 @@ export default function LiveSwitcherController() {
                           return (
                             <ActionButton
                               key={p.label}
-                              disabled={isAnyStreaming}
+                              disabled={isStreamArmed}
                               onClick={() => updateDestination(dest.id, { label: p.label, url: p.url })}
                               className={`p-2 rounded-[12px] border text-[10px] font-bold transition-all text-center ${
                                 isSel
@@ -3693,7 +2183,7 @@ export default function LiveSwitcherController() {
                           <input
                             type="text"
                             value={dest.url}
-                            disabled={isAnyStreaming}
+                            disabled={isStreamArmed}
                             onChange={e => updateDestination(dest.id, { url: e.target.value })}
                             placeholder="rtmp://a.rtmp.youtube.com/live2"
                             className="px-2.5 py-1.5 bg-black/40 border border-white/10 rounded-[12px] text-[11px] text-white placeholder-white/20 focus:outline-none focus:border-purple-500 disabled:opacity-50"
@@ -3705,7 +2195,7 @@ export default function LiveSwitcherController() {
                             <input
                               type={dest.showKey ? 'text' : 'password'}
                               value={dest.key}
-                              disabled={isAnyStreaming}
+                              disabled={isStreamArmed}
                               onChange={e => updateDestination(dest.id, { key: e.target.value })}
                               placeholder="Paste stream key…"
                               className="w-full px-2.5 py-1.5 pr-8 bg-black/40 border border-white/10 rounded-[12px] text-[11px] text-white placeholder-white/20 focus:outline-none focus:border-purple-500 disabled:opacity-50"
@@ -3744,7 +2234,7 @@ export default function LiveSwitcherController() {
                 {/* Add Destination Button (Up to 6) */}
                 {destinations.length < 6 && (
                   <ActionButton
-                    disabled={isAnyStreaming}
+                    disabled={isStreamArmed}
                     onClick={addDestination}
                     className="flex items-center justify-center gap-1.5 p-2.5 rounded-[12px] border border-dashed border-white/20 hover:border-purple-500/50 bg-white/[0.01] hover:bg-purple-950/10 text-white/60 hover:text-white text-xs font-bold transition-all disabled:opacity-40"
                   >
@@ -3786,7 +2276,7 @@ export default function LiveSwitcherController() {
                     ].map(r => (
                       <ActionButton
                         key={r.label}
-                        disabled={isAnyStreaming}
+                        disabled={isStreamArmed}
                         onClick={() => { setStreamWidth(r.w); setStreamHeight(r.h); }}
                         className={`p-2 rounded-[12px] border text-xs font-bold transition-all ${
                           streamWidth === r.w
@@ -3885,16 +2375,16 @@ export default function LiveSwitcherController() {
                   </span>
                 )}
                 <ActionButton
-                  onClick={toggleSimulstream} loadingLabel={isAnyStreaming ? "Stopping broadcast…" : "Starting broadcast…"}
-                  disabled={!isAnyStreaming && !destinations.some(d => d.enabled && (d.url || d.key))}
+                  onClick={toggleSimulstream} loadingLabel={isStreamArmed ? "Stopping broadcast…" : "Starting broadcast…"}
+                  disabled={!isStreamArmed && !destinations.some(d => d.enabled && (d.url || d.key))}
                   className={`px-6 py-2.5 rounded-[12px] text-xs font-bold border flex items-center gap-2 transition-all shadow-lg disabled:opacity-40 ${
-                    isAnyStreaming
+                    isStreamArmed
                       ? "bg-red-600 border-red-500 text-white hover:bg-red-500 shadow-red-950/40"
                       : "bg-purple-600 border-purple-500 text-white hover:bg-purple-500 shadow-purple-950/40"
                   }`}
                 >
                   <PiRadio size={16} />
-                  {isAnyStreaming ? "Stop All Streams" : "Start Simulstream"}
+                  {isStreamArmed ? "Stop All Streams" : "Start Simulstream"}
                 </ActionButton>
               </div>
             </div>

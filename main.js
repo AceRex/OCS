@@ -13,6 +13,7 @@ const {
   shell,
   globalShortcut,
   systemPreferences,
+  nativeImage,
 } = require("electron");
 
 // ── Universal Dark Theme Mandate (Enforce dark theme across Windows titlebars, menu bars, and dialogs) ──
@@ -25,9 +26,11 @@ function safeWebContentsSend(target, channel, ...args) {
   try {
     if (!target) return;
     const wc = target.webContents ? target.webContents : target;
-    if (!wc || (typeof wc.isDestroyed === "function" && wc.isDestroyed())) return;
+    if (!wc || (typeof wc.isDestroyed === "function" && wc.isDestroyed()))
+      return;
     if (typeof wc.isCrashed === "function" && wc.isCrashed()) return;
-    if (typeof wc.isLoadingMainFrame === "function" && wc.isLoadingMainFrame()) return;
+    if (typeof wc.isLoadingMainFrame === "function" && wc.isLoadingMainFrame())
+      return;
 
     // Electron's WebContents.prototype.send internally catches errors and prints:
     // "Error sending from webFrameMain: Error: Render frame was disposed before WebFrameMain could be accessed"
@@ -68,7 +71,11 @@ function broadcastToAllWindows(channel, ...args) {
 // Global safety net: suppress benign transient Electron frame disposal during reload / rapid frame streaming
 process.on("uncaughtException", (err) => {
   const msg = (err && err.message) || String(err || "");
-  if (msg.includes("WebFrameMain") || msg.includes("Render frame was disposed") || msg.includes("Object has been destroyed")) {
+  if (
+    msg.includes("WebFrameMain") ||
+    msg.includes("Render frame was disposed") ||
+    msg.includes("Object has been destroyed")
+  ) {
     return;
   }
   console.error("[UncaughtException]", err);
@@ -76,7 +83,11 @@ process.on("uncaughtException", (err) => {
 
 process.on("unhandledRejection", (reason) => {
   const msg = (reason && reason.message) || String(reason || "");
-  if (msg.includes("WebFrameMain") || msg.includes("Render frame was disposed") || msg.includes("Object has been destroyed")) {
+  if (
+    msg.includes("WebFrameMain") ||
+    msg.includes("Render frame was disposed") ||
+    msg.includes("Object has been destroyed")
+  ) {
     return;
   }
   console.error("[UnhandledRejection]", reason);
@@ -132,16 +143,24 @@ const fsp = fs.promises;
 const yauzl = require("yauzl");
 const { spawn, execSync } = require("child_process");
 const QRCode = require("qrcode");
+const crypto = require("crypto");
+const {
+  designStudioService,
+} = require("./src/main/design/designStudioService");
 
 const { AsrFacade } = require("./src/main/asr/asrFacade");
 const { emitTimerLifecycle } = require("./src/main/timerLifecycle");
 const { SessionArchiveService } = require("./src/main/sessionArchive");
 const { recoveryManager } = require("./src/main/session/recoveryManager");
 const { programRecorder } = require("./src/main/recording/programRecorder");
-const { getDeterministicRecordingPath } = require("./src/main/recording/recordingPath");
+const {
+  getDeterministicRecordingPath,
+} = require("./src/main/recording/recordingPath");
 const { RecordingIndex } = require("./src/main/recording/recordingIndex");
 const { broadcastAudioBus } = require("./src/App/controller/broadcastAudioBus");
-const { broadcastSupervisor } = require("./src/main/streaming/broadcastSupervisor");
+const {
+  broadcastSupervisor,
+} = require("./src/main/streaming/broadcastSupervisor");
 const { probeMediaInfo } = require("./src/main/sessionAudio");
 const {
   generatePairing,
@@ -395,7 +414,9 @@ const _pairingRateLimiter = new PairingRateLimiter();
 
 async function refreshPairingQr() {
   try {
-    const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-git-main-acerexs-projects.vercel.app/api";
+    const apiBase =
+      (appSettings ? appSettings.get("apiBaseUrl") : null) ||
+      "https://ocs-backend-git-main-acerexs-projects.vercel.app/api";
     const payload = buildPairPayload({
       ip: serverIp,
       port: PORT,
@@ -1055,7 +1076,9 @@ ipcMain.handle("open-external-url", async (_event, url) => {
   if (
     url &&
     typeof url === "string" &&
-    (url.startsWith("https://") || url.startsWith("http://") || url.startsWith("x-apple.systempreferences:"))
+    (url.startsWith("https://") ||
+      url.startsWith("http://") ||
+      url.startsWith("x-apple.systempreferences:"))
   ) {
     await shell.openExternal(url);
     return true;
@@ -1091,7 +1114,9 @@ ipcMain.handle("media-get-camera-status", async () => {
 ipcMain.handle("media-open-camera-settings", async () => {
   if (process.platform === "darwin") {
     try {
-      await shell.openExternal("x-apple.systempreferences:com.apple.preference.security?Privacy_Camera");
+      await shell.openExternal(
+        "x-apple.systempreferences:com.apple.preference.security?Privacy_Camera",
+      );
       return { ok: true };
     } catch (e) {
       return { ok: false, error: e.message };
@@ -1243,6 +1268,337 @@ ipcMain.handle("design-generate", async (event, prompt) => {
   };
 });
 
+// ─── DESIGN STUDIO IPC HANDLERS ─────────────────────────
+ipcMain.handle("design:list", async () => {
+  try {
+    return { ok: true, designs: designStudioService.listDesigns() };
+  } catch (err) {
+    return { ok: false, error: err.message, designs: [] };
+  }
+});
+
+ipcMain.handle("design:save", async (_event, design) => {
+  try {
+    const saved = designStudioService.saveDesign(design);
+    return { ok: true, design: saved };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle("design:delete", async (_event, id) => {
+  try {
+    const res = designStudioService.deleteDesign(id);
+    return res;
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle("design:import-image", async (_event, sourcePath) => {
+  try {
+    if (sourcePath && typeof sourcePath === "string") {
+      const asset = designStudioService.importImageFile(sourcePath);
+      return { ok: true, asset };
+    }
+    const parent =
+      (_event?.sender ? BrowserWindow.fromWebContents(_event.sender) : null) ||
+      controllerWindow;
+    const res = await designStudioService.promptAndImportImage(parent);
+    return res;
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle(
+  "design:present",
+  async (_event, { design, target = "both" } = {}) => {
+    try {
+      const result = designStudioService.presentDesign(
+        design,
+        target,
+        ({ target: t, layers }) => {
+          const visibleLayers = layers.filter(
+            (l) => l.visible !== false && !l.isMissing,
+          );
+
+          // Stream broadcast layers (rendered by SwitcherProgramCanvas)
+          const streamLayers = visibleLayers.map((l) => ({
+            id: l.id,
+            type: l.type || "image",
+            name: l.name || "Overlay Layer",
+            content:
+              l.content ||
+              l.url ||
+              (l.filePath ? pathToFileURL(l.filePath).href : ""),
+            url:
+              l.url ||
+              l.content ||
+              (l.filePath ? pathToFileURL(l.filePath).href : ""),
+            text: l.text,
+            fontFamily: l.fontFamily,
+            fontSize: l.fontSize,
+            fontWeight: l.fontWeight,
+            color: l.color,
+            textAlign: l.textAlign,
+            textTransform: l.textTransform,
+            shape: l.shape,
+            fillType: l.fillType || (l.gradient ? "linear-gradient" : "solid"),
+            fill: l.fill,
+            gradient: l.gradient || null,
+            stroke: l.stroke,
+            strokeWidth: l.strokeWidth,
+            borderRadius: typeof l.borderRadius === "number" ? l.borderRadius : (l.shape === "rounded-rect" || l.frameShape === "rounded-rect" ? 12 : 0),
+            aspectLocked: Boolean(l.aspectLocked),
+            rotation: l.rotation || 0,
+            height: l.height,
+            groupId: l.groupId || null,
+            frameShape: l.frameShape || "none",
+            frameCrop: l.frameCrop || { fitMode: "fill", zoom: 1, panX: 0, panY: 0 },
+            mask: l.mask || "square",
+            transition: l.transition || null,
+            originalUrl: l.originalUrl || null,
+            hasBgRemoved: Boolean(l.hasBgRemoved),
+            shadowEnabled: Boolean(l.shadowEnabled),
+            shadowColor: l.shadowColor,
+            shadowOpacity: typeof l.shadowOpacity === "number" ? l.shadowOpacity : 60,
+            shadowBlur: typeof l.shadowBlur === "number" ? l.shadowBlur : 10,
+            shadowOffsetX: typeof l.shadowOffsetX === "number" ? l.shadowOffsetX : 0,
+            shadowOffsetY: typeof l.shadowOffsetY === "number" ? l.shadowOffsetY : 4,
+            x: typeof l.x === "number" ? l.x : 50,
+            y: typeof l.y === "number" ? l.y : 80,
+            style: {
+              width: typeof l.width === "number" ? l.width : 35,
+              opacity: typeof l.opacity === "number" ? l.opacity : 1,
+            },
+          }));
+
+          // Sanctuary display canvas pinned layers (Band 3 rendered by DisplayCanvas)
+          const sanctuaryLayers = visibleLayers.map((l) => ({
+            id: l.id,
+            type: l.type || "image",
+            url:
+              l.url ||
+              l.content ||
+              (l.filePath ? pathToFileURL(l.filePath).href : ""),
+            content:
+              l.content ||
+              l.url ||
+              (l.filePath ? pathToFileURL(l.filePath).href : ""),
+            text: l.text,
+            fontFamily: l.fontFamily,
+            fontSize: l.fontSize ? `${l.fontSize}px` : undefined,
+            fontWeight: l.fontWeight,
+            color: l.color,
+            textAlign: l.textAlign,
+            textTransform: l.textTransform,
+            shape: l.shape,
+            fillType: l.fillType || (l.gradient ? "linear-gradient" : "solid"),
+            fill: l.fill,
+            gradient: l.gradient || null,
+            stroke: l.stroke,
+            strokeWidth: l.strokeWidth,
+            borderRadius: typeof l.borderRadius === "number" ? l.borderRadius : (l.shape === "rounded-rect" || l.frameShape === "rounded-rect" ? 12 : 0),
+            aspectLocked: Boolean(l.aspectLocked),
+            height: l.height,
+            rotation: l.rotation || 0,
+            frameShape: l.frameShape || "none",
+            frameCrop: l.frameCrop || { fitMode: "fill", zoom: 1, panX: 0, panY: 0 },
+            mask: l.mask || "square",
+            shadowEnabled: Boolean(l.shadowEnabled),
+            shadowColor: l.shadowColor,
+            shadowOpacity: typeof l.shadowOpacity === "number" ? l.shadowOpacity : 60,
+            shadowBlur: typeof l.shadowBlur === "number" ? l.shadowBlur : 10,
+            shadowOffsetX: typeof l.shadowOffsetX === "number" ? l.shadowOffsetX : 0,
+            shadowOffsetY: typeof l.shadowOffsetY === "number" ? l.shadowOffsetY : 4,
+            x: (typeof l.x === "number" ? l.x : 50) / 100,
+            y: (typeof l.y === "number" ? l.y : 80) / 100,
+            width: (typeof l.width === "number" ? l.width : 35) / 100,
+            opacity: typeof l.opacity === "number" ? l.opacity : 1,
+            zIndex: typeof l.zIndex === "number" ? l.zIndex : 30,
+          }));
+
+          // Design Studio is strictly Live Program only (for streaming and recording)
+          updateLiveBroadcastConfig({ layers: streamLayers, hasSanctuaryOverlay: false });
+
+          // Design Studio must never publish to General Screen or presentation displays.
+          // Remove any stale General Screen overlays belonging to Design Studio
+          // without clearing unrelated pinned layers (countdown, alert pins) or presentation content.
+          if (Array.isArray(currentCanvasState.pinnedLayers) && currentCanvasState.pinnedLayers.length > 0) {
+            const prevCount = currentCanvasState.pinnedLayers.length;
+            currentCanvasState.pinnedLayers = currentCanvasState.pinnedLayers.filter(
+              (l) => !l.isDesignStudio && l.origin !== "design-studio" && !visibleLayers.some((vl) => vl.id === l.id)
+            );
+            if (currentCanvasState.pinnedLayers.length !== prevCount) {
+              broadcastCanvasState(currentCanvasState);
+            }
+          }
+        },
+      );
+
+      broadcastToAllWindows(
+        "design:live-changed",
+        designStudioService.getLiveState(),
+      );
+      return result;
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  },
+);
+
+ipcMain.handle("design:hide", async () => {
+  try {
+    const result = designStudioService.hideDesign(() => {
+      updateLiveBroadcastConfig({ layers: [], hasSanctuaryOverlay: false });
+      // Remove any stale Design Studio overlays from General Screen without clearing unrelated pinned layers
+      if (Array.isArray(currentCanvasState.pinnedLayers) && currentCanvasState.pinnedLayers.length > 0) {
+        const prevCount = currentCanvasState.pinnedLayers.length;
+        currentCanvasState.pinnedLayers = currentCanvasState.pinnedLayers.filter(
+          (l) => !l.isDesignStudio && l.origin !== "design-studio"
+        );
+        if (currentCanvasState.pinnedLayers.length !== prevCount) {
+          broadcastCanvasState(currentCanvasState);
+        }
+      }
+    });
+    broadcastToAllWindows(
+      "design:live-changed",
+      designStudioService.getLiveState(),
+    );
+    return result;
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle("design:get-live-state", async () => {
+  return designStudioService.getLiveState();
+});
+
+ipcMain.handle("design:save-processed-asset", async (_event, payload) => {
+  try {
+    const res = designStudioService.saveProcessedAsset(payload);
+    return { ok: true, asset: res };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle("design:list-live-controls", async () => {
+  try {
+    return { ok: true, liveControls: designStudioService.listLiveControls() };
+  } catch (err) {
+    return { ok: false, error: err.message, liveControls: [] };
+  }
+});
+
+ipcMain.handle("design:save-live-control", async (_event, control) => {
+  try {
+    const saved = designStudioService.saveLiveControl(control);
+    broadcastToAllWindows("design:live-controls-changed", designStudioService.listLiveControls());
+    return { ok: true, control: saved };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle("design:delete-live-control", async (_event, id) => {
+  try {
+    const res = designStudioService.deleteLiveControl(id);
+    broadcastToAllWindows("design:live-controls-changed", designStudioService.listLiveControls());
+    return res;
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle("design:clear-all-live-controls", async () => {
+  try {
+    const res = designStudioService.clearAllLiveControls();
+    broadcastToAllWindows("design:live-controls-changed", []);
+    return res;
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle("design:set-active-controls-overlays", async (_event, overlays) => {
+  try {
+    // overlays is an array of { id, layers, transitionState, isVisible }
+    updateLiveBroadcastConfig({ activeStudioControls: overlays || [] });
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle("design:get-role-assignments", async () => {
+  try {
+    return { ok: true, roleAssignments: designStudioService.getRoleAssignments() };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle("design:set-role-assignment", async (_event, { role, templateId }) => {
+  try {
+    const res = designStudioService.setRoleAssignment(role, templateId);
+    broadcastToAllWindows("design:role-assignments-changed", res.roleAssignments);
+    return res;
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+ipcMain.handle("design:capture-ui", async (_event, outPath) => {
+  try {
+    if (!controllerWindow || controllerWindow.isDestroyed()) {
+      return { ok: false, error: "Controller window not available" };
+    }
+    const img = await controllerWindow.webContents.capturePage();
+    const dest =
+      outPath ||
+      path.join(app.getPath("userData"), `screenshot_${Date.now()}.png`);
+    fs.writeFileSync(dest, img.toPNG());
+    return { ok: true, path: dest };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
+
+// Development UI Capture Watcher (Confined to explicit dev flag)
+if (process.env.OCS_DEV_SCREENSHOT === "1" || !app.isPackaged) {
+  setInterval(async () => {
+    try {
+      const triggerFile = path.join(
+        app.getPath("userData"),
+        "take_screenshot_cmd.json",
+      );
+      if (fs.existsSync(triggerFile)) {
+        const raw = fs.readFileSync(triggerFile, "utf8");
+        fs.unlinkSync(triggerFile);
+        const { outPath, evalJs } = JSON.parse(raw);
+        if (evalJs && controllerWindow && !controllerWindow.isDestroyed()) {
+          await controllerWindow.webContents.executeJavaScript(evalJs);
+          await new Promise((r) => setTimeout(r, 600));
+        }
+        if (controllerWindow && !controllerWindow.isDestroyed() && outPath) {
+          const img = await controllerWindow.webContents.capturePage();
+          fs.writeFileSync(outPath, img.toPNG());
+          console.log(
+            "[Screenshot Watcher] Captured controller screenshot to:",
+            outPath,
+          );
+        }
+      }
+    } catch (err) {
+      console.warn("[Screenshot Watcher] Error:", err.message);
+    }
+  }, 800);
+}
+
 // ------ SERVER SETUP ------
 const express = require("express");
 const http = require("http");
@@ -1268,10 +1624,16 @@ const sqlite3 = require("sqlite3").verbose();
 
 function getBibleDbPath() {
   const isPackaged = app ? app.isPackaged : false;
-  
+
   // 1. Packaged Electron app (via asarUnpack)
   if (isPackaged && process.resourcesPath) {
-    const unpackedPath = path.join(process.resourcesPath, "app.asar.unpacked", "src", "Bible", "bibles.db");
+    const unpackedPath = path.join(
+      process.resourcesPath,
+      "app.asar.unpacked",
+      "src",
+      "Bible",
+      "bibles.db",
+    );
     if (fs.existsSync(unpackedPath)) {
       return unpackedPath;
     }
@@ -1279,7 +1641,12 @@ function getBibleDbPath() {
 
   // 2. If running inside app.asar, resolve sibling app.asar.unpacked directory
   if (__dirname.includes("app.asar")) {
-    const unpackedPath = path.join(__dirname.replace("app.asar", "app.asar.unpacked"), "src", "Bible", "bibles.db");
+    const unpackedPath = path.join(
+      __dirname.replace("app.asar", "app.asar.unpacked"),
+      "src",
+      "Bible",
+      "bibles.db",
+    );
     if (fs.existsSync(unpackedPath)) {
       return unpackedPath;
     }
@@ -1287,7 +1654,12 @@ function getBibleDbPath() {
 
   // 3. Fallback to direct resources directory
   if (process.resourcesPath) {
-    const directPath = path.join(process.resourcesPath, "src", "Bible", "bibles.db");
+    const directPath = path.join(
+      process.resourcesPath,
+      "src",
+      "Bible",
+      "bibles.db",
+    );
     if (fs.existsSync(directPath)) {
       return directPath;
     }
@@ -1304,7 +1676,10 @@ const db = new sqlite3.Database(dbPath, (err) => {
   if (err) {
     console.error("[BibleDB] Database opening error:", err, "at path:", dbPath);
   } else {
-    console.log("[BibleDB] Successfully connected to SQLite database at:", dbPath);
+    console.log(
+      "[BibleDB] Successfully connected to SQLite database at:",
+      dbPath,
+    );
   }
 });
 
@@ -1322,8 +1697,12 @@ serverApp.get("/pair-info", (_req, res) => {
     ok: true,
     port: PORT,
     pairingRequired: true,
-    apiBaseUrl: (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-git-main-acerexs-projects.vercel.app/api",
-    authLoginUrl: (appSettings ? appSettings.get("authLoginUrl") : null) || "https://waveio-git-main-acerexs-projects.vercel.app",
+    apiBaseUrl:
+      (appSettings ? appSettings.get("apiBaseUrl") : null) ||
+      "https://ocs-backend-git-main-acerexs-projects.vercel.app/api",
+    authLoginUrl:
+      (appSettings ? appSettings.get("authLoginUrl") : null) ||
+      "https://waveio-git-main-acerexs-projects.vercel.app",
     // Never expose the live token/code over an unauthenticated HTTP GET
   });
 });
@@ -1331,10 +1710,13 @@ serverApp.get("/pair-info", (_req, res) => {
 // Direct HTTP Upload Endpoint for heavy video/media transfers
 serverApp.post("/api/upload-asset", async (req, res) => {
   try {
-    const { name, type, size, mimeType, dataBase64, deviceName, pairingCode } = req.body || {};
+    const { name, type, size, mimeType, dataBase64, deviceName, pairingCode } =
+      req.body || {};
 
     if (!name || !dataBase64) {
-      return res.status(400).json({ ok: false, error: "Invalid asset payload" });
+      return res
+        .status(400)
+        .json({ ok: false, error: "Invalid asset payload" });
     }
 
     const transferId = `xfer-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
@@ -1343,7 +1725,11 @@ serverApp.post("/api/upload-asset", async (req, res) => {
     let responded = false;
     pendingAssetTransfers.set(transferId, {
       transferId,
-      device: { id: "http-upload", name: deviceName || "Mobile Companion", ip: clientIp },
+      device: {
+        id: "http-upload",
+        name: deviceName || "Mobile Companion",
+        ip: clientIp,
+      },
       payload: { name, type, size, mimeType, dataBase64 },
       ack: (result) => {
         if (!responded) {
@@ -1355,7 +1741,7 @@ serverApp.post("/api/upload-asset", async (req, res) => {
     });
 
     console.log(
-      `[Remote Asset HTTP] Incoming transfer ${transferId} from ${deviceName || "Mobile"}: ${name} (${type}, ${size} bytes)`
+      `[Remote Asset HTTP] Incoming transfer ${transferId} from ${deviceName || "Mobile"}: ${name} (${type}, ${size} bytes)`,
     );
 
     // Surface accept/reject prompt to desktop
@@ -1400,9 +1786,13 @@ serverApp.post("/api/upload-asset", async (req, res) => {
 // Direct Raw Binary Stream Upload Endpoint (compatible with Expo uploadAsync)
 serverApp.post("/api/upload-asset-raw", (req, res) => {
   try {
-    const filename = decodeURIComponent(req.headers["x-filename"] || `asset_${Date.now()}`);
+    const filename = decodeURIComponent(
+      req.headers["x-filename"] || `asset_${Date.now()}`,
+    );
     const fileType = req.headers["x-filetype"] || "media";
-    const deviceName = decodeURIComponent(req.headers["x-devicename"] || "Mobile Companion");
+    const deviceName = decodeURIComponent(
+      req.headers["x-devicename"] || "Mobile Companion",
+    );
     const clientIp = req.ip || req.socket.remoteAddress;
     const transferId = `xfer-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -1433,7 +1823,7 @@ serverApp.post("/api/upload-asset-raw", (req, res) => {
       });
 
       console.log(
-        `[Remote Asset RAW HTTP] Incoming transfer ${transferId} from ${deviceName}: ${filename} (${fileType}, ${buf.length} bytes)`
+        `[Remote Asset RAW HTTP] Incoming transfer ${transferId} from ${deviceName}: ${filename} (${fileType}, ${buf.length} bytes)`,
       );
 
       // Surface accept/reject prompt to desktop
@@ -1519,7 +1909,7 @@ const MAX_CAMERA_SLOTS = 6;
 
 // Controller-permission: exactly one holder at a time.
 // 'desktop' = the desktop Electron window; a socketId = a paired phone.
-let switcherControllerSocketId = 'desktop';
+let switcherControllerSocketId = "desktop";
 
 // Currently-selected Program source socketId (null = none)
 let switcherProgramSourceId = null;
@@ -1529,12 +1919,12 @@ let switcherRouteGeneral = false;
 let switcherRouteSpeaker = false;
 
 // Active display selection & A/B source assignments
-let switcherActiveDisplay = 'display1'; // 'display1' | 'display2'
-let switcherDisplay1Source = 'general'; // 'general' | socketId
-let switcherDisplay2Source = null;      // 'speaker' | socketId | null
+let switcherActiveDisplay = "display1"; // 'display1' | 'display2'
+let switcherDisplay1Source = "general"; // 'general' | socketId
+let switcherDisplay2Source = null; // 'speaker' | socketId | null
 let savedPresentationContentSlot = null; // Preserves presentation contentSlot (lyrics/bible/slides) when live-output/camera overrides
-let savedGeneralContentSlot = null;      // Preserves General Screen presentation state during live sharing
-let savedSpeakerContentSlot = null;      // Preserves Speaker Screen confidence state during live sharing
+let savedGeneralContentSlot = null; // Preserves General Screen presentation state during live sharing
+let savedSpeakerContentSlot = null; // Preserves Speaker Screen confidence state during live sharing
 
 // ─── Live Broadcast Engine: Screen Scaling & Overlays ────────────────────────
 let liveBroadcastConfig = {
@@ -1558,16 +1948,16 @@ let liveBroadcastConfig = {
     y: 88,
     width: 36,
     style: {
-      shape: "rounded-rect",     // "rounded-rect" | "angled-cut" | "minimal-bar" | "pill"
-      badgeShape: "circle",      // "circle" | "triangle" | "rect" | "none"
-      badgeIcon: "cross",        // "cross" | "dove" | "user" | "mic" | "star" | "bible"
-      primaryColor: "#581c87",   // Deep purple
+      shape: "rounded-rect", // "rounded-rect" | "angled-cut" | "minimal-bar" | "pill"
+      badgeShape: "circle", // "circle" | "triangle" | "rect" | "none"
+      badgeIcon: "cross", // "cross" | "dove" | "user" | "mic" | "star" | "bible"
+      primaryColor: "#581c87", // Deep purple
       secondaryColor: "#3b0764", // Secondary gradient
-      accentColor: "#a855f7",    // Accent highlight
+      accentColor: "#a855f7", // Accent highlight
       textColor: "#ffffff",
       subtitleColor: "#cbd5e1",
       opacity: 0.95,
-      fontSize: "medium",        // "small" | "medium" | "large"
+      fontSize: "medium", // "small" | "medium" | "large"
       uppercaseTitle: false,
       showAccentSlash: true,
     },
@@ -1590,39 +1980,72 @@ let liveBroadcastConfig = {
     speed: "medium", // "slow" | "medium" | "fast"
   },
   layers: [], // Custom image & graphic overlay layers [{ id, type, content, name, x, y, style: { width, opacity, borderRadius } }]
+  activeStudioControls: [], // Published Live Control tiles [{ id, label, snapshotLayers, transition, status, animStartTime }]
 };
 
 // Generic destination registry for Live Output routing (DEF-05)
 const switcherDestinations = new Map([
-  ['general', {
-    id: 'general',
-    name: 'General Screen',
-    get active() { return switcherRouteGeneral; },
-    set active(val) { switcherRouteGeneral = !!val; },
-    get savedContentSlot() { return savedGeneralContentSlot; },
-    set savedContentSlot(val) { savedGeneralContentSlot = val; },
-    getWindow: () => (generalWindow && !generalWindow.isDestroyed() ? generalWindow : null),
-    sendLiveOutputFrame: (frameData) => {
-      safeWebContentsSend(generalWindow, "switcher-live-output-frame", frameData);
+  [
+    "general",
+    {
+      id: "general",
+      name: "General Screen",
+      get active() {
+        return switcherRouteGeneral;
+      },
+      set active(val) {
+        switcherRouteGeneral = !!val;
+      },
+      get savedContentSlot() {
+        return savedGeneralContentSlot;
+      },
+      set savedContentSlot(val) {
+        savedGeneralContentSlot = val;
+      },
+      getWindow: () =>
+        generalWindow && !generalWindow.isDestroyed() ? generalWindow : null,
+      sendLiveOutputFrame: (frameData) => {
+        safeWebContentsSend(
+          generalWindow,
+          "switcher-live-output-frame",
+          frameData,
+        );
+      },
     },
-  }],
-  ['speaker', {
-    id: 'speaker',
-    name: 'Speaker Screen',
-    get active() { return switcherRouteSpeaker; },
-    set active(val) { switcherRouteSpeaker = !!val; },
-    get savedContentSlot() { return savedSpeakerContentSlot; },
-    set savedContentSlot(val) { savedSpeakerContentSlot = val; },
-    getWindow: () => (speakerWindow && !speakerWindow.isDestroyed() ? speakerWindow : null),
-    sendLiveOutputFrame: (frameData) => {
-      safeWebContentsSend(speakerWindow, "switcher-live-output-frame", frameData);
+  ],
+  [
+    "speaker",
+    {
+      id: "speaker",
+      name: "Speaker Screen",
+      get active() {
+        return switcherRouteSpeaker;
+      },
+      set active(val) {
+        switcherRouteSpeaker = !!val;
+      },
+      get savedContentSlot() {
+        return savedSpeakerContentSlot;
+      },
+      set savedContentSlot(val) {
+        savedSpeakerContentSlot = val;
+      },
+      getWindow: () =>
+        speakerWindow && !speakerWindow.isDestroyed() ? speakerWindow : null,
+      sendLiveOutputFrame: (frameData) => {
+        safeWebContentsSend(
+          speakerWindow,
+          "switcher-live-output-frame",
+          frameData,
+        );
+      },
     },
-  }],
+  ],
 ]);
 
 function routeSwitcherDestination(destinationId, active) {
   const dest = switcherDestinations.get(destinationId);
-  if (!dest) return { ok: false, error: 'Invalid destination' };
+  if (!dest) return { ok: false, error: "Invalid destination" };
 
   const isShared = !!active;
   dest.active = isShared;
@@ -1631,57 +2054,76 @@ function routeSwitcherDestination(destinationId, active) {
   const win = dest.getWindow();
 
   if (isShared) {
-    if (currentCanvasState.contentSlot && currentCanvasState.contentSlot.type !== 'live-output' && currentCanvasState.contentSlot.type !== 'live-camera') {
+    if (
+      currentCanvasState.contentSlot &&
+      currentCanvasState.contentSlot.type !== "live-output" &&
+      currentCanvasState.contentSlot.type !== "live-camera"
+    ) {
       dest.savedContentSlot = currentCanvasState.contentSlot;
-      if (dest.id === 'general') {
+      if (dest.id === "general") {
         savedPresentationContentSlot = currentCanvasState.contentSlot;
       }
     }
-    const liveOutputSlot = { type: 'live-output', data: { title: 'Live Output' } };
-    if (dest.id === 'general') {
+    const liveOutputSlot = {
+      type: "live-output",
+      data: { title: "Live Output" },
+    };
+    if (dest.id === "general") {
       currentCanvasState.contentSlot = liveOutputSlot;
     }
     broadcastCanvasState(
-      dest.id === 'general' ? currentCanvasState : { ...currentCanvasState, contentSlot: liveOutputSlot },
-      [dest.id]
+      dest.id === "general"
+        ? currentCanvasState
+        : { ...currentCanvasState, contentSlot: liveOutputSlot },
+      [dest.id],
     );
   } else {
-    const fallbackSlot = dest.id === 'general' ? savedPresentationContentSlot : null;
-    const restoredSlot = dest.savedContentSlot || fallbackSlot || { type: 'none', data: null };
-    if (dest.id === 'general') {
+    const fallbackSlot =
+      dest.id === "general" ? savedPresentationContentSlot : null;
+    const restoredSlot = dest.savedContentSlot ||
+      fallbackSlot || { type: "none", data: null };
+    if (dest.id === "general") {
       currentCanvasState.contentSlot = restoredSlot;
     }
 
     // DEF-08: Ensure destination window receives set-content or clear-content
     if (win) {
-      if (restoredSlot && restoredSlot.type !== 'none') {
+      if (restoredSlot && restoredSlot.type !== "none") {
         safeWebContentsSend(win, "set-content", restoredSlot);
       } else {
         safeWebContentsSend(win, "clear-content");
       }
     }
     broadcastCanvasState(
-      dest.id === 'general' ? currentCanvasState : { ...currentCanvasState, contentSlot: restoredSlot },
-      [dest.id]
+      dest.id === "general"
+        ? currentCanvasState
+        : { ...currentCanvasState, contentSlot: restoredSlot },
+      [dest.id],
     );
   }
 
   broadcastSwitcherState();
-  return { ok: true, routeGeneral: switcherRouteGeneral, routeSpeaker: switcherRouteSpeaker };
+  return {
+    ok: true,
+    routeGeneral: switcherRouteGeneral,
+    routeSpeaker: switcherRouteSpeaker,
+  };
 }
 
 // Global transition settings (Phase B)
 let switcherTransitionSetting = {
-  type: 'fade',
+  type: "fade",
   duration: 750,
-  direction: 'left-to-right',
+  direction: "left-to-right",
 };
 let switcherActiveTransition = null;
 let switcherTransitionTimer = null;
 
 // Assign the next available slot index (1–6)
 function _nextSwitcherSlot() {
-  const used = new Set([...switcherCameraSlots.values()].map((v) => v.slotIndex));
+  const used = new Set(
+    [...switcherCameraSlots.values()].map((v) => v.slotIndex),
+  );
   for (let i = 1; i <= MAX_CAMERA_SLOTS; i++) {
     if (!used.has(i)) return i;
   }
@@ -1696,7 +2138,7 @@ function _switcherSlotsPayload() {
       socketId: sockId,
       name: info.name,
       slotIndex: info.slotIndex,
-      type: info.type || 'camera',
+      type: info.type || "camera",
       isLocal: !!info.isLocal,
       deviceId: info.deviceId || null,
     });
@@ -1722,52 +2164,88 @@ function broadcastSwitcherState() {
   if (io) {
     for (const [id, sock] of io.sockets.sockets) {
       if (isPaired(id)) {
-        sock.emit('switcher:state', state);
+        sock.emit("switcher:state", state);
       }
     }
   }
   // To controller window
-  broadcastToAllWindows('switcher-state-update', state);
+  broadcastToAllWindows("switcher-state-update", state);
 }
 
 function broadcastLiveConfig() {
   if (io) {
     for (const [id, sock] of io.sockets.sockets) {
       if (isPaired(id)) {
-        sock.emit('switcher:broadcast-config', liveBroadcastConfig);
+        sock.emit("switcher:broadcast-config", liveBroadcastConfig);
       }
     }
   }
-  broadcastToAllWindows('switcher-broadcast-config', liveBroadcastConfig);
+  broadcastToAllWindows("switcher-broadcast-config", liveBroadcastConfig);
+}
+
+let bibleDismissTimer = null;
+
+function dismissBibleRoleControl() {
+  if (bibleDismissTimer) {
+    clearTimeout(bibleDismissTimer);
+    bibleDismissTimer = null;
+  }
+  const controls = Array.isArray(liveBroadcastConfig.activeStudioControls)
+    ? [...liveBroadcastConfig.activeStudioControls]
+    : [];
+  const idx = controls.findIndex(
+    (c) => c && (c.id === "role_playback_bible" || c.role === "bible")
+  );
+  if (idx >= 0) {
+    const ctrl = controls[idx];
+    if (ctrl.status === "hidden") return;
+    ctrl.status = "exiting";
+    ctrl.animStartTime = Date.now();
+    const exitDur = ctrl.transition?.exit?.duration || 350;
+    broadcastLiveConfig();
+
+    setTimeout(() => {
+      const curControls = Array.isArray(liveBroadcastConfig.activeStudioControls)
+        ? liveBroadcastConfig.activeStudioControls.filter(
+            (c) => c && c.id !== "role_playback_bible" && c.role !== "bible"
+          )
+        : [];
+      liveBroadcastConfig.activeStudioControls = curControls;
+      broadcastLiveConfig();
+    }, exitDur + 50);
+  }
 }
 
 function updateLiveBroadcastConfig(payload = {}) {
-  if (!payload || typeof payload !== 'object') return;
-  if (typeof payload.scale === 'number') {
+  if (!payload || typeof payload !== "object") return;
+  if (typeof payload.scale === "number") {
     liveBroadcastConfig.scale = Math.max(0.5, Math.min(1.0, payload.scale));
   }
-  if (typeof payload.fitMode === 'string') {
+  if (typeof payload.fitMode === "string") {
     liveBroadcastConfig.fitMode = payload.fitMode;
   }
-  if (payload.logo && typeof payload.logo === 'object') {
+  if (payload.logo && typeof payload.logo === "object") {
     liveBroadcastConfig.logo = {
       ...liveBroadcastConfig.logo,
       ...payload.logo,
     };
   }
-  if (payload.lowerThird && typeof payload.lowerThird === 'object') {
+  if (payload.lowerThird && typeof payload.lowerThird === "object") {
     liveBroadcastConfig.lowerThird = {
       ...liveBroadcastConfig.lowerThird,
       ...payload.lowerThird,
     };
   }
-  if (payload.bibleLowerThird && typeof payload.bibleLowerThird === 'object') {
+  if (payload.bibleLowerThird && typeof payload.bibleLowerThird === "object") {
     liveBroadcastConfig.bibleLowerThird = {
       ...liveBroadcastConfig.bibleLowerThird,
       ...payload.bibleLowerThird,
     };
+    if (payload.bibleLowerThird.isShowing === false) {
+      dismissBibleRoleControl();
+    }
   }
-  if (payload.ticker && typeof payload.ticker === 'object') {
+  if (payload.ticker && typeof payload.ticker === "object") {
     liveBroadcastConfig.ticker = {
       ...liveBroadcastConfig.ticker,
       ...payload.ticker,
@@ -1776,26 +2254,32 @@ function updateLiveBroadcastConfig(payload = {}) {
   if (Array.isArray(payload.layers)) {
     liveBroadcastConfig.layers = payload.layers;
   }
+  if (Array.isArray(payload.activeStudioControls)) {
+    liveBroadcastConfig.activeStudioControls = payload.activeStudioControls;
+  }
+  if (typeof payload.hasSanctuaryOverlay === "boolean") {
+    liveBroadcastConfig.hasSanctuaryOverlay = payload.hasSanctuaryOverlay;
+  }
   broadcastLiveConfig();
 }
 
 function broadcastTransitionStart(transition) {
-  broadcastToAllWindows('switcher-transition-start', transition);
+  broadcastToAllWindows("switcher-transition-start", transition);
   if (io) {
     for (const [id, sock] of io.sockets.sockets) {
       if (isPaired(id)) {
-        sock.emit('switcher:transition-start', transition);
+        sock.emit("switcher:transition-start", transition);
       }
     }
   }
 }
 
 function broadcastTransitionComplete(programSourceId) {
-  broadcastToAllWindows('switcher-transition-complete', { programSourceId });
+  broadcastToAllWindows("switcher-transition-complete", { programSourceId });
   if (io) {
     for (const [id, sock] of io.sockets.sockets) {
       if (isPaired(id)) {
-        sock.emit('switcher:transition-complete', { programSourceId });
+        sock.emit("switcher:transition-complete", { programSourceId });
       }
     }
   }
@@ -1810,27 +2294,35 @@ function executeProgramSwitch(targetId, customTransition) {
   const toId = targetId;
 
   // Preserve non-camera presentation contentSlot whenever switching from presentation
-  if (currentCanvasState.contentSlot && currentCanvasState.contentSlot.type !== 'live-camera') {
+  if (
+    currentCanvasState.contentSlot &&
+    currentCanvasState.contentSlot.type !== "live-camera"
+  ) {
     savedPresentationContentSlot = currentCanvasState.contentSlot;
   }
 
   // If already on targetId with no transition running, nothing to do
-  const currentEffective = switcherProgramSourceId || 'general';
-  const targetEffective = toId || 'general';
+  const currentEffective = switcherProgramSourceId || "general";
+  const targetEffective = toId || "general";
   if (!switcherActiveTransition && currentEffective === targetEffective) {
     return { ok: true, programSourceId: switcherProgramSourceId };
   }
 
   // If already transitioning to this exact target, ignore duplicate clicks
   if (switcherActiveTransition && switcherActiveTransition.toId === toId) {
-    return { ok: true, transitioning: true, transition: switcherActiveTransition };
+    return {
+      ok: true,
+      transitioning: true,
+      transition: switcherActiveTransition,
+    };
   }
 
   // Interruption handling (Section 4):
   // Cancel previous transition timer immediately
-  let fromId = switcherProgramSourceId || 'general';
+  let fromId = switcherProgramSourceId || "general";
   if (switcherActiveTransition) {
-    fromId = switcherActiveTransition.toId || switcherProgramSourceId || 'general';
+    fromId =
+      switcherActiveTransition.toId || switcherProgramSourceId || "general";
     if (switcherTransitionTimer) {
       clearTimeout(switcherTransitionTimer);
       switcherTransitionTimer = null;
@@ -1838,21 +2330,25 @@ function executeProgramSwitch(targetId, customTransition) {
     switcherActiveTransition = null;
   }
 
-  const finalSourceId = (toId === 'general' || !toId) ? null : toId;
+  const finalSourceId = toId === "general" || !toId ? null : toId;
 
   // If cut, no previous source, or duration <= 0: immediate hard cut
-  if (transition.type === 'cut' || !fromId || transition.duration <= 0) {
+  if (transition.type === "cut" || !fromId || transition.duration <= 0) {
     switcherActiveTransition = null;
     switcherProgramSourceId = finalSourceId;
     if (finalSourceId) {
       const targetSock = io && io.sockets.sockets.get(finalSourceId);
-      if (targetSock) targetSock.emit('switcher:you-are-program', { active: true });
+      if (targetSock)
+        targetSock.emit("switcher:you-are-program", { active: true });
     }
     if (switcherRouteGeneral || switcherRouteSpeaker) {
       const dests = [];
-      if (switcherRouteGeneral) dests.push('general');
-      if (switcherRouteSpeaker) dests.push('speaker');
-      currentCanvasState.contentSlot = { type: 'live-output', data: { title: 'Live Output' } };
+      if (switcherRouteGeneral) dests.push("general");
+      if (switcherRouteSpeaker) dests.push("speaker");
+      currentCanvasState.contentSlot = {
+        type: "live-output",
+        data: { title: "Live Output" },
+      };
       broadcastCanvasState(currentCanvasState, dests);
     }
     broadcastSwitcherState();
@@ -1861,18 +2357,28 @@ function executeProgramSwitch(targetId, customTransition) {
   }
 
   // Animated transition (Fade / Wipe)
-  const duration = Math.max(100, Math.min(3000, Number(transition.duration) || 750));
-  const type = ['cut', 'fade', 'wipe'].includes(transition.type) ? transition.type : 'fade';
-  const direction = ['left-to-right', 'right-to-left', 'top-to-bottom', 'bottom-to-top'].includes(transition.direction)
+  const duration = Math.max(
+    100,
+    Math.min(3000, Number(transition.duration) || 750),
+  );
+  const type = ["cut", "fade", "wipe"].includes(transition.type)
+    ? transition.type
+    : "fade";
+  const direction = [
+    "left-to-right",
+    "right-to-left",
+    "top-to-bottom",
+    "bottom-to-top",
+  ].includes(transition.direction)
     ? transition.direction
-    : 'left-to-right';
+    : "left-to-right";
   const transitionId = `trans_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
   const startTime = Date.now();
 
   switcherActiveTransition = {
     id: transitionId,
     fromId,
-    toId: toId || 'general',
+    toId: toId || "general",
     type,
     duration,
     direction,
@@ -1882,7 +2388,8 @@ function executeProgramSwitch(targetId, customTransition) {
   // Section 5: Tally lights up immediately at transition start
   if (finalSourceId) {
     const targetSock = io && io.sockets.sockets.get(finalSourceId);
-    if (targetSock) targetSock.emit('switcher:you-are-program', { active: true });
+    if (targetSock)
+      targetSock.emit("switcher:you-are-program", { active: true });
   }
 
   // Broadcast transition start
@@ -1891,9 +2398,12 @@ function executeProgramSwitch(targetId, customTransition) {
   // Keep routed displays on composited live-output stream
   if (switcherRouteGeneral || switcherRouteSpeaker) {
     const dests = [];
-    if (switcherRouteGeneral) dests.push('general');
-    if (switcherRouteSpeaker) dests.push('speaker');
-    currentCanvasState.contentSlot = { type: 'live-output', data: { title: 'Live Switcher Output' } };
+    if (switcherRouteGeneral) dests.push("general");
+    if (switcherRouteSpeaker) dests.push("speaker");
+    currentCanvasState.contentSlot = {
+      type: "live-output",
+      data: { title: "Live Switcher Output" },
+    };
     broadcastCanvasState(currentCanvasState, dests);
   }
 
@@ -1903,13 +2413,18 @@ function executeProgramSwitch(targetId, customTransition) {
     switcherActiveTransition = null;
     // Section 5: Authoritative program state updates at transition completion
     switcherProgramSourceId = finalSourceId;
-    console.log(`[Switcher] Transition complete. Authoritative program source: ${finalSourceId}`);
+    console.log(
+      `[Switcher] Transition complete. Authoritative program source: ${finalSourceId}`,
+    );
 
     if (switcherRouteGeneral || switcherRouteSpeaker) {
       const dests = [];
-      if (switcherRouteGeneral) dests.push('general');
-      if (switcherRouteSpeaker) dests.push('speaker');
-      currentCanvasState.contentSlot = { type: 'live-output', data: { title: 'Live Output' } };
+      if (switcherRouteGeneral) dests.push("general");
+      if (switcherRouteSpeaker) dests.push("speaker");
+      currentCanvasState.contentSlot = {
+        type: "live-output",
+        data: { title: "Live Output" },
+      };
       broadcastCanvasState(currentCanvasState, dests);
     }
 
@@ -1917,16 +2432,33 @@ function executeProgramSwitch(targetId, customTransition) {
     broadcastTransitionComplete(finalSourceId);
   }, duration);
 
-  return { ok: true, inTransition: true, transitionId, programSourceId: finalSourceId };
+  return {
+    ok: true,
+    inTransition: true,
+    transitionId,
+    programSourceId: finalSourceId,
+  };
 }
 
 function switchDisplay(targetDisplay, customTransition) {
-  switcherActiveDisplay = targetDisplay === 'display2' ? 'display2' : 'display1';
-  let targetSource = switcherActiveDisplay === 'display1' ? switcherDisplay1Source : switcherDisplay2Source;
-  if (!targetSource || (switcherActiveDisplay === 'display2' && targetSource === 'speaker')) {
-    const firstCam = switcherCameraSlots.size > 0 ? Array.from(switcherCameraSlots.keys())[0] : null;
-    targetSource = firstCam || (switcherActiveDisplay === 'display1' ? 'general' : 'speaker');
-    if (firstCam && switcherActiveDisplay === 'display2') {
+  switcherActiveDisplay =
+    targetDisplay === "display2" ? "display2" : "display1";
+  let targetSource =
+    switcherActiveDisplay === "display1"
+      ? switcherDisplay1Source
+      : switcherDisplay2Source;
+  if (
+    !targetSource ||
+    (switcherActiveDisplay === "display2" && targetSource === "speaker")
+  ) {
+    const firstCam =
+      switcherCameraSlots.size > 0
+        ? Array.from(switcherCameraSlots.keys())[0]
+        : null;
+    targetSource =
+      firstCam ||
+      (switcherActiveDisplay === "display1" ? "general" : "speaker");
+    if (firstCam && switcherActiveDisplay === "display2") {
       switcherDisplay2Source = firstCam;
     }
   }
@@ -1940,11 +2472,14 @@ function broadcastDevicesUpdated() {
     name: d.name,
     paired: !!d.paired,
     status: d.paired ? "connected" : "pending",
-    isAdmin: adminDeviceIds.has(d.id) || adminDeviceNames.has(d.name) || !!d.isAdmin,
+    isAdmin:
+      adminDeviceIds.has(d.id) || adminDeviceNames.has(d.name) || !!d.isAdmin,
     isVoiceActive: !!d.isVoiceActive,
     connectedAt: d.connectedAt,
     isCameraSource: switcherCameraSlots.has(d.id),
-    cameraSlotIndex: switcherCameraSlots.has(d.id) ? switcherCameraSlots.get(d.id).slotIndex : null,
+    cameraSlotIndex: switcherCameraSlots.has(d.id)
+      ? switcherCameraSlots.get(d.id).slotIndex
+      : null,
     isSwitcherController: d.id === switcherControllerSocketId,
   }));
   for (const win of BrowserWindow.getAllWindows()) {
@@ -1991,10 +2526,18 @@ io.on("connection", (socket) => {
     }
   };
 
-  if (socket.handshake.query && (socket.handshake.query.isStudioCamera === "true" || socket.handshake.query.isSwitcherCamera === "true")) {
+  if (
+    socket.handshake.query &&
+    (socket.handshake.query.isStudioCamera === "true" ||
+      socket.handshake.query.isSwitcherCamera === "true")
+  ) {
     markPaired(socket.id);
     device.paired = true;
-    device.name = socket.handshake.query.deviceName || (socket.handshake.query.isSwitcherCamera === "true" ? "WebRTC Switcher Camera" : "WebRTC Studio Camera");
+    device.name =
+      socket.handshake.query.deviceName ||
+      (socket.handshake.query.isSwitcherCamera === "true"
+        ? "WebRTC Switcher Camera"
+        : "WebRTC Studio Camera");
     console.log("[Remote] Auto-paired Camera client:", socket.id, device.name);
     notifyController("mobile-connected", device);
   }
@@ -2005,7 +2548,8 @@ io.on("connection", (socket) => {
     (socket.handshake.auth.token || socket.handshake.auth.code);
   if (handshakeCred && validateCredential(pairing, handshakeCred)) {
     // Gate mobile pairing on desktop auth / guest state
-    const isAllowedToPair = authService.isAuthenticated() || !authService.isGuestExpired();
+    const isAllowedToPair =
+      authService.isAuthenticated() || !authService.isGuestExpired();
     if (!isAllowedToPair) {
       socket.emit("pair-result", {
         ok: false,
@@ -2018,14 +2562,35 @@ io.on("connection", (socket) => {
     device.paired = true;
     device.status = "connected";
     device.name = socket.handshake.auth.deviceName || "Mobile";
-    device.isAdmin = adminDeviceIds.has(device.id) || adminDeviceNames.has(device.name);
-    if (!device.deviceRole) device.deviceRole = device.isAdmin ? "admin" : "speaker";
-    const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-git-main-acerexs-projects.vercel.app/api";
-    const authUrl = (appSettings ? appSettings.get("authLoginUrl") : null) || "https://waveio-git-main-acerexs-projects.vercel.app";
-    console.log("[Remote] paired via handshake:", socket.id, "isAdmin:", device.isAdmin, "role:", device.deviceRole);
-    socket.emit("pair-result", { ok: true, deviceName: device.name, isAdmin: device.isAdmin, deviceRole: device.deviceRole, apiBaseUrl: apiBase, authLoginUrl: authUrl });
+    device.isAdmin =
+      adminDeviceIds.has(device.id) || adminDeviceNames.has(device.name);
+    if (!device.deviceRole)
+      device.deviceRole = device.isAdmin ? "admin" : "speaker";
+    const apiBase =
+      (appSettings ? appSettings.get("apiBaseUrl") : null) ||
+      "https://ocs-backend-git-main-acerexs-projects.vercel.app/api";
+    const authUrl =
+      (appSettings ? appSettings.get("authLoginUrl") : null) ||
+      "https://waveio-git-main-acerexs-projects.vercel.app";
+    console.log(
+      "[Remote] paired via handshake:",
+      socket.id,
+      "isAdmin:",
+      device.isAdmin,
+      "role:",
+      device.deviceRole,
+    );
+    socket.emit("pair-result", {
+      ok: true,
+      deviceName: device.name,
+      isAdmin: device.isAdmin,
+      deviceRole: device.deviceRole,
+      apiBaseUrl: apiBase,
+      authLoginUrl: authUrl,
+    });
     socket.emit("overlay-content", latestOverlayContent);
-    if (latestOverlayTimer != null) socket.emit("overlay-timer", latestOverlayTimer);
+    if (latestOverlayTimer != null)
+      socket.emit("overlay-timer", latestOverlayTimer);
     notifyController("mobile-connected", device);
     broadcastDevicesUpdated();
   } else {
@@ -2044,7 +2609,8 @@ io.on("connection", (socket) => {
 
   socket.on("pair", (payload = {}) => {
     // Gate mobile pairing on desktop auth / guest state
-    const isAllowedToPair = authService.isAuthenticated() || !authService.isGuestExpired();
+    const isAllowedToPair =
+      authService.isAuthenticated() || !authService.isGuestExpired();
     if (!isAllowedToPair) {
       socket.emit("pair-result", {
         ok: false,
@@ -2092,13 +2658,27 @@ io.on("connection", (socket) => {
     device.paired = true;
     device.status = "connected";
     device.name = payload.deviceName || device.name || "Mobile";
-    device.isAdmin = adminDeviceIds.has(device.id) || adminDeviceNames.has(device.name);
-    if (!device.deviceRole) device.deviceRole = device.isAdmin ? "admin" : "speaker";
-    const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-git-main-acerexs-projects.vercel.app/api";
-    const authUrl = (appSettings ? appSettings.get("authLoginUrl") : null) || "https://waveio-git-main-acerexs-projects.vercel.app";
-    socket.emit("pair-result", { ok: true, deviceName: device.name, isAdmin: device.isAdmin, deviceRole: device.deviceRole, apiBaseUrl: apiBase, authLoginUrl: authUrl });
+    device.isAdmin =
+      adminDeviceIds.has(device.id) || adminDeviceNames.has(device.name);
+    if (!device.deviceRole)
+      device.deviceRole = device.isAdmin ? "admin" : "speaker";
+    const apiBase =
+      (appSettings ? appSettings.get("apiBaseUrl") : null) ||
+      "https://ocs-backend-git-main-acerexs-projects.vercel.app/api";
+    const authUrl =
+      (appSettings ? appSettings.get("authLoginUrl") : null) ||
+      "https://waveio-git-main-acerexs-projects.vercel.app";
+    socket.emit("pair-result", {
+      ok: true,
+      deviceName: device.name,
+      isAdmin: device.isAdmin,
+      deviceRole: device.deviceRole,
+      apiBaseUrl: apiBase,
+      authLoginUrl: authUrl,
+    });
     socket.emit("overlay-content", latestOverlayContent);
-    if (latestOverlayTimer != null) socket.emit("overlay-timer", latestOverlayTimer);
+    if (latestOverlayTimer != null)
+      socket.emit("overlay-timer", latestOverlayTimer);
     notifyController("mobile-connected", device);
     broadcastDevicesUpdated();
   });
@@ -2124,15 +2704,23 @@ io.on("connection", (socket) => {
       return;
     }
 
-    const deviceRole = device.deviceRole || (device.isAdmin ? "admin" : "speaker");
+    const deviceRole =
+      device.deviceRole || (device.isAdmin ? "admin" : "speaker");
     const roleForPayload = payload.role || "controller";
 
     // Admin (overseer) and Stage Manager can use Controller Voice Prompts (Bible AI control)
     if (roleForPayload === "controller") {
-      const canUseControllerVoice = deviceRole === "admin" || deviceRole === "stageManager";
+      const canUseControllerVoice =
+        deviceRole === "admin" || deviceRole === "stageManager";
       if (!canUseControllerVoice) {
-        console.warn(`[Remote Voice] Blocked ${deviceRole} device ${device.name} (${socket.id}) from controller voice prompt mode`);
-        ack({ ok: false, error: "Unauthorized: Controller Voice Prompts are for Admin and Stage Manager devices only." });
+        console.warn(
+          `[Remote Voice] Blocked ${deviceRole} device ${device.name} (${socket.id}) from controller voice prompt mode`,
+        );
+        ack({
+          ok: false,
+          error:
+            "Unauthorized: Controller Voice Prompts are for Admin and Stage Manager devices only.",
+        });
         return;
       }
     }
@@ -2140,13 +2728,25 @@ io.on("connection", (socket) => {
     // Live Mic broadcast is reserved strictly for Stage Managers (Admin is overseer, restricted from live mic)
     if (roleForPayload === "mic") {
       if (deviceRole === "admin") {
-        console.warn(`[Remote Voice] Blocked Admin overseer ${device.name} (${socket.id}) from live mic mode`);
-        ack({ ok: false, error: "Overseer Restriction: Admin accounts can use Voice Prompts for Bible Control, but Live Sanctuary Microphone broadcast is restricted to Stage Managers." });
+        console.warn(
+          `[Remote Voice] Blocked Admin overseer ${device.name} (${socket.id}) from live mic mode`,
+        );
+        ack({
+          ok: false,
+          error:
+            "Overseer Restriction: Admin accounts can use Voice Prompts for Bible Control, but Live Sanctuary Microphone broadcast is restricted to Stage Managers.",
+        });
         return;
       }
       if (deviceRole !== "stageManager") {
-        console.warn(`[Remote Voice] Blocked ${deviceRole} device ${device.name} (${socket.id}) from live mic mode`);
-        ack({ ok: false, error: "Unauthorized: Live Sanctuary Microphone broadcast is restricted to Stage Managers." });
+        console.warn(
+          `[Remote Voice] Blocked ${deviceRole} device ${device.name} (${socket.id}) from live mic mode`,
+        );
+        ack({
+          ok: false,
+          error:
+            "Unauthorized: Live Sanctuary Microphone broadcast is restricted to Stage Managers.",
+        });
         return;
       }
     }
@@ -2287,10 +2887,12 @@ io.on("connection", (socket) => {
     if (switcherCameraSlots.has(socket.id)) {
       const info = switcherCameraSlots.get(socket.id);
       switcherCameraSlots.delete(socket.id);
-      console.log(`[Switcher] Camera slot ${info.slotIndex} freed (device disconnected: ${socket.id})`);
+      console.log(
+        `[Switcher] Camera slot ${info.slotIndex} freed (device disconnected: ${socket.id})`,
+      );
       if (switcherProgramSourceId === socket.id) {
         switcherProgramSourceId = null;
-        console.log('[Switcher] Program source cleared (camera disconnected)');
+        console.log("[Switcher] Program source cleared (camera disconnected)");
       }
       if (switcherDisplay2Source === socket.id) {
         const remaining = Array.from(switcherCameraSlots.keys());
@@ -2299,11 +2901,15 @@ io.on("connection", (socket) => {
       switcherChanged = true;
     }
     if (switcherControllerSocketId === socket.id) {
-      switcherControllerSocketId = 'desktop';
-      console.log('[Switcher] Controller reclaimed by desktop (phone disconnected)');
+      switcherControllerSocketId = "desktop";
+      console.log(
+        "[Switcher] Controller reclaimed by desktop (phone disconnected)",
+      );
       for (const win of BrowserWindow.getAllWindows()) {
         if (!win.isDestroyed()) {
-          win.webContents.send('switcher-controller-reclaimed', { reason: 'disconnect' });
+          win.webContents.send("switcher-controller-reclaimed", {
+            reason: "disconnect",
+          });
         }
       }
       switcherChanged = true;
@@ -2315,7 +2921,9 @@ io.on("connection", (socket) => {
   // ─── Teleprompter Phone Camera WebRTC Signaling ───
   socket.on("teleprompter:request-camera", (payload = {}) => {
     if (!isPaired(socket.id)) return;
-    const targetSocket = payload.targetId ? io.sockets.sockets.get(payload.targetId) : null;
+    const targetSocket = payload.targetId
+      ? io.sockets.sockets.get(payload.targetId)
+      : null;
     if (targetSocket) {
       targetSocket.emit("teleprompter:camera-requested", {
         fromId: socket.id,
@@ -2339,7 +2947,9 @@ io.on("connection", (socket) => {
 
   socket.on("teleprompter:camera-answer", (payload = {}) => {
     if (!isPaired(socket.id)) return;
-    const targetSocket = payload.targetId ? io.sockets.sockets.get(payload.targetId) : null;
+    const targetSocket = payload.targetId
+      ? io.sockets.sockets.get(payload.targetId)
+      : null;
     if (targetSocket) {
       targetSocket.emit("teleprompter:camera-answer", {
         answer: payload.answer,
@@ -2353,7 +2963,9 @@ io.on("connection", (socket) => {
 
   socket.on("teleprompter:camera-ice-candidate", (payload = {}) => {
     if (!isPaired(socket.id)) return;
-    const targetSocket = payload.targetId ? io.sockets.sockets.get(payload.targetId) : null;
+    const targetSocket = payload.targetId
+      ? io.sockets.sockets.get(payload.targetId)
+      : null;
     if (targetSocket) {
       targetSocket.emit("teleprompter:camera-ice-candidate", {
         candidate: payload.candidate,
@@ -2381,7 +2993,8 @@ io.on("connection", (socket) => {
   // Teleprompter Content Sharing (Mobile -> Desktop Workstation)
   socket.on("teleprompter:share-content", (payload = {}, ack = () => {}) => {
     if (!isPaired(socket.id)) {
-      if (typeof ack === "function") ack({ ok: false, error: "Pairing required before sharing content" });
+      if (typeof ack === "function")
+        ack({ ok: false, error: "Pairing required before sharing content" });
       return;
     }
     const dev = connectedDevices.find((d) => d.id === socket.id);
@@ -2391,26 +3004,34 @@ io.on("connection", (socket) => {
       fromDevice: dev ? dev.name : "Mobile Phone",
       timestamp: Date.now(),
     };
-    console.log("[Teleprompter] Received content from mobile:", contentPayload.title, "length:", contentPayload.content.length);
+    console.log(
+      "[Teleprompter] Received content from mobile:",
+      contentPayload.title,
+      "length:",
+      contentPayload.content.length,
+    );
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
         win.webContents.send("teleprompter-content-shared", contentPayload);
       }
     }
-    if (typeof ack === "function") ack({ ok: true, message: "Content received on workstation" });
+    if (typeof ack === "function")
+      ack({ ok: true, message: "Content received on workstation" });
   });
 
   // Teleprompter Mobile Camera Frame Streaming (Mobile -> Desktop Workstation)
   // Now also serves as switcher preview frames — payload includes isProgramSource flag
   socket.on("teleprompter:camera-frame", (payload = {}) => {
     if (!isPaired(socket.id) && !switcherCameraSlots.has(socket.id)) {
-      console.warn(`[Teleprompter] Dropped frame: socket ${socket.id} is not paired or assigned`);
+      console.warn(
+        `[Teleprompter] Dropped frame: socket ${socket.id} is not paired or assigned`,
+      );
       return;
     }
     const cameraSlot = switcherCameraSlots.get(socket.id);
     const isProgramSource = socket.id === switcherProgramSourceId;
     const framePayload = {
-      slotIndex: cameraSlot ? cameraSlot.slotIndex : (payload.slotIndex || 1),
+      slotIndex: cameraSlot ? cameraSlot.slotIndex : payload.slotIndex || 1,
       data: payload.data || payload.frame,
       fromId: socket.id,
       timestamp: payload.timestamp || Date.now(),
@@ -2423,22 +3044,28 @@ io.on("connection", (socket) => {
     if (isProgramSource) {
       broadcastToAllWindows("switcher-program-frame", framePayload);
     }
-    if (io && isProgramSource && (switcherRouteGeneral || switcherRouteSpeaker)) {
+    if (
+      io &&
+      isProgramSource &&
+      (switcherRouteGeneral || switcherRouteSpeaker)
+    ) {
       const vIo = io.volatile || io;
-      vIo.emit('switcher:live-frame', framePayload);
+      vIo.emit("switcher:live-frame", framePayload);
     }
   });
 
   // Switcher Mobile Camera Frame Streaming (Mobile -> Desktop Workstation)
   socket.on("switcher:camera-frame", (payload = {}) => {
     if (!isPaired(socket.id) && !switcherCameraSlots.has(socket.id)) {
-      console.warn(`[Switcher] Dropped frame: socket ${socket.id} is not paired or assigned`);
+      console.warn(
+        `[Switcher] Dropped frame: socket ${socket.id} is not paired or assigned`,
+      );
       return;
     }
     const cameraSlot = switcherCameraSlots.get(socket.id);
     const isProgramSource = socket.id === switcherProgramSourceId;
     const framePayload = {
-      slotIndex: cameraSlot ? cameraSlot.slotIndex : (payload.slotIndex || 1),
+      slotIndex: cameraSlot ? cameraSlot.slotIndex : payload.slotIndex || 1,
       data: payload.data || payload.frame,
       fromId: socket.id,
       timestamp: payload.timestamp || Date.now(),
@@ -2451,9 +3078,13 @@ io.on("connection", (socket) => {
     if (isProgramSource) {
       broadcastToAllWindows("switcher-program-frame", framePayload); // win.webContents.send("switcher-program-frame", framePayload);
     }
-    if (io && isProgramSource && (switcherRouteGeneral || switcherRouteSpeaker)) {
+    if (
+      io &&
+      isProgramSource &&
+      (switcherRouteGeneral || switcherRouteSpeaker)
+    ) {
       const vIo = io.volatile || io;
-      vIo.emit('switcher:live-frame', framePayload);
+      vIo.emit("switcher:live-frame", framePayload);
     }
   });
 
@@ -2472,7 +3103,7 @@ io.on("connection", (socket) => {
     if (io && (switcherRouteGeneral || switcherRouteSpeaker)) {
       // The view windows (General/Speaker) receive it via their own Socket.IO connection
       const vIo = io.volatile || io;
-      vIo.emit('switcher:live-frame', {
+      vIo.emit("switcher:live-frame", {
         data: payload.data,
         timestamp: payload.timestamp || Date.now(),
         isMirrored: !!payload.isMirrored,
@@ -2485,7 +3116,9 @@ io.on("connection", (socket) => {
     if (!isPaired(socket.id)) return;
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
-        win.webContents.send("teleprompter-mobile-camera-start", { fromId: socket.id });
+        win.webContents.send("teleprompter-mobile-camera-start", {
+          fromId: socket.id,
+        });
       }
     }
   });
@@ -2494,7 +3127,9 @@ io.on("connection", (socket) => {
     if (!isPaired(socket.id)) return;
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) {
-        win.webContents.send("teleprompter-mobile-camera-stop", { fromId: socket.id });
+        win.webContents.send("teleprompter-mobile-camera-stop", {
+          fromId: socket.id,
+        });
       }
     }
   });
@@ -2504,54 +3139,74 @@ io.on("connection", (socket) => {
   // Camera-source opt-in (mobile device wants to be a camera source)
   socket.on("switcher:opt-in-camera", (payload = {}, ack = () => {}) => {
     if (!isPaired(socket.id)) {
-      if (typeof ack === 'function') ack({ ok: false, error: 'Pairing required' });
+      if (typeof ack === "function")
+        ack({ ok: false, error: "Pairing required" });
       return;
     }
     // DEF-03/04: Role separation: if current controller opts in as camera, yield controller role to desktop
     if (switcherControllerSocketId === socket.id) {
-      console.log(`[Switcher] Camera opt-in for controller ${socket.id} — yielding controller role to desktop to allow camera mode`);
+      console.log(
+        `[Switcher] Camera opt-in for controller ${socket.id} — yielding controller role to desktop to allow camera mode`,
+      );
       switcherControllerSocketId = null;
-      io.emit('switcher:controller-changed', { controllerSocketId: null });
+      io.emit("switcher:controller-changed", { controllerSocketId: null });
       for (const win of BrowserWindow.getAllWindows()) {
         if (!win.isDestroyed()) {
-          win.webContents.send("switcher-controller-reclaimed", { reason: "Device switched to camera mode" });
+          win.webContents.send("switcher-controller-reclaimed", {
+            reason: "Device switched to camera mode",
+          });
         }
       }
     }
     if (switcherCameraSlots.has(socket.id)) {
       // Already opted in — return current slot
       const info = switcherCameraSlots.get(socket.id);
-      if (typeof ack === 'function') ack({ ok: true, slotIndex: info.slotIndex });
+      if (typeof ack === "function")
+        ack({ ok: true, slotIndex: info.slotIndex });
       return;
     }
     if (switcherCameraSlots.size >= MAX_CAMERA_SLOTS) {
-      console.log(`[Switcher] Camera opt-in rejected for ${socket.id}: max ${MAX_CAMERA_SLOTS} cameras already connected`);
-      if (typeof ack === 'function') ack({ ok: false, error: `Maximum of ${MAX_CAMERA_SLOTS} cameras already connected` });
+      console.log(
+        `[Switcher] Camera opt-in rejected for ${socket.id}: max ${MAX_CAMERA_SLOTS} cameras already connected`,
+      );
+      if (typeof ack === "function")
+        ack({
+          ok: false,
+          error: `Maximum of ${MAX_CAMERA_SLOTS} cameras already connected`,
+        });
       return;
     }
     const slotIndex = _nextSwitcherSlot();
-    const devName = connectedDevices.find((d) => d.id === socket.id)?.name || payload.name || 'Camera';
+    const devName =
+      connectedDevices.find((d) => d.id === socket.id)?.name ||
+      payload.name ||
+      "Camera";
     switcherCameraSlots.set(socket.id, { name: devName, slotIndex });
     console.log(`[Switcher] Camera opted in: ${devName} -> slot ${slotIndex}`);
 
     // Auto-assign first camera to switcherDisplay2Source if empty or defaulted to speaker
-    if (!switcherDisplay2Source || switcherDisplay2Source === 'speaker' || !switcherCameraSlots.has(switcherDisplay2Source)) {
+    if (
+      !switcherDisplay2Source ||
+      switcherDisplay2Source === "speaker" ||
+      !switcherCameraSlots.has(switcherDisplay2Source)
+    ) {
       switcherDisplay2Source = socket.id;
     }
 
     broadcastSwitcherState();
     broadcastDevicesUpdated();
-    if (typeof ack === 'function') ack({ ok: true, slotIndex });
+    if (typeof ack === "function") ack({ ok: true, slotIndex });
   });
 
   // Camera-source opt-out
   socket.on("switcher:opt-out-camera", (payload = {}, ack = () => {}) => {
     if (!isPaired(socket.id)) {
-      if (typeof ack === 'function') ack({ ok: false, error: 'Pairing required' });
+      if (typeof ack === "function")
+        ack({ ok: false, error: "Pairing required" });
       return;
     }
     if (!switcherCameraSlots.has(socket.id)) {
-      if (typeof ack === 'function') ack({ ok: true }); // Not in a slot — no-op
+      if (typeof ack === "function") ack({ ok: true }); // Not in a slot — no-op
       return;
     }
     const info = switcherCameraSlots.get(socket.id);
@@ -2566,117 +3221,188 @@ io.on("connection", (socket) => {
     console.log(`[Switcher] Camera opted out: slot ${info.slotIndex}`);
     broadcastSwitcherState();
     broadcastDevicesUpdated();
-    if (typeof ack === 'function') ack({ ok: true });
+    if (typeof ack === "function") ack({ ok: true });
   });
 
   // Program source switch with transition support — ENFORCED SERVER-SIDE
   socket.on("switcher:set-program", (payload = {}, ack = () => {}) => {
     if (!isPaired(socket.id)) {
-      if (typeof ack === 'function') ack({ ok: false, error: 'Pairing required' });
+      if (typeof ack === "function")
+        ack({ ok: false, error: "Pairing required" });
       return;
     }
     // Server-side controller-permission check — not just UI gating
     if (switcherControllerSocketId !== socket.id) {
-      console.warn(`[Switcher] REJECTED switcher:set-program from non-controller ${socket.id} (controller: ${switcherControllerSocketId})`);
-      if (typeof ack === 'function') ack({ ok: false, error: 'Permission denied — you are not the current switcher controller' });
+      console.warn(
+        `[Switcher] REJECTED switcher:set-program from non-controller ${socket.id} (controller: ${switcherControllerSocketId})`,
+      );
+      if (typeof ack === "function")
+        ack({
+          ok: false,
+          error:
+            "Permission denied — you are not the current switcher controller",
+        });
       return;
     }
     const targetId = payload.deviceId;
-    if (!targetId || (!switcherCameraSlots.has(targetId) && targetId !== null)) {
-      if (typeof ack === 'function') ack({ ok: false, error: 'Invalid camera source' });
+    if (
+      !targetId ||
+      (!switcherCameraSlots.has(targetId) && targetId !== null)
+    ) {
+      if (typeof ack === "function")
+        ack({ ok: false, error: "Invalid camera source" });
       return;
     }
     const result = executeProgramSwitch(targetId, payload.transition);
-    if (typeof ack === 'function') ack(result);
+    if (typeof ack === "function") ack(result);
   });
 
   // Global transition settings update — ENFORCED SERVER-SIDE
-  socket.on("switcher:set-transition-setting", (payload = {}, ack = () => {}) => {
-    if (!isPaired(socket.id)) {
-      if (typeof ack === 'function') ack({ ok: false, error: 'Pairing required' });
-      return;
-    }
-    if (switcherControllerSocketId !== socket.id) {
-      console.warn(`[Switcher] REJECTED switcher:set-transition-setting from non-controller ${socket.id}`);
-      if (typeof ack === 'function') ack({ ok: false, error: 'Permission denied — you are not the current switcher controller' });
-      return;
-    }
-    const { type = 'fade', duration = 750, direction = 'left-to-right' } = payload;
-    switcherTransitionSetting = {
-      type: ['cut', 'fade', 'wipe'].includes(type) ? type : 'fade',
-      duration: Math.max(100, Math.min(3000, Number(duration) || 750)),
-      direction: ['left-to-right', 'right-to-left', 'top-to-bottom', 'bottom-to-top'].includes(direction)
-        ? direction
-        : 'left-to-right',
-    };
-    console.log(`[Switcher] Transition setting updated by ${socket.id}:`, switcherTransitionSetting);
-    broadcastSwitcherState();
-    for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) {
-        win.webContents.send("switcher-transition-setting-updated", switcherTransitionSetting);
+  socket.on(
+    "switcher:set-transition-setting",
+    (payload = {}, ack = () => {}) => {
+      if (!isPaired(socket.id)) {
+        if (typeof ack === "function")
+          ack({ ok: false, error: "Pairing required" });
+        return;
       }
-    }
-    if (typeof ack === 'function') ack({ ok: true, transitionSetting: switcherTransitionSetting });
-  });
+      if (switcherControllerSocketId !== socket.id) {
+        console.warn(
+          `[Switcher] REJECTED switcher:set-transition-setting from non-controller ${socket.id}`,
+        );
+        if (typeof ack === "function")
+          ack({
+            ok: false,
+            error:
+              "Permission denied — you are not the current switcher controller",
+          });
+        return;
+      }
+      const {
+        type = "fade",
+        duration = 750,
+        direction = "left-to-right",
+      } = payload;
+      switcherTransitionSetting = {
+        type: ["cut", "fade", "wipe"].includes(type) ? type : "fade",
+        duration: Math.max(100, Math.min(3000, Number(duration) || 750)),
+        direction: [
+          "left-to-right",
+          "right-to-left",
+          "top-to-bottom",
+          "bottom-to-top",
+        ].includes(direction)
+          ? direction
+          : "left-to-right",
+      };
+      console.log(
+        `[Switcher] Transition setting updated by ${socket.id}:`,
+        switcherTransitionSetting,
+      );
+      broadcastSwitcherState();
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) {
+          win.webContents.send(
+            "switcher-transition-setting-updated",
+            switcherTransitionSetting,
+          );
+        }
+      }
+      if (typeof ack === "function")
+        ack({ ok: true, transitionSetting: switcherTransitionSetting });
+    },
+  );
 
   // Destination routing (General View / Speaker View)
   socket.on("switcher:route-destination", (payload = {}, ack = () => {}) => {
     if (!isPaired(socket.id)) {
-      if (typeof ack === 'function') ack({ ok: false, error: 'Pairing required' });
+      if (typeof ack === "function")
+        ack({ ok: false, error: "Pairing required" });
       return;
     }
     if (switcherControllerSocketId !== socket.id) {
-      console.warn(`[Switcher] REJECTED switcher:route-destination from non-controller ${socket.id}`);
-      if (typeof ack === 'function') ack({ ok: false, error: 'Permission denied — you are not the current switcher controller' });
+      console.warn(
+        `[Switcher] REJECTED switcher:route-destination from non-controller ${socket.id}`,
+      );
+      if (typeof ack === "function")
+        ack({
+          ok: false,
+          error:
+            "Permission denied — you are not the current switcher controller",
+        });
       return;
     }
     const { destination, active } = payload;
     const result = routeSwitcherDestination(destination, active);
-    if (typeof ack === 'function') ack(result);
+    if (typeof ack === "function") ack(result);
   });
 
   // Mobile-initiated active display selection (Display 1 vs Display 2)
   socket.on("switcher:set-active-display", (payload = {}, ack = () => {}) => {
     if (!isPaired(socket.id)) {
-      if (typeof ack === 'function') ack({ ok: false, error: 'Pairing required' });
+      if (typeof ack === "function")
+        ack({ ok: false, error: "Pairing required" });
       return;
     }
     if (switcherControllerSocketId !== socket.id) {
-      console.warn(`[Switcher] REJECTED switcher:set-active-display from non-controller ${socket.id}`);
-      if (typeof ack === 'function') ack({ ok: false, error: 'Permission denied — you are not the current switcher controller' });
+      console.warn(
+        `[Switcher] REJECTED switcher:set-active-display from non-controller ${socket.id}`,
+      );
+      if (typeof ack === "function")
+        ack({
+          ok: false,
+          error:
+            "Permission denied — you are not the current switcher controller",
+        });
       return;
     }
-    const displayId = typeof payload === 'string' ? payload : payload?.displayId;
-    const customTransition = typeof payload === 'object' ? payload?.transition : null;
+    const displayId =
+      typeof payload === "string" ? payload : payload?.displayId;
+    const customTransition =
+      typeof payload === "object" ? payload?.transition : null;
     const result = switchDisplay(displayId, customTransition);
-    if (typeof ack === 'function') ack(result);
+    if (typeof ack === "function") ack(result);
   });
 
   // Mobile-initiated display source assignment (set source for Display 1 or Display 2)
   socket.on("switcher:set-display-source", (payload = {}, ack = () => {}) => {
     if (!isPaired(socket.id)) {
-      if (typeof ack === 'function') ack({ ok: false, error: 'Pairing required' });
+      if (typeof ack === "function")
+        ack({ ok: false, error: "Pairing required" });
       return;
     }
     if (switcherControllerSocketId !== socket.id) {
-      console.warn(`[Switcher] REJECTED switcher:set-display-source from non-controller ${socket.id}`);
-      if (typeof ack === 'function') ack({ ok: false, error: 'Permission denied — you are not the current switcher controller' });
+      console.warn(
+        `[Switcher] REJECTED switcher:set-display-source from non-controller ${socket.id}`,
+      );
+      if (typeof ack === "function")
+        ack({
+          ok: false,
+          error:
+            "Permission denied — you are not the current switcher controller",
+        });
       return;
     }
     const { displayId, sourceId } = payload || {};
-    if (displayId === 'display1') {
-      switcherDisplay1Source = sourceId || 'general';
-    } else if (displayId === 'display2') {
-      switcherDisplay2Source = sourceId || 'speaker';
+    if (displayId === "display1") {
+      switcherDisplay1Source = sourceId || "general";
+    } else if (displayId === "display2") {
+      switcherDisplay2Source = sourceId || "speaker";
     }
     broadcastSwitcherState();
-    if (typeof ack === 'function') ack({ ok: true, display1Source: switcherDisplay1Source, display2Source: switcherDisplay2Source });
+    if (typeof ack === "function")
+      ack({
+        ok: true,
+        display1Source: switcherDisplay1Source,
+        display2Source: switcherDisplay2Source,
+      });
   });
 
   // Request initial switcher state sync
   socket.on("switcher:get-state", (ack = () => {}) => {
     if (!isPaired(socket.id)) {
-      if (typeof ack === 'function') ack({ ok: false, error: 'Pairing required' });
+      if (typeof ack === "function")
+        ack({ ok: false, error: "Pairing required" });
       return;
     }
     const state = {
@@ -2693,21 +3419,27 @@ io.on("connection", (socket) => {
       activeTransition: switcherActiveTransition,
       broadcastConfig: liveBroadcastConfig,
     };
-    if (typeof ack === 'function') ack(state);
+    if (typeof ack === "function") ack(state);
   });
 
   // Live Broadcast Studio Config: Overlays, Screen Scaling, Bible Lower Third
-  socket.on("switcher:update-broadcast-config", (payload = {}, ack = () => {}) => {
-    if (!isPaired(socket.id)) {
-      if (typeof ack === 'function') ack({ ok: false, error: 'Pairing required' });
-      return;
-    }
-    updateLiveBroadcastConfig(payload);
-    if (typeof ack === 'function') ack({ ok: true, broadcastConfig: liveBroadcastConfig });
-  });
+  socket.on(
+    "switcher:update-broadcast-config",
+    (payload = {}, ack = () => {}) => {
+      if (!isPaired(socket.id)) {
+        if (typeof ack === "function")
+          ack({ ok: false, error: "Pairing required" });
+        return;
+      }
+      updateLiveBroadcastConfig(payload);
+      if (typeof ack === "function")
+        ack({ ok: true, broadcastConfig: liveBroadcastConfig });
+    },
+  );
 
   socket.on("switcher:get-broadcast-config", (_payload, ack = () => {}) => {
-    if (typeof ack === 'function') ack({ ok: true, broadcastConfig: liveBroadcastConfig });
+    if (typeof ack === "function")
+      ack({ ok: true, broadcastConfig: liveBroadcastConfig });
   });
 
   // WebRTC Continuous Camera Signaling: Offer from camera source -> Desktop
@@ -2744,7 +3476,9 @@ io.on("connection", (socket) => {
     if (io && targetId) {
       const targetSock = io.sockets.sockets.get(targetId);
       if (targetSock) {
-        targetSock.emit("switcher:webrtc-ice-candidate", { candidate: payload.candidate });
+        targetSock.emit("switcher:webrtc-ice-candidate", {
+          candidate: payload.candidate,
+        });
       }
     }
     for (const win of BrowserWindow.getAllWindows()) {
@@ -2952,7 +3686,8 @@ io.on("connection", (socket) => {
       socket.emit("pair-required", {
         message: "Pairing required before control commands",
       });
-      if (typeof ack === "function") ack({ ok: false, error: "Pairing required" });
+      if (typeof ack === "function")
+        ack({ ok: false, error: "Pairing required" });
       return;
     }
 
@@ -3097,9 +3832,9 @@ server.listen(PORT, "0.0.0.0", () => {
 
 // Keep MJPEG connections alive indefinitely — Node.js defaults (5s keepAliveTimeout)
 // would drop vMix / OBS connections mid-stream causing a required reload.
-server.keepAliveTimeout = 0;   // Never close idle keep-alive connections
-server.headersTimeout = 0;     // Never timeout waiting for headers on persistent streams
-server.timeout = 0;            // Disable socket-level idle timeout for streaming clients
+server.keepAliveTimeout = 0; // Never close idle keep-alive connections
+server.headersTimeout = 0; // Never timeout waiting for headers on persistent streams
+server.timeout = 0; // Disable socket-level idle timeout for streaming clients
 
 ipcMain.handle("get-server-info", async () => {
   // Refresh IP in case it changed
@@ -3114,7 +3849,8 @@ ipcMain.handle("get-server-info", async () => {
       name: d.name,
       paired: !!d.paired,
       status: d.paired ? "connected" : "pending",
-      isAdmin: adminDeviceIds.has(d.id) || adminDeviceNames.has(d.name) || !!d.isAdmin,
+      isAdmin:
+        adminDeviceIds.has(d.id) || adminDeviceNames.has(d.name) || !!d.isAdmin,
       isVoiceActive: !!d.isVoiceActive,
       connectedAt: d.connectedAt,
     })),
@@ -3129,13 +3865,17 @@ ipcMain.handle("get-paired-devices", async () => {
     ip: d.ip,
     name: d.name,
     paired: !!d.paired,
-    status: d.paired ? "connected" : (d.status || "connected"),
-    isAdmin: adminDeviceIds.has(d.id) || adminDeviceNames.has(d.name) || !!d.isAdmin,
-    deviceRole: d.deviceRole || (adminDeviceIds.has(d.id) ? "admin" : "speaker"),
+    status: d.paired ? "connected" : d.status || "connected",
+    isAdmin:
+      adminDeviceIds.has(d.id) || adminDeviceNames.has(d.name) || !!d.isAdmin,
+    deviceRole:
+      d.deviceRole || (adminDeviceIds.has(d.id) ? "admin" : "speaker"),
     isVoiceActive: !!d.isVoiceActive,
     connectedAt: d.connectedAt,
     isCameraSource: switcherCameraSlots.has(d.id),
-    cameraSlotIndex: switcherCameraSlots.has(d.id) ? switcherCameraSlots.get(d.id).slotIndex : null,
+    cameraSlotIndex: switcherCameraSlots.has(d.id)
+      ? switcherCameraSlots.get(d.id).slotIndex
+      : null,
   }));
 });
 
@@ -3164,8 +3904,10 @@ ipcMain.handle("pairing-rotate", async () => {
       name: d.name,
       paired: !!d.paired,
       status: d.paired ? "connected" : "pending",
-      isAdmin: adminDeviceIds.has(d.id) || adminDeviceNames.has(d.name) || !!d.isAdmin,
-      deviceRole: d.deviceRole || (adminDeviceIds.has(d.id) ? "admin" : "speaker"),
+      isAdmin:
+        adminDeviceIds.has(d.id) || adminDeviceNames.has(d.name) || !!d.isAdmin,
+      deviceRole:
+        d.deviceRole || (adminDeviceIds.has(d.id) ? "admin" : "speaker"),
       isVoiceActive: !!d.isVoiceActive,
       connectedAt: d.connectedAt,
     })),
@@ -3187,7 +3929,11 @@ ipcMain.handle("mobile-device-set-role", async (_event, { deviceId, role }) => {
       if (dev.name) adminDeviceNames.delete(dev.name);
     }
     const sock = io.sockets.sockets.get(deviceId);
-    if (sock) sock.emit("device-role-updated", { isAdmin: dev.isAdmin, deviceRole: dev.deviceRole });
+    if (sock)
+      sock.emit("device-role-updated", {
+        isAdmin: dev.isAdmin,
+        deviceRole: dev.deviceRole,
+      });
     broadcastDevicesUpdated();
     return { ok: true, deviceRole: dev.deviceRole, isAdmin: dev.isAdmin };
   }
@@ -3195,10 +3941,16 @@ ipcMain.handle("mobile-device-set-role", async (_event, { deviceId, role }) => {
 });
 
 // Legacy shim so old callers still work
-ipcMain.handle("mobile-device-set-admin", async (_event, { deviceId, isAdmin }) => {
-  const role = isAdmin ? "admin" : "speaker";
-  return ipcMain.listeners("mobile-device-set-role")?.[0]?.({ deviceId, role });
-});
+ipcMain.handle(
+  "mobile-device-set-admin",
+  async (_event, { deviceId, isAdmin }) => {
+    const role = isAdmin ? "admin" : "speaker";
+    return ipcMain.listeners("mobile-device-set-role")?.[0]?.({
+      deviceId,
+      role,
+    });
+  },
+);
 
 ipcMain.handle("mobile-device-remove", async (_event, deviceId) => {
   const devIndex = connectedDevices.findIndex((d) => d.id === deviceId);
@@ -3210,7 +3962,9 @@ ipcMain.handle("mobile-device-remove", async (_event, deviceId) => {
   }
   const sock = io.sockets.sockets.get(deviceId);
   if (sock) {
-    sock.emit("pair-required", { message: "Device pairing has been removed by the controller operator" });
+    sock.emit("pair-required", {
+      message: "Device pairing has been removed by the controller operator",
+    });
     sock.disconnect(true);
   }
   broadcastDevicesUpdated();
@@ -3448,7 +4202,11 @@ function broadcastCanvasState(state, allowedTargets = null) {
     safeWebContentsSend(generalWindow, "canvas-state-update", generalState);
   }
   if (controllerWindow) {
-    safeWebContentsSend(controllerWindow, "canvas-state-update", currentCanvasState);
+    safeWebContentsSend(
+      controllerWindow,
+      "canvas-state-update",
+      currentCanvasState,
+    );
   }
 
   // FR-4.15: lightweight summary to Mobile Companion
@@ -3480,7 +4238,10 @@ function toggleBlackout() {
     blackout: !currentCanvasState.chrome?.blackout,
   };
   broadcastCanvasState(currentCanvasState);
-  console.log("[Hotkeys] Blackout toggled:", currentCanvasState.chrome.blackout);
+  console.log(
+    "[Hotkeys] Blackout toggled:",
+    currentCanvasState.chrome.blackout,
+  );
 }
 
 function clearContent() {
@@ -3515,16 +4276,20 @@ ipcMain.on("canvas-clear-content", () => clearContent());
 
 // Grant switcher controller permission to a paired device
 ipcMain.handle("switcher:grant-control", (_event, deviceId) => {
-  if (!deviceId || typeof deviceId !== 'string') {
-    return { ok: false, error: 'Invalid deviceId' };
+  if (!deviceId || typeof deviceId !== "string") {
+    return { ok: false, error: "Invalid deviceId" };
   }
   const prevHolder = switcherControllerSocketId;
   switcherControllerSocketId = deviceId;
-  console.log(`[Switcher] Control granted to: ${deviceId} (was: ${prevHolder})`);
+  console.log(
+    `[Switcher] Control granted to: ${deviceId} (was: ${prevHolder})`,
+  );
 
   // DEF-03/04: Enforce role separation: If device was a camera source, remove from camera slots
   if (switcherCameraSlots.has(deviceId)) {
-    console.log(`[Switcher] Relinquishing camera role for newly granted controller: ${deviceId}`);
+    console.log(
+      `[Switcher] Relinquishing camera role for newly granted controller: ${deviceId}`,
+    );
     switcherCameraSlots.delete(deviceId);
     if (switcherProgramSourceId === deviceId) {
       switcherProgramSourceId = null;
@@ -3534,19 +4299,24 @@ ipcMain.handle("switcher:grant-control", (_event, deviceId) => {
     }
     const targetSock = io && io.sockets.sockets.get(deviceId);
     if (targetSock) {
-      targetSock.emit('switcher:you-are-program', { active: false });
+      targetSock.emit("switcher:you-are-program", { active: false });
     }
   }
 
   // Notify new holder
   const targetSock = io && io.sockets.sockets.get(deviceId);
   if (targetSock) {
-    targetSock.emit('switcher:control-granted', { controllerSocketId: deviceId });
+    targetSock.emit("switcher:control-granted", {
+      controllerSocketId: deviceId,
+    });
   }
   // Notify previous holder (if it was a phone)
-  if (prevHolder && prevHolder !== 'desktop') {
+  if (prevHolder && prevHolder !== "desktop") {
     const prevSock = io && io.sockets.sockets.get(prevHolder);
-    if (prevSock) prevSock.emit('switcher:control-revoked', { newControllerSocketId: deviceId });
+    if (prevSock)
+      prevSock.emit("switcher:control-revoked", {
+        newControllerSocketId: deviceId,
+      });
   }
   broadcastSwitcherState();
   broadcastDevicesUpdated();
@@ -3556,11 +4326,14 @@ ipcMain.handle("switcher:grant-control", (_event, deviceId) => {
 // Reclaim switcher controller permission back to desktop (safety valve — unconditional)
 ipcMain.handle("switcher:reclaim-control", () => {
   const prevHolder = switcherControllerSocketId;
-  switcherControllerSocketId = 'desktop';
+  switcherControllerSocketId = "desktop";
   console.log(`[Switcher] Control reclaimed by desktop (was: ${prevHolder})`);
-  if (prevHolder && prevHolder !== 'desktop') {
+  if (prevHolder && prevHolder !== "desktop") {
     const prevSock = io && io.sockets.sockets.get(prevHolder);
-    if (prevSock) prevSock.emit('switcher:control-revoked', { newControllerSocketId: 'desktop' });
+    if (prevSock)
+      prevSock.emit("switcher:control-revoked", {
+        newControllerSocketId: "desktop",
+      });
   }
   broadcastSwitcherState();
   broadcastDevicesUpdated();
@@ -3569,73 +4342,114 @@ ipcMain.handle("switcher:reclaim-control", () => {
 
 // Desktop-initiated program switch with transition support
 ipcMain.handle("switcher:set-program-desktop", (_event, payload) => {
-  if (switcherControllerSocketId !== 'desktop') {
-    return { ok: false, error: 'Desktop does not hold controller permission' };
+  if (switcherControllerSocketId !== "desktop") {
+    return { ok: false, error: "Desktop does not hold controller permission" };
   }
-  const deviceId = typeof payload === 'string' ? payload : payload?.deviceId;
-  const customTransition = typeof payload === 'object' ? payload?.transition : null;
-  if (deviceId && deviceId !== 'general' && deviceId !== 'speaker' && !switcherCameraSlots.has(deviceId)) {
-    return { ok: false, error: 'Device is not a camera source' };
+  const deviceId = typeof payload === "string" ? payload : payload?.deviceId;
+  const customTransition =
+    typeof payload === "object" ? payload?.transition : null;
+  if (
+    deviceId &&
+    deviceId !== "general" &&
+    deviceId !== "speaker" &&
+    !switcherCameraSlots.has(deviceId)
+  ) {
+    return { ok: false, error: "Device is not a camera source" };
   }
   return executeProgramSwitch(deviceId || null, customTransition);
 });
 
 // Desktop-initiated active display selection (Display 1 vs Display 2)
 ipcMain.handle("switcher:set-active-display-desktop", (_event, payload) => {
-  if (switcherControllerSocketId !== 'desktop') {
-    return { ok: false, error: 'Desktop does not hold controller permission' };
+  if (switcherControllerSocketId !== "desktop") {
+    return { ok: false, error: "Desktop does not hold controller permission" };
   }
-  const displayId = typeof payload === 'string' ? payload : payload?.displayId;
-  const customTransition = typeof payload === 'object' ? payload?.transition : null;
+  const displayId = typeof payload === "string" ? payload : payload?.displayId;
+  const customTransition =
+    typeof payload === "object" ? payload?.transition : null;
   return switchDisplay(displayId, customTransition);
 });
 
 // Desktop-initiated display source assignment (set source for Display 1 or Display 2)
-ipcMain.handle("switcher:set-display-source-desktop", (_event, { displayId, sourceId }) => {
-  if (switcherControllerSocketId !== 'desktop') {
-    return { ok: false, error: 'Desktop does not hold controller permission' };
-  }
-  if (displayId === 'display1') {
-    switcherDisplay1Source = sourceId || 'general';
-  } else if (displayId === 'display2') {
-    switcherDisplay2Source = sourceId || 'speaker';
-  }
-  broadcastSwitcherState();
-  return { ok: true, display1Source: switcherDisplay1Source, display2Source: switcherDisplay2Source };
-});
+ipcMain.handle(
+  "switcher:set-display-source-desktop",
+  (_event, { displayId, sourceId }) => {
+    if (switcherControllerSocketId !== "desktop") {
+      return {
+        ok: false,
+        error: "Desktop does not hold controller permission",
+      };
+    }
+    if (displayId === "display1") {
+      switcherDisplay1Source = sourceId || "general";
+    } else if (displayId === "display2") {
+      switcherDisplay2Source = sourceId || "speaker";
+    }
+    broadcastSwitcherState();
+    return {
+      ok: true,
+      display1Source: switcherDisplay1Source,
+      display2Source: switcherDisplay2Source,
+    };
+  },
+);
 
 // Desktop-initiated global transition settings update
 ipcMain.handle("switcher:set-transition-setting-desktop", (_event, setting) => {
-  if (switcherControllerSocketId !== 'desktop') {
-    return { ok: false, error: 'Desktop does not hold controller permission' };
+  if (switcherControllerSocketId !== "desktop") {
+    return { ok: false, error: "Desktop does not hold controller permission" };
   }
-  const { type = 'fade', duration = 750, direction = 'left-to-right' } = setting || {};
+  const {
+    type = "fade",
+    duration = 750,
+    direction = "left-to-right",
+  } = setting || {};
   switcherTransitionSetting = {
-    type: ['cut', 'fade', 'wipe'].includes(type) ? type : 'fade',
+    type: ["cut", "fade", "wipe"].includes(type) ? type : "fade",
     duration: Math.max(100, Math.min(3000, Number(duration) || 750)),
-    direction: ['left-to-right', 'right-to-left', 'top-to-bottom', 'bottom-to-top'].includes(direction)
+    direction: [
+      "left-to-right",
+      "right-to-left",
+      "top-to-bottom",
+      "bottom-to-top",
+    ].includes(direction)
       ? direction
-      : 'left-to-right',
+      : "left-to-right",
   };
   broadcastSwitcherState();
-  broadcastToAllWindows("switcher-transition-setting-updated", switcherTransitionSetting);
+  broadcastToAllWindows(
+    "switcher-transition-setting-updated",
+    switcherTransitionSetting,
+  );
   return { ok: true, transitionSetting: switcherTransitionSetting };
 });
 
 // Desktop-initiated live broadcast engine config update (screen scaling, overlays, bible lower-third)
-ipcMain.handle("switcher:update-broadcast-config-desktop", (_event, payload) => {
-  updateLiveBroadcastConfig(payload);
-  return { ok: true, broadcastConfig: liveBroadcastConfig, ...liveBroadcastConfig };
-});
+ipcMain.handle(
+  "switcher:update-broadcast-config-desktop",
+  (_event, payload) => {
+    updateLiveBroadcastConfig(payload);
+    return {
+      ok: true,
+      broadcastConfig: liveBroadcastConfig,
+      ...liveBroadcastConfig,
+    };
+  },
+);
 
 ipcMain.handle("switcher:get-broadcast-config-desktop", () => {
-  return { ok: true, broadcastConfig: liveBroadcastConfig, ...liveBroadcastConfig };
+  return {
+    ok: true,
+    broadcastConfig: liveBroadcastConfig,
+    ...liveBroadcastConfig,
+  };
 });
 
 // Live Output frame broadcast from Switcher mixing engine
 ipcMain.on("switcher:send-live-output-frame", (_event, frameData) => {
   if (!frameData) return;
-  const frameString = typeof frameData === "string" ? frameData : (frameData.data || "");
+  const frameString =
+    typeof frameData === "string" ? frameData : frameData.data || "";
   const effect = typeof frameData === "object" ? frameData.effect : null;
   // If General Screen is actively shared to Live Output, deliver the composited frame
   if (switcherRouteGeneral && generalWindow) {
@@ -3647,17 +4461,27 @@ ipcMain.on("switcher:send-live-output-frame", (_event, frameData) => {
   }
   // Deliver over Socket.IO to any remote displays or streaming clients
   if (io) {
-    io.emit("switcher:live-frame", { data: frameString, timestamp: Date.now(), effect });
+    io.emit("switcher:live-frame", {
+      data: frameString,
+      timestamp: Date.now(),
+      effect,
+    });
   }
 });
 
 // Desktop-initiated destination routing (Non-destructive Live Output sharing)
-ipcMain.handle("switcher:route-destination-desktop", (_event, { destination, active }) => {
-  if (switcherControllerSocketId !== 'desktop') {
-    return { ok: false, error: 'Desktop does not hold controller permission' };
-  }
-  return routeSwitcherDestination(destination, active);
-});
+ipcMain.handle(
+  "switcher:route-destination-desktop",
+  (_event, { destination, active }) => {
+    if (switcherControllerSocketId !== "desktop") {
+      return {
+        ok: false,
+        error: "Desktop does not hold controller permission",
+      };
+    }
+    return routeSwitcherDestination(destination, active);
+  },
+);
 
 // Get current switcher state (for desktop UI hydration)
 ipcMain.handle("switcher:get-state-desktop", () => {
@@ -3677,67 +4501,85 @@ ipcMain.handle("switcher:get-state-desktop", () => {
 });
 
 // Desktop assigns camera slot (for physical camcorders or manually assigned devices)
-ipcMain.handle("switcher:assign-slot-desktop", (_event, { socketId, name, slotIndex, type, deviceId, isLocal }) => {
-  if (switcherControllerSocketId !== 'desktop') {
-    return { ok: false, error: 'Desktop does not hold controller permission' };
-  }
-  if (!socketId || !slotIndex) {
-    return { ok: false, error: 'Missing socketId or slotIndex' };
-  }
-  const id = socketId;
-  const devName = name || (type === 'camcorder' ? `Camcorder ${slotIndex}` : `Camera ${slotIndex}`);
-  markPaired(id);
-  const matchedDev = connectedDevices.find((d) => d.id === id);
-  if (matchedDev) {
-    matchedDev.paired = true;
-    matchedDev.status = "connected";
-  }
-  switcherCameraSlots.set(id, {
-    name: devName,
-    slotIndex: Number(slotIndex),
-    type: type || 'camcorder',
-    deviceId: deviceId || null,
-    isLocal: isLocal !== undefined ? !!isLocal : id.startsWith('local:'),
-  });
+ipcMain.handle(
+  "switcher:assign-slot-desktop",
+  (_event, { socketId, name, slotIndex, type, deviceId, isLocal }) => {
+    if (switcherControllerSocketId !== "desktop") {
+      return {
+        ok: false,
+        error: "Desktop does not hold controller permission",
+      };
+    }
+    if (!socketId || !slotIndex) {
+      return { ok: false, error: "Missing socketId or slotIndex" };
+    }
+    const id = socketId;
+    const devName =
+      name ||
+      (type === "camcorder" ? `Camcorder ${slotIndex}` : `Camera ${slotIndex}`);
+    markPaired(id);
+    const matchedDev = connectedDevices.find((d) => d.id === id);
+    if (matchedDev) {
+      matchedDev.paired = true;
+      matchedDev.status = "connected";
+    }
+    switcherCameraSlots.set(id, {
+      name: devName,
+      slotIndex: Number(slotIndex),
+      type: type || "camcorder",
+      deviceId: deviceId || null,
+      isLocal: isLocal !== undefined ? !!isLocal : id.startsWith("local:"),
+    });
 
-  // Auto-assign to switcherDisplay2Source if empty or defaulted to speaker
-  if (!switcherDisplay2Source || switcherDisplay2Source === 'speaker' || !switcherCameraSlots.has(switcherDisplay2Source)) {
-    switcherDisplay2Source = id;
-  }
+    // Auto-assign to switcherDisplay2Source if empty or defaulted to speaker
+    if (
+      !switcherDisplay2Source ||
+      switcherDisplay2Source === "speaker" ||
+      !switcherCameraSlots.has(switcherDisplay2Source)
+    ) {
+      switcherDisplay2Source = id;
+    }
 
-  broadcastSwitcherState();
-  broadcastDevicesUpdated();
-  return { ok: true, slotIndex, socketId: id };
-});
+    broadcastSwitcherState();
+    broadcastDevicesUpdated();
+    return { ok: true, slotIndex, socketId: id };
+  },
+);
 
 // Desktop removes/releases camera slot
-ipcMain.handle("switcher:remove-slot-desktop", (_event, { socketId, slotIndex }) => {
-  if (switcherControllerSocketId !== 'desktop') {
-    return { ok: false, error: 'Desktop does not hold controller permission' };
-  }
-  let id = socketId;
-  if (!id && slotIndex) {
-    for (const [sid, info] of switcherCameraSlots.entries()) {
-      if (info.slotIndex === Number(slotIndex)) {
-        id = sid;
-        break;
+ipcMain.handle(
+  "switcher:remove-slot-desktop",
+  (_event, { socketId, slotIndex }) => {
+    if (switcherControllerSocketId !== "desktop") {
+      return {
+        ok: false,
+        error: "Desktop does not hold controller permission",
+      };
+    }
+    let id = socketId;
+    if (!id && slotIndex) {
+      for (const [sid, info] of switcherCameraSlots.entries()) {
+        if (info.slotIndex === Number(slotIndex)) {
+          id = sid;
+          break;
+        }
       }
     }
-  }
-  if (!id || !switcherCameraSlots.has(id)) {
+    if (!id || !switcherCameraSlots.has(id)) {
+      return { ok: true };
+    }
+    switcherCameraSlots.delete(id);
+    if (switcherProgramSourceId === id) switcherProgramSourceId = null;
+    if (switcherDisplay1Source === id) switcherDisplay1Source = "general";
+    if (switcherDisplay2Source === id) {
+      const remaining = Array.from(switcherCameraSlots.keys());
+      switcherDisplay2Source = remaining.length > 0 ? remaining[0] : "speaker";
+    }
+    broadcastSwitcherState();
+    broadcastDevicesUpdated();
     return { ok: true };
-  }
-  switcherCameraSlots.delete(id);
-  if (switcherProgramSourceId === id) switcherProgramSourceId = null;
-  if (switcherDisplay1Source === id) switcherDisplay1Source = 'general';
-  if (switcherDisplay2Source === id) {
-    const remaining = Array.from(switcherCameraSlots.keys());
-    switcherDisplay2Source = remaining.length > 0 ? remaining[0] : 'speaker';
-  }
-  broadcastSwitcherState();
-  broadcastDevicesUpdated();
-  return { ok: true };
-});
+  },
+);
 
 // Desktop sends WebRTC answer back to specific camera source
 ipcMain.on("switcher:webrtc-answer", (_event, payload = {}) => {
@@ -3755,13 +4597,17 @@ ipcMain.on("switcher:webrtc-ice-candidate", (_event, payload = {}) => {
   if (!io || !targetId) return;
   const targetSock = io.sockets.sockets.get(targetId);
   if (targetSock) {
-    targetSock.emit("switcher:webrtc-ice-candidate", { candidate: payload.candidate });
+    targetSock.emit("switcher:webrtc-ice-candidate", {
+      candidate: payload.candidate,
+    });
   }
 });
 
 function createWindows() {
   if (!app || !app.isReady()) {
-    console.warn("[App] createWindows() invoked before app is ready. Postponing.");
+    console.warn(
+      "[App] createWindows() invoked before app is ready. Postponing.",
+    );
     return;
   }
   const displays = screen.getAllDisplays();
@@ -3903,7 +4749,11 @@ function createWindows() {
 
   // Fast UI pulse for sub-second guest counters
   setInterval(() => {
-    safeWebContentsSend(controllerWindow, "auth:status", authService.getAuthStatus());
+    safeWebContentsSend(
+      controllerWindow,
+      "auth:status",
+      authService.getAuthStatus(),
+    );
   }, 3000);
 
   // Periodic Silent Reload of Days Left (Offline Wall-Clock + Background Sync)
@@ -3942,7 +4792,11 @@ function createWindows() {
     const isShift = input.shift;
 
     // 1. Blackout (Blank Screen): F10, or Cmd/Ctrl+Shift+B, or Cmd/Ctrl+B
-    if (key === "f10" || (isCmdOrCtrl && isShift && key === "b") || (isCmdOrCtrl && key === "b")) {
+    if (
+      key === "f10" ||
+      (isCmdOrCtrl && isShift && key === "b") ||
+      (isCmdOrCtrl && key === "b")
+    ) {
       event.preventDefault();
       toggleBlackout();
       return;
@@ -3979,17 +4833,111 @@ function createWindows() {
     latestOverlayContent = value;
     if (io) io.emit("overlay-content", value);
 
-    // Auto-trigger Bible scripture lower third on Live screen if enabled
-    if (value?.type === "bible" && liveBroadcastConfig.bibleLowerThird?.enabled && liveBroadcastConfig.bibleLowerThird?.autoTrigger) {
+    // Bible scripture lower third: Route to assigned custom template or legacy fallback
+    if (value?.type === "bible") {
       const bData = value.data || {};
-      const ref = (bData.title || (bData.book ? `${bData.book} ${bData.chapter || ''}:${bData.verse || ''}` : '') || "").trim();
+      const ref = (
+        bData.title ||
+        (bData.book
+          ? `${bData.book} ${bData.chapter || ""}:${bData.verse || ""}`
+          : "") ||
+        ""
+      ).trim();
       const body = (bData.body || "").trim();
-      const version = (bData.version || bData.translation || "KJV").toUpperCase();
-      if (ref || body) {
+      const version = (
+        bData.version ||
+        bData.translation ||
+        "KJV"
+      ).toUpperCase();
+
+      const bibleTemplateId = designStudioService.getRoleAssignments()?.bible;
+      const assignedTemplate = bibleTemplateId ? designStudioService.getDesign(bibleTemplateId) : null;
+
+      if (assignedTemplate && (ref || body)) {
+        // Render scripture popup using assigned custom Bible template
+        const resolvedLayers = designStudioService.resolveTemplateLayers(assignedTemplate, "bible", {
+          verseText: body,
+          verse: body,
+          text: body,
+          body: body,
+          scripture: body,
+          reference: ref,
+          ref: ref,
+          title: ref,
+          passage: ref,
+          version: version,
+          translation: version,
+        });
+
+        const controls = Array.isArray(liveBroadcastConfig.activeStudioControls)
+          ? [...liveBroadcastConfig.activeStudioControls]
+          : [];
+        const existingIdx = controls.findIndex(
+          (c) => c && (c.id === "role_playback_bible" || c.role === "bible")
+        );
+
+        if (existingIdx >= 0) {
+          // In-place verse update while visible: update layers without restarting entrance animation
+          const existing = { ...controls[existingIdx] };
+          existing.snapshotLayers = resolvedLayers;
+          existing.label = `Scripture: ${ref || "Passage"}`;
+          if (existing.status === "exiting") {
+            existing.status = "live";
+          }
+          controls[existingIdx] = existing;
+        } else {
+          // Play entrance transition for newly entering lower third
+          controls.push({
+            id: "role_playback_bible",
+            role: "bible",
+            templateId: assignedTemplate.id,
+            label: `Scripture: ${ref || "Passage"}`,
+            snapshotLayers: resolvedLayers,
+            transition: assignedTemplate.transition || {
+              entrance: { type: "fade", duration: 400, easing: "ease-out" },
+              exit: { type: "fade", duration: 300, easing: "ease-in" },
+            },
+            status: "entering",
+            animStartTime: Date.now(),
+          });
+        }
+
+        // Manage auto-dismissal timer if configured
+        if (bibleDismissTimer) clearTimeout(bibleDismissTimer);
+        const autoDismiss = liveBroadcastConfig.bibleLowerThird?.autoDismiss ?? false;
+        const dismissDelay = liveBroadcastConfig.bibleLowerThird?.dismissDelay || 12;
+        if (autoDismiss && dismissDelay > 0) {
+          bibleDismissTimer = setTimeout(() => {
+            dismissBibleRoleControl();
+          }, dismissDelay * 1000);
+        }
+
+        // Ensure legacy isShowing is strictly false to prevent duplicate popups
+        liveBroadcastConfig.bibleLowerThird.isShowing = false;
+        updateLiveBroadcastConfig({ activeStudioControls: controls });
+      } else if (!bibleTemplateId && liveBroadcastConfig.bibleLowerThird?.enabled && liveBroadcastConfig.bibleLowerThird?.autoTrigger && (ref || body)) {
+        // Fallback to legacy Bible lower third ONLY when no custom template is assigned
         liveBroadcastConfig.bibleLowerThird.currentRef = ref;
         liveBroadcastConfig.bibleLowerThird.currentText = body;
         liveBroadcastConfig.bibleLowerThird.version = version;
         liveBroadcastConfig.bibleLowerThird.isShowing = true;
+        broadcastLiveConfig();
+      } else if (bibleTemplateId && !assignedTemplate) {
+        console.warn(`[Bible Lower Third] Assigned Bible template ID "${bibleTemplateId}" was not found in design storage.`);
+        broadcastToAllWindows("design:role-template-error", {
+          role: "bible",
+          templateId: bibleTemplateId,
+          message: "Assigned Bible template not found. Please re-assign your template in Live Design Studio.",
+        });
+        // Never silently substitute legacy lower third when a template was assigned
+        liveBroadcastConfig.bibleLowerThird.isShowing = false;
+        broadcastLiveConfig();
+      }
+    } else if (value == null) {
+      // Clean dismissal when content is cleared
+      dismissBibleRoleControl();
+      if (liveBroadcastConfig.bibleLowerThird?.isShowing) {
+        liveBroadcastConfig.bibleLowerThird.isShowing = false;
         broadcastLiveConfig();
       }
     }
@@ -4032,22 +4980,31 @@ function createWindows() {
         data: value.data || value,
       };
     }
-    if (currentCanvasState.contentSlot.type !== 'live-camera' && currentCanvasState.contentSlot.type !== 'live-output') {
+    if (
+      currentCanvasState.contentSlot.type !== "live-camera" &&
+      currentCanvasState.contentSlot.type !== "live-output"
+    ) {
       savedPresentationContentSlot = currentCanvasState.contentSlot;
       savedGeneralContentSlot = currentCanvasState.contentSlot;
     }
 
     // If General Screen is actively shared to Live Output, preserve the live-output slot on air
     if (switcherRouteGeneral) {
-      currentCanvasState.contentSlot = { type: 'live-output', data: { title: 'Live Output' } };
+      currentCanvasState.contentSlot = {
+        type: "live-output",
+        data: { title: "Live Output" },
+      };
     }
 
     broadcastCanvasState(currentCanvasState, allowedTargets);
 
     // Dispatch to gated windows (do not interrupt screen if actively sharing live output)
-    if (speakerOk && !switcherRouteSpeaker) safeWebContentsSend(speakerWindow, "set-content", value);
-    if (generalOk && !switcherRouteGeneral) safeWebContentsSend(generalWindow, "set-content", value);
-    if (controllerOk) safeWebContentsSend(controllerWindow, "set-content", value);
+    if (speakerOk && !switcherRouteSpeaker)
+      safeWebContentsSend(speakerWindow, "set-content", value);
+    if (generalOk && !switcherRouteGeneral)
+      safeWebContentsSend(generalWindow, "set-content", value);
+    if (controllerOk)
+      safeWebContentsSend(controllerWindow, "set-content", value);
 
     // Tier 2 cleanup bias: record displayed scripture refs during active session
     if (
@@ -4199,7 +5156,10 @@ function startDisplayMirrorEngine() {
     if (generalWindow && !generalWindow.isDestroyed()) {
       const wc = generalWindow.webContents;
       if (wc && !wc.isDestroyed() && !isCapturingGeneral) {
-        if (typeof wc.isLoadingMainFrame === "function" && wc.isLoadingMainFrame()) {
+        if (
+          typeof wc.isLoadingMainFrame === "function" &&
+          wc.isLoadingMainFrame()
+        ) {
           // Window is navigating or reloading; skip frame
         } else {
           isCapturingGeneral = true;
@@ -4207,10 +5167,16 @@ function startDisplayMirrorEngine() {
             wc.capturePage()
               .then((img) => {
                 if (img && !img.isEmpty()) {
-                  const thumb = img.resize({ width: 1280, height: 720, quality: "better" });
+                  const thumb = img.resize({
+                    width: 1280,
+                    height: 720,
+                    quality: "better",
+                  });
                   const payload = {
                     destination: "general",
-                    data: "data:image/jpeg;base64," + thumb.toJPEG(85).toString("base64"),
+                    data:
+                      "data:image/jpeg;base64," +
+                      thumb.toJPEG(85).toString("base64"),
                   };
                   broadcastToAllWindows("display-mirror-frame", payload); // win.webContents.send("display-mirror-frame", payload);
                 }
@@ -4230,7 +5196,10 @@ function startDisplayMirrorEngine() {
     if (speakerWindow && !speakerWindow.isDestroyed()) {
       const wc = speakerWindow.webContents;
       if (wc && !wc.isDestroyed() && !isCapturingSpeaker) {
-        if (typeof wc.isLoadingMainFrame === "function" && wc.isLoadingMainFrame()) {
+        if (
+          typeof wc.isLoadingMainFrame === "function" &&
+          wc.isLoadingMainFrame()
+        ) {
           // Window is navigating or reloading; skip frame
         } else {
           isCapturingSpeaker = true;
@@ -4238,10 +5207,16 @@ function startDisplayMirrorEngine() {
             wc.capturePage()
               .then((img) => {
                 if (img && !img.isEmpty()) {
-                  const thumb = img.resize({ width: 1280, height: 720, quality: "better" });
+                  const thumb = img.resize({
+                    width: 1280,
+                    height: 720,
+                    quality: "better",
+                  });
                   const payload = {
                     destination: "speaker",
-                    data: "data:image/jpeg;base64," + thumb.toJPEG(85).toString("base64"),
+                    data:
+                      "data:image/jpeg;base64," +
+                      thumb.toJPEG(85).toString("base64"),
                   };
                   broadcastToAllWindows("display-mirror-frame", payload); // win.webContents.send("display-mirror-frame", payload);
                 }
@@ -4445,7 +5420,7 @@ ipcMain.handle("recorder:start", async (_e, options) => {
       opts.outputPath = getDeterministicRecordingPath();
     } else if (!path.isAbsolute(opts.outputPath)) {
       // If a relative path was passed without directory delimiters, use it as custom filename in deterministic folder
-      if (!opts.outputPath.includes('/') && !opts.outputPath.includes('\\')) {
+      if (!opts.outputPath.includes("/") && !opts.outputPath.includes("\\")) {
         opts.outputPath = getDeterministicRecordingPath(null, opts.outputPath);
       } else {
         const defaultRecDir = path.join(app.getPath("userData"), "recordings");
@@ -4457,10 +5432,10 @@ ipcMain.handle("recorder:start", async (_e, options) => {
     if (recordingIndex) {
       const entry = recordingIndex.createEntry({
         outputPath: opts.outputPath,
-        title:  opts.title || null,
-        width:  opts.width  || 1280,
+        title: opts.title || null,
+        width: opts.width || 1280,
         height: opts.height || 720,
-        fps:    opts.fps    || 30,
+        fps: opts.fps || 30,
       });
       opts._recordingIndexId = entry.id; // pass through so stop() can finalize
     }
@@ -4480,19 +5455,27 @@ ipcMain.handle("recorder:stop", async () => {
     // Finalize the recording index entry with validated metadata
     if (recordingIndex && pendingIndexId) {
       const finalized = recordingIndex.finalizeEntry(pendingIndexId, result);
-      console.log(`[IPC recorder:stop] Recording indexed: ${finalized?.status} — ${finalized?.outputPath}`);
+      console.log(
+        `[IPC recorder:stop] Recording indexed: ${finalized?.status} — ${finalized?.outputPath}`,
+      );
       // Notify renderer so Sessions UI refreshes immediately
       const wins = BrowserWindow.getAllWindows();
       for (const w of wins) {
-        try { w.webContents.send("recording-session-updated"); } catch (_) {}
+        try {
+          w.webContents.send("recording-session-updated");
+        } catch (_) {}
       }
     } else if (result && result.ok && result.outputPath && recordingIndex) {
       // Fallback: create+finalize if we lost the id (e.g. recorder was started before index was ready)
-      const entry = recordingIndex.createEntry({ outputPath: result.outputPath });
+      const entry = recordingIndex.createEntry({
+        outputPath: result.outputPath,
+      });
       recordingIndex.finalizeEntry(entry.id, result);
       const wins = BrowserWindow.getAllWindows();
       for (const w of wins) {
-        try { w.webContents.send("recording-session-updated"); } catch (_) {}
+        try {
+          w.webContents.send("recording-session-updated");
+        } catch (_) {}
       }
     }
 
@@ -4500,7 +5483,11 @@ ipcMain.handle("recorder:stop", async () => {
   } catch (err) {
     // Mark recording as failed in index
     if (recordingIndex && pendingIndexId) {
-      recordingIndex.updateEntry(pendingIndexId, { status: 'failed', error: err.message, endedAt: Date.now() });
+      recordingIndex.updateEntry(pendingIndexId, {
+        status: "failed",
+        error: err.message,
+        endedAt: Date.now(),
+      });
     }
     console.error("[IPC recorder:stop] error:", err.message);
     return { ok: false, error: err.message };
@@ -4538,13 +5525,17 @@ ipcMain.handle("recorder:show-in-folder", async (_e, targetPath) => {
 
 ipcMain.on("recorder:push-video-frame", (_e, buffer) => {
   if (buffer) {
-    programRecorder.writeVideoFrame(Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer));
+    programRecorder.writeVideoFrame(
+      Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer),
+    );
   }
 });
 
 ipcMain.on("recorder:push-audio-chunk", (_e, buffer) => {
   if (buffer) {
-    programRecorder.writeAudioChunk(Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer));
+    programRecorder.writeAudioChunk(
+      Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer),
+    );
   }
 });
 
@@ -4602,14 +5593,20 @@ ipcMain.handle("broadcast:status", () => {
 });
 
 // Broadcast RTMP/SRT Supervisor — Multi-Destination Simulstreaming (Stage 8)
-ipcMain.handle("broadcast:start-multi", async (_e, destinations, baseConfig) => {
-  try {
-    return await broadcastSupervisor.startMulti(destinations, baseConfig || {});
-  } catch (err) {
-    console.error("[IPC broadcast:start-multi] error:", err.message);
-    return { ok: false, error: err.message };
-  }
-});
+ipcMain.handle(
+  "broadcast:start-multi",
+  async (_e, destinations, baseConfig) => {
+    try {
+      return await broadcastSupervisor.startMulti(
+        destinations,
+        baseConfig || {},
+      );
+    } catch (err) {
+      console.error("[IPC broadcast:start-multi] error:", err.message);
+      return { ok: false, error: err.message };
+    }
+  },
+);
 
 ipcMain.handle("broadcast:stop-all", async () => {
   try {
@@ -4647,17 +5644,27 @@ ipcMain.on("broadcast:push-audio-chunk", (_e, buffer) => {
 ipcMain.handle("session-list", async () => {
   try {
     // Merge production recording sessions + Whisper/transcription sessions
-    const archiveSessions = sessionArchive ? (await sessionArchive.listSessions() || []) : [];
-    const recordings      = recordingIndex  ? recordingIndex.listEntries() : [];
+    const archiveSessions = sessionArchive
+      ? (await sessionArchive.listSessions()) || []
+      : [];
+    const recordings = recordingIndex ? recordingIndex.listEntries() : [];
     // Tag archive sessions so UI can distinguish them
-    const taggedArchive   = archiveSessions.map(s => ({ ...s, type: s.type || 'transcription' }));
-    const taggedRecording = recordings.map(r => ({ ...r, type: 'recording' }));
+    const taggedArchive = archiveSessions.map((s) => ({
+      ...s,
+      type: s.type || "transcription",
+    }));
+    const taggedRecording = recordings.map((r) => ({
+      ...r,
+      type: "recording",
+    }));
     // Sort all combined by creation time desc
-    const combined = [...taggedArchive, ...taggedRecording]
-      .sort((a, b) => (b.createdAt || b.startedAt || 0) - (a.createdAt || a.startedAt || 0));
+    const combined = [...taggedArchive, ...taggedRecording].sort(
+      (a, b) =>
+        (b.createdAt || b.startedAt || 0) - (a.createdAt || a.startedAt || 0),
+    );
     return combined;
   } catch (err) {
-    console.error('[IPC session-list] error:', err.message);
+    console.error("[IPC session-list] error:", err.message);
     return [];
   }
 });
@@ -4939,7 +5946,8 @@ ipcMain.handle("settings-set", async (_e, patch) => {
     latestOverlayStyle = { ...(latestOverlayStyle || {}), ...patch.styles };
     if (io) io.emit("overlay-style", latestOverlayStyle);
     for (const win of BrowserWindow.getAllWindows()) {
-      if (!win.isDestroyed()) win.webContents.send("set-style", latestOverlayStyle);
+      if (!win.isDestroyed())
+        win.webContents.send("set-style", latestOverlayStyle);
     }
   }
   // Broadcast settings-updated to all windows
@@ -5073,7 +6081,6 @@ ipcMain.handle("auth:logout", async () => {
 });
 // ─────────────────────────────────────────────────────────────────────────────
 
-
 // Clipboard IPC Handlers
 ipcMain.handle("clipboard:write-text", (_event, text) => {
   try {
@@ -5105,6 +6112,12 @@ app.whenReady().then(async () => {
     console.error("[RecoveryManager] Startup init error:", err.message);
   }
 
+  try {
+    designStudioService.initialize(app.getPath("userData"));
+  } catch (err) {
+    console.error("[DesignStudio] Startup init error:", err.message);
+  }
+
   // GRANT MEDIA ACCESS (Camera & Microphone) AUTOMATICALLY
   session.defaultSession.setPermissionRequestHandler(
     (webContents, permission, callback) => {
@@ -5116,12 +6129,14 @@ app.whenReady().then(async () => {
     },
   );
 
-  session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
-    if (permission === "media") {
-      return true;
-    }
-    return false;
-  });
+  session.defaultSession.setPermissionCheckHandler(
+    (webContents, permission) => {
+      if (permission === "media") {
+        return true;
+      }
+      return false;
+    },
+  );
 
   if (process.platform === "darwin" && systemPreferences.askForMediaAccess) {
     systemPreferences.askForMediaAccess("camera").catch(() => {});
@@ -5196,7 +6211,6 @@ app.whenReady().then(async () => {
   const ffmpegBin = programRecorder ? programRecorder.getFfmpegPath() : null;
   recordingIndex = new RecordingIndex(recordingsDir, ffmpegBin);
 
-
   sleepPrevention.init();
   const sleepProbe = sleepPrevention.probe();
   if (!sleepProbe.ok) {
@@ -5242,9 +6256,11 @@ app.whenReady().then(async () => {
         currentCanvasState &&
         currentCanvasState.contentSlot &&
         currentCanvasState.contentSlot.type !== "none" &&
-        currentCanvasState.contentSlot.data != null
+        currentCanvasState.contentSlot.data != null,
       );
-      const isSessionRecording = Boolean(sessionArchive && sessionArchive.active);
+      const isSessionRecording = Boolean(
+        sessionArchive && sessionArchive.active,
+      );
       return isPresentationActive || isSessionRecording;
     },
   });

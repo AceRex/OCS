@@ -33,6 +33,7 @@ const TEST_SUITES = [
   { name: 'Stage 9.8 External Platform & Field Production Validation', script: 'scripts/test-stage98-external-validation.js' },
   { name: 'Stage 9.9 Local Recording & Network Resilience Audit', script: 'scripts/test-stage99-recording-network-resilience.js' },
   { name: 'Stage 10 Production Rehearsal & Live Recovery Validation', script: 'scripts/test-stage10-production-rehearsal.js' },
+  { name: 'Role-Based Lower Thirds & Editor Repair', script: 'scripts/test-roles-and-editor-repair.js' },
 ];
 
 console.log('====================================================');

@@ -143,14 +143,19 @@ async function runStage98Harness() {
 
     await worker.start();
 
-    // Push 45 identical frames (simulating static sermon slide)
+    // Push identical frames (simulating static sermon slide)
     const staticFrame = generateBlankFrame(1280, 720, 0x10);
-    for (let i = 0; i < 45; i++) {
+    for (let i = 0; i < 60; i++) {
       worker.writeVideoFrame(staticFrame, { captureTimestamp: Date.now() });
       await new Promise(r => setTimeout(r, 33));
     }
 
-    await new Promise(r => setTimeout(r, 600));
+    // Allow hardware encoder to flush initial GOP
+    const t0 = Date.now();
+    while (Date.now() - t0 < 4000 && worker.getStatus().encodedFrames === 0) {
+      worker.writeVideoFrame(staticFrame, { captureTimestamp: Date.now() });
+      await new Promise(r => setTimeout(r, 66));
+    }
     const status = worker.getStatus();
 
     assert(status.isStreaming === true, 'Stream remains actively streaming on static slide content');

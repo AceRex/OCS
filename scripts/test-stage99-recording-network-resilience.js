@@ -234,9 +234,15 @@ async function runStage99Harness() {
 
   // Simulate static slide presentation
   const staticSlide = generateRgbaFrame(640, 360, 20, 20, 30);
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 60; i++) {
     worker4.writeVideoFrame(staticSlide, { captureTimestamp: Date.now() });
     await new Promise(r => setTimeout(r, 33));
+  }
+
+  const t0 = Date.now();
+  while (Date.now() - t0 < 4000 && worker4.telemetry.encodedFrames === 0 && worker4.telemetry.outputBytes === 0) {
+    worker4.writeVideoFrame(staticSlide, { captureTimestamp: Date.now() });
+    await new Promise(r => setTimeout(r, 66));
   }
 
   // Trigger watchdog tick manually with static slide metrics

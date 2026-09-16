@@ -105,7 +105,26 @@ class BroadcastAudioBus {
       this.channelNodes[i] = chGain;
     }
 
+    if (this.audioCtx.state === 'suspended') {
+      this.audioCtx.resume().catch(() => {});
+    }
+
     return true;
+  }
+
+  /**
+   * Explicitly resumes AudioContext if suspended by Chromium autoplay policy.
+   */
+  async resume() {
+    if (!this.audioCtx) this.initWebAudio();
+    if (this.audioCtx && this.audioCtx.state === 'suspended') {
+      try {
+        await this.audioCtx.resume();
+      } catch (err) {
+        console.warn('[BroadcastAudioBus] Failed to resume AudioContext:', err);
+      }
+    }
+    return this.audioCtx?.state;
   }
 
   /**

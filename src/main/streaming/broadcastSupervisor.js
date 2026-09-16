@@ -58,6 +58,7 @@ class BroadcastSupervisor {
     this._liveTimer        = null;
     this._isIntentionalStop = false;
     this._isBackpressured  = false;
+    this._isStopped        = false;
 
     // Real-time telemetry
     this.stats = {
@@ -268,6 +269,14 @@ class BroadcastSupervisor {
         );
       }
 
+      // Check if destination is Facebook to isolate strict CBR/GOP constraints
+      const isFacebook = Boolean(
+        c.isFacebook ||
+        c.platform === 'facebook' ||
+        (typeof c.label === 'string' && /facebook/i.test(c.label)) ||
+        (typeof c.streamUrl === 'string' && /(?:live-api-s\.facebook\.com|facebook\.com|fbcdn\.net)/i.test(c.streamUrl))
+      );
+
       // Video encoding
       args.push('-c:v', encoder);
       if (encoder === 'libx264') {
@@ -276,15 +285,28 @@ class BroadcastSupervisor {
           '-tune', 'zerolatency',
           '-b:v', `${c.videoBitrateKbps}k`,
           '-maxrate', `${c.videoBitrateKbps}k`,
-          '-bufsize', `${c.videoBitrateKbps * 2}k`,
-          '-profile:v', 'main'
+          '-bufsize', `${c.videoBitrateKbps * 2}k`
         );
+        if (isFacebook) {
+          args.push('-profile:v', 'main', '-sc_threshold', '0');
+        }
       } else if (encoder === 'h264_videotoolbox') {
-        args.push(
-          '-b:v', `${c.videoBitrateKbps}k`,
-          '-maxrate', `${c.videoBitrateKbps}k`,
-          '-realtime', '1'
-        );
+        if (isFacebook) {
+          args.push(
+            '-b:v', `${c.videoBitrateKbps}k`,
+            '-maxrate', `${c.videoBitrateKbps}k`,
+            '-bufsize', `${c.videoBitrateKbps * 2}k`,
+            '-constant_bit_rate', '1',
+            '-realtime', '1',
+            '-profile:v', 'main'
+          );
+        } else {
+          args.push(
+            '-b:v', `${c.videoBitrateKbps}k`,
+            '-maxrate', `${c.videoBitrateKbps}k`,
+            '-realtime', '1'
+          );
+        }
       } else if (encoder === 'h264_nvenc') {
         args.push(
           '-preset', 'p3',
@@ -292,6 +314,9 @@ class BroadcastSupervisor {
           '-maxrate', `${c.videoBitrateKbps}k`,
           '-bufsize', `${c.videoBitrateKbps * 2}k`
         );
+        if (isFacebook) {
+          args.push('-profile:v', 'main');
+        }
       }
 
       // Mandatory 2.0s keyframe cadence
@@ -313,6 +338,11 @@ class BroadcastSupervisor {
       }
 
       // Real-time network delivery
+      const isRtmp = c.streamUrl.startsWith('rtmp://') || c.streamUrl.startsWith('rtmps://');
+      if (isRtmp) args.push('-tcp_nodelay', '1');
+      args.push('-max_interleave_delta', '1000000');
+      const rwTimeout = isFacebook ? '30000000' : '15000000';
+      args.push('-rw_timeout', rwTimeout);
       args.push('-flush_packets', '1');
       args.push('-f', format, c.streamUrl);
 
@@ -649,6 +679,7 @@ class BroadcastSupervisor {
    * @returns {Promise<{ ok: boolean, results: Array<{id, ok, error?}> }>}
    */
   async startMulti(destinations, baseConfig = {}) {
+    this._isStopped = false;
     if (!Array.isArray(destinations) || destinations.length === 0) {
       return { ok: false, error: 'destinations array is required' };
     }
@@ -731,15 +762,33 @@ class BroadcastSupervisor {
         args.push('-f', 's16le', '-ar', `${c.sampleRate}`, '-ac', `${c.channels}`, '-i', 'pipe:3');
       }
 
+      const isFacebook = Boolean(
+        c.isFacebook ||
+        c.platform === 'facebook' ||
+        (typeof c.label === 'string' && /facebook/i.test(c.label)) ||
+        (typeof c.streamUrl === 'string' && /(?:live-api-s\.facebook\.com|facebook\.com|fbcdn\.net)/i.test(c.streamUrl))
+      );
+
       args.push('-c:v', encoder);
       if (encoder === 'libx264') {
         args.push('-preset', 'veryfast', '-b:v', `${c.videoBitrateKbps}k`,
-          '-maxrate', `${c.videoBitrateKbps}k`, '-bufsize', `${c.videoBitrateKbps * 2}k`, '-profile:v', 'main');
+          '-maxrate', `${c.videoBitrateKbps}k`, '-bufsize', `${c.videoBitrateKbps * 2}k`);
+        if (isFacebook) {
+          args.push('-profile:v', 'main', '-sc_threshold', '0');
+        }
       } else if (encoder === 'h264_videotoolbox') {
-        args.push('-b:v', `${c.videoBitrateKbps}k`, '-maxrate', `${c.videoBitrateKbps}k`, '-realtime', '1');
+        if (isFacebook) {
+          args.push('-b:v', `${c.videoBitrateKbps}k`, '-maxrate', `${c.videoBitrateKbps}k`,
+            '-bufsize', `${c.videoBitrateKbps * 2}k`, '-constant_bit_rate', '1', '-realtime', '1', '-profile:v', 'main');
+        } else {
+          args.push('-b:v', `${c.videoBitrateKbps}k`, '-maxrate', `${c.videoBitrateKbps}k`, '-realtime', '1');
+        }
       } else if (encoder === 'h264_nvenc') {
         args.push('-preset', 'p3', '-b:v', `${c.videoBitrateKbps}k`,
           '-maxrate', `${c.videoBitrateKbps}k`, '-bufsize', `${c.videoBitrateKbps * 2}k`);
+        if (isFacebook) {
+          args.push('-profile:v', 'main');
+        }
       }
 
       args.push('-g', String(gopSize), '-keyint_min', String(gopSize), '-pix_fmt', 'yuv420p');
@@ -748,6 +797,11 @@ class BroadcastSupervisor {
         args.push('-c:a', 'aac', '-b:a', `${c.audioBitrateKbps}k`, '-ar', `${c.sampleRate}`);
       }
       if (!isMpegTs) args.push('-flvflags', 'no_duration_filesize');
+      const isRtmp = c.streamUrl.startsWith('rtmp://') || c.streamUrl.startsWith('rtmps://');
+      if (isRtmp) args.push('-tcp_nodelay', '1');
+      args.push('-max_interleave_delta', '1000000');
+      const rwTimeout = isFacebook ? '30000000' : '15000000';
+      args.push('-rw_timeout', rwTimeout);
       args.push('-flush_packets', '1', '-f', format, c.streamUrl);
 
       try {
@@ -969,16 +1023,25 @@ class BroadcastSupervisor {
    */
   async stopAll() {
     this._isIntentionalStop = true;
+    this._isStopped = true; // Immediately signal getMultiStatus() to return empty
+
     const workerPromises = [];
     if (this._workers && this._workers.size > 0) {
       for (const worker of this._workers.values()) {
         workerPromises.push(worker.stop());
       }
-      this._workers.clear();
     }
     const ids = this._multiProcesses ? [...this._multiProcesses.keys()] : [];
     const procPromises = ids.map(id => this._stopDestination(id));
     await Promise.all([...workerPromises, ...procPromises]);
+
+    // Clear all maps AFTER workers have fully stopped
+    this._workers.clear();
+    this._multiProcesses.clear();
+    this._multiStats.clear();
+    this._multiConfig.clear();
+    this._multiReconnect.clear();
+
     this._isIntentionalStop = false;
     const count = Math.max(workerPromises.length, ids.length);
     console.log(`[BroadcastSupervisor] All ${count} destinations stopped.`);
@@ -1058,6 +1121,9 @@ class BroadcastSupervisor {
    * @returns {Object<id, {isStreaming, state, health, fps, bitrateKbps, uptimeSec, droppedFrames, framesSent}>}
    */
   getMultiStatus() {
+    // After stopAll(), return empty immediately to prevent stale status from leaking to renderer
+    if (this._isStopped) return {};
+
     if (this._workers && this._workers.size > 0) {
       const result = {};
       for (const [id, worker] of this._workers) {

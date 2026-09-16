@@ -132,6 +132,7 @@ async function runProgramRecorderTests() {
     const frame = generateRgbaFrame(320, 180, 255, 0, 0);
     crashRecorder.writeVideoFrame(frame);
     crashRecorder.writeAudioChunk(pcmShort);
+    await new Promise(r => setTimeout(r, 20));
   }
 
   // Signal EOF to input pipes so FFmpeg flushes raw input into fragments
