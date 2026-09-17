@@ -4850,8 +4850,11 @@ function createWindows() {
         "KJV"
       ).toUpperCase();
 
+      const reqId = `req_bible_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
       const bibleTemplateId = designStudioService.getRoleAssignments()?.bible;
       const assignedTemplate = bibleTemplateId ? designStudioService.getDesign(bibleTemplateId) : null;
+
+      console.log(`[Bible Presentation] [${reqId}] Passage: "${ref}", Translation: "${version}", TemplateID: "${bibleTemplateId || 'none'}"`);
 
       if (assignedTemplate && (ref || body)) {
         // Render scripture popup using assigned custom Bible template
@@ -4861,10 +4864,12 @@ function createWindows() {
           text: body,
           body: body,
           scripture: body,
+          passageText: body,
           reference: ref,
           ref: ref,
           title: ref,
           passage: ref,
+          bookVerse: ref,
           version: version,
           translation: version,
         });
@@ -4876,21 +4881,26 @@ function createWindows() {
           (c) => c && (c.id === "role_playback_bible" || c.role === "bible")
         );
 
+        let lifecycleState = "entering";
         if (existingIdx >= 0) {
           // In-place verse update while visible: update layers without restarting entrance animation
           const existing = { ...controls[existingIdx] };
           existing.snapshotLayers = resolvedLayers;
           existing.label = `Scripture: ${ref || "Passage"}`;
+          existing.reqId = reqId;
+          existing.updatedAt = Date.now();
           if (existing.status === "exiting") {
             existing.status = "live";
           }
           controls[existingIdx] = existing;
+          lifecycleState = existing.status || "live";
         } else {
           // Play entrance transition for newly entering lower third
           controls.push({
             id: "role_playback_bible",
             role: "bible",
             templateId: assignedTemplate.id,
+            reqId,
             label: `Scripture: ${ref || "Passage"}`,
             snapshotLayers: resolvedLayers,
             transition: assignedTemplate.transition || {
@@ -4899,8 +4909,30 @@ function createWindows() {
             },
             status: "entering",
             animStartTime: Date.now(),
+            createdAt: Date.now(),
           });
         }
+
+        console.log(
+          `[Bible Presentation] [${reqId}] Template: "${assignedTemplate.name}" (rev ${assignedTemplate.updatedAt || 'initial'}), ` +
+          `Resolved Layers: ${resolvedLayers.length}, Playback Instance: "role_playback_bible", Lifecycle: "${lifecycleState}"`
+        );
+
+        // Broadcast concise diagnostics for real integration testing and verification
+        broadcastToAllWindows("bible:presentation-diagnostics", {
+          reqId,
+          passage: ref,
+          translation: version,
+          templateId: assignedTemplate.id,
+          templateName: assignedTemplate.name,
+          revision: assignedTemplate.updatedAt || "initial",
+          resolvedVerse: body,
+          resolvedReference: ref,
+          resolvedLayersCount: resolvedLayers.length,
+          layerIds: resolvedLayers.map((l) => l.id),
+          playbackInstanceId: "role_playback_bible",
+          lifecycleState,
+        });
 
         // Manage auto-dismissal timer if configured
         if (bibleDismissTimer) clearTimeout(bibleDismissTimer);

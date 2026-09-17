@@ -207,7 +207,12 @@ contextBridge.exposeInMainWorld("electron", {
     },
     removeSetStyleListener: () => {
       ipcRenderer.removeAllListeners("set-style");
-    }
+    },
+    onBibleDiagnostics: (callback) => {
+      const listener = (_event, diag) => callback(diag);
+      ipcRenderer.on("bible:presentation-diagnostics", listener);
+      return () => ipcRenderer.removeListener("bible:presentation-diagnostics", listener);
+    },
   },
   Canvas: {
     syncState: (canvasState) => ipcRenderer.send("canvas-sync-state", canvasState),

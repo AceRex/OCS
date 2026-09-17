@@ -49,6 +49,7 @@ import {
   PiIntersect,
   PiHandPalm,
   PiCursor,
+  PiDotsThreeVertical,
 } from "react-icons/pi";
 import ActionButton from "../components/feedback/ActionButton";
 import { calculateCropMetrics } from "./designStudioCrop";
@@ -2944,18 +2945,36 @@ function renderVectorShape(layer, sw) {
         }}
       >
         {/* Clipped Mask Image */}
-        {layer.maskImage && layer.maskImage.url && (
-          <img
-            src={layer.maskImage.url}
-            alt="Masked Asset"
-            className="w-full h-full pointer-events-none select-none"
-            style={{
-              objectFit: layer.maskImage.fitMode === "fit" ? "contain" : "cover",
-              transform: `translate(${layer.maskImage.panX || 0}%, ${layer.maskImage.panY || 0}%) scale(${layer.maskImage.zoom || 1})`,
-              transformOrigin: "center center",
-            }}
-          />
-        )}
+        {layer.maskImage && layer.maskImage.url && (() => {
+          const mImg = layer.maskImage;
+          const crop = mImg.frameCrop || mImg;
+          const cw = (layer.width || 35) * (16 / 9);
+          const ch = typeof layer.height === "number" ? layer.height : 15;
+          const nw = mImg.naturalWidth && mImg.naturalHeight ? mImg.naturalWidth : (mImg.aspectRatio || 1.777778) * 1000;
+          const nh = mImg.naturalWidth && mImg.naturalHeight ? mImg.naturalHeight : 1000;
+          const metrics = calculateCropMetrics({
+            containerWidth: cw,
+            containerHeight: ch,
+            naturalWidth: nw,
+            naturalHeight: nh,
+            fitMode: crop.fitMode || "fill",
+            zoom: typeof crop.zoom === "number" ? crop.zoom : 1,
+            panX: crop.panX || 0,
+            panY: crop.panY || 0,
+          });
+          return (
+            <img
+              src={mImg.url}
+              alt="Masked Asset"
+              className="pointer-events-none select-none"
+              style={{
+                ...metrics.css,
+                transform: crop.rotation ? `rotate(${crop.rotation}deg)` : undefined,
+                transformOrigin: "center center",
+              }}
+            />
+          );
+        })()}
         {isGlass && layer.sweepHighlight && (
           <div
             className="absolute inset-0 pointer-events-none"
@@ -3208,24 +3227,46 @@ function renderVectorShape(layer, sw) {
         </defs>
 
         {/* Base shape or clipped image container */}
-        {layer.maskImage && layer.maskImage.url ? (
-          <g clipPath={`url(#${clipId})`}>
-            {svgShapeNode}
-            <image
-              href={layer.maskImage.url}
-              x={`${(layer.maskImage.panX || 0)}%`}
-              y={`${(layer.maskImage.panY || 0)}%`}
-              width="100%"
-              height="100%"
-              preserveAspectRatio={layer.maskImage.fitMode === "fit" ? "xMidYMid meet" : "xMidYMid slice"}
-              style={{
-                transform: `scale(${layer.maskImage.zoom || 1})`,
-                transformOrigin: "center center",
-                pointerEvents: "none",
-              }}
-            />
-          </g>
-        ) : (
+        {layer.maskImage && layer.maskImage.url ? (() => {
+          const mImg = layer.maskImage;
+          const crop = mImg.frameCrop || mImg;
+          const cw = (layer.width || 35) * (16 / 9);
+          const ch = typeof layer.height === "number" ? layer.height : 15;
+          const nw = mImg.naturalWidth && mImg.naturalHeight ? mImg.naturalWidth : (mImg.aspectRatio || 1.777778) * 1000;
+          const nh = mImg.naturalWidth && mImg.naturalHeight ? mImg.naturalHeight : 1000;
+          const metrics = calculateCropMetrics({
+            containerWidth: cw,
+            containerHeight: ch,
+            naturalWidth: nw,
+            naturalHeight: nh,
+            fitMode: crop.fitMode || "fill",
+            zoom: typeof crop.zoom === "number" ? crop.zoom : 1,
+            panX: crop.panX || 0,
+            panY: crop.panY || 0,
+          });
+          const leftPct = (metrics.drawX / cw) * 100;
+          const topPct = (metrics.drawY / ch) * 100;
+          const widthPct = (metrics.drawW / cw) * 100;
+          const heightPct = (metrics.drawH / ch) * 100;
+          return (
+            <g clipPath={`url(#${clipId})`}>
+              {svgShapeNode}
+              <image
+                href={layer.maskImage.url}
+                x={`${leftPct}%`}
+                y={`${topPct}%`}
+                width={`${widthPct}%`}
+                height={`${heightPct}%`}
+                preserveAspectRatio="none"
+                style={{
+                  transform: crop.rotation ? `rotate(${crop.rotation}deg)` : undefined,
+                  transformOrigin: "center center",
+                  pointerEvents: "none",
+                }}
+              />
+            </g>
+          );
+        })() : (
           svgShapeNode
         )}
       </svg>
@@ -3303,6 +3344,32 @@ export default function LiveDesignStudioModal({
   const [moveGroupWithSelected, setMoveGroupWithSelected] = useState(false);
   const [showAdvancedInspector, setShowAdvancedInspector] = useState(false);
   const [roleAssignments, setRoleAssignments] = useState({ bible: null, announcement: null, speaker: null });
+
+  // ── Layers Panel 50/50 Resizable Sidebar State ───────────────────────────
+  const [layersPanelHeight, setLayersPanelHeight] = useState(() => {
+    try {
+      const stored = localStorage.getItem("ocs_studio_layers_panel_height");
+      return stored ? Math.max(120, Math.min(700, parseInt(stored, 10))) : 260;
+    } catch (_) {
+      return 260;
+    }
+  });
+  const [isResizingLayers, setIsResizingLayers] = useState(false);
+  const layersResizeStartRef = useRef({ startY: 0, startH: 260 });
+
+  // ── Context Menu State ───────────────────────────────────────────────────
+  const [contextMenu, setContextMenu] = useState(null); // { x, y, layerId, isMulti }
+  const contextMenuRef = useRef(null);
+
+  // ── Header popover state ─────────────────────────────────────────────────
+  const [docMenuOpen, setDocMenuOpen] = useState(false);
+  const [templateSettingsOpen, setTemplateSettingsOpen] = useState(false);
+  const [liveControlsMenuOpen, setLiveControlsMenuOpen] = useState(false);
+  const [liveControlsMode, setLiveControlsMode] = useState("add"); // 'add' | 'update'
+  const [closingWithUnsaved, setClosingWithUnsaved] = useState(false);
+  const docMenuRef = useRef(null);
+  const templateSettingsRef = useRef(null);
+  const liveControlsMenuRef = useRef(null);
 
   // Background removal state
   const [bgRemovalProcessing, setBgRemovalProcessing] = useState(false);
@@ -3648,6 +3715,11 @@ export default function LiveDesignStudioModal({
           handleDuplicateSelected();
         }
       } else if (e.key === "Escape") {
+        if (contextMenu) {
+          e.preventDefault();
+          setContextMenu(null);
+          return;
+        }
         if (editingCropLayerId) {
           e.preventDefault();
           setEditingCropLayerId(null);
@@ -4850,6 +4922,54 @@ export default function LiveDesignStudioModal({
     window.addEventListener("mouseup", handleCanvasMouseUp);
   };
 
+  const handlePointerDownOnCropHandle = (e, layer, handleId, initialRot, initialZoom) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (e.target && typeof e.target.setPointerCapture === "function") {
+      try {
+        e.target.setPointerCapture(e.pointerId);
+      } catch (_) {}
+    }
+    if (!canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const isShapeMask = layer.type === "shape" && Boolean(layer.maskImage?.url);
+    const mImg = isShapeMask ? (layer.maskImage || {}) : (layer.frameCrop || layer);
+    const curPanX = mImg.panX || 0;
+    const curPanY = mImg.panY || 0;
+
+    dragRef.current = {
+      mode: handleId === "crop-rot" ? "rotateCropContent" : "resizeCropContent",
+      layerId: layer.id,
+      isShapeMask,
+      handle: handleId,
+      startX: e.clientX,
+      startY: e.clientY,
+      canvasW: rect.width,
+      canvasH: rect.height,
+      origPanX: curPanX,
+      origPanY: curPanY,
+      origZoom: initialZoom || 1,
+      origRotation: initialRot || 0,
+      origFit: mImg.fitMode || "fill",
+      origSnapshot: {
+        design: JSON.parse(JSON.stringify(currentDesignRef.current)),
+        selectedLayerIds: [layer.id],
+        selectedLayerId: layer.id,
+      },
+      hasMoved: false,
+    };
+
+    window.removeEventListener("mousemove", handleCanvasMouseMove);
+    window.removeEventListener("mouseup", handleCanvasMouseUp);
+    window.addEventListener("mousemove", handleCanvasMouseMove);
+    window.addEventListener("mouseup", handleCanvasMouseUp);
+    window.removeEventListener("pointermove", handleCanvasMouseMove);
+    window.removeEventListener("pointerup", handleCanvasMouseUp);
+    window.addEventListener("pointermove", handleCanvasMouseMove);
+    window.addEventListener("pointerup", handleCanvasMouseUp);
+  };
+  const handleMouseDownOnCropHandle = handlePointerDownOnCropHandle;
+
   const processDragFrame = useCallback(() => {
     animFrameRef.current = null;
     const drag = dragRef.current;
@@ -4858,22 +4978,108 @@ export default function LiveDesignStudioModal({
 
     const { clientX, clientY } = coords;
 
+    if (drag.mode === "resizeCropContent") {
+      const dist = Math.hypot(clientX - drag.startX, clientY - drag.startY);
+      if (!drag.hasMoved && dist < 2) return;
+      drag.hasMoved = true;
+
+      const isTop = drag.handle.includes("n");
+      const isLeft = drag.handle.includes("w");
+      const deltaX = (clientX - drag.startX) / (zoom || 1);
+      const deltaY = (clientY - drag.startY) / (zoom || 1);
+
+      let scaleDelta = 0;
+      if (drag.handle === "crop-n") {
+        scaleDelta = -deltaY;
+      } else if (drag.handle === "crop-s") {
+        scaleDelta = deltaY;
+      } else if (drag.handle === "crop-w") {
+        scaleDelta = -deltaX;
+      } else if (drag.handle === "crop-e") {
+        scaleDelta = deltaX;
+      } else {
+        const multX = isLeft ? -1 : 1;
+        const multY = isTop ? -1 : 1;
+        scaleDelta = (deltaX * multX + deltaY * multY) / 2;
+      }
+
+      const minZoom = drag.origFit === "free" ? 0.05 : drag.origFit === "fit" ? 0.2 : 1.0;
+      let nextZoom = Number((drag.origZoom + scaleDelta * 0.008).toFixed(3));
+      if (drag.origFit === "fill" && nextZoom < 1.0) {
+        nextZoom = 1.0;
+        showFeedback("Fill mode constraint: image must cover frame. Switch to Free mode to scale below 100%.", false);
+      } else {
+        nextZoom = Math.max(minZoom, Math.min(5, nextZoom));
+      }
+
+      setCurrentDesign((prev) => ({
+        ...prev,
+        layers: prev.layers.map((l) => {
+          if (l.id !== drag.layerId) return l;
+          if (drag.isShapeMask) {
+            return {
+              ...l,
+              maskImage: {
+                ...(l.maskImage || {}),
+                zoom: nextZoom,
+                frameCrop: { ...(l.maskImage?.frameCrop || {}), zoom: nextZoom },
+              },
+            };
+          }
+          return {
+            ...l,
+            frameCrop: {
+              ...(l.frameCrop || {}),
+              zoom: nextZoom,
+            },
+          };
+        }),
+      }));
+      return;
+    }
+
+    if (drag.mode === "rotateCropContent") {
+      const dist = Math.hypot(clientX - drag.startX, clientY - drag.startY);
+      if (!drag.hasMoved && dist < 2) return;
+      drag.hasMoved = true;
+
+      const deltaX = (clientX - drag.startX) / (zoom || 1);
+      const nextRot = Math.round(((drag.origRotation + deltaX * 0.8) % 360 + 360) % 360);
+
+      setCurrentDesign((prev) => ({
+        ...prev,
+        layers: prev.layers.map((l) => {
+          if (l.id !== drag.layerId) return l;
+          return {
+            ...l,
+            maskImage: {
+              ...(l.maskImage || {}),
+              rotation: nextRot,
+              frameCrop: { ...(l.maskImage?.frameCrop || {}), rotation: nextRot },
+            },
+          };
+        }),
+      }));
+      return;
+    }
+
     if (drag.mode === "panCropImage") {
       const dist = Math.hypot(clientX - drag.startX, clientY - drag.startY);
       if (!drag.hasMoved && dist < 2) return;
       drag.hasMoved = true;
 
-      const deltaScreenX = clientX - drag.startX;
-      const deltaScreenY = clientY - drag.startY;
+      const deltaScreenX = (clientX - drag.startX) / (zoom || 1);
+      const deltaScreenY = (clientY - drag.startY) / (zoom || 1);
 
-      const layerScreenW = Math.max(20, (drag.layerW / 100) * drag.canvasW);
-      const layerScreenH = Math.max(20, (drag.layerH / 100) * drag.canvasH);
+      const layerScreenW = Math.max(20, (drag.layerW / 100) * (drag.canvasW / (zoom || 1)));
+      const layerScreenH = Math.max(20, (drag.layerH / 100) * (drag.canvasH / (zoom || 1)));
 
       const deltaPanX = ((deltaScreenX / layerScreenW) * 100) * 1.5;
       const deltaPanY = ((deltaScreenY / layerScreenH) * 100) * 1.5;
 
-      const newPanX = Math.max(-100, Math.min(100, Math.round(drag.origPanX + deltaPanX)));
-      const newPanY = Math.max(-100, Math.min(100, Math.round(drag.origPanY + deltaPanY)));
+      const clampLimit = drag.origFit === "free" ? 300 : 100;
+      const newPanX = Math.max(-clampLimit, Math.min(clampLimit, Math.round(drag.origPanX + deltaPanX)));
+      const newPanY = Math.max(-clampLimit, Math.min(clampLimit, Math.round(drag.origPanY + deltaPanY)));
 
       setCurrentDesign((prev) => ({
         ...prev,
@@ -4886,6 +5092,7 @@ export default function LiveDesignStudioModal({
                 ...(l.maskImage || {}),
                 panX: newPanX,
                 panY: newPanY,
+                frameCrop: { ...(l.maskImage?.frameCrop || {}), panX: newPanX, panY: newPanY },
               },
             };
           }
@@ -5447,6 +5654,76 @@ export default function LiveDesignStudioModal({
     showFeedback("Shape geometry reset", true);
   };
 
+  const handleLayerContextMenu = (e, layer) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const currentSelected = selectedLayerIdsRef.current || selectedLayerIds;
+    let nextSelected = currentSelected;
+    if (!currentSelected.includes(layer.id)) {
+      nextSelected = [layer.id];
+      selectedLayerIdsRef.current = nextSelected;
+      setSelectedLayerIds(nextSelected);
+      setSelectedLayerId(layer.id);
+    }
+    const isMulti = nextSelected.length > 1;
+    const menuW = 210;
+    const menuH = 340;
+    const posX = Math.max(10, Math.min(window.innerWidth - menuW - 10, e.clientX));
+    const posY = Math.max(10, Math.min(window.innerHeight - menuH - 10, e.clientY));
+    setContextMenu({
+      x: posX,
+      y: posY,
+      layerId: layer.id,
+      isMulti,
+    });
+  };
+
+  const handleOpenMoreMenu = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!selectedLayer) return;
+    const btnRect = e.currentTarget.getBoundingClientRect();
+    const menuW = 210;
+    const menuH = 340;
+    const posX = Math.max(10, Math.min(window.innerWidth - menuW - 10, btnRect.left - menuW + 30));
+    const posY = Math.max(10, Math.min(window.innerHeight - menuH - 10, btnRect.bottom + 6));
+    setContextMenu({
+      x: posX,
+      y: posY,
+      layerId: selectedLayer.id,
+      isMulti: selectedLayerIds.length > 1,
+    });
+  };
+
+  const handleLayersDividerMouseDown = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsResizingLayers(true);
+    layersResizeStartRef.current = { startY: e.clientY, startH: layersPanelHeight };
+
+    const handleMove = (moveEvt) => {
+      const deltaY = layersResizeStartRef.current.startY - moveEvt.clientY;
+      const maxH = Math.max(200, Math.floor(window.innerHeight * 0.65));
+      const nextH = Math.max(120, Math.min(maxH, layersResizeStartRef.current.startH + deltaY));
+      setLayersPanelHeight(nextH);
+    };
+
+    const handleUp = () => {
+      setIsResizingLayers(false);
+      window.removeEventListener("mousemove", handleMove);
+      window.removeEventListener("mouseup", handleUp);
+      setLayersPanelHeight((cur) => {
+        try {
+          localStorage.setItem("ocs_studio_layers_panel_height", String(cur));
+        } catch (_) {}
+        return cur;
+      });
+    };
+
+    window.addEventListener("mousemove", handleMove);
+    window.addEventListener("mouseup", handleUp);
+  };
+
   const handleZoomIn = () => setZoom((z) => Math.min(4.0, Number((z + 0.25).toFixed(2))));
   const handleZoomOut = () => setZoom((z) => Math.max(0.25, Number((z - 0.25).toFixed(2))));
   const handleResetZoom = () => {
@@ -5595,6 +5872,28 @@ export default function LiveDesignStudioModal({
     showFeedback("Created new blank design draft", true);
   };
 
+  // ── Close header popovers on outside click ───────────────────────────────
+  useEffect(() => {
+    if (!isOpen) return;
+    const handler = (e) => {
+      if (docMenuRef.current && !docMenuRef.current.contains(e.target)) setDocMenuOpen(false);
+      if (templateSettingsRef.current && !templateSettingsRef.current.contains(e.target)) setTemplateSettingsOpen(false);
+      if (liveControlsMenuRef.current && !liveControlsMenuRef.current.contains(e.target)) setLiveControlsMenuOpen(false);
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target)) setContextMenu(null);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [isOpen]);
+
+  // ── Guard-close: Save / Discard / Cancel when unsaved ────────────────────
+  const handleGuardedClose = useCallback(() => {
+    if (hasUnsavedChanges) {
+      setClosingWithUnsaved(true);
+    } else {
+      onClose();
+    }
+  }, [hasUnsavedChanges, onClose]);
+
   if (!isOpen || typeof document === "undefined") return null;
 
   return createPortal(
@@ -5662,205 +5961,489 @@ export default function LiveDesignStudioModal({
           }
         `}</style>
 
-        {/* ── Top Bar: Workflow & Presentation Controls ──────────────────────── */}
-        <div className="h-14 border-b border-white/10 px-5 flex items-center justify-between bg-[#12101e] shrink-0">
-          {/* Left: Design Selector & Status */}
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-[12px] bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-400 shrink-0">
-              <PiTelevision size={18} />
+        {/* ── Compact Top Bar — single 56px row ────────────────────────────── */}
+        <header
+          className="h-14 border-b border-white/10 px-3 flex items-center gap-2 bg-[#12101e] shrink-0"
+          style={{ minWidth: 0 }}
+        >
+          {/* ── LEFT: studio icon + editable name + unsaved indicator + document menu ── */}
+          <div className="flex items-center gap-1.5 min-w-0" style={{ flex: "1 1 0" }}>
+            {/* Studio icon */}
+            <div
+              className="w-8 h-8 rounded-[12px] bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-400 shrink-0"
+              title="Live Design Studio"
+            >
+              <PiTelevision size={16} />
             </div>
 
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-black uppercase tracking-wider text-white">
-                  Live Design Studio
-                </span>
-              </div>
-              <div className="flex items-center gap-2 mt-0.5">
-                <input
-                  type="text"
-                  value={currentDesign.name}
-                  onChange={(e) => {
-                    pushUndoSnapshot();
-                    setCurrentDesign((prev) => ({ ...prev, name: e.target.value }));
-                  }}
-                  className="bg-white/5 border border-white/10 rounded-[12px] px-2.5 py-0.5 text-[11px] text-white w-48 focus:outline-none focus:border-purple-500"
-                  placeholder="Design Title"
-                  aria-label="Design Title"
-                />
-              </div>
-            </div>
+            {/* Editable design name */}
+            <input
+              type="text"
+              value={currentDesign.name}
+              onChange={(e) => {
+                pushUndoSnapshot();
+                setCurrentDesign((prev) => ({ ...prev, name: e.target.value }));
+                setHasUnsavedChanges(true);
+              }}
+              className="bg-transparent text-sm font-semibold text-white truncate min-w-0 focus:outline-none focus:bg-white/5 focus:rounded-[12px] px-1.5 py-0.5 transition-colors"
+              style={{ maxWidth: 200 }}
+              placeholder="Design name"
+              aria-label="Design name"
+              title={currentDesign.name}
+            />
 
-            <ActionButton
-              onClick={handleCreateNewDesign}
-              className="px-2.5 py-1.5 rounded-[12px] bg-white/5 hover:bg-white/10 text-white/70 text-[11px] font-bold border border-white/10 transition-all"
-            >
-              New
-            </ActionButton>
-
-            <ActionButton
-              onClick={handleSaveDesign}
-              className={`px-3 py-1.5 rounded-[12px] text-[11px] font-bold border transition-all flex items-center gap-1.5 ${
-                hasUnsavedChanges
-                  ? "bg-purple-600 hover:bg-purple-500 border-purple-400 text-white shadow-md shadow-purple-950/40"
-                  : "bg-white/5 hover:bg-white/10 border-white/10 text-white/70"
-              }`}
-            >
-              <PiFloppyDisk size={13} />
-              <span>{hasUnsavedChanges ? "Save *" : "Saved"}</span>
-            </ActionButton>
-
-            <div className="w-px h-5 bg-white/10 mx-1" />
-
-            {/* Role Assignment & Preview Controls */}
-            <div className="flex items-center gap-2 bg-white/5 border border-white/10 rounded-[12px] px-2.5 py-1">
-              <span className="text-[10px] font-bold text-white/50 uppercase tracking-wider">Role:</span>
-              <select
-                value={currentDesign.role || "custom"}
-                onChange={(e) => {
-                  pushUndoSnapshot();
-                  setCurrentDesign((prev) => ({ ...prev, role: e.target.value }));
-                  setHasUnsavedChanges(true);
-                }}
-                className="bg-black/40 text-white text-[11px] font-medium px-2 py-0.5 rounded-[12px] border border-white/10 focus:outline-none focus:border-purple-500"
-                aria-label="Use As Role"
+            {/* Unsaved indicator */}
+            {hasUnsavedChanges && (
+              <span
+                className="shrink-0 text-[10px] text-amber-400/90 font-medium whitespace-nowrap"
+                aria-label="Unsaved changes"
               >
-                <option value="custom" className="bg-neutral-900 text-white">Custom / None</option>
-                <option value="bible" className="bg-neutral-900 text-white">Bible Lower-Third</option>
-                <option value="announcement" className="bg-neutral-900 text-white">Announcement</option>
-                <option value="speaker" className="bg-neutral-900 text-white">Speaker / Name</option>
-              </select>
-
-              {currentDesign.role && currentDesign.role !== "custom" && (() => {
-                const assignedId = roleAssignments[currentDesign.role];
-                const assignedDesign = designs.find((d) => d.id === assignedId);
-                const assignedName = assignedDesign ? assignedDesign.name : (assignedId === currentDesign.id ? currentDesign.name : "None");
-                return (
-                  <span
-                    className="text-[10px] text-white/50 border border-white/10 px-2 py-0.5 rounded-[12px] bg-white/5 truncate max-w-[150px]"
-                    title={`Assigned Default for ${currentDesign.role}: "${assignedName}"`}
-                  >
-                    Default: <strong className="text-white/80 font-bold">{assignedName}</strong>
-                  </span>
-                );
-              })()}
-
-              {currentDesign.role && currentDesign.role !== "custom" && (
-                <button
-                  type="button"
-                  onClick={() => handleSetRoleDefault(currentDesign.role, currentDesign.id)}
-                  className={`px-2 py-0.5 text-[10px] font-bold rounded-[12px] border transition-all ${
-                    roleAssignments[currentDesign.role] === currentDesign.id
-                      ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40"
-                      : "bg-white/5 text-white/70 hover:text-white border-white/10 hover:bg-white/10"
-                  }`}
-                  title={roleAssignments[currentDesign.role] === currentDesign.id ? "Currently set as default template for this role" : "Save and set this template as the default for this role"}
-                >
-                  {roleAssignments[currentDesign.role] === currentDesign.id ? "✓ Default" : "Set as Default"}
-                </button>
-              )}
-
-              {currentDesign.role === "bible" && (() => {
-                const val = validateRoleTemplate(currentDesign);
-                if (!val.valid) {
-                  return (
-                    <span className="text-[10px] text-amber-300 bg-amber-500/15 border border-amber-500/30 px-2 py-0.5 rounded-[12px]" title={`Missing required fields: ${val.missingFields.join(", ")}`}>
-                      ⚠️ Needs: {val.missingFields.join(", ")}
-                    </span>
-                  );
-                }
-                return (
-                  <span className="text-[10px] text-emerald-300 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-[12px]">
-                    ✓ Valid
-                  </span>
-                );
-              })()}
-            </div>
-          </div>
-
-          {/* Center: Undo / Redo */}
-          <div className="flex items-center bg-white/5 border border-white/10 rounded-[12px] p-0.5">
-            <button
-              onClick={handleUndo}
-              disabled={undoStack.length === 0}
-              className="px-2.5 py-1 text-xs font-bold text-white/80 hover:text-white disabled:opacity-20 rounded-[12px] hover:bg-white/5 transition-all flex items-center gap-1"
-              title="Undo (Cmd+Z)"
-            >
-              <PiArrowCounterClockwise size={13} />
-              <span>Undo</span>
-            </button>
-            <div className="w-px h-3.5 bg-white/10" />
-            <button
-              onClick={handleRedo}
-              disabled={redoStack.length === 0}
-              className="px-2.5 py-1 text-xs font-bold text-white/80 hover:text-white disabled:opacity-20 rounded-[12px] hover:bg-white/5 transition-all flex items-center gap-1"
-              title="Redo (Cmd+Y)"
-            >
-              <PiArrowClockwise size={13} />
-              <span>Redo</span>
-            </button>
-          </div>
-
-          {/* Right: Studio Actions & Controls */}
-          <div className="flex items-center gap-2">
-
-            <ActionButton
-              onClick={() => handleAddToLiveControls()}
-              disabled={currentDesign.layers.length === 0}
-              className="px-3.5 py-1.5 rounded-[12px] bg-indigo-600 hover:bg-indigo-500 disabled:opacity-35 text-white text-xs font-bold transition-all shadow-md flex items-center gap-1.5"
-              title="Save current overlay design as a Live Switcher control tile"
-              aria-label="Add to Live Controls"
-            >
-              <PiBroadcast size={14} />
-              <span>Add to Live Controls</span>
-            </ActionButton>
-
-            {existingControls.length > 0 && (
-              <div className="flex items-center gap-1 bg-black/40 border border-white/10 p-0.5 rounded-[12px]">
-                {existingControls.length > 1 && (
-                  <select
-                    value={selectedUpdateControlId}
-                    onChange={(e) => setSelectedUpdateControlId(e.target.value)}
-                    className="bg-transparent text-white text-[11px] px-1.5 py-1 focus:outline-none max-w-[120px] truncate"
-                    aria-label="Select Control to Update"
-                  >
-                    {existingControls.map((c) => (
-                      <option key={c.id} value={c.id} className="bg-neutral-900 text-white">
-                        {c.label || c.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                <ActionButton
-                  onClick={() => handleUpdateSavedControl()}
-                  disabled={currentDesign.layers.length === 0}
-                  className="px-3 py-1.5 rounded-[12px] bg-amber-600 hover:bg-amber-500 disabled:opacity-35 text-white text-xs font-bold transition-all shadow-md flex items-center gap-1.5"
-                  title="Commit changes to selected saved control snapshot"
-                  aria-label="Update Saved Control"
-                >
-                  <PiFloppyDisk size={14} />
-                  <span>Update Saved Control</span>
-                </ActionButton>
-              </div>
+                ● Unsaved
+              </span>
             )}
 
-            <ActionButton
-              onClick={onClose}
-              className="px-3.5 py-1.5 rounded-[12px] bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold transition-all shadow-md active:scale-95 flex items-center gap-1"
-              aria-label="Done editing"
+            {/* Document menu trigger */}
+            <div className="relative shrink-0" ref={docMenuRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  setDocMenuOpen((v) => !v);
+                  setTemplateSettingsOpen(false);
+                  setLiveControlsMenuOpen(false);
+                }}
+                className="w-7 h-7 rounded-[12px] text-white/40 hover:text-white hover:bg-white/8 transition-colors flex items-center justify-center"
+                title="Document menu — New, Open, Rename"
+                aria-label="Document menu"
+                aria-haspopup="true"
+                aria-expanded={docMenuOpen}
+              >
+                <PiCaretDown size={12} />
+              </button>
+
+              {docMenuOpen && (
+                <div
+                  className="absolute left-0 top-full mt-1 z-[10010] w-48 bg-[#1a1630] border border-white/12 rounded-[12px] shadow-2xl py-1 overflow-hidden"
+                  role="menu"
+                >
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => { handleCreateNewDesign(); setDocMenuOpen(false); }}
+                    className="w-full text-left px-3.5 py-2 text-[12px] text-white/80 hover:text-white hover:bg-white/8 transition-colors flex items-center gap-2"
+                  >
+                    <PiPlus size={13} className="text-white/40" /> New design
+                  </button>
+
+                  {designs.length > 0 && (
+                    <>
+                      <div className="mx-3 my-1 border-t border-white/10" />
+                      <div className="px-3.5 py-1 text-[10px] font-bold text-white/30 uppercase tracking-wider">
+                        Open saved
+                      </div>
+                      <div className="max-h-48 overflow-y-auto">
+                        {designs.slice(0, 14).map((d) => (
+                          <button
+                            key={d.id}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => { handleSelectDesign(d.id); setDocMenuOpen(false); }}
+                            className={`w-full text-left px-3.5 py-1.5 text-[12px] truncate transition-colors flex items-center gap-2 ${
+                              d.id === currentDesign.id
+                                ? "text-purple-300 bg-purple-500/10"
+                                : "text-white/70 hover:text-white hover:bg-white/8"
+                            }`}
+                            title={d.name}
+                          >
+                            <PiStack size={11} className="shrink-0 text-white/25" />
+                            <span className="truncate">{d.name}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+
+                  <div className="mx-3 my-1 border-t border-white/10" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      pushUndoSnapshot();
+                      // eslint-disable-next-line no-alert
+                      const newName = window.prompt("Rename design:", currentDesign.name);
+                      if (newName && newName.trim()) {
+                        setCurrentDesign((prev) => ({ ...prev, name: newName.trim() }));
+                        setHasUnsavedChanges(true);
+                      }
+                      setDocMenuOpen(false);
+                    }}
+                    className="w-full text-left px-3.5 py-2 text-[12px] text-white/80 hover:text-white hover:bg-white/8 transition-colors flex items-center gap-2"
+                  >
+                    <PiTextT size={12} className="text-white/40" /> Rename…
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* ── CENTRE: Undo / Redo icon buttons ──────────────────────────── */}
+          <div className="flex items-center bg-white/5 border border-white/10 rounded-[12px] p-0.5 shrink-0">
+            <button
+              type="button"
+              onClick={handleUndo}
+              disabled={undoStack.length === 0}
+              className="w-8 h-8 flex items-center justify-center text-white/60 hover:text-white disabled:opacity-25 rounded-[12px] hover:bg-white/8 transition-colors"
+              title="Undo (Cmd+Z)"
+              aria-label="Undo"
             >
-              <span>Done</span>
-            </ActionButton>
-            <ActionButton
-              onClick={onClose}
-              className="p-1.5 rounded-[12px] bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-all"
+              <PiArrowCounterClockwise size={14} />
+            </button>
+            <div className="w-px h-4 bg-white/10 mx-0.5" />
+            <button
+              type="button"
+              onClick={handleRedo}
+              disabled={redoStack.length === 0}
+              className="w-8 h-8 flex items-center justify-center text-white/60 hover:text-white disabled:opacity-25 rounded-[12px] hover:bg-white/8 transition-colors"
+              title="Redo (Cmd+Shift+Z)"
+              aria-label="Redo"
+            >
+              <PiArrowClockwise size={14} />
+            </button>
+          </div>
+
+          {/* ── RIGHT: Template Settings | Save | Live Controls | Close ──── */}
+          <div className="flex items-center gap-1.5 shrink-0">
+
+            {/* Template Settings button + popover */}
+            <div className="relative" ref={templateSettingsRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  setTemplateSettingsOpen((v) => {
+                    const next = !v;
+                    if (next) refreshRoleAssignments();
+                    return next;
+                  });
+                  setDocMenuOpen(false);
+                  setLiveControlsMenuOpen(false);
+                }}
+                className={`h-8 px-2.5 rounded-[12px] text-[12px] font-medium border transition-colors flex items-center gap-1.5 ${
+                  templateSettingsOpen
+                    ? "bg-white/12 border-white/20 text-white"
+                    : "bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/8"
+                }`}
+                title="Template role, field bindings, Set as Default"
+                aria-label="Template Settings"
+                aria-haspopup="true"
+                aria-expanded={templateSettingsOpen}
+              >
+                <PiSlidersHorizontal size={13} />
+                <span>Template Settings</span>
+              </button>
+
+              {templateSettingsOpen && (
+                <div
+                  className="absolute right-0 top-full mt-1 z-[10010] w-80 bg-[#1a1630] border border-white/12 rounded-[12px] shadow-2xl p-4 space-y-3"
+                  style={{ width: 310 }}
+                  role="dialog"
+                  aria-label="Template Settings"
+                >
+                  {/* Always-visible Bible Template assignment card */}
+                  <div className="bg-black/40 border border-white/10 rounded-[12px] p-2.5 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-bold text-white/45 uppercase tracking-wider">Assigned Bible Template</span>
+                      <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded-[6px] ${
+                        roleAssignments?.bible ? "bg-emerald-500/20 text-emerald-300" : "bg-white/10 text-white/40"
+                      }`}>
+                        {roleAssignments?.bible ? "Active" : "Legacy Fallback"}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-xs font-semibold text-white truncate" title={roleAssignments?.bible ? "Assigned Bible Template" : ""}>
+                        {(() => {
+                          const assignedId = roleAssignments?.bible;
+                          const match = designs.find((d) => d.id === assignedId);
+                          if (match) return match.name;
+                          if (assignedId === currentDesign.id) return currentDesign.name;
+                          return assignedId ? `ID: ${assignedId}` : "None (Using legacy lower-third)";
+                        })()}
+                      </p>
+                      {currentDesign.role === "bible" && roleAssignments?.bible !== currentDesign.id && (
+                        <button
+                          type="button"
+                          onClick={() => handleSetRoleDefault("bible", currentDesign.id)}
+                          className="px-2 py-1 rounded-[12px] bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-bold shrink-0 transition-colors"
+                          title="Assign current design as default Bible template"
+                        >
+                          Set Current
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Role selector */}
+                  <div>
+                    <p className="text-[10px] font-bold text-white/40 uppercase tracking-wider mb-2">Use Current Design As</p>
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {[
+                        { value: "custom", label: "Custom" },
+                        { value: "bible", label: "Bible" },
+                        { value: "announcement", label: "Announcement" },
+                        { value: "speaker", label: "Speaker / Name" },
+                      ].map(({ value, label }) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => {
+                            pushUndoSnapshot();
+                            setCurrentDesign((prev) => ({ ...prev, role: value }));
+                            setHasUnsavedChanges(true);
+                          }}
+                          className={`px-2.5 py-2 rounded-[12px] text-[11px] font-semibold border transition-colors text-left ${
+                            (currentDesign.role || "custom") === value
+                              ? "bg-purple-500/25 border-purple-500/50 text-purple-200"
+                              : "bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/8"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Default assignment for current role */}
+                  {currentDesign.role && currentDesign.role !== "custom" && (() => {
+                    const assignedId = roleAssignments[currentDesign.role];
+                    const assignedDesign = designs.find((d) => d.id === assignedId);
+                    const assignedName = assignedDesign
+                      ? assignedDesign.name
+                      : assignedId === currentDesign.id
+                      ? currentDesign.name
+                      : "None";
+                    const isDefault = roleAssignments[currentDesign.role] === currentDesign.id;
+                    return (
+                      <div className="border-t border-white/8 pt-3 space-y-2">
+                        <p className="text-[11px] text-white/40">
+                          Current default for {currentDesign.role}: <span className="text-white/70 font-medium truncate">{assignedName}</span>
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => handleSetRoleDefault(currentDesign.role, currentDesign.id)}
+                          disabled={isDefault}
+                          className={`w-full px-3 py-2 text-[11px] font-semibold rounded-[12px] border transition-colors ${
+                            isDefault
+                              ? "bg-emerald-500/15 border-emerald-500/35 text-emerald-300 cursor-default"
+                              : "bg-white/5 border-white/10 text-white/70 hover:text-white hover:bg-white/8"
+                          }`}
+                        >
+                          {isDefault ? "✓ This is the default template" : "Set as Default for this role"}
+                        </button>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Validation */}
+                  {currentDesign.role === "bible" && (() => {
+                    const val = validateRoleTemplate(currentDesign);
+                    if (!val.valid) return (
+                      <div className="px-3 py-2.5 rounded-[12px] bg-amber-500/10 border border-amber-500/25 text-[11px] text-amber-300 space-y-1">
+                        <p className="font-semibold">⚠️ Missing required fields</p>
+                        <p className="text-amber-300/70">
+                          Add text layers with IDs: <strong className="text-amber-200">{val.missingFields.join(", ")}</strong> to enable automatic scripture binding.
+                        </p>
+                      </div>
+                    );
+                    return (
+                      <div className="px-3 py-2.5 rounded-[12px] bg-emerald-500/10 border border-emerald-500/20 text-[11px] text-emerald-300">
+                        ✓ All required fields present — ready for Bible role automatic binding.
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+
+            {/* Save button */}
+            <button
+              type="button"
+              onClick={handleSaveDesign}
+              className={`h-8 px-3 rounded-[12px] text-[12px] font-semibold border transition-colors flex items-center gap-1.5 ${
+                hasUnsavedChanges
+                  ? "bg-purple-600 hover:bg-purple-500 border-purple-500 text-white shadow-sm shadow-purple-900/40"
+                  : "bg-white/5 border-white/10 text-white/50 hover:text-white hover:bg-white/8"
+              }`}
+              title={hasUnsavedChanges ? "Save design — you have unsaved changes" : "Design saved"}
+              aria-label={hasUnsavedChanges ? "Save — unsaved changes present" : "Saved"}
+            >
+              <PiFloppyDisk size={13} />
+              <span>{hasUnsavedChanges ? "Save" : "Saved"}</span>
+            </button>
+
+            {/* Live Controls dropdown */}
+            <div className="relative" ref={liveControlsMenuRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  setLiveControlsMenuOpen((v) => !v);
+                  setDocMenuOpen(false);
+                  setTemplateSettingsOpen(false);
+                }}
+                disabled={currentDesign.layers.length === 0}
+                className={`h-8 px-3 rounded-[12px] text-[12px] font-semibold border transition-colors flex items-center gap-1.5 disabled:opacity-35 ${
+                  liveControlsMenuOpen
+                    ? "bg-indigo-600 border-indigo-500 text-white"
+                    : "bg-indigo-600/75 hover:bg-indigo-600 border-indigo-500/60 text-white"
+                }`}
+                title="Add or update a Live Control tile"
+                aria-label="Live Controls"
+                aria-haspopup="true"
+                aria-expanded={liveControlsMenuOpen}
+              >
+                <PiBroadcast size={13} />
+                <span>Live Controls</span>
+                <PiCaretDown size={10} className="opacity-70" />
+              </button>
+
+              {liveControlsMenuOpen && (
+                <div
+                  className="absolute right-0 top-full mt-1 z-[10010] bg-[#1a1630] border border-white/12 rounded-[12px] shadow-2xl p-4 space-y-3"
+                  style={{ width: 288 }}
+                  role="dialog"
+                  aria-label="Live Controls"
+                >
+                  {/* Mode tabs */}
+                  <div className="flex gap-1 bg-white/5 border border-white/10 p-0.5 rounded-[12px]">
+                    {[
+                      { key: "add", label: "Add as New" },
+                      { key: "update", label: "Update Existing" },
+                    ].map(({ key, label }) => (
+                      <button
+                        key={key}
+                        type="button"
+                        onClick={() => setLiveControlsMode(key)}
+                        className={`flex-1 py-1.5 text-[11px] font-semibold rounded-[12px] transition-colors ${
+                          liveControlsMode === key
+                            ? "bg-indigo-600 text-white shadow-sm"
+                            : "text-white/50 hover:text-white hover:bg-white/8"
+                        }`}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {liveControlsMode === "add" && (
+                    <div className="space-y-2">
+                      <p className="text-[11px] text-white/45 leading-relaxed">
+                        Saves a snapshot of <strong className="text-white/70">"{currentDesign.name}"</strong> as a hidden control tile ready to show on air from the Live Switcher.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => { handleAddToLiveControls(); setLiveControlsMenuOpen(false); }}
+                        className="w-full h-9 rounded-[12px] bg-indigo-600 hover:bg-indigo-500 text-white text-[12px] font-semibold flex items-center justify-center gap-2 transition-colors"
+                      >
+                        <PiBroadcast size={13} /> Add as New Control
+                      </button>
+                    </div>
+                  )}
+
+                  {liveControlsMode === "update" && (
+                    <div className="space-y-2">
+                      {existingControls.length === 0 ? (
+                        <p className="text-[11px] text-white/40 italic py-2">
+                          No saved controls yet. Use "Add as New" first.
+                        </p>
+                      ) : (
+                        <>
+                          <p className="text-[10px] font-bold text-white/35 uppercase tracking-wider">Select target control</p>
+                          <div className="space-y-1 max-h-44 overflow-y-auto">
+                            {existingControls.map((c) => (
+                              <button
+                                key={c.id}
+                                type="button"
+                                onClick={() => setSelectedUpdateControlId(c.id)}
+                                className={`w-full text-left px-3 py-2 rounded-[12px] text-[12px] border transition-colors truncate ${
+                                  selectedUpdateControlId === c.id
+                                    ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-200"
+                                    : "bg-white/5 border-white/8 text-white/60 hover:text-white hover:bg-white/8"
+                                }`}
+                                title={c.label || c.name}
+                              >
+                                {selectedUpdateControlId === c.id ? "→ " : ""}{c.label || c.name}
+                              </button>
+                            ))}
+                          </div>
+                          {selectedUpdateControlId && (() => {
+                            const target = existingControls.find((c) => c.id === selectedUpdateControlId);
+                            return target ? (
+                              <button
+                                type="button"
+                                onClick={() => { handleUpdateSavedControl(); setLiveControlsMenuOpen(false); }}
+                                className="w-full h-9 rounded-[12px] bg-amber-600 hover:bg-amber-500 text-white text-[12px] font-semibold flex items-center justify-center gap-2 transition-colors"
+                              >
+                                <PiFloppyDisk size={13} /> Update "{target.label || target.name}"
+                              </button>
+                            ) : null;
+                          })()}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Close (guarded) */}
+            <button
+              type="button"
+              onClick={handleGuardedClose}
+              className="w-8 h-8 rounded-[12px] bg-white/5 hover:bg-white/10 text-white/45 hover:text-white border border-white/10 flex items-center justify-center transition-colors"
               title="Close Design Studio"
               aria-label="Close Design Studio"
             >
-              <PiX size={16} />
-            </ActionButton>
+              <PiX size={14} />
+            </button>
           </div>
-        </div>
+        </header>
+
+        {/* ── Unsaved-changes guard dialog ──────────────────────────────────── */}
+        {closingWithUnsaved && (
+          <div className="fixed inset-0 z-[10020] flex items-center justify-center bg-black/60 backdrop-blur-sm">
+            <div className="bg-[#1a1630] border border-white/15 rounded-[12px] shadow-2xl p-6 w-80 space-y-4">
+              <p className="text-sm font-semibold text-white">You have unsaved changes</p>
+              <p className="text-[12px] text-white/50 leading-relaxed">
+                Save before closing to keep your work, or discard to exit now.
+              </p>
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await handleSaveDesign();
+                    setClosingWithUnsaved(false);
+                    onClose();
+                  }}
+                  className="flex-1 h-9 rounded-[12px] bg-purple-600 hover:bg-purple-500 text-white text-[12px] font-semibold transition-colors"
+                >
+                  Save &amp; Close
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setClosingWithUnsaved(false); onClose(); }}
+                  className="flex-1 h-9 rounded-[12px] bg-white/8 hover:bg-white/12 text-white/65 hover:text-white text-[12px] font-semibold border border-white/10 transition-colors"
+                >
+                  Discard
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setClosingWithUnsaved(false)}
+                  className="w-9 h-9 rounded-[12px] bg-white/5 hover:bg-white/10 text-white/45 hover:text-white border border-white/10 flex items-center justify-center transition-colors"
+                  aria-label="Cancel close"
+                >
+                  <PiX size={13} />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── Main Work Area: Left Tools Shelf + Center Video Canvas + Right Inspector ─ */}
         <div className="flex-1 min-h-0 flex overflow-hidden">
@@ -6416,6 +6999,9 @@ export default function LiveDesignStudioModal({
                           onDoubleClick={(e) => {
                             handleDoubleClickChild(e, layer);
                           }}
+                          onContextMenu={(e) => {
+                            handleLayerContextMenu(e, layer);
+                          }}
                           className={`absolute select-none group ${layer.type === "text" ? "cursor-text" : "cursor-move"}`}
                           style={{
                             left: `${layer.x}%`,
@@ -6437,85 +7023,12 @@ export default function LiveDesignStudioModal({
                             animation: animName ? `${animName} ${animDur} ease-out forwards` : undefined,
                           }}
                         >
-                          {/* Transform & Rotate Handles when selected and NOT inline editing */}
-                          {isSelected && !isInlineEditing && (
+                          {/* Transform & Rotate Handles when selected and NOT inline editing or crop editing */}
+                          {isSelected && !isInlineEditing && editingCropLayerId !== layer.id && (
                             <>
-                              {/* When in image crop editing mode, show emerald crop outline and floating toolbar */}
-                              {editingCropLayerId === layer.id && editingCropTarget === "image" ? (
-                                <>
-                                  <div className="absolute -inset-1 border-2 border-emerald-400 border-dashed rounded-[12px] pointer-events-none z-50 animate-pulse" />
-                                  <div
-                                    className="absolute -top-11 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 bg-neutral-900/95 border border-emerald-500/50 rounded-[12px] px-2.5 py-1 text-[11px] shadow-2xl backdrop-blur-md pointer-events-auto shrink-0 select-none whitespace-nowrap"
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    <span className="text-emerald-300 font-bold flex items-center gap-1">
-                                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                                      Crop Image
-                                    </span>
-                                    <span className="text-white/30">|</span>
-                                    <button
-                                      type="button"
-                                      onClick={() => setEditingCropTarget("frame")}
-                                      className="text-white/80 hover:text-white px-1.5 py-0.5 rounded-[12px] bg-white/10 hover:bg-white/20 font-medium text-[10px]"
-                                      title="Switch to editing container frame"
-                                    >
-                                      Edit Frame
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => handleResetMaskCrop(layer.id)}
-                                      className="text-white/80 hover:text-white px-1.5 py-0.5 rounded-[12px] bg-white/10 hover:bg-white/20 font-medium text-[10px]"
-                                      title="Reset image pan & zoom"
-                                    >
-                                      Reset
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        setEditingCropLayerId(null);
-                                        setEditingCropTarget("image");
-                                      }}
-                                      className="text-emerald-300 hover:text-emerald-200 px-2 py-0.5 rounded-[12px] bg-emerald-500/20 font-bold border border-emerald-500/40 text-[10px]"
-                                      title="Finish crop editing (Esc)"
-                                    >
-                                      Done
-                                    </button>
-                                  </div>
-                                </>
-                              ) : (
-                                <>
-                                  <div className="absolute -inset-1 border-2 border-purple-500 border-dashed rounded-[12px] pointer-events-none z-50" />
-                                  {editingCropLayerId === layer.id && editingCropTarget === "frame" && (
-                                    <div
-                                      className="absolute -top-11 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 bg-neutral-900/95 border border-purple-500/50 rounded-[12px] px-2.5 py-1 text-[11px] shadow-2xl backdrop-blur-md pointer-events-auto shrink-0 select-none whitespace-nowrap"
-                                      onClick={(e) => e.stopPropagation()}
-                                    >
-                                      <span className="text-purple-300 font-bold flex items-center gap-1">
-                                        <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
-                                        Editing Frame
-                                      </span>
-                                      <span className="text-white/30">|</span>
-                                      <button
-                                        type="button"
-                                        onClick={() => setEditingCropTarget("image")}
-                                        className="text-white/80 hover:text-white px-1.5 py-0.5 rounded-[12px] bg-white/10 hover:bg-white/20 font-medium text-[10px]"
-                                        title="Switch to editing image crop"
-                                      >
-                                        Edit Image
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setEditingCropLayerId(null);
-                                          setEditingCropTarget("image");
-                                        }}
-                                        className="text-purple-300 hover:text-purple-200 px-2 py-0.5 rounded-[12px] bg-purple-500/20 font-bold border border-purple-500/40 text-[10px]"
-                                        title="Finish editing (Esc)"
-                                      >
-                                        Done
-                                      </button>
-                                    </div>
-                                  )}
+                              {/* Selection outline */}
+                              <div className="absolute -inset-1 border-2 border-purple-500 border-dashed rounded-[12px] pointer-events-none z-50" />
+
                               {/* Handles only shown on active item */}
                               {selectedLayerId === layer.id && (
                                 <>
@@ -6590,8 +7103,6 @@ export default function LiveDesignStudioModal({
                               )}
                             </>
                           )}
-                        </>
-                      )}
 
                           {/* Bézier Curve Node & Handle Overlay */}
                           {editingShapeLayerId === layer.id && layer.type === "shape" && (
@@ -6831,33 +7342,241 @@ export default function LiveDesignStudioModal({
                                 onDoubleClick={(e) => handleDoubleClickText(e, layer)}
                                 style={{
                                   width: "100%",
+                                  height: "100%",
                                   fontFamily: layer.fontFamily || "Inter, sans-serif",
                                   fontSize: `calc(${(layer.fontSize || 22)} * 100cqh / 720)`,
                                   fontWeight: layer.fontWeight || "bold",
                                   color: layer.color || "#ffffff",
                                   textAlign: layer.textAlign || "left",
                                   textTransform: layer.textTransform || "none",
-                                  lineHeight: 1.25,
+                                  lineHeight: typeof layer.lineHeight === "number" ? layer.lineHeight : 1.25,
                                   whiteSpace: "pre-wrap",
                                   cursor: "text",
                                   pointerEvents: "auto",
                                   textShadow: layer.shadowEnabled ? formatLayerShadow(layer) : "none",
+                                  padding: layer.padding ? `${layer.padding}px` : undefined,
+                                  display: "flex",
+                                  flexDirection: "column",
+                                  justifyContent: layer.verticalAlign === "bottom" ? "flex-end" : layer.verticalAlign === "middle" ? "center" : "flex-start",
                                   position: "relative",
+                                  overflow: "hidden",
                                 }}
                                 title="Double-click to edit text directly on canvas"
                               >
                                 {layer.fieldBinding && (
-                                  <span className="absolute -top-3 left-0 text-[8px] font-mono px-1 py-0.2 bg-purple-900/80 text-purple-200 rounded-[12px] border border-purple-500/30 pointer-events-none select-none">
+                                  <span className="absolute -top-3 left-0 text-[8px] font-mono px-1 py-0.2 bg-purple-900/80 text-purple-200 rounded-[12px] border border-purple-500/30 pointer-events-none select-none z-10">
                                     [{layer.fieldBinding}]
                                   </span>
                                 )}
-                                {layer.text || "Heading Text"}
+                                <span>{layer.text || "Heading Text"}</span>
                               </div>
                             )
                           ) : null}
                         </div>
                       );
                     })}
+
+                    {/* 4. Dedicated Clipped Image Editing Overlay (outside mask clipping region) */}
+                    {(() => {
+                      if (!editingCropLayerId || editingCropTarget !== "image") return null;
+                      const cropLayer = currentDesign.layers.find((l) => l.id === editingCropLayerId && l.visible !== false);
+                      if (!cropLayer) return null;
+                      const isShapeMask = cropLayer.type === "shape" && Boolean(cropLayer.maskImage?.url);
+                      const isImageLayer = cropLayer.type === "image" && Boolean(cropLayer.content || cropLayer.url || cropLayer.filePath);
+                      if (!isShapeMask && !isImageLayer) return null;
+
+                      const mImg = isShapeMask ? (cropLayer.maskImage || {}) : (cropLayer.frameCrop || cropLayer);
+                      const fitMode = mImg.fitMode || "fill";
+                      const zoomVal = typeof mImg.zoom === "number" ? mImg.zoom : 1;
+                      const panXVal = mImg.panX || 0;
+                      const panYVal = mImg.panY || 0;
+                      const rotVal = mImg.rotation || 0;
+
+                      const layerX = cropLayer.x || 50;
+                      const layerY = cropLayer.y || 50;
+                      const layerW = cropLayer.width || 35;
+                      const layerH = typeof cropLayer.height === "number"
+                        ? cropLayer.height
+                        : cropLayer.type === "image"
+                          ? ((cropLayer.width || 30) * (16 / 9)) / (cropLayer.aspectRatio || 1.777778)
+                          : 12;
+                      const layerRot = cropLayer.rotation || 0;
+                      const cw = (layerW || 35) * (16 / 9);
+                      const ch = layerH || 12;
+                      const nw = mImg.naturalWidth && mImg.naturalHeight ? mImg.naturalWidth : (mImg.aspectRatio || 1.777778) * 1000;
+                      const nh = mImg.naturalWidth && mImg.naturalHeight ? mImg.naturalHeight : 1000;
+
+                      const metrics = calculateCropMetrics({
+                        containerWidth: cw,
+                        containerHeight: ch,
+                        naturalWidth: nw,
+                        naturalHeight: nh,
+                        fitMode,
+                        zoom: zoomVal,
+                        panX: panXVal,
+                        panY: panYVal,
+                      });
+
+                      const leftPct = (metrics.drawX / cw) * 100;
+                      const topPct = (metrics.drawY / ch) * 100;
+                      const widthPct = (metrics.drawW / cw) * 100;
+                      const heightPct = (metrics.drawH / ch) * 100;
+
+                      return (
+                        <div
+                          key={`crop-overlay-${cropLayer.id}`}
+                          data-studio-crop-overlay="true"
+                          className="absolute pointer-events-none z-[95]"
+                          style={{
+                            left: `${layerX}%`,
+                            top: `${layerY}%`,
+                            width: `${layerW}%`,
+                            height: `${layerH}%`,
+                            transform: `translate(-50%, -50%) rotate(${layerRot}deg)`,
+                            transformOrigin: "center center",
+                          }}
+                        >
+                          {/* Stationary Mask Boundary Outline */}
+                          <div
+                            className="absolute inset-0 border-2 border-emerald-400 border-dashed rounded-[12px] pointer-events-none shadow-md"
+                            style={{
+                              ...getContainerShapeStyle(cropLayer.shape || cropLayer.frameShape, cropLayer.borderRadius),
+                            }}
+                          >
+                            <div
+                              className="absolute -top-5 left-0 px-1.5 py-0.5 bg-emerald-600/90 text-[9px] font-bold text-white rounded-[12px] uppercase tracking-wider shadow pointer-events-none whitespace-nowrap"
+                              style={{ transform: `scale(${1 / (zoom || 1)})`, transformOrigin: "top left" }}
+                            >
+                              Mask (Stationary)
+                            </div>
+                          </div>
+
+                          {/* Full Unclipped Image Bounds & Corner/Edge/Rotation Handles */}
+                          <div
+                            className="absolute pointer-events-none"
+                            style={{
+                              left: `${leftPct}%`,
+                              top: `${topPct}%`,
+                              width: `${widthPct}%`,
+                              height: `${heightPct}%`,
+                              transform: `rotate(${rotVal}deg)`,
+                              transformOrigin: "center center",
+                            }}
+                          >
+                            {/* Subdued dashed boundary outline */}
+                            <div className="absolute inset-0 border-2 border-purple-400 border-dashed rounded-[12px] shadow-sm pointer-events-none" />
+
+                            {/* 4 Corner Resize Nodes */}
+                            {[
+                              { id: "crop-nw", pos: "-top-2 -left-2 cursor-nwse-resize", title: "Drag outward to expand, inward to resize proportionally" },
+                              { id: "crop-ne", pos: "-top-2 -right-2 cursor-nesw-resize", title: "Drag outward to expand, inward to resize proportionally" },
+                              { id: "crop-sw", pos: "-bottom-2 -left-2 cursor-nesw-resize", title: "Drag outward to expand, inward to resize proportionally" },
+                              { id: "crop-se", pos: "-bottom-2 -right-2 cursor-nwse-resize", title: "Drag outward to expand, inward to resize proportionally" },
+                            ].map(({ id: hId, pos, title }) => (
+                              <div
+                                key={hId}
+                                onPointerDown={(e) => handlePointerDownOnCropHandle(e, cropLayer, hId, rotVal, zoomVal)}
+                                className={`absolute w-3.5 h-3.5 bg-purple-500 border-2 border-white rounded-[12px] pointer-events-auto hover:scale-125 transition-transform shadow-lg z-50 ${pos}`}
+                                style={{ transform: `scale(${1 / (zoom || 1)})` }}
+                                title={title}
+                              />
+                            ))}
+
+                            {/* 4 Edge Resize Nodes */}
+                            {[
+                              { id: "crop-n", pos: "-top-2 left-1/2 -translate-x-1/2 cursor-ns-resize", title: "Drag outward to expand, inward to resize vertically" },
+                              { id: "crop-s", pos: "-bottom-2 left-1/2 -translate-x-1/2 cursor-ns-resize", title: "Drag outward to expand, inward to resize vertically" },
+                              { id: "crop-w", pos: "top-1/2 -translate-y-1/2 -left-2 cursor-ew-resize", title: "Drag outward to expand, inward to resize horizontally" },
+                              { id: "crop-e", pos: "top-1/2 -translate-y-1/2 -right-2 cursor-ew-resize", title: "Drag outward to expand, inward to resize horizontally" },
+                            ].map(({ id: hId, pos, title }) => (
+                              <div
+                                key={hId}
+                                onPointerDown={(e) => handlePointerDownOnCropHandle(e, cropLayer, hId, rotVal, zoomVal)}
+                                className={`absolute w-3 h-3 bg-indigo-500 border-2 border-white rounded-[12px] pointer-events-auto hover:scale-125 transition-transform shadow-md z-50 ${pos}`}
+                                style={{ transform: `scale(${1 / (zoom || 1)})` }}
+                                title={title}
+                              />
+                            ))}
+
+                            {/* Top Rotation Handle */}
+                            <div
+                              onPointerDown={(e) => handlePointerDownOnCropHandle(e, cropLayer, "crop-rot", rotVal, zoomVal)}
+                              className="absolute -top-7 left-1/2 -translate-x-1/2 w-4 h-4 bg-amber-400 border-2 border-white rounded-[12px] pointer-events-auto hover:scale-125 transition-transform shadow-lg cursor-grab active:cursor-grabbing z-50 flex items-center justify-center text-[9px] text-black font-bold"
+                              style={{ transform: `scale(${1 / (zoom || 1)})` }}
+                              title="Drag to rotate image independently of mask"
+                            >
+                              <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-0.5 h-3 bg-amber-400 pointer-events-none" />
+                              ↻
+                            </div>
+                          </div>
+
+                          {/* Floating Crop Toolbar */}
+                          <div
+                            className="absolute -top-12 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 bg-[#141124]/95 border border-purple-500/40 rounded-[12px] px-2.5 py-1 text-[11px] shadow-2xl backdrop-blur-md pointer-events-auto select-none whitespace-nowrap"
+                            style={{ transform: `scale(${Math.max(0.8, 1 / (zoom || 1))}) translate(-50%, 0)`, transformOrigin: "top left", left: "50%" }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <span className="text-purple-300 font-bold flex items-center gap-1">
+                              <PiCrop size={12} className="text-purple-400" />
+                              Editing Content
+                            </span>
+                            <span className="text-white/20">|</span>
+
+                            {/* Mode Toggles: Fill | Fit | Free */}
+                            <div className="flex items-center gap-0.5 bg-white/5 p-0.5 rounded-[12px] border border-white/10">
+                              {[
+                                { mode: "fill", label: "Fill" },
+                                { mode: "fit", label: "Fit" },
+                                { mode: "free", label: "Free" },
+                              ].map(({ mode, label }) => (
+                                <button
+                                  key={mode}
+                                  type="button"
+                                  onClick={() => {
+                                    pushUndoSnapshot();
+                                    updateLayer(cropLayer.id, {
+                                      maskImage: {
+                                        ...(cropLayer.maskImage || {}),
+                                        fitMode: mode,
+                                        frameCrop: { ...(cropLayer.maskImage?.frameCrop || {}), fitMode: mode },
+                                      },
+                                    });
+                                    showFeedback(`Mode: ${label}${mode === "free" ? " (Shrinking allowed)" : mode === "fill" ? " (Image constrained to cover mask)" : ""}`, true);
+                                  }}
+                                  className={`px-2 py-0.5 rounded-[12px] font-bold text-[10px] transition-colors ${
+                                    fitMode === mode
+                                      ? "bg-purple-600 text-white shadow-sm"
+                                      : "text-white/60 hover:text-white hover:bg-white/10"
+                                  }`}
+                                  title={
+                                    mode === "fill"
+                                      ? "Fill: Constrained to cover entire mask frame"
+                                      : mode === "free"
+                                        ? "Free: Allows unconstrained shrinking, panning and scaling"
+                                        : "Fit: Scales image to fit entirely inside frame"
+                                  }
+                                >
+                                  {label}
+                                </button>
+                              ))}
+                            </div>
+
+                            <span className="text-white/20">|</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingCropLayerId(null);
+                                setEditingCropTarget("image");
+                              }}
+                              className="text-purple-200 hover:text-white px-2.5 py-0.5 rounded-[12px] bg-purple-600 hover:bg-purple-500 font-bold text-[10px] transition-colors"
+                              title="Finish editing content (Escape)"
+                            >
+                              Done
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
@@ -6877,9 +7596,21 @@ export default function LiveDesignStudioModal({
               <span className="text-xs font-bold uppercase tracking-wider text-white">
                 {selectedLayer ? "Layer Inspector" : "Layers & Elements"}
               </span>
-              <span className="text-[10px] font-mono text-white/40">
-                {currentDesign.layers.length} items
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-mono text-white/40">
+                  {currentDesign.layers.length} items
+                </span>
+                {selectedLayer && (
+                  <button
+                    onClick={handleOpenMoreMenu}
+                    className="p-1 rounded-[12px] hover:bg-white/10 text-white/60 hover:text-white transition-colors"
+                    title="More actions & options"
+                    aria-label="More actions"
+                  >
+                    <PiDotsThreeVertical size={15} />
+                  </button>
+                )}
+              </div>
             </div>
 
             <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
@@ -7456,6 +8187,64 @@ export default function LiveDesignStudioModal({
                           ))}
                         </div>
                       </div>
+
+                      {/* Vertical Alignment & Padding & Auto-Fit */}
+                      <div className="grid grid-cols-3 gap-2 pt-1 border-t border-white/5">
+                        <div className="space-y-0.5">
+                          <span className="text-[9px] font-bold text-white/40 block">V-Align</span>
+                          <div className="grid grid-cols-3 gap-0.5 bg-black/40 border border-white/15 p-0.5 rounded-[12px]">
+                            {[
+                              { val: "top", label: "Top" },
+                              { val: "middle", label: "Mid" },
+                              { val: "bottom", label: "Bot" },
+                            ].map(({ val, label }) => (
+                              <button
+                                key={val}
+                                type="button"
+                                onClick={() => updateLayer(selectedLayer.id, { verticalAlign: val })}
+                                className={`py-0.5 rounded-[10px] text-[9px] font-bold flex items-center justify-center transition-all ${
+                                  (selectedLayer.verticalAlign || "top") === val ? "bg-purple-600 text-white" : "text-white/40 hover:text-white"
+                                }`}
+                                title={`Vertical Align ${label}`}
+                              >
+                                {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <div className="space-y-0.5">
+                          <span className="text-[9px] font-bold text-white/40 block">Padding</span>
+                          <div className="flex items-center bg-black/40 border border-white/15 px-1.5 py-0.5 rounded-[12px]">
+                            <input
+                              type="number"
+                              min="0"
+                              max="60"
+                              value={selectedLayer.padding || 0}
+                              onChange={(e) => {
+                                const v = parseInt(e.target.value, 10);
+                                if (!isNaN(v)) updateLayer(selectedLayer.id, { padding: v });
+                              }}
+                              className="w-full bg-transparent text-xs text-white focus:outline-none"
+                              aria-label="Padding in pixels"
+                            />
+                            <span className="text-[9px] text-white/40">px</span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-0.5">
+                          <span className="text-[9px] font-bold text-white/40 block">Auto-Fit</span>
+                          <label className="flex items-center gap-1.5 px-2 py-1 bg-black/40 border border-white/15 rounded-[12px] cursor-pointer text-[10px] font-bold text-white/70 h-[26px]">
+                            <input
+                              type="checkbox"
+                              checked={selectedLayer.autoFit !== false}
+                              onChange={(e) => updateLayer(selectedLayer.id, { autoFit: e.target.checked })}
+                              className="rounded accent-purple-500"
+                            />
+                            <span>Fit</span>
+                          </label>
+                        </div>
+                      </div>
                     </div>
                   )}
 
@@ -7927,6 +8716,50 @@ export default function LiveDesignStudioModal({
                                   className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 bg-black/50 border-white/20"
                                 />
                               </label>
+
+                              {/* Glass Target (when layer has a clipped image/mask) */}
+                              {selectedLayer.maskImage?.url && (
+                                <div className="space-y-1.5 pt-2 border-t border-white/10">
+                                  <span className="text-[9px] text-white/40 uppercase font-bold tracking-wider block">
+                                    Glass Surface Target
+                                  </span>
+                                  <div className="grid grid-cols-2 gap-1.5 p-1 bg-black/40 border border-white/10 rounded-[12px]">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        pushUndoSnapshot();
+                                        updateLayer(selectedLayer.id, { glassTarget: "image" });
+                                      }}
+                                      className={`py-1.5 text-xs font-semibold rounded-[12px] transition-colors ${
+                                        selectedLayer.glassTarget !== "backdrop"
+                                          ? "bg-purple-600 text-white shadow-sm"
+                                          : "text-white/60 hover:text-white"
+                                      }`}
+                                    >
+                                      Image Glass
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        pushUndoSnapshot();
+                                        updateLayer(selectedLayer.id, { glassTarget: "backdrop" });
+                                      }}
+                                      className={`py-1.5 text-xs font-semibold rounded-[12px] transition-colors ${
+                                        selectedLayer.glassTarget === "backdrop"
+                                          ? "bg-purple-600 text-white shadow-sm"
+                                          : "text-white/60 hover:text-white"
+                                      }`}
+                                    >
+                                      Backdrop Glass
+                                    </button>
+                                  </div>
+                                  <span className="text-[9px] text-white/40 block leading-tight">
+                                    {selectedLayer.glassTarget === "backdrop"
+                                      ? "Backdrop: Frosts live program video behind shape; image renders over frosted glass."
+                                      : "Image: Directly blurs and frosts the clipped image with glass tint and specular sweep."}
+                                  </span>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
@@ -8318,67 +9151,40 @@ export default function LiveDesignStudioModal({
                         )}
                       </div>
 
-                      {/* Editable Shape Curves (Bézier) Card */}
-                      {selectedLayer.shape !== "line" && selectedLayer.shape !== "arrow" && selectedLayer.shape !== "bracket-left" && selectedLayer.shape !== "bracket-right" && (
-                        <div className="p-3 bg-[#151221] rounded-[12px] border border-white/10 space-y-2.5">
+                      {/* Active Shape Curves (Bézier) Controls (Secondary entry via Context Menu & More Menu) */}
+                      {editingShapeLayerId === selectedLayer.id && (
+                        <div className="p-3 bg-[#151221] rounded-[12px] border border-purple-500/50 space-y-2.5">
                           <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-white/50">
-                              Shape Curves & Edges
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-purple-300">
+                              Editing Bézier Curves
                             </span>
-                            {editingShapeLayerId === selectedLayer.id && (
-                              <span className="text-[9px] font-bold text-purple-300 bg-purple-500/20 border border-purple-500/30 px-1.5 py-0.5 rounded-[6px]">
-                                Editing Curves
-                              </span>
-                            )}
+                            <button
+                              type="button"
+                              onClick={() => setEditingShapeLayerId(null)}
+                              className="text-[10px] text-purple-300 hover:text-white font-bold px-2 py-0.5 rounded-[12px] bg-purple-600/30 hover:bg-purple-600/50 transition-colors"
+                            >
+                              Done
+                            </button>
                           </div>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (editingShapeLayerId === selectedLayer.id) {
-                                setEditingShapeLayerId(null);
-                              } else {
-                                if (!selectedLayer.customPath) {
-                                  pushUndoSnapshot();
-                                  updateLayer(selectedLayer.id, {
-                                    customPath: getDefaultShapeNodes(selectedLayer.shape),
-                                  });
-                                }
-                                setEditingShapeLayerId(selectedLayer.id);
-                              }
-                            }}
-                            className={`w-full py-2 rounded-[12px] text-xs font-bold flex items-center justify-center gap-1.5 border transition-all ${
-                              editingShapeLayerId === selectedLayer.id
-                                ? "bg-purple-600 border-purple-400 text-white shadow-md"
-                                : "bg-purple-600/20 hover:bg-purple-600/40 border-purple-500/30 text-purple-200"
-                            }`}
-                          >
-                            <span>{editingShapeLayerId === selectedLayer.id ? "Done Editing Curves" : "Edit Shape (Bézier Curves)"}</span>
-                          </button>
-
-                          {editingShapeLayerId === selectedLayer.id && (
-                            <div className="space-y-2 pt-1">
-                              <p className="text-[10px] text-white/50 leading-tight">
-                                Drag vertex nodes, Bézier handles, or edge midpoints on the canvas to curve contours.
-                              </p>
-                              <div className="grid grid-cols-2 gap-1.5">
-                                <button
-                                  type="button"
-                                  onClick={() => handleStraightenSegment(selectedLayer.id, activeCurveNodeIdx)}
-                                  className="py-1 px-2 rounded-[8px] bg-black/40 hover:bg-black/60 border border-white/10 text-[10px] text-white/80"
-                                >
-                                  Straighten Segment
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleResetShapeCurves(selectedLayer.id)}
-                                  className="py-1 px-2 rounded-[8px] bg-black/40 hover:bg-black/60 border border-white/10 text-[10px] text-red-300"
-                                >
-                                  Reset Shape
-                                </button>
-                              </div>
-                            </div>
-                          )}
+                          <p className="text-[10px] text-white/50 leading-tight">
+                            Drag vertex nodes, Bézier handles, or edge midpoints on the canvas to curve contours.
+                          </p>
+                          <div className="grid grid-cols-2 gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleStraightenSegment(selectedLayer.id, activeCurveNodeIdx)}
+                              className="py-1 px-2 rounded-[12px] bg-black/40 hover:bg-black/60 border border-white/10 text-[10px] text-white/80"
+                            >
+                              Straighten Segment
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleResetShapeCurves(selectedLayer.id)}
+                              className="py-1 px-2 rounded-[12px] bg-black/40 hover:bg-black/60 border border-white/10 text-[10px] text-red-300"
+                            >
+                              Reset Shape
+                            </button>
+                          </div>
                         </div>
                       )}
                     </>
@@ -9013,155 +9819,436 @@ export default function LiveDesignStudioModal({
                   Select any layer on the canvas to inspect and edit its properties.
                 </div>
               )}
+            </div>
 
-              {/* ── Layer Order Stack ────────────────────────────────────────── */}
-              <div className="pt-3 border-t border-white/10 space-y-2">
-                <div className="flex items-center justify-between pb-1">
-                  <span className="text-[10px] uppercase font-bold tracking-widest text-white/40">
-                    Layers Stack
-                  </span>
-                  <span className="text-[10px] text-white/40">Top to bottom</span>
-                </div>
+            {/* Draggable Divider between Inspector and Layers Stack */}
+            <div
+              onMouseDown={handleLayersDividerMouseDown}
+              className="h-2 relative flex items-center justify-center bg-[#151221] hover:bg-purple-600/30 border-y border-white/10 cursor-row-resize select-none transition-colors group z-10 shrink-0"
+              title="Drag to resize Inspector / Layers panes"
+            >
+              <div className="w-8 h-1 rounded-full bg-white/20 group-hover:bg-purple-400 transition-colors" />
+            </div>
 
-                <div className="space-y-1.5 max-h-60 overflow-y-auto pr-0.5">
-                  {[...currentDesign.layers].reverse().map((layer, reverseIdx) => {
-                    const idx = currentDesign.layers.length - 1 - reverseIdx;
-                    const isSelected = selectedLayerIds.includes(layer.id);
+            {/* ── Bottom Pane: Layers Stack ───────────────────────────────── */}
+            <div
+              style={{ height: `${layersPanelHeight}px` }}
+              className="shrink-0 flex flex-col bg-[#0c0a15] overflow-hidden"
+            >
+              {/* Layers Stack Header */}
+              <div className="p-2.5 px-3 border-b border-white/10 flex items-center justify-between shrink-0 bg-[#100e1b]">
+                <span className="text-[11px] uppercase font-bold tracking-wider text-white/70">
+                  Layers Stack
+                </span>
+                <span className="text-[10px] text-white/40 font-mono">
+                  {currentDesign.layers.length} layers
+                </span>
+              </div>
 
-                    return (
-                      <React.Fragment key={layer.id}>
-                        <div
-                          onClick={(e) => {
-                            const currentSelected = selectedLayerIdsRef.current || selectedLayerIds;
-                            let next;
-                            if (e.shiftKey) {
-                              if (currentSelected.includes(layer.id)) {
-                                next = currentSelected.filter((id) => id !== layer.id);
-                              } else {
-                                next = [...currentSelected, layer.id];
-                              }
+              {/* Scrollable list of layers */}
+              <div className="flex-1 overflow-y-auto p-2.5 space-y-1.5">
+                {[...currentDesign.layers].reverse().map((layer, reverseIdx) => {
+                  const idx = currentDesign.layers.length - 1 - reverseIdx;
+                  const isSelected = selectedLayerIds.includes(layer.id);
+
+                  return (
+                    <React.Fragment key={layer.id}>
+                      <div
+                        onClick={(e) => {
+                          const currentSelected = selectedLayerIdsRef.current || selectedLayerIds;
+                          let next;
+                          if (e.shiftKey) {
+                            if (currentSelected.includes(layer.id)) {
+                              next = currentSelected.filter((id) => id !== layer.id);
                             } else {
-                              next = [layer.id];
+                              next = [...currentSelected, layer.id];
                             }
-                            selectedLayerIdsRef.current = next;
-                            setSelectedLayerIds(next);
-                            setSelectedLayerId(layer.id);
-                            if (editingCropLayerId && editingCropLayerId !== layer.id) {
-                              setEditingCropLayerId(null);
-                              setEditingCropTarget("image");
-                            }
-                          }}
-                          className={`p-2 rounded-[12px] border transition-all flex items-center justify-between cursor-pointer text-xs ${
-                            isSelected
-                              ? "bg-purple-600/30 border-purple-500 text-purple-200"
-                              : "bg-white/[0.02] border-white/5 text-white/70 hover:bg-white/[0.05]"
-                          }`}
-                        >
-                          <div className="flex items-center gap-2 min-w-0 pr-2">
-                            <span className="text-white/40 text-[10px] font-mono w-4 shrink-0">
-                              #{idx + 1}
+                          } else {
+                            next = [layer.id];
+                          }
+                          selectedLayerIdsRef.current = next;
+                          setSelectedLayerIds(next);
+                          setSelectedLayerId(layer.id);
+                          if (editingCropLayerId && editingCropLayerId !== layer.id) {
+                            setEditingCropLayerId(null);
+                            setEditingCropTarget("image");
+                          }
+                        }}
+                        onContextMenu={(e) => {
+                          handleLayerContextMenu(e, layer);
+                        }}
+                        className={`p-2 rounded-[12px] border transition-all flex items-center justify-between cursor-pointer text-xs ${
+                          isSelected
+                            ? "bg-purple-600/30 border-purple-500 text-purple-200"
+                            : "bg-white/[0.02] border-white/5 text-white/70 hover:bg-white/[0.05]"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 min-w-0 pr-2">
+                          <span className="text-white/40 text-[10px] font-mono w-4 shrink-0">
+                            #{idx + 1}
+                          </span>
+                          <span className="truncate font-semibold text-xs">
+                            {layer.name}
+                          </span>
+                          {layer.maskImage?.url && (
+                            <span className="text-[9px] font-bold text-purple-300 bg-purple-500/20 border border-purple-500/30 px-1.5 py-0.2 rounded-[12px] shrink-0">
+                              Mask
                             </span>
-                            <span className="truncate font-semibold text-xs">
-                              {layer.name}
-                            </span>
-                            {layer.maskImage?.url && (
-                              <span className="text-[9px] font-bold text-purple-300 bg-purple-500/20 border border-purple-500/30 px-1.5 py-0.2 rounded-[8px] shrink-0">
-                                Mask
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="flex items-center gap-1 shrink-0">
-                            <ActionButton
-                              disabled={idx === currentDesign.layers.length - 1}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleBringForward(layer.id);
-                              }}
-                              className="p-1 rounded-[12px] text-white/40 hover:text-white disabled:opacity-20"
-                              title="Bring Forward"
-                            >
-                              <PiArrowUp size={11} />
-                            </ActionButton>
-                            <ActionButton
-                              disabled={idx === 0}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleSendBackward(layer.id);
-                              }}
-                              className="p-1 rounded-[12px] text-white/40 hover:text-white disabled:opacity-20"
-                              title="Send Backward"
-                            >
-                              <PiArrowDown size={11} />
-                            </ActionButton>
-                            <ActionButton
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                updateLayer(layer.id, { visible: !layer.visible });
-                              }}
-                              className="p-1 rounded-[12px] text-white/40 hover:text-white"
-                              title={layer.visible ? "Hide Layer" : "Show Layer"}
-                            >
-                              {layer.visible ? <PiEye size={12} /> : <PiEyeSlash size={12} className="text-white/20" />}
-                            </ActionButton>
-                            <ActionButton
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteLayer(layer.id);
-                              }}
-                              className="p-1 rounded-[12px] text-white/40 hover:text-red-400"
-                              title="Delete Layer"
-                            >
-                              <PiTrash size={12} />
-                            </ActionButton>
-                          </div>
+                          )}
                         </div>
 
-                        {/* Nested Masked Image Sub-Row in Layers Panel */}
-                        {layer.maskImage && layer.maskImage.url && (
-                          <div
+                        <div className="flex items-center gap-1 shrink-0">
+                          <ActionButton
+                            disabled={idx === currentDesign.layers.length - 1}
                             onClick={(e) => {
                               e.stopPropagation();
-                              selectedLayerIdsRef.current = [layer.id];
-                              setSelectedLayerIds([layer.id]);
-                              setSelectedLayerId(layer.id);
-                              setEditingCropLayerId(layer.id);
-                              setEditingCropTarget("image");
-                              showFeedback(`Editing image inside ${layer.name}. Drag canvas to pan image.`, true);
+                              handleBringForward(layer.id);
                             }}
-                            className={`ml-5 -mt-0.5 mb-1 p-1.5 rounded-[12px] border transition-all flex items-center justify-between cursor-pointer text-xs ${
-                              selectedLayerId === layer.id && editingCropLayerId === layer.id && editingCropTarget === "image"
-                                ? "bg-emerald-600/30 border-emerald-500/60 text-emerald-100 shadow-sm"
-                                : "bg-white/[0.015] border-white/5 text-white/60 hover:bg-white/[0.04]"
-                            }`}
-                            title="Click to select and edit image content inside this mask"
+                            className="p-1 rounded-[12px] text-white/40 hover:text-white disabled:opacity-20"
+                            title="Bring Forward"
                           >
-                            <div className="flex items-center gap-1.5 min-w-0 pr-1">
-                              <span className="text-emerald-400 text-xs">↳ 🖼</span>
-                              <span className="truncate text-[11px] font-medium">
-                                {layer.maskImage.name || "Masked Image"}
-                              </span>
-                            </div>
-                            <span className={`text-[9px] px-1.5 py-0.5 rounded-[8px] font-bold border shrink-0 ${
-                              selectedLayerId === layer.id && editingCropLayerId === layer.id && editingCropTarget === "image"
-                                ? "bg-emerald-500/30 text-emerald-200 border-emerald-500/50"
-                                : "bg-white/5 text-white/50 border-white/10"
-                            }`}>
-                              {selectedLayerId === layer.id && editingCropLayerId === layer.id && editingCropTarget === "image"
-                                ? "Editing Image"
-                                : "Edit Image"}
+                            <PiArrowUp size={11} />
+                          </ActionButton>
+                          <ActionButton
+                            disabled={idx === 0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleSendBackward(layer.id);
+                            }}
+                            className="p-1 rounded-[12px] text-white/40 hover:text-white disabled:opacity-20"
+                            title="Send Backward"
+                          >
+                            <PiArrowDown size={11} />
+                          </ActionButton>
+                          <ActionButton
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              updateLayer(layer.id, { visible: !layer.visible });
+                            }}
+                            className="p-1 rounded-[12px] text-white/40 hover:text-white"
+                            title={layer.visible ? "Hide Layer" : "Show Layer"}
+                          >
+                            {layer.visible ? <PiEye size={12} /> : <PiEyeSlash size={12} className="text-white/20" />}
+                          </ActionButton>
+                          <ActionButton
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteLayer(layer.id);
+                            }}
+                            className="p-1 rounded-[12px] text-white/40 hover:text-red-400"
+                            title="Delete Layer"
+                          >
+                            <PiTrash size={12} />
+                          </ActionButton>
+                        </div>
+                      </div>
+
+                      {/* Nested Masked Image Sub-Row in Layers Panel */}
+                      {layer.maskImage && layer.maskImage.url && (
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            selectedLayerIdsRef.current = [layer.id];
+                            setSelectedLayerIds([layer.id]);
+                            setSelectedLayerId(layer.id);
+                            setEditingCropLayerId(layer.id);
+                            setEditingCropTarget("image");
+                            showFeedback(`Editing image inside ${layer.name}. Drag canvas to pan image.`, true);
+                          }}
+                          onContextMenu={(e) => {
+                            handleLayerContextMenu(e, layer);
+                          }}
+                          className={`ml-5 -mt-0.5 mb-1 p-1.5 rounded-[12px] border transition-all flex items-center justify-between cursor-pointer text-xs ${
+                            selectedLayerId === layer.id && editingCropLayerId === layer.id && editingCropTarget === "image"
+                              ? "bg-emerald-600/30 border-emerald-500/60 text-emerald-100 shadow-sm"
+                              : "bg-white/[0.015] border-white/5 text-white/60 hover:bg-white/[0.04]"
+                          }`}
+                          title="Click to select and edit image content inside this mask"
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0 pr-1">
+                            <span className="text-emerald-400 text-xs">↳ 🖼</span>
+                            <span className="truncate text-[11px] font-medium">
+                              {layer.maskImage.name || "Masked Image"}
                             </span>
                           </div>
-                        )}
-                      </React.Fragment>
-                    );
-                  })}
-                </div>
+                          <span className={`text-[9px] px-1.5 py-0.5 rounded-[12px] font-bold border shrink-0 ${
+                            selectedLayerId === layer.id && editingCropLayerId === layer.id && editingCropTarget === "image"
+                              ? "bg-emerald-500/30 text-emerald-200 border-emerald-500/50"
+                              : "bg-white/5 text-white/50 border-white/10"
+                          }`}>
+                            {selectedLayerId === layer.id && editingCropLayerId === layer.id && editingCropTarget === "image"
+                              ? "Editing Image"
+                              : "Edit Image"}
+                          </span>
+                        </div>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
               </div>
             </div>
           </div>
         </div>
       </div>
+
+      {/* ── Layer Context Menu Popover ───────────────────────────────── */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          style={{
+            position: "fixed",
+            left: `${contextMenu.x}px`,
+            top: `${contextMenu.y}px`,
+            zIndex: 10000,
+          }}
+          className="w-56 bg-[#13111e] border border-white/15 rounded-[12px] shadow-2xl p-1.5 space-y-1 text-xs select-none backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {(() => {
+            const targetLayer = currentDesign.layers.find((l) => l.id === contextMenu.layerId);
+            const isMulti = contextMenu.isMulti;
+
+            if (isMulti) {
+              return (
+                <>
+                  <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white/40 border-b border-white/10">
+                    {selectedLayerIds.length} Selected Elements
+                  </div>
+                  {canCreateClippingMask() && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleCreateClippingMask();
+                        setContextMenu(null);
+                      }}
+                      className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-purple-600/30 text-purple-200 text-left flex items-center justify-between transition-colors"
+                    >
+                      <span className="font-semibold">Create Clipping Mask</span>
+                      <span className="text-[10px] text-purple-300">Mask+Img</span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleDuplicateSelected();
+                      setContextMenu(null);
+                    }}
+                    className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-white/10 text-white text-left flex items-center justify-between transition-colors"
+                  >
+                    <span>Duplicate Selected</span>
+                    <span className="text-[10px] text-white/40 font-mono">Cmd+D</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleDeleteSelected();
+                      setContextMenu(null);
+                    }}
+                    className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-red-500/20 text-red-300 text-left flex items-center justify-between transition-colors"
+                  >
+                    <span>Delete Selected</span>
+                    <span className="text-[10px] text-red-400 font-mono">Del</span>
+                  </button>
+                </>
+              );
+            }
+
+            if (!targetLayer) return null;
+
+            const hasMask = Boolean(targetLayer.maskImage?.url);
+            const isShape = targetLayer.type === "shape";
+
+            return (
+              <>
+                <div className="px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-white/40 border-b border-white/10 truncate">
+                  {targetLayer.name || "Layer"}
+                </div>
+
+                {/* Mask / Image Operations */}
+                {hasMask && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingCropLayerId(targetLayer.id);
+                        setEditingCropTarget("image");
+                        setContextMenu(null);
+                        showFeedback(`Editing image inside ${targetLayer.name}`, true);
+                      }}
+                      className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-purple-600/30 text-purple-200 text-left flex items-center justify-between transition-colors font-medium"
+                    >
+                      <span>Edit Clipped Image</span>
+                      <span className="text-[10px] text-purple-300 font-mono">Crop</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingCropLayerId(targetLayer.id);
+                        setEditingCropTarget("frame");
+                        setContextMenu(null);
+                        showFeedback(`Editing mask shape frame for ${targetLayer.name}`, true);
+                      }}
+                      className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-purple-600/30 text-purple-200 text-left flex items-center justify-between transition-colors font-medium"
+                    >
+                      <span>Edit Mask Shape</span>
+                      <span className="text-[10px] text-purple-300 font-mono">Frame</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleReleaseClippingMask(targetLayer.id);
+                        setContextMenu(null);
+                      }}
+                      className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-white/10 text-white/80 hover:text-white text-left flex items-center justify-between transition-colors"
+                    >
+                      <span>Release Mask</span>
+                    </button>
+                    <div className="my-1 border-t border-white/10" />
+                  </>
+                )}
+
+                {isShape && !hasMask && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handlePlaceImageInsideShape(targetLayer.id);
+                        setContextMenu(null);
+                      }}
+                      className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-purple-600/30 text-purple-200 text-left flex items-center justify-between transition-colors font-medium"
+                    >
+                      <span>Place Image Inside Mask...</span>
+                    </button>
+                    <div className="my-1 border-t border-white/10" />
+                  </>
+                )}
+
+                {/* Bézier Curves & Path Conversion */}
+                {isShape && targetLayer.shape !== "line" && targetLayer.shape !== "arrow" && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (editingShapeLayerId === targetLayer.id) {
+                          setEditingShapeLayerId(null);
+                        } else {
+                          if (!targetLayer.customPath) {
+                            pushUndoSnapshot();
+                            updateLayer(targetLayer.id, {
+                              customPath: getDefaultShapeNodes(targetLayer.shape),
+                            });
+                          }
+                          setEditingShapeLayerId(targetLayer.id);
+                        }
+                        setContextMenu(null);
+                      }}
+                      className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-purple-600/30 text-purple-200 text-left flex items-center justify-between transition-colors font-medium"
+                    >
+                      <span>{editingShapeLayerId === targetLayer.id ? "Done Editing Curves" : "Edit Bézier Curves"}</span>
+                    </button>
+
+                    {targetLayer.customPath && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleResetShapeCurves(targetLayer.id);
+                          setContextMenu(null);
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-red-500/20 text-red-300 text-left flex items-center justify-between transition-colors"
+                      >
+                        <span>Reset Shape Contours</span>
+                      </button>
+                    )}
+                    <div className="my-1 border-t border-white/10" />
+                  </>
+                )}
+
+                {/* Arrangement Options */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleBringForward(targetLayer.id);
+                    setContextMenu(null);
+                  }}
+                  className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-white/10 text-white/80 hover:text-white text-left flex items-center justify-between transition-colors"
+                >
+                  <span>Bring Forward</span>
+                  <span className="text-[10px] text-white/40 font-mono">Cmd+]</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleSendBackward(targetLayer.id);
+                    setContextMenu(null);
+                  }}
+                  className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-white/10 text-white/80 hover:text-white text-left flex items-center justify-between transition-colors"
+                >
+                  <span>Send Backward</span>
+                  <span className="text-[10px] text-white/40 font-mono">Cmd+[</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleBringToFront(targetLayer.id);
+                    setContextMenu(null);
+                  }}
+                  className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-white/10 text-white/80 hover:text-white text-left flex items-center justify-between transition-colors"
+                >
+                  <span>Bring to Front</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleSendToBack(targetLayer.id);
+                    setContextMenu(null);
+                  }}
+                  className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-white/10 text-white/80 hover:text-white text-left flex items-center justify-between transition-colors"
+                >
+                  <span>Send to Back</span>
+                </button>
+
+                <div className="my-1 border-t border-white/10" />
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    pushUndoSnapshot();
+                    updateLayer(targetLayer.id, { visible: !targetLayer.visible });
+                    setContextMenu(null);
+                  }}
+                  className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-white/10 text-white/80 hover:text-white text-left flex items-center justify-between transition-colors"
+                >
+                  <span>{targetLayer.visible ? "Hide Layer" : "Show Layer"}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleDuplicateSelected();
+                    setContextMenu(null);
+                  }}
+                  className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-white/10 text-white/80 hover:text-white text-left flex items-center justify-between transition-colors"
+                >
+                  <span>Duplicate</span>
+                  <span className="text-[10px] text-white/40 font-mono">Cmd+D</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleDeleteLayer(targetLayer.id);
+                    setContextMenu(null);
+                  }}
+                  className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-red-500/20 text-red-300 text-left flex items-center justify-between transition-colors"
+                >
+                  <span>Delete Layer</span>
+                  <span className="text-[10px] text-red-400 font-mono">Del</span>
+                </button>
+              </>
+            );
+          })()}
+        </div>
+      )}
     </div>,
     document.body
   );

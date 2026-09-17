@@ -118,12 +118,32 @@ export function validateRoleTemplate(roleOrDesign, explicitLayers) {
   const boundFields = new Set();
   if (Array.isArray(layers)) {
     for (const layer of layers) {
-      if (layer && layer.type === "text" && layer.fieldBinding) {
-        const parts = layer.fieldBinding.split(".");
-        const rawField = parts.length === 2 ? parts[1] : parts[0];
-        const normalized = normalizeFieldId(rawField);
-        boundFields.add(normalized);
-        boundFields.add(rawField);
+      if (layer && layer.type === "text") {
+        if (layer.fieldBinding || layer.roleBinding) {
+          const binding = layer.fieldBinding || layer.roleBinding;
+          const parts = binding.split(".");
+          const rawField = parts.length === 2 ? parts[1] : parts[0];
+          boundFields.add(rawField);
+          boundFields.add(normalizeFieldId(rawField));
+        }
+        if (typeof layer.text === "string" && layer.text.includes("{{")) {
+          const tokens = layer.text.match(/\{\{([^}]+)\}\}/g);
+          if (tokens) {
+            for (const token of tokens) {
+              const key = token.replace(/\{\{|\}\}/g, "").trim();
+              boundFields.add(key);
+              boundFields.add(normalizeFieldId(key));
+            }
+          }
+        }
+        const nameKey = normalizeFieldId(layer.name);
+        if (nameKey) {
+          boundFields.add(nameKey);
+        }
+        const textKey = normalizeFieldId(layer.text);
+        if (textKey) {
+          boundFields.add(textKey);
+        }
       }
     }
   }
@@ -153,47 +173,89 @@ export function resolveTemplateLayers(templateOrLayers, role, content, sampleFal
   const actualContent = (typeof role === "object" && !Array.isArray(role) && !content) ? role : content;
   const sourceContent = actualContent || (sampleFallback ? SAMPLE_ROLE_CONTENT[actualRole] : {}) || {};
 
-  return layers.map((layer) => {
-    if (!layer || layer.type !== "text" || !layer.fieldBinding) {
-      return { ...layer };
+  const getFieldValue = (fieldKey) => {
+    if (!fieldKey) return undefined;
+    const canonical = normalizeFieldId(fieldKey);
+    let val = sourceContent[fieldKey];
+    if (val === undefined && canonical) {
+      val = sourceContent[canonical];
     }
-
-    const parts = layer.fieldBinding.split(".");
-    const fRole = parts.length === 2 ? parts[0] : role;
-    const rawFieldId = parts.length === 2 ? parts[1] : parts[0];
-    const canonicalFieldId = normalizeFieldId(rawFieldId);
-
-    // Look up directly or by canonical alias
-    let value = sourceContent[rawFieldId];
-    if (value === undefined && canonicalFieldId) {
-      value = sourceContent[canonicalFieldId];
-    }
-    if (value === undefined && FIELD_ALIASES[canonicalFieldId]) {
-      for (const alias of FIELD_ALIASES[canonicalFieldId]) {
+    if (val === undefined && FIELD_ALIASES[canonical]) {
+      for (const alias of FIELD_ALIASES[canonical]) {
         if (sourceContent[alias] !== undefined) {
-          value = sourceContent[alias];
+          val = sourceContent[alias];
           break;
         }
       }
     }
+    if (val === undefined && sampleFallback && SAMPLE_ROLE_CONTENT[actualRole]) {
+      val = SAMPLE_ROLE_CONTENT[actualRole][canonical] || SAMPLE_ROLE_CONTENT[actualRole][fieldKey];
+    }
+    return typeof val === "string" ? val : undefined;
+  };
 
-    if (typeof value === "string" && value.trim().length > 0) {
-      return {
+  return layers.map((layer) => {
+    if (!layer) return layer;
+    if (layer.maskImage) {
+      layer = {
         ...layer,
-        text: value,
-        resolvedField: canonicalFieldId,
-        resolvedRole: fRole,
+        maskImage: {
+          ...layer.maskImage,
+          frameCrop: layer.maskImage.frameCrop ? { ...layer.maskImage.frameCrop } : undefined,
+        },
       };
     }
+    if (layer.type !== "text") {
+      return { ...layer };
+    }
 
-    if (sampleFallback && SAMPLE_ROLE_CONTENT[fRole]) {
-      const sampleVal = SAMPLE_ROLE_CONTENT[fRole][canonicalFieldId] || SAMPLE_ROLE_CONTENT[fRole][rawFieldId];
-      if (sampleVal) {
+    // 1. Explicit fieldBinding or roleBinding
+    let targetField = layer.fieldBinding || layer.roleBinding;
+    if (targetField) {
+      const parts = targetField.split(".");
+      const rawFieldId = parts.length === 2 ? parts[1] : parts[0];
+      const val = getFieldValue(rawFieldId);
+      if (val !== undefined && val.trim().length > 0) {
         return {
           ...layer,
-          text: sampleVal,
-          resolvedField: canonicalFieldId,
-          resolvedRole: fRole,
+          text: val,
+          resolvedField: normalizeFieldId(rawFieldId),
+          resolvedRole: actualRole,
+        };
+      }
+    }
+
+    // 2. Mustache replacement in layer.text
+    if (typeof layer.text === "string" && layer.text.includes("{{")) {
+      let updatedText = layer.text;
+      const tokens = layer.text.match(/\{\{([^}]+)\}\}/g);
+      if (tokens) {
+        for (const token of tokens) {
+          const key = token.replace(/\{\{|\}\}/g, "").trim();
+          const val = getFieldValue(key);
+          if (val !== undefined) {
+            updatedText = updatedText.replace(token, val);
+          }
+        }
+        return {
+          ...layer,
+          text: updatedText,
+          resolvedField: "mustache",
+          resolvedRole: actualRole,
+        };
+      }
+    }
+
+    // 3. Inferred binding by layer name or text
+    const inferredKey = normalizeFieldId(layer.name) || normalizeFieldId(layer.text);
+    if (inferredKey && ["verseText", "reference", "version", "heading", "message", "name", "title"].includes(inferredKey)) {
+      const val = getFieldValue(inferredKey);
+      if (val !== undefined && val.trim().length > 0) {
+        return {
+          ...layer,
+          text: val,
+          resolvedField: inferredKey,
+          resolvedRole: actualRole,
         };
       }
     }

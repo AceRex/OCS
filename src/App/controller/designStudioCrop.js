@@ -3,7 +3,7 @@
  * Unified crop and pan bounding calculation for Studio DOM and Canvas 2D Program Compositor.
  */
 
-export function calculateCropMetrics({
+function calculateCropMetrics({
   containerWidth,
   containerHeight,
   naturalWidth,
@@ -17,7 +17,8 @@ export function calculateCropMetrics({
   const ch = Math.max(1, typeof containerHeight === "number" && !isNaN(containerHeight) ? containerHeight : 1);
   const nw = Math.max(1, typeof naturalWidth === "number" && !isNaN(naturalWidth) ? naturalWidth : 1);
   const nh = Math.max(1, typeof naturalHeight === "number" && !isNaN(naturalHeight) ? naturalHeight : 1);
-  const z = Math.max(1, typeof zoom === "number" && !isNaN(zoom) ? zoom : 1);
+  const minZoom = fitMode === "free" ? 0.05 : 1;
+  const z = Math.max(minZoom, typeof zoom === "number" && !isNaN(zoom) ? zoom : 1);
 
   const containerAspect = cw / ch;
   const imageAspect = nw / nh;
@@ -25,6 +26,15 @@ export function calculateCropMetrics({
   let baseW, baseH;
   if (fitMode === "fit") {
     // contain: scale image so it fits entirely inside frame
+    if (imageAspect > containerAspect) {
+      baseW = cw;
+      baseH = cw / imageAspect;
+    } else {
+      baseH = ch;
+      baseW = ch * imageAspect;
+    }
+  } else if (fitMode === "free") {
+    // free transform: default to proportional fit, allow free unconstrained pan & scale
     if (imageAspect > containerAspect) {
       baseW = cw;
       baseH = cw / imageAspect;
@@ -55,11 +65,18 @@ export function calculateCropMetrics({
   const clampedPanY = Math.max(-100, Math.min(100, typeof panY === "number" && !isNaN(panY) ? panY : 0)) / 100;
 
   // If overflow exists on an axis, pan can travel up to half of the overflow in either direction.
+  // In free mode, pan travels freely across container dimensions without clamping.
   // panX = +100% aligns left edge of image with left edge of frame.
   // panX = -100% aligns right edge of image with right edge of frame.
   // If no overflow exists, pan is 0 (centered).
-  const panPxX = overflowW > 0 ? (clampedPanX * overflowW) / 2 : 0;
-  const panPxY = overflowH > 0 ? (clampedPanY * overflowH) / 2 : 0;
+  let panPxX, panPxY;
+  if (fitMode === "free") {
+    panPxX = (clampedPanX * cw) / 2;
+    panPxY = (clampedPanY * ch) / 2;
+  } else {
+    panPxX = overflowW > 0 ? (clampedPanX * overflowW) / 2 : 0;
+    panPxY = overflowH > 0 ? (clampedPanY * overflowH) / 2 : 0;
+  }
 
   // Position relative to top-left of container (0, 0)
   const drawX = (cw - drawW) / 2 + panPxX;
@@ -92,3 +109,5 @@ export function calculateCropMetrics({
     },
   };
 }
+
+module.exports = { calculateCropMetrics };

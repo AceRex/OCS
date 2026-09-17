@@ -374,6 +374,7 @@ app.whenReady().then(async () => {
 
   // 5. Test Missing Template Error Handling (Zero Silent Fallback)
   console.log("\n[Backend] Testing Missing/Invalid Template Actionable Error (No Silent Fallback)...");
+  designStudioService.designs = [];
   designStudioService.setRoleAssignment("bible", "non_existent_corrupted_id");
 
   const badAssignedId = designStudioService.getRoleAssignments().bible;

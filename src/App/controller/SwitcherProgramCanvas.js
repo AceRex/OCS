@@ -7,6 +7,11 @@ import { calculateCropMetrics } from "./designStudioCrop";
 const _programImageCache = {};
 const _designLayerImageCache = new Map();
 
+// Module-level callback registered by SwitcherProgramCanvas to trigger redraws
+// whenever an async image load completes.
+let _onImageLoadCallback = null;
+export function setImageLoadCallback(cb) { _onImageLoadCallback = cb; }
+
 // Bounded Offscreen Buffer for Frosted Glass Background Blur
 let _glassOffscreenCanvas = null;
 
@@ -642,6 +647,8 @@ export function drawDesignStudioLayer(ctx, layer, w, h, animOffset = { x: 0, y: 
     let img = src ? _designLayerImageCache.get(src) : null;
     if (src && !img) {
       img = new Image();
+      img.onload = () => { if (_onImageLoadCallback) _onImageLoadCallback(); };
+      img.onerror = () => { console.warn("[DesignLayer] Image failed to load:", src); };
       img.src = src;
       _designLayerImageCache.set(src, img);
     }
@@ -732,7 +739,156 @@ export function drawDesignStudioLayer(ctx, layer, w, h, animOffset = { x: 0, y: 
     const isLineOrArrow = isLine || isArrow || isBracket;
 
     if (!isLineOrArrow && layer.fillType === "glass") {
-      renderGlassPanelBackgroundBlur(ctx, layer, shape, rx, ry, layerW, layerH, cx, cy, w, h, animOffset);
+      const hasMaskImg = Boolean(layer.maskImage?.url);
+      const isBackdropTarget = layer.glassTarget === "backdrop";
+
+      if (hasMaskImg && !isBackdropTarget) {
+        // IMAGE GLASS: Apply blur, glass tint, and specular highlights directly to the clipped image within the mask!
+        const mSrc = layer.maskImage.url;
+        let mImg = _designLayerImageCache.get(mSrc);
+        if (mSrc && !mImg) {
+          mImg = new Image();
+          mImg.onload = () => { if (_onImageLoadCallback) _onImageLoadCallback(); };
+          mImg.onerror = () => { console.warn("[DesignLayer] Mask image failed to load:", mSrc); };
+          mImg.src = mSrc;
+          _designLayerImageCache.set(mSrc, mImg);
+        }
+
+        ctx.save();
+        ctx.beginPath();
+        buildShapePath(ctx, shape, rx, ry, layerW, layerH, layer.borderRadius, h, layer.customPath);
+        ctx.clip();
+
+        // 1. Draw outer shadow or subtle backing
+        if (layer.shadowEnabled) {
+          ctx.fillStyle = "rgba(0, 0, 0, 0.01)";
+          ctx.fill();
+        }
+
+        // 2. Draw blurred image
+        if (mImg && mImg.complete && mImg.naturalWidth > 0) {
+          const mCrop = layer.maskImage.frameCrop || layer.maskImage;
+          const mFit = mCrop.fitMode || layer.maskImage.fitMode || "fill";
+          const mZoom = typeof mCrop.zoom === "number" ? mCrop.zoom : (typeof layer.maskImage.zoom === "number" ? layer.maskImage.zoom : 1);
+          const mPanX = typeof mCrop.panX === "number" ? mCrop.panX : (typeof layer.maskImage.panX === "number" ? layer.maskImage.panX : 0);
+          const mPanY = typeof mCrop.panY === "number" ? mCrop.panY : (typeof layer.maskImage.panY === "number" ? layer.maskImage.panY : 0);
+          const mRot = typeof mCrop.rotation === "number" ? mCrop.rotation : (typeof layer.maskImage.rotation === "number" ? layer.maskImage.rotation : 0);
+
+          const metrics = calculateCropMetrics({
+            containerWidth: layerW,
+            containerHeight: layerH,
+            naturalWidth: mImg.naturalWidth,
+            naturalHeight: mImg.naturalHeight,
+            fitMode: mFit,
+            zoom: mZoom,
+            panX: mPanX,
+            panY: mPanY,
+          });
+
+          const blurPx = typeof layer.backgroundBlur === "number" ? layer.backgroundBlur : 16;
+          const prevFilter = ctx.filter;
+          if (blurPx > 0) {
+            try {
+              ctx.filter = `blur(${Math.round(blurPx * (h / 720))}px)`;
+            } catch (_) {}
+          }
+
+          if (mRot) {
+            const imgCenterX = rx + metrics.drawX + metrics.drawW / 2;
+            const imgCenterY = ry + metrics.drawY + metrics.drawH / 2;
+            ctx.save();
+            ctx.translate(imgCenterX, imgCenterY);
+            ctx.rotate((mRot * Math.PI) / 180);
+            ctx.drawImage(mImg, -metrics.drawW / 2, -metrics.drawH / 2, metrics.drawW, metrics.drawH);
+            ctx.restore();
+          } else {
+            ctx.drawImage(mImg, rx + metrics.drawX, ry + metrics.drawY, metrics.drawW, metrics.drawH);
+          }
+          ctx.filter = prevFilter || "none";
+        }
+
+        // 3. Glass tint gradient overlay
+        const tint = layer.glassTint || "#ffffff";
+        const opacity = typeof layer.glassOpacity === "number" ? Math.max(0, Math.min(1, layer.glassOpacity)) : 0.25;
+        const tintGrad = ctx.createLinearGradient(rx, ry, rx + layerW, ry + layerH);
+        tintGrad.addColorStop(0, getGlassTintRgba(tint, Math.min(1, opacity + 0.1)));
+        tintGrad.addColorStop(1, getGlassTintRgba(tint, Math.max(0, opacity - 0.05)));
+        ctx.fillStyle = tintGrad;
+        ctx.fill();
+
+        // 4. Specular sweep highlight if enabled
+        if (layer.sweepHighlight) {
+          drawSpecularHighlightSweep(ctx, rx, ry, layerW, layerH, animOffset.sweepProgress ?? 0.5);
+        }
+        ctx.restore();
+
+        // 5. Crisp border
+        const sw = typeof layer.strokeWidth === "number" ? layer.strokeWidth : 1;
+        if (sw > 0 && layer.stroke && layer.stroke !== "transparent") {
+          ctx.beginPath();
+          buildShapePath(ctx, shape, rx, ry, layerW, layerH, layer.borderRadius, h, layer.customPath);
+          ctx.strokeStyle = layer.stroke;
+          ctx.lineWidth = Math.max(1, Math.round(sw * (h / 720)));
+          ctx.stroke();
+        }
+      } else {
+        // BACKDROP GLASS: Frost the live program background underneath the shape
+        renderGlassPanelBackgroundBlur(ctx, layer, shape, rx, ry, layerW, layerH, cx, cy, w, h, animOffset);
+
+        if (hasMaskImg) {
+          const mSrc = layer.maskImage.url;
+          let mImg = _designLayerImageCache.get(mSrc);
+          if (mSrc && !mImg) {
+            mImg = new Image();
+            mImg.onload = () => { if (_onImageLoadCallback) _onImageLoadCallback(); };
+            mImg.onerror = () => { console.warn("[DesignLayer] Mask image failed to load:", mSrc); };
+            mImg.src = mSrc;
+            _designLayerImageCache.set(mSrc, mImg);
+          }
+
+          if (mImg && mImg.complete && mImg.naturalWidth > 0) {
+            ctx.save();
+            ctx.beginPath();
+            buildShapePath(ctx, shape, rx, ry, layerW, layerH, layer.borderRadius, h, layer.customPath);
+            ctx.clip();
+
+            const mCrop = layer.maskImage.frameCrop || layer.maskImage;
+            const mFit = mCrop.fitMode || layer.maskImage.fitMode || "fill";
+            const mZoom = typeof mCrop.zoom === "number" ? mCrop.zoom : (typeof layer.maskImage.zoom === "number" ? layer.maskImage.zoom : 1);
+            const mPanX = typeof mCrop.panX === "number" ? mCrop.panX : (typeof layer.maskImage.panX === "number" ? layer.maskImage.panX : 0);
+            const mPanY = typeof mCrop.panY === "number" ? mCrop.panY : (typeof layer.maskImage.panY === "number" ? layer.maskImage.panY : 0);
+            const mRot = typeof mCrop.rotation === "number" ? mCrop.rotation : (typeof layer.maskImage.rotation === "number" ? layer.maskImage.rotation : 0);
+
+            const metrics = calculateCropMetrics({
+              containerWidth: layerW,
+              containerHeight: layerH,
+              naturalWidth: mImg.naturalWidth,
+              naturalHeight: mImg.naturalHeight,
+              fitMode: mFit,
+              zoom: mZoom,
+              panX: mPanX,
+              panY: mPanY,
+            });
+
+            // Translucent image blending so the frosted background shines through
+            const imgAlpha = typeof layer.maskImage.opacity === "number" ? layer.maskImage.opacity : 0.7;
+            ctx.globalAlpha = imgAlpha * (layer.opacity ?? 1);
+
+            if (mRot) {
+              const imgCenterX = rx + metrics.drawX + metrics.drawW / 2;
+              const imgCenterY = ry + metrics.drawY + metrics.drawH / 2;
+              ctx.save();
+              ctx.translate(imgCenterX, imgCenterY);
+              ctx.rotate((mRot * Math.PI) / 180);
+              ctx.drawImage(mImg, -metrics.drawW / 2, -metrics.drawH / 2, metrics.drawW, metrics.drawH);
+              ctx.restore();
+            } else {
+              ctx.drawImage(mImg, rx + metrics.drawX, ry + metrics.drawY, metrics.drawW, metrics.drawH);
+            }
+            ctx.restore();
+          }
+        }
+      }
     } else {
       ctx.beginPath();
       buildShapePath(ctx, shape, rx, ry, layerW, layerH, layer.borderRadius, h, layer.customPath);
@@ -758,6 +914,8 @@ export function drawDesignStudioLayer(ctx, layer, w, h, animOffset = { x: 0, y: 
           let mImg = _designLayerImageCache.get(mSrc);
           if (mSrc && !mImg) {
             mImg = new Image();
+            mImg.onload = () => { if (_onImageLoadCallback) _onImageLoadCallback(); };
+            mImg.onerror = () => { console.warn("[DesignLayer] Mask image failed to load:", mSrc); };
             mImg.src = mSrc;
             _designLayerImageCache.set(mSrc, mImg);
           }
@@ -768,18 +926,35 @@ export function drawDesignStudioLayer(ctx, layer, w, h, animOffset = { x: 0, y: 
             buildShapePath(ctx, shape, rx, ry, layerW, layerH, layer.borderRadius, h, layer.customPath);
             ctx.clip();
 
+            const mCrop = layer.maskImage.frameCrop || layer.maskImage;
+            const mFit = mCrop.fitMode || layer.maskImage.fitMode || "fill";
+            const mZoom = typeof mCrop.zoom === "number" ? mCrop.zoom : (typeof layer.maskImage.zoom === "number" ? layer.maskImage.zoom : 1);
+            const mPanX = typeof mCrop.panX === "number" ? mCrop.panX : (typeof layer.maskImage.panX === "number" ? layer.maskImage.panX : 0);
+            const mPanY = typeof mCrop.panY === "number" ? mCrop.panY : (typeof layer.maskImage.panY === "number" ? layer.maskImage.panY : 0);
+            const mRot = typeof mCrop.rotation === "number" ? mCrop.rotation : (typeof layer.maskImage.rotation === "number" ? layer.maskImage.rotation : 0);
+
             const metrics = calculateCropMetrics({
               containerWidth: layerW,
               containerHeight: layerH,
               naturalWidth: mImg.naturalWidth,
               naturalHeight: mImg.naturalHeight,
-              fitMode: layer.maskImage.fitMode || "fill",
-              zoom: layer.maskImage.zoom || 1,
-              panX: layer.maskImage.panX || 0,
-              panY: layer.maskImage.panY || 0,
+              fitMode: mFit,
+              zoom: mZoom,
+              panX: mPanX,
+              panY: mPanY,
             });
 
-            ctx.drawImage(mImg, rx + metrics.drawX, ry + metrics.drawY, metrics.drawW, metrics.drawH);
+            if (mRot) {
+              const imgCenterX = rx + metrics.drawX + metrics.drawW / 2;
+              const imgCenterY = ry + metrics.drawY + metrics.drawH / 2;
+              ctx.save();
+              ctx.translate(imgCenterX, imgCenterY);
+              ctx.rotate((mRot * Math.PI) / 180);
+              ctx.drawImage(mImg, -metrics.drawW / 2, -metrics.drawH / 2, metrics.drawW, metrics.drawH);
+              ctx.restore();
+            } else {
+              ctx.drawImage(mImg, rx + metrics.drawX, ry + metrics.drawY, metrics.drawW, metrics.drawH);
+            }
             ctx.restore();
           }
         }
@@ -805,6 +980,8 @@ export function drawDesignStudioLayer(ctx, layer, w, h, animOffset = { x: 0, y: 
     const fontFamily = layer.fontFamily || "Inter, sans-serif";
     const fontWeight = layer.fontWeight || "bold";
     const shouldWrap = layer.wrap !== false;
+    const lineSpacing = typeof layer.lineSpacing === "number" ? layer.lineSpacing : 1.25;
+    const padPx = Math.round((typeof layer.padding === "number" ? layer.padding : 0) * (h / 720));
 
     if (layer.shadowEnabled) {
       const scale = h / 720;
@@ -823,12 +1000,15 @@ export function drawDesignStudioLayer(ctx, layer, w, h, animOffset = { x: 0, y: 
     ctx.textAlign = layer.textAlign || "left";
     ctx.textBaseline = "middle";
 
-    let tx = 0;
-    if (layer.textAlign === "left") tx = -layerW / 2;
-    else if (layer.textAlign === "right") tx = layerW / 2;
+    const innerW = Math.max(1, layerW - padPx * 2);
+    const innerH = Math.max(1, layerH - padPx * 2);
 
-    const maxW = layerW > 0 ? layerW : 9999;
-    const maxH = layerH > 0 ? layerH : 9999;
+    let tx = 0;
+    if (layer.textAlign === "left") tx = -innerW / 2;
+    else if (layer.textAlign === "right") tx = innerW / 2;
+
+    const maxW = innerW > 0 ? innerW : 9999;
+    const maxH = innerH > 0 ? innerH : 9999;
 
     const breakTextIntoLines = (fs) => {
       ctx.font = `${fontWeight} ${fs}px ${fontFamily}`;
@@ -860,40 +1040,65 @@ export function drawDesignStudioLayer(ctx, layer, w, h, animOffset = { x: 0, y: 
     };
 
     let effectiveFontSize = baseFontSize;
-    let renderLines = breakTextIntoLines(effectiveFontSize);
+    let allLines = breakTextIntoLines(effectiveFontSize);
 
-    // If text exceeds bounding box height, dynamically scale down font size toward minFontSize
-    if (layerH > 0 && renderLines.length * (effectiveFontSize * 1.25) > maxH) {
+    // Auto-fit: step font size down toward minFontSize until text fits the box height
+    if (layer.autoFit !== false && layerH > 0 && allLines.length * (effectiveFontSize * lineSpacing) > maxH) {
       while (effectiveFontSize > minFontSize) {
         effectiveFontSize = Math.max(minFontSize, effectiveFontSize - 1);
-        renderLines = breakTextIntoLines(effectiveFontSize);
-        if (renderLines.length * (effectiveFontSize * 1.25) <= maxH) {
+        allLines = breakTextIntoLines(effectiveFontSize);
+        if (allLines.length * (effectiveFontSize * lineSpacing) <= maxH) {
           break;
         }
       }
     }
 
-    // Clamp lines if still overflowing at minFontSize
-    const lineHeight = effectiveFontSize * 1.25;
-    const maxAllowedLines = Math.max(1, Math.floor(maxH / lineHeight));
-    if (renderLines.length > maxAllowedLines) {
-      renderLines = renderLines.slice(0, maxAllowedLines);
-      if (renderLines.length > 0) {
-        let lastLine = renderLines[renderLines.length - 1];
-        if (lastLine.length > 3) {
-          lastLine = lastLine.slice(0, -3).trim() + "...";
-        } else {
-          lastLine = "...";
-        }
-        renderLines[renderLines.length - 1] = lastLine;
-      }
+    const lineHeight = effectiveFontSize * lineSpacing;
+    const linesPerPage = Math.max(1, Math.floor(maxH / lineHeight));
+
+    // Pagination: split allLines into pages; render the current page only
+    // ctrl.currentPage is passed via the animOffset or layer directly (default 0)
+    const currentPage = typeof layer._currentPage === "number" ? layer._currentPage : 0;
+    const totalPages = Math.ceil(allLines.length / linesPerPage);
+    const pageStart = currentPage * linesPerPage;
+    const renderLines = allLines.slice(pageStart, pageStart + linesPerPage);
+
+    // Vertical alignment within the text box
+    const totalTextH = renderLines.length * lineHeight;
+    let baselineY;
+    const vertAlign = layer.verticalAlign || "top";
+    if (vertAlign === "middle") {
+      baselineY = -totalTextH / 2 + lineHeight / 2;
+    } else if (vertAlign === "bottom") {
+      baselineY = innerH / 2 - totalTextH + lineHeight / 2;
+    } else {
+      // top
+      baselineY = -innerH / 2 + lineHeight / 2;
     }
 
     ctx.font = `${fontWeight} ${effectiveFontSize}px ${fontFamily}`;
-    const startY = -((renderLines.length - 1) * lineHeight) / 2;
+    // Clip to the text box bounds to prevent overflow leaking beyond the layer
+    if (padPx > 0 || (layerW > 0 && layerH > 0)) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(-layerW / 2, -layerH / 2, layerW, layerH);
+      ctx.clip();
+    }
     renderLines.forEach((line, i) => {
-      ctx.fillText(line, tx, startY + i * lineHeight);
+      ctx.fillText(line, tx, baselineY + i * lineHeight);
     });
+    if (padPx > 0 || (layerW > 0 && layerH > 0)) {
+      ctx.restore();
+    }
+
+    // Expose pagination metadata on the layer for operator UI (read-only annotation)
+    if (totalPages > 1) {
+      layer._totalPages = totalPages;
+      layer._currentPage = currentPage;
+    } else {
+      delete layer._totalPages;
+      delete layer._currentPage;
+    }
   }
 
   // Reset canvas shadow state between layers so shadows never leak
@@ -947,6 +1152,12 @@ export default function SwitcherProgramCanvas({
     broadcastConfigRef.current = broadcastConfig;
     isDirtyRef.current = true;
   }, [broadcastConfig]);
+
+  // Register image-load callback so async texture loads immediately trigger a redraw
+  useEffect(() => {
+    setImageLoadCallback(() => { isDirtyRef.current = true; });
+    return () => { setImageLoadCallback(null); };
+  }, []);
 
   const isStreamingActiveRef = useRef(isStreamingActive);
   useEffect(() => {
@@ -1935,6 +2146,24 @@ export default function SwitcherProgramCanvas({
               <PiX size={13} />
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Active Studio Bible Control Operator Dismiss Button */}
+      {bConfig.activeStudioControls?.some(c => (c.role === "bible" || c.id === "role_playback_bible" || c.id?.startsWith("role_playback_bible")) && c.status !== "hidden") && (
+        <div className="absolute bottom-4 right-4 z-30 pointer-events-auto">
+          <button
+            onClick={() => {
+              if (window.electron?.Presentation?.setContent) {
+                window.electron.Presentation.setContent(null);
+              }
+            }}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[12px] bg-black/70 hover:bg-black/90 border border-white/20 text-white/90 hover:text-white transition-all text-xs font-semibold shadow-lg backdrop-blur-md"
+            title="Dismiss scripture lower third"
+          >
+            <PiX size={13} />
+            <span>Dismiss Bible</span>
+          </button>
         </div>
       )}
 

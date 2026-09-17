@@ -135,7 +135,16 @@ class DesignStudioService {
   }
 
   getRoleAssignments() {
-    return { ...this.roleAssignments };
+    const assignments = { ...this.roleAssignments };
+    for (const role of ["bible", "announcement", "speaker"]) {
+      if (!assignments[role] || !this.designs.some((d) => d.id === assignments[role])) {
+        const match = [...this.designs].reverse().find((d) => d.role === role);
+        if (match) {
+          assignments[role] = match.id;
+        }
+      }
+    }
+    return assignments;
   }
 
   setRoleAssignment(role, templateId) {
@@ -144,7 +153,7 @@ class DesignStudioService {
     }
     this.roleAssignments[role] = templateId || null;
     this.persistRoleAssignments();
-    return { ok: true, roleAssignments: { ...this.roleAssignments } };
+    return { ok: true, roleAssignments: this.getRoleAssignments() };
   }
 
   loadDesigns() {
@@ -347,6 +356,7 @@ class DesignStudioService {
         fillType,
         fill: layer.fill !== undefined ? layer.fill : (isLineOrArrow ? "transparent" : "#581c87"),
         gradient: this.sanitizeGradient(layer.gradient),
+        glassTarget: ["image", "backdrop"].includes(layer.glassTarget) ? layer.glassTarget : "image",
         glassTint: typeof layer.glassTint === "string" ? layer.glassTint : "#ffffff",
         glassOpacity: typeof layer.glassOpacity === "number" ? Math.max(0, Math.min(1, layer.glassOpacity)) : 0.25,
         backgroundBlur: typeof layer.backgroundBlur === "number" ? Math.max(0, Math.min(100, layer.backgroundBlur)) : 16,
@@ -363,10 +373,11 @@ class DesignStudioService {
         maskImage: (layer.maskImage && typeof layer.maskImage === "object") ? (() => {
           const m = layer.maskImage;
           const crop = (m.frameCrop && typeof m.frameCrop === "object") ? m.frameCrop : m;
-          const fitMode = ["fit", "fill"].includes(crop.fitMode) ? crop.fitMode : "fill";
-          const zoom = typeof crop.zoom === "number" && crop.zoom >= 1 ? Math.min(5, crop.zoom) : 1;
+          const fitMode = ["fit", "fill", "free"].includes(crop.fitMode) ? crop.fitMode : "fill";
+          const zoom = typeof crop.zoom === "number" && crop.zoom >= 0.1 ? Math.min(5, crop.zoom) : 1;
           const panX = typeof crop.panX === "number" ? Math.max(-100, Math.min(100, crop.panX)) : 0;
           const panY = typeof crop.panY === "number" ? Math.max(-100, Math.min(100, crop.panY)) : 0;
+          const rotation = typeof crop.rotation === "number" ? crop.rotation : 0;
           return {
             url: m.url || m.content || "",
             assetId: m.assetId || null,
@@ -380,7 +391,8 @@ class DesignStudioService {
             zoom,
             panX,
             panY,
-            frameCrop: { fitMode, zoom, panX, panY },
+            rotation,
+            frameCrop: { fitMode, zoom, panX, panY, rotation },
           };
         })() : null,
         customPath: Array.isArray(layer.customPath) ? layer.customPath : null,
@@ -484,6 +496,11 @@ class DesignStudioService {
       this.designs[existingIndex] = sanitized;
     } else {
       this.designs.push(sanitized);
+    }
+
+    if (sanitized.role && sanitized.role !== "custom" && !this.roleAssignments[sanitized.role]) {
+      this.roleAssignments[sanitized.role] = sanitized.id;
+      this.persistRoleAssignments();
     }
 
     this.persistDesigns();
@@ -835,28 +852,72 @@ class DesignStudioService {
       return fieldId;
     };
 
+    const getFieldValue = (fieldKey) => {
+      if (!fieldKey) return undefined;
+      const canonical = normalize(fieldKey);
+      let val = sourceContent[fieldKey];
+      if (val === undefined && canonical) {
+        val = sourceContent[canonical];
+      }
+      if (val === undefined && FIELD_ALIASES[canonical]) {
+        for (const alias of FIELD_ALIASES[canonical]) {
+          if (sourceContent[alias] !== undefined) {
+            val = sourceContent[alias];
+            break;
+          }
+        }
+      }
+      return typeof val === "string" ? val : undefined;
+    };
+
     return template.layers.map((l) => {
       const layer = { ...l };
-      if (layer.type === "text" && layer.fieldBinding) {
-        const parts = layer.fieldBinding.split(".");
-        const rawFieldId = parts.length === 2 ? parts[1] : parts[0];
-        const canonical = normalize(rawFieldId);
+      // Deep-clone maskImage to preserve transforms and frameCrop intact
+      if (layer.maskImage) {
+        layer.maskImage = {
+          ...layer.maskImage,
+          frameCrop: layer.maskImage.frameCrop ? { ...layer.maskImage.frameCrop } : undefined,
+        };
+      }
 
-        let val = sourceContent[rawFieldId];
-        if (val === undefined && canonical) {
-          val = sourceContent[canonical];
-        }
-        if (val === undefined && FIELD_ALIASES[canonical]) {
-          for (const alias of FIELD_ALIASES[canonical]) {
-            if (sourceContent[alias] !== undefined) {
-              val = sourceContent[alias];
-              break;
-            }
+      if (layer.type === "text") {
+        // 1. Explicit fieldBinding or roleBinding
+        let targetField = layer.fieldBinding || layer.roleBinding;
+        if (targetField) {
+          const parts = targetField.split(".");
+          const rawFieldId = parts.length === 2 ? parts[1] : parts[0];
+          const val = getFieldValue(rawFieldId);
+          if (val !== undefined && val.trim().length > 0) {
+            layer.text = val;
+            return layer;
           }
         }
 
-        if (typeof val === "string" && val.trim().length > 0) {
-          layer.text = val;
+        // 2. Mustache replacement in layer.text: {{verseText}}, {{reference}}, {{version}}, etc.
+        if (typeof layer.text === "string" && layer.text.includes("{{")) {
+          let updatedText = layer.text;
+          const tokens = layer.text.match(/\{\{([^}]+)\}\}/g);
+          if (tokens) {
+            for (const token of tokens) {
+              const key = token.replace(/\{\{|\}\}/g, "").trim();
+              const val = getFieldValue(key);
+              if (val !== undefined) {
+                updatedText = updatedText.replace(token, val);
+              }
+            }
+            layer.text = updatedText;
+            return layer;
+          }
+        }
+
+        // 3. Infer binding by layer name or text content if fieldBinding is unset
+        const inferredKey = normalize(layer.name) || normalize(layer.text);
+        if (inferredKey && ["verseText", "reference", "version", "heading", "message", "name", "title"].includes(inferredKey)) {
+          const val = getFieldValue(inferredKey);
+          if (val !== undefined && val.trim().length > 0) {
+            layer.text = val;
+            return layer;
+          }
         }
       }
       return layer;
@@ -907,11 +968,32 @@ class DesignStudioService {
 
     const boundFields = new Set();
     for (const layer of checkLayers) {
-      if (layer && layer.type === "text" && layer.fieldBinding) {
-        const parts = layer.fieldBinding.split(".");
-        const rawField = parts.length === 2 ? parts[1] : parts[0];
-        boundFields.add(rawField);
-        boundFields.add(normalize(rawField));
+      if (layer && layer.type === "text") {
+        if (layer.fieldBinding || layer.roleBinding) {
+          const binding = layer.fieldBinding || layer.roleBinding;
+          const parts = binding.split(".");
+          const rawField = parts.length === 2 ? parts[1] : parts[0];
+          boundFields.add(rawField);
+          boundFields.add(normalize(rawField));
+        }
+        if (typeof layer.text === "string" && layer.text.includes("{{")) {
+          const tokens = layer.text.match(/\{\{([^}]+)\}\}/g);
+          if (tokens) {
+            for (const token of tokens) {
+              const key = token.replace(/\{\{|\}\}/g, "").trim();
+              boundFields.add(key);
+              boundFields.add(normalize(key));
+            }
+          }
+        }
+        const nameKey = normalize(layer.name);
+        if (nameKey) {
+          boundFields.add(nameKey);
+        }
+        const textKey = normalize(layer.text);
+        if (textKey) {
+          boundFields.add(textKey);
+        }
       }
     }
 
