@@ -564,7 +564,7 @@ async function runStage96RuntimeValidation() {
 
     // Rule 2: Standby slate emits when isBroadcastActive and no source selected
     const hasStandbySlate = /STANDBY BROADCAST SLATE/.test(canvasCode) &&
-      /OCS BROADCAST READY/.test(canvasCode);
+      /(?:OCS|WAVE\.IO) BROADCAST READY/i.test(canvasCode);
     assert.strictEqual(hasStandbySlate, true, 'Standby slate is emitted to keep broadcast feed active');
 
     pass('Canvas Permanence & Standby Slate verified', 'Canvas never unmounts, continuous 30fps standby feed');

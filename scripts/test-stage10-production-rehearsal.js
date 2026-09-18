@@ -150,6 +150,7 @@ async function runStage10Harness() {
 
     // 2. Packaging configuration audit in electron-builder.yml
     const builderYmlPath = path.join(__dirname, '..', 'electron-builder.yml');
+    const builderConfig = fs.readFileSync(builderYmlPath, 'utf8');
     testAssert(builderConfig.includes('productName: wave.io') || builderConfig.includes('productName: OCS'), 'Packaged productName set to wave.io/OCS');
     testAssert(builderConfig.includes('main.js') && builderConfig.includes('dist/**/*'), 'Files contract includes main.js and dist bundle');
 
