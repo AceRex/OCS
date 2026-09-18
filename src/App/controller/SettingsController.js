@@ -598,7 +598,7 @@ export default function SettingsController() {
                 Settings & Synchronization
               </h2>
               <p className="text-[10px] text-[#8882A4] font-bold uppercase tracking-widest">
-                OCS Global Workstation Configuration
+                wave.io Global Workstation Configuration
               </p>
             </div>
           </div>
@@ -1464,7 +1464,7 @@ export default function SettingsController() {
                       </h3>
                     </div>
                     <p className="text-xs text-[#8882A4] leading-relaxed max-w-2xl">
-                      When a timer or broadcast session ends, OCS will
+                      When a timer or broadcast session ends, wave.io will
                       automatically stitch your custom Intro to the beginning
                       and Outro to the end of the recording. The resulting
                       archive in Sessions will be ready for immediate playback
@@ -1703,7 +1703,7 @@ export default function SettingsController() {
                 Target Transcription Language
               </h3>
               <p className="text-xs text-[#8882A4] leading-relaxed">
-                OCS transcribes only the selected language. When an interpreter
+                wave.io transcribes only the selected language. When an interpreter
                 speaks another language on the same microphone, those chunks are
                 automatically filtered out (whisper language detection per VAD
                 segment).
@@ -1810,7 +1810,7 @@ export default function SettingsController() {
                 </h3>
               </div>
               <p className="text-xs text-[#8882A4] leading-relaxed">
-                Keeps monitors, beamers, and projectors awake while OCS is
+                Keeps monitors, beamers, and projectors awake while wave.io is
                 active. "Always" prevents macOS/Windows screensavers and sleep
                 timers completely.
               </p>
@@ -1841,13 +1841,13 @@ export default function SettingsController() {
               </div>
             </div>
 
-            {/* OCS Service at System Startup */}
+            {/* wave.io Service at System Startup */}
             <div className="bg-[#1A1428] border border-[#2E2542] p-6 rounded-3xl space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <PiPower className="text-[#38BDF8]" size={20} />
                   <h3 className="text-sm font-black uppercase tracking-widest text-[#F5F2FA]">
-                    OCS Service Startup
+                    wave.io Service Startup
                   </h3>
                 </div>
                 <ActionButton
@@ -1865,7 +1865,7 @@ export default function SettingsController() {
                 </ActionButton>
               </div>
               <p className="text-xs text-[#8882A4] leading-relaxed">
-                Automatically launches the OCS Presentation, Remote, and ASR
+                Automatically launches the wave.io Presentation, Remote, and ASR
                 service on workstation boot / login, ensuring projection screens
                 and companion remotes are ready for service without manual
                 start.
@@ -2034,7 +2034,7 @@ export default function SettingsController() {
                 );
               })()}
 
-            {/* OCS Desktop Version & Updates */}
+            {/* wave.io Desktop Version & Updates */}
             <div className="bg-[#1A1428] border border-[#2E2542] p-6 rounded-3xl space-y-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2.5">
@@ -2087,7 +2087,7 @@ export default function SettingsController() {
                     current version
                   </span>
                   <span className="text-white font-bold">
-                    OCS v{updater.currentVersion}
+                    wave.io v{updater.currentVersion}
                   </span>
                 </div>
               </div>

@@ -1,5 +1,5 @@
 appId: com.ocs.desktop
-productName: OCS
+productName: wave.io
 copyright: "Copyright © 2026 Are Oluwasegun Johnson"
 
 directories:
@@ -84,4 +84,4 @@ nsis:
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
-  shortcutName: OCS
+  shortcutName: wave.io

@@ -136,12 +136,12 @@ export default function TeleprompterFullscreenOverlay({
           lines: [
             {
               id: "l1",
-              text: "Welcome to the OCS Live Teleprompter.",
+              text: "Welcome to the wave.io Live Teleprompter.",
               words: [
                 { word: "Welcome", index: 0 },
                 { word: "to", index: 1 },
                 { word: "the", index: 2 },
-                { word: "OCS", index: 3 },
+                { word: "wave.io", index: 3 },
                 { word: "Live", index: 4 },
                 { word: "Teleprompter.", index: 5 },
               ],

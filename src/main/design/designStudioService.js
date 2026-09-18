@@ -135,16 +135,7 @@ class DesignStudioService {
   }
 
   getRoleAssignments() {
-    const assignments = { ...this.roleAssignments };
-    for (const role of ["bible", "announcement", "speaker"]) {
-      if (!assignments[role] || !this.designs.some((d) => d.id === assignments[role])) {
-        const match = [...this.designs].reverse().find((d) => d.role === role);
-        if (match) {
-          assignments[role] = match.id;
-        }
-      }
-    }
-    return assignments;
+    return { ...this.roleAssignments };
   }
 
   setRoleAssignment(role, templateId) {
@@ -498,7 +489,7 @@ class DesignStudioService {
       this.designs.push(sanitized);
     }
 
-    if (sanitized.role && sanitized.role !== "custom" && !this.roleAssignments[sanitized.role]) {
+    if ((designData.setAsDefault || designData.isDefault) && sanitized.role && sanitized.role !== "custom") {
       this.roleAssignments[sanitized.role] = sanitized.id;
       this.persistRoleAssignments();
     }

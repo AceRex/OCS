@@ -243,6 +243,10 @@ app.whenReady().then(async () => {
     },
   });
 
+  controllerWin.webContents.on('console-message', (e, level, msg) => {
+    console.log('  [Renderer]', msg);
+  });
+
   await controllerWin.loadFile(path.resolve(__dirname, "../controller.html"));
   await new Promise((r) => setTimeout(r, 2000));
 
@@ -284,9 +288,10 @@ app.whenReady().then(async () => {
       if (!modal) return { log };
 
       // 2. Verify Studio Header displays assigned Bible template name
+      await new Promise(r => setTimeout(r, 800)); // allow async fetch to complete
       const headerText = modal.querySelector("header")?.innerText || "";
-      const hasDefaultMention = headerText.includes("Default:") || modal.innerText.includes("Majestic Gold Scripture");
-      assertCheck("Header displays assigned default Bible template name", hasDefaultMention, "Found default template indicator in studio header");
+      const hasDefaultMention = headerText.toLowerCase().includes("default:") || modal.innerText.toLowerCase().includes("majestic gold scripture");
+      assertCheck("Header displays assigned default Bible template name", hasDefaultMention, "Header text: " + JSON.stringify(headerText));
 
       // 3. Test Layers panel
       const layersSection = modal.querySelector(".overflow-y-auto") || modal;
@@ -374,7 +379,6 @@ app.whenReady().then(async () => {
 
   // 5. Test Missing Template Error Handling (Zero Silent Fallback)
   console.log("\n[Backend] Testing Missing/Invalid Template Actionable Error (No Silent Fallback)...");
-  designStudioService.designs = [];
   designStudioService.setRoleAssignment("bible", "non_existent_corrupted_id");
 
   const badAssignedId = designStudioService.getRoleAssignments().bible;
@@ -497,12 +501,31 @@ app.whenReady().then(async () => {
       const modal = document.querySelector('[data-studio-modal="true"]');
       if (!modal) return { log };
 
-      // Switch design or layers to maskedDesign
-      // We can also trigger double click on any shape to test crop editing
-      const canvasArea = modal.querySelector(".canvas-interactive-area") || modal;
-      
+      // Open Document menu and select "Pastor Profile with Photo" or "Majestic Gold Scripture"
+      const docBtn = modal.querySelector('button[title*="Document menu"]');
+      if (docBtn) {
+        docBtn.click();
+        await new Promise(r => setTimeout(r, 400));
+        const designBtns = Array.from(modal.querySelectorAll('button[role="menuitem"]'));
+        const targetBtn = designBtns.find(b => b.textContent.includes("Pastor Profile") || b.textContent.includes("Majestic Gold"));
+        if (targetBtn) {
+          targetBtn.click();
+          await new Promise(r => setTimeout(r, 600));
+        }
+      }
+
+      // Fallback: If still empty, click the first template card in the sidebar
+      let layerElements = Array.from(modal.querySelectorAll('[data-studio-layer-id]'));
+      if (layerElements.length === 0) {
+        const tmplCard = modal.querySelector('div[title*="Insert "]');
+        if (tmplCard) {
+          tmplCard.click();
+          await new Promise(r => setTimeout(r, 500));
+        }
+      }
+
       // Select layer
-      const layerElements = Array.from(modal.querySelectorAll('[data-studio-layer-id]'));
+      layerElements = Array.from(modal.querySelectorAll('[data-studio-layer-id]'));
       assertCheck("Canvas layers present", layerElements.length > 0, layerElements.length + " layers on canvas");
       if (layerElements.length > 0) {
         layerElements[0].click();

@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import DisplayCanvas from "./DisplayCanvas";
+import logoIconGray from "@/assets/wave/wave_icon_gray.png";
 
 function App({ mode: propMode }) {
   const [countdown, setCountDown] = useState(null);
@@ -819,8 +820,11 @@ function App({ mode: propMode }) {
           />
         ) : (
           <div className="flex flex-col items-center animate-pulse">
-            <h1 className="text-[15vw] font-black text-light tracking-tighter leading-none opacity-20" style={{ color: '#F6F3F1' }}>OCS</h1>
-            <p className="text-light/30 text-2xl font-medium tracking-[1em] uppercase mt-4" style={{ color: '#F6F3F1' }}>Service is Starting</p>
+            <img
+              src={logoIconGray}
+              alt="Service is Starting"
+              className="w-48 h-48 sm:w-64 sm:h-64 max-w-[40vw] max-h-[40vh] object-contain opacity-25"
+            />
           </div>
         )}
       </div>

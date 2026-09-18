@@ -4,7 +4,7 @@ exports.createTemplate = (electronApp, actions = {}) => {
   const isMac = process.platform === "darwin";
   const appInstance = electronApp || app;
   const appName =
-    appInstance?.name || (appInstance?.getName ? appInstance.getName() : "OCS");
+    appInstance?.name || (appInstance?.getName ? appInstance.getName() : "wave.io");
 
   const template = [
     // App Menu (macOS only)
@@ -153,7 +153,7 @@ exports.createTemplate = (electronApp, actions = {}) => {
       role: "help",
       submenu: [
         {
-          label: "OCS Documentation & Setup Guide",
+          label: "wave.io Documentation & Setup Guide",
           click: async () => {
             await shell.openExternal("https://waveio-git-main-acerexs-projects.vercel.app/docs");
           },

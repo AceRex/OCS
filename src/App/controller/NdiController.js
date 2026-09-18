@@ -23,8 +23,8 @@ function NdiPanel() {
     enabled: false,
     isRunning: false,
     nativeNdiAvailable: false,
-    programStreamName: "OCS - Program Output",
-    stageStreamName: "OCS - Stage Display",
+    programStreamName: "wave.io - Program Output",
+    stageStreamName: "wave.io - Stage Display",
     alphaEnabled: true,
     resolution: "1080p",
     fps: 30,
@@ -203,7 +203,7 @@ function NdiPanel() {
               </span>
             </div>
             <p className="text-xs text-[#8882A4] mt-0.5">
-              Stream OCS scripture, presentation slides, lower-thirds & stage view to OBS, vMix, TriCaster & Zoom
+              Stream wave.io scripture, presentation slides, lower-thirds & stage view to OBS, vMix, TriCaster & Zoom
             </p>
           </div>
         </div>
@@ -513,7 +513,7 @@ function NdiPanel() {
                 </div>
               </div>
               <span className="px-2 py-0.5 rounded text-[9px] font-bold bg-white/5 text-[#8882A4]">
-                {source.isLocal ? "Local OCS" : "LAN Source"}
+                {source.isLocal ? "Local wave.io" : "LAN Source"}
               </span>
             </div>
           ))}
@@ -527,7 +527,7 @@ function NdiPanel() {
             <PiInfo size={18} />
           </div>
           <div>
-            <h3 className="font-bold text-sm text-white">How to Connect OCS with Other Broadcast Apps</h3>
+            <h3 className="font-bold text-sm text-white">How to Connect wave.io with Other Broadcast Apps</h3>
             <p className="text-xs text-[#8882A4]">Quick connection guides for OBS Studio, vMix, Zoom & TriCaster</p>
           </div>
         </div>
@@ -583,9 +583,9 @@ function NdiPanel() {
 
           {activeGuideTab === "zoom" && (
             <div>
-              <p className="font-bold text-white mb-2">Sending OCS into Zoom / Google Meet / Microsoft Teams</p>
+              <p className="font-bold text-white mb-2">Sending wave.io into Zoom / Google Meet / Microsoft Teams</p>
               <ol className="list-decimal pl-5 space-y-1.5 text-xs">
-                <li>Add OCS as a Browser Source or NDI Source inside OBS Studio.</li>
+                <li>Add wave.io as a Browser Source or NDI Source inside OBS Studio.</li>
                 <li>Click <strong className="text-white">"Start Virtual Camera"</strong> in OBS Studio.</li>
                 <li>In Zoom or Teams, select <strong className="text-white">"OBS Virtual Camera"</strong> as your webcam input.</li>
               </ol>
@@ -598,7 +598,7 @@ function NdiPanel() {
               <ol className="list-decimal pl-5 space-y-1.5 text-xs">
                 <li>In ProPresenter, open <strong className="text-white">Screens → Configure Screens</strong>.</li>
                 <li>Add an <strong className="text-white">NDI Output</strong> or <strong className="text-white">Video Input (NDI)</strong>.</li>
-                <li>Select <strong className="text-cyan-400">"{status.programStreamName}"</strong> to feed OCS slides and bible verses into ProPresenter stages.</li>
+                <li>Select <strong className="text-cyan-400">"{status.programStreamName}"</strong> to feed wave.io slides and bible verses into ProPresenter stages.</li>
           </ol>
             </div>
           )}

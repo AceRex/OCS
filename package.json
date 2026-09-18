@@ -1,7 +1,7 @@
 {
   "name": "ocs",
   "version": "1.0.0",
-  "description": "Organised Church service software",
+  "description": "wave.io - Live Worship & Presentation Suite",
   "main": "main.js",
   "scripts": {
     "start": "concurrently \"npm run build:all\" \"electronmon .\"",

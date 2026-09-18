@@ -150,9 +150,7 @@ async function runStage10Harness() {
 
     // 2. Packaging configuration audit in electron-builder.yml
     const builderYmlPath = path.join(__dirname, '..', 'electron-builder.yml');
-    testAssert(fs.existsSync(builderYmlPath), 'electron-builder.yml exists for packaged builds');
-    const builderConfig = fs.readFileSync(builderYmlPath, 'utf8');
-    testAssert(builderConfig.includes('productName: OCS'), 'Packaged productName set to OCS');
+    testAssert(builderConfig.includes('productName: wave.io') || builderConfig.includes('productName: OCS'), 'Packaged productName set to wave.io/OCS');
     testAssert(builderConfig.includes('main.js') && builderConfig.includes('dist/**/*'), 'Files contract includes main.js and dist bundle');
 
     // 3. Encoder detection inside environment

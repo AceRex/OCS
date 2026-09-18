@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>OCS — Launching</title>
+  <title>wave.io — Launching</title>
   <style>
     * {
       box-sizing: border-box;
@@ -13,7 +13,7 @@
       -webkit-app-region: drag;
     }
     body {
-      background: #0B0814;
+      background: #0B1020;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       color: #FFFFFF;
       height: 100vh;
@@ -23,15 +23,15 @@
       align-items: center;
       justify-content: center;
       overflow: hidden;
-      border: 1px solid rgba(168, 85, 247, 0.25);
-      border-radius: 24px;
+      border: 1px solid rgba(0, 168, 255, 0.25);
+      border-radius: 12px;
       position: relative;
     }
     .glow-orb {
       position: absolute;
       width: 250px;
       height: 250px;
-      background: radial-gradient(circle, rgba(168, 85, 247, 0.35) 0%, rgba(6, 182, 212, 0.15) 60%, transparent 80%);
+      background: radial-gradient(circle, rgba(0, 168, 255, 0.35) 0%, rgba(139, 92, 246, 0.15) 60%, transparent 80%);
       filter: blur(40px);
       z-index: 0;
       animation: pulse 3s ease-in-out infinite alternate;
@@ -52,22 +52,15 @@
     .logo-badge {
       width: 72px;
       height: 72px;
-      border-radius: 20px;
-      background: linear-gradient(135deg, #7c3aed 0%, #06b6d4 100%);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 34px;
-      font-weight: 900;
-      color: white;
-      letter-spacing: -1px;
-      box-shadow: 0 10px 30px rgba(124, 58, 237, 0.4);
+      border-radius: 12px;
+      object-fit: contain;
+      box-shadow: 0 10px 30px rgba(0, 168, 255, 0.35);
     }
     .app-title {
       font-size: 26px;
       font-weight: 800;
       letter-spacing: -0.5px;
-      background: linear-gradient(to right, #FFFFFF, #E9D5FF);
+      background: linear-gradient(to right, #FFFFFF, #00E5FF);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
@@ -94,7 +87,7 @@
       left: 0;
       height: 100%;
       width: 35%;
-      background: linear-gradient(90deg, #7c3aed, #06b6d4);
+      background: linear-gradient(90deg, #00A8FF, #00E5FF, #8B5CF6);
       border-radius: 2px;
       animation: indeterminate 1.4s infinite cubic-bezier(0.65, 0.815, 0.735, 0.395);
     }
@@ -104,7 +97,7 @@
     }
     .status-text {
       font-size: 11px;
-      color: #A89EC4;
+      color: #94A3B8;
       font-weight: 600;
       height: 16px;
       transition: all 0.2s ease;
@@ -122,10 +115,10 @@
 <body>
   <div class="glow-orb"></div>
   <div class="content">
-    <div class="logo-badge">O</div>
+    <img src="assets/icon.png" class="logo-badge" alt="wave.io Logo" />
     <div>
-      <h1 class="app-title">OCS</h1>
-      <p class="app-subtitle">Organised Church Service</p>
+      <h1 class="app-title">wave.io</h1>
+      <p class="app-subtitle">Live Presentation & Broadcast Suite</p>
     </div>
     <div class="progress-track">
       <div class="progress-bar"></div>

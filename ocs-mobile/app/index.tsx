@@ -153,7 +153,7 @@ export default function Dashboard() {
         <View className="flex-row items-center justify-between mb-6 mt-2">
           <View>
             <Text className="text-3xl font-black text-white tracking-tight">
-              OCS<Text className="text-green-400">.</Text>
+              wave<Text className="text-cyan-400">.io</Text>
             </Text>
             <TouchableOpacity
               onPress={handleOpenRename}
@@ -316,7 +316,7 @@ export default function Dashboard() {
                   {/* Account Section */}
                   <View className="pt-2 border-t border-white/10">
                     <Text className="text-white/40 text-[10px] font-black uppercase tracking-wider mb-2">
-                      OCS Account & License
+                      wave.io Account & License
                     </Text>
 
                     {isAuthenticated ? (
@@ -358,7 +358,7 @@ export default function Dashboard() {
                             <SignIn size={20} color="#C084FC" weight="bold" />
                           </View>
                           <View>
-                            <Text className="text-white font-bold text-sm">Sign In to OCS Account</Text>
+                            <Text className="text-white font-bold text-sm">Sign In to wave.io Account</Text>
                             <Text className="text-amber-300/80 text-[11px]">
                               Guest Mode: {guestRemainingMinutes}m left
                             </Text>

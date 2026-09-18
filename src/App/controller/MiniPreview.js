@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { renderAnimatedLyrics } from './LyricAnimationEngine';
+import logoIconGray from "@/assets/wave/wave_icon_gray.png";
 
 export default function MiniPreview({ mode }) {
     const [countdown, setCountDown] = useState(null);
@@ -499,9 +500,12 @@ export default function MiniPreview({ mode }) {
         }
         return (
             <div className="w-full h-full flex items-center justify-center" style={{ backgroundColor: bgColor }}>
-                <div className="flex flex-col items-center animate-pulse scale-75">
-                    <h1 className="text-5xl font-black text-white tracking-tighter leading-none opacity-20">OCS</h1>
-                    <p className="text-white/30 text-xs font-bold tracking-[0.5em] uppercase mt-2">Service is Starting</p>
+                <div className="flex flex-col items-center animate-pulse">
+                    <img
+                        src={logoIconGray}
+                        alt="Service is Starting"
+                        className="w-16 h-16 object-contain opacity-25"
+                    />
                 </div>
             </div>
         );

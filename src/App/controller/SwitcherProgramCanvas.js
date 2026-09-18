@@ -1384,7 +1384,7 @@ export default function SwitcherProgramCanvas({
       ctx.font = `bold ${Math.round(size * 0.38)}px sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      const label = cfg.logo.preset === "cross" ? "✝" : cfg.logo.preset === "dove" ? "🕊" : "OCS";
+      const label = cfg.logo.preset === "cross" ? "✝" : cfg.logo.preset === "dove" ? "🕊" : "wave.io";
       ctx.fillText(label, lx + size / 2, ly + size * 0.35);
       ctx.restore();
     }
@@ -1892,7 +1892,7 @@ export default function SwitcherProgramCanvas({
                 ctx.fillStyle = "rgba(255, 255, 255, 0.85)";
                 ctx.font = `bold ${Math.round(28 * (targetH / 720))}px system-ui, -apple-system, sans-serif`;
                 ctx.textAlign = "center";
-                ctx.fillText("OCS BROADCAST READY", canvas.width / 2, canvas.height / 2 - Math.round(12 * (targetH / 720)));
+                ctx.fillText("WAVE.IO BROADCAST READY", canvas.width / 2, canvas.height / 2 - Math.round(12 * (targetH / 720)));
 
                 ctx.font = `${Math.round(14 * (targetH / 720))}px system-ui, -apple-system, sans-serif`;
                 ctx.fillStyle = "rgba(255, 255, 255, 0.4)";

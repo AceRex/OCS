@@ -136,7 +136,7 @@ export default function ConnectScreen() {
     } else {
       Alert.alert(
         "Invalid QR / Barcode",
-        `Scanned code does not match OCS desktop format:\n\n${data}`,
+        `Scanned code does not match wave.io desktop format:\n\n${data}`,
         [{ text: "OK", onPress: () => setScanned(false) }],
       );
     }
@@ -197,7 +197,7 @@ export default function ConnectScreen() {
 
                 <Text style={styles.title}>Connected & Paired</Text>
                 <Text style={styles.subtitle}>
-                  Your companion is actively paired with the OCS desktop workstation.
+                  Your companion is actively paired with the wave.io desktop workstation.
                 </Text>
 
                 {/* Session Details Card */}
@@ -386,7 +386,7 @@ export default function ConnectScreen() {
 
             <View style={styles.scannerTipBox}>
               <Text style={styles.scannerTipText}>
-                Point camera at the QR code in OCS Desktop → Remote
+                Point camera at the QR code in wave.io Desktop → Remote
               </Text>
             </View>
           </View>

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { PiX } from "react-icons/pi";
+import logoIconGray from "@/assets/wave/wave_icon_gray.png";
 
 export default function PreviewModal({ isOpen, onClose, mode }) {
     const [countdown, setCountDown] = useState(null);
@@ -319,9 +320,12 @@ export default function PreviewModal({ isOpen, onClose, mode }) {
         }
         return (
             <div className="w-full h-full flex items-center justify-center bg-primary" style={{ backgroundColor: bgColor }}>
-                <div className="flex flex-col items-center animate-pulse scale-50">
-                    <h1 className="text-6xl font-black text-light tracking-tighter leading-none opacity-20">OCS</h1>
-                    <p className="text-light/30 text-lg font-medium tracking-[1em] uppercase mt-2">Service is Starting</p>
+                <div className="flex flex-col items-center animate-pulse">
+                    <img
+                        src={logoIconGray}
+                        alt="Service is Starting"
+                        className="w-24 h-24 object-contain opacity-25"
+                    />
                 </div>
             </div>
         );

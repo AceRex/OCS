@@ -93,20 +93,32 @@ process.on("unhandledRejection", (reason) => {
   console.error("[UnhandledRejection]", reason);
 });
 
-// ── Custom Protocol Scheme for Authentication & Deep Links (FR-13.8, FR-13.3) ───
+const path = require("path");
+const APP_ICON_PATH = path.join(__dirname, "assets", "icon.png");
+
+// ── Custom Protocol Schemes for Authentication & Deep Links (FR-13.8, FR-13.3) ───
 app.setAsDefaultProtocolClient("ocs");
+app.setAsDefaultProtocolClient("waveio");
+
+// ── Preserve Installation & Data Compatibility (Requirement 4) ─────────────
+// Retain existing ~/Library/Application Support/ocs profile path so databases,
+// saved designs, scenes.json, and license credentials are unconditionally preserved.
+try {
+  const legacyUserData = path.join(app.getPath("appData"), "ocs");
+  app.setPath("userData", legacyUserData);
+} catch (_) {}
 
 // ── Single Instance Lock (Enforce app only loads once) ──────────────────────
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
   console.log(
-    "[App] Another instance of OCS is already running. Quitting duplicate process.",
+    "[App] Another instance of wave.io is already running. Quitting duplicate process.",
   );
   app.quit();
   process.exit(0);
 }
 
-app.setName("OCS");
+app.setName("wave.io");
 if (process.platform === "win32") {
   app.setAppUserModelId("com.acerex.ocs");
 }
@@ -116,14 +128,14 @@ app.on("second-instance", (_event, argv) => {
     "[App] Second instance launch attempted. Checking for deep link or focusing controller.",
   );
   const deepLink = argv.find(
-    (arg) => typeof arg === "string" && arg.startsWith("ocs://"),
+    (arg) => typeof arg === "string" && (arg.startsWith("ocs://") || arg.startsWith("waveio://")),
   );
   if (deepLink) {
     handleAuthDeepLink(deepLink);
     return;
   }
   const windows = BrowserWindow.getAllWindows();
-  const controller = windows.find((w) => w.getTitle() === "OCS Controller");
+  const controller = windows.find((w) => w.getTitle() === "wave.io Controller" || w.getTitle() === "OCS Controller");
   if (controller && !controller.isDestroyed()) {
     if (controller.isMinimized()) controller.restore();
     controller.focus();
@@ -134,8 +146,6 @@ app.on("open-url", (event, rawUrl) => {
   event.preventDefault();
   handleAuthDeepLink(rawUrl);
 });
-
-const path = require("path");
 const url = require("url");
 const { pathToFileURL, fileURLToPath } = url;
 const fs = require("fs");
@@ -265,6 +275,7 @@ function showSplashWindow() {
   splashWindow = new BrowserWindow({
     width: 480,
     height: 320,
+    icon: APP_ICON_PATH,
     frame: false,
     transparent: true,
     center: true,
@@ -289,8 +300,9 @@ function showLoginWindow() {
   loginWindow = new BrowserWindow({
     width: 540,
     height: 640,
-    title: "OCS — Workstation Authentication",
-    backgroundColor: "#0B0814",
+    icon: APP_ICON_PATH,
+    title: "wave.io — Workstation Authentication",
+    backgroundColor: "#0B1020",
     resizable: false,
     center: true,
     webPreferences: {
@@ -4621,7 +4633,8 @@ function createWindows() {
     height: secondaryDisplay ? secondaryDisplay.bounds.height : 600,
     x: secondaryDisplay ? secondaryDisplay.bounds.x : 50,
     y: secondaryDisplay ? secondaryDisplay.bounds.y : 50,
-    title: "OCS Speaker View",
+    icon: APP_ICON_PATH,
+    title: "wave.io Speaker View",
     backgroundColor: "black",
     autoHideMenuBar: true,
     show: false,
@@ -4657,7 +4670,8 @@ function createWindows() {
       : secondaryDisplay
         ? secondaryDisplay.bounds.y + 50
         : 100,
-    title: "OCS General View",
+    icon: APP_ICON_PATH,
+    title: "wave.io General View",
     backgroundColor: "black",
     autoHideMenuBar: true,
     show: false,
@@ -4677,8 +4691,9 @@ function createWindows() {
     height: primaryDisplay.bounds.height,
     x: primaryDisplay.bounds.x,
     y: primaryDisplay.bounds.y,
-    title: "OCS Controller",
-    backgroundColor: "#0B0814",
+    icon: APP_ICON_PATH,
+    title: "wave.io Controller",
+    backgroundColor: "#0B1020",
     darkTheme: true,
     autoHideMenuBar: true,
     show: false,
@@ -6134,6 +6149,14 @@ ipcMain.handle("clipboard:read-text", () => {
 });
 
 app.whenReady().then(async () => {
+  if (process.platform === "darwin" && app.dock) {
+    try {
+      app.dock.setIcon(APP_ICON_PATH);
+    } catch (e) {
+      console.warn("[DockIcon] Error setting dock icon:", e.message);
+    }
+  }
+
   // Show splash window immediately on startup (FR-13.2)
   showSplashWindow();
 

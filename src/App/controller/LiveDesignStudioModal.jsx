@@ -6002,12 +6002,40 @@ export default function LiveDesignStudioModal({
               </span>
             )}
 
+            {/* Default Role Indicator Badge */}
+            {roleAssignments?.bible && (
+              <span
+                className={`shrink-0 px-2 py-0.5 rounded-[12px] text-[10px] font-bold uppercase tracking-wider border flex items-center gap-1.5 ${
+                  roleAssignments.bible === currentDesign.id
+                    ? "bg-amber-500/20 border-amber-500/40 text-amber-300"
+                    : "bg-purple-500/15 border-purple-500/30 text-purple-300"
+                }`}
+                title={`Default Bible Template: ${designs.find((d) => d.id === roleAssignments.bible)?.name || roleAssignments.bible}`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                Default: Bible
+                {designs.find((d) => d.id === roleAssignments.bible) && (
+                  <span className="font-normal opacity-80 lowercase truncate max-w-[120px]">
+                    ({designs.find((d) => d.id === roleAssignments.bible)?.name})
+                  </span>
+                )}
+              </span>
+            )}
+
             {/* Document menu trigger */}
             <div className="relative shrink-0" ref={docMenuRef}>
               <button
                 type="button"
                 onClick={() => {
-                  setDocMenuOpen((v) => !v);
+                  setDocMenuOpen((v) => {
+                    const next = !v;
+                    if (next && designApi?.listDesigns) {
+                      designApi.listDesigns().then((res) => {
+                        if (res?.ok && Array.isArray(res.designs)) setDesigns(res.designs);
+                      }).catch(() => {});
+                    }
+                    return next;
+                  });
                   setTemplateSettingsOpen(false);
                   setLiveControlsMenuOpen(false);
                 }}

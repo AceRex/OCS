@@ -24,6 +24,7 @@ import {
   PiArticle,
 } from "react-icons/pi";
 import { useAuth } from "../context/AuthContext";
+import WaveLogo from "../brand/WaveLogo";
 
 // ─── Sidebar Account / Login Component ───────────────────────────────────────
 
@@ -348,15 +349,20 @@ export default function Sidebar({ activeTab, onTabChange }) {
 
       {/* Logo */}
       <div className="w-full px-4 mb-8 flex items-center justify-center">
-        <div
-          className={`font-black text-2xl tracking-tighter text-white transition-opacity duration-300 ${
-            effectiveCollapsed ? "opacity-0 w-0" : "opacity-100"
-          }`}
-        >
-          OCS
-        </div>
-        {effectiveCollapsed && (
-          <div className="font-black text-xl text-white/20">O</div>
+        {effectiveCollapsed ? (
+          <WaveLogo
+            variant="icon"
+            color="white"
+            className="h-8 w-8 object-contain hover:scale-105"
+            alt="wave.io"
+          />
+        ) : (
+          <WaveLogo
+            variant="horizontal"
+            color="white"
+            className="h-7 w-auto max-w-[160px] object-contain hover:scale-105"
+            alt="wave.io"
+          />
         )}
       </div>
 
