@@ -459,7 +459,7 @@ export default function DisplayCanvas({
         const manualHighlightSet = new Set(data?.manualHighlights || []);
         const verseOffsets = data?.verseOffsets || {};
         const hasManualHighlights = manualHighlightSet.size > 0;
-        const highlightColor = canvasState?.bibleHighlightColor || data?.bibleHighlightColor || "#FFEB3B";
+        const highlightColor = data?.bibleHighlightColor || canvasState?.bibleHighlightColor || "#FFEB3B";
         const highlightTextColor = getContrastTextColor(highlightColor);
 
         /**

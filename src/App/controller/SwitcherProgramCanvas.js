@@ -1183,7 +1183,7 @@ export function drawDesignStudioLayer(ctx, layer, w, h, animOffset = { x: 0, y: 
             const pillH = Math.round(lineHeight * 0.88);
             if (typeof ctx.roundRect === "function") {
               ctx.beginPath();
-              ctx.roundRect(curX - padPill, lineY - pillH / 2, partW + padPill * 2, pillH, 3);
+              ctx.roundRect(curX - padPill, lineY - pillH / 2, partW + padPill * 2, pillH, 12);
               ctx.fill();
             } else {
               ctx.fillRect(curX - padPill, lineY - pillH / 2, partW + padPill * 2, pillH);
@@ -1623,7 +1623,7 @@ export default function SwitcherProgramCanvas({
             const pillH = Math.round(18 * (h / 720));
             if (typeof ctx.roundRect === "function") {
               ctx.beginPath();
-              ctx.roundRect(curX - padPill, lineY - pillH / 2, wordW + padPill * 2, pillH, 3);
+              ctx.roundRect(curX - padPill, lineY - pillH / 2, wordW + padPill * 2, pillH, 12);
               ctx.fill();
             } else {
               ctx.fillRect(curX - padPill, lineY - pillH / 2, wordW + padPill * 2, pillH);

@@ -127,7 +127,7 @@ export default function PreviewModal({ isOpen, onClose, mode }) {
         } = presentationContent.data;
         const safeBody = body || "";
         const manualHighlightSet = new Set(manualHighlights || []);
-        const effectiveHlColor = bibleHighlightColor || presentationStyle?.bibleHighlightColor || '#FFEB3B';
+        const effectiveHlColor = presentationStyle?.bibleHighlightColor || presentationContent.data.bibleHighlightColor || bibleHighlightColor || '#FFEB3B';
         const length = safeBody.length;
         const useReadAlong = !!readAlong?.enabled
             && Array.isArray(readAlong.tokens)

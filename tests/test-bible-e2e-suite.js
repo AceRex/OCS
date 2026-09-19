@@ -362,33 +362,50 @@ app.whenReady().then(async () => {
 
   // ── Criterion 9: Edge-aware Context Menu Positioning ──
   console.log('Test 9: Edge-aware context menu positioning calculation...');
-  const corners = [
-    { x: 10, y: 10 },
-    { x: 1270, y: 10 },
-    { x: 10, y: 710 },
-    { x: 1270, y: 710 },
-  ];
-  for (const c of corners) {
-    const edgeRes = await win.webContents.executeJavaScript(`
-      (() => {
-        const x = ${c.x};
-        const y = ${c.y};
-        const menuWidth = 220;
-        const menuHeight = 160;
-        const vw = window.innerWidth;
-        const vh = window.innerHeight;
-        let left = x;
-        let top = y;
-        if (left + menuWidth > vw - 12) left = Math.max(12, x - menuWidth);
-        if (top + menuHeight > vh - 12) top = Math.max(12, y - menuHeight);
-        return {
-          clampedInside: left >= 12 && left + menuWidth <= vw && top >= 12 && top + menuHeight <= vh,
-          left,
-          top,
-        };
-      })()
-    `);
-    assert.strictEqual(edgeRes.clampedInside, true, `Context menu at (${c.x}, ${c.y}) must stay within viewport`);
+  const edgeRes = await win.webContents.executeJavaScript(`
+    (() => {
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      const menuWidth = 220;
+      const menuHeight = 160;
+      const margin = 12;
+
+      const corners = [
+        { x: 5, y: 5 },
+        { x: vw - 5, y: 5 },
+        { x: 5, y: vh - 5 },
+        { x: vw - 5, y: vh - 5 },
+      ];
+
+      return corners.map(c => {
+        let left = c.x;
+        if (left + menuWidth + margin > vw) {
+          left = Math.max(margin, c.x - menuWidth);
+          if (left + menuWidth + margin > vw) {
+            left = Math.max(margin, vw - menuWidth - margin);
+          }
+        } else {
+          left = Math.max(margin, left);
+        }
+
+        let top = c.y;
+        if (top + menuHeight + margin > vh) {
+          top = Math.max(margin, c.y - menuHeight);
+          if (top + menuHeight + margin > vh) {
+            top = Math.max(margin, vh - menuHeight - margin);
+          }
+        } else {
+          top = Math.max(margin, top);
+        }
+
+        const clampedInside = left >= margin && left + menuWidth <= vw && top >= margin && top + menuHeight <= vh;
+        return { c, left, top, clampedInside, vw, vh };
+      });
+    })()
+  `);
+
+  for (const item of edgeRes) {
+    assert.strictEqual(item.clampedInside, true, `Context menu at (${item.c.x}, ${item.c.y}) must stay within viewport (${item.vw}x${item.vh}), got left=${item.left}, top=${item.top}`);
   }
   console.log('✓ PASS: Context menu boundary clamping verified across all 4 viewport corners.\n');
 

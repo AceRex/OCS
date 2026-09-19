@@ -4867,6 +4867,17 @@ function createWindows() {
     latestOverlayContent = value;
     if (io) io.emit("overlay-content", value);
 
+    const allowedTargets = Array.isArray(value?.target) ? value.target : null;
+    const speakerOk =
+      speakerWindow &&
+      !speakerWindow.isDestroyed() &&
+      (allowedTargets === null || allowedTargets.includes("speaker"));
+    const generalOk =
+      generalWindow &&
+      !generalWindow.isDestroyed() &&
+      (allowedTargets === null || allowedTargets.includes("general"));
+    const controllerOk = controllerWindow && !controllerWindow.isDestroyed();
+
     // Bible scripture lower third: Route to assigned custom template or legacy fallback
     if (value?.type === "bible") {
       const bData = value.data || {};
@@ -4950,9 +4961,70 @@ function createWindows() {
 
       value.data = bData;
 
-      const reqId = `req_bible_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
       const bibleTemplateId = designStudioService.getRoleAssignments()?.bible;
       const assignedTemplate = bibleTemplateId ? designStudioService.getDesign(bibleTemplateId) : null;
+      const effectiveHlColor = bData.bibleHighlightColor || latestOverlayStyle?.bibleHighlightColor || "#FFEB3B";
+
+      // ── Dedicated Highlight-Only Fast Path ──
+      // Updates highlights, colors, and offsets without restarting entrance animation or timers
+      if (bData.isHighlightOnlyUpdate && isSamePassage) {
+        if (assignedTemplate && (ref || body)) {
+          const controls = Array.isArray(liveBroadcastConfig.activeStudioControls)
+            ? [...liveBroadcastConfig.activeStudioControls]
+            : [];
+          const existingIdx = controls.findIndex(
+            (c) => c && (c.id === "role_playback_bible" || c.role === "bible")
+          );
+          if (existingIdx >= 0) {
+            const existing = { ...controls[existingIdx] };
+            existing.manualHighlights = bData.manualHighlights || [];
+            existing.verseOffsets = bData.verseOffsets || {};
+            existing.bibleHighlightColor = effectiveHlColor;
+            existing.updatedAt = Date.now();
+            controls[existingIdx] = existing;
+            updateLiveBroadcastConfig({ activeStudioControls: controls });
+          }
+        } else if (liveBroadcastConfig.bibleLowerThird?.isShowing) {
+          liveBroadcastConfig.bibleLowerThird.manualHighlights = bData.manualHighlights || [];
+          liveBroadcastConfig.bibleLowerThird.verseOffsets = bData.verseOffsets || {};
+          liveBroadcastConfig.bibleLowerThird.bibleHighlightColor = effectiveHlColor;
+          broadcastLiveConfig();
+        }
+
+        currentCanvasState.contentSlot = {
+          type: value.type || "none",
+          data: value.data || value,
+        };
+        currentCanvasState.bibleHighlightColor = effectiveHlColor;
+
+        if (
+          currentCanvasState.contentSlot.type !== "live-camera" &&
+          currentCanvasState.contentSlot.type !== "live-output"
+        ) {
+          savedPresentationContentSlot = currentCanvasState.contentSlot;
+          savedGeneralContentSlot = currentCanvasState.contentSlot;
+        }
+        if (switcherRouteGeneral) {
+          currentCanvasState.contentSlot = {
+            type: "live-output",
+            data: { title: "Live Output" },
+          };
+        }
+
+        broadcastCanvasState(currentCanvasState, allowedTargets);
+
+        if (speakerOk && !switcherRouteSpeaker)
+          safeWebContentsSend(speakerWindow, "set-content", value);
+        if (generalOk && !switcherRouteGeneral)
+          safeWebContentsSend(generalWindow, "set-content", value);
+        if (controllerOk)
+          safeWebContentsSend(controllerWindow, "set-content", value);
+
+        console.log(`[IPC] In-place highlight update applied for "${ref}" (${(bData.manualHighlights || []).length} highlights, color: ${effectiveHlColor})`);
+        return;
+      }
+
+      const reqId = `req_bible_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
 
       console.log(`[Bible Presentation] [${reqId}] Passage: "${ref}", Translation: "${version}", TemplateID: "${bibleTemplateId || 'none'}"`);
 
@@ -4990,7 +5062,7 @@ function createWindows() {
           existing.reqId = reqId;
           existing.manualHighlights = bData.manualHighlights || [];
           existing.verseOffsets = bData.verseOffsets || {};
-          existing.bibleHighlightColor = latestOverlayStyle?.bibleHighlightColor || "#FFEB3B";
+          existing.bibleHighlightColor = effectiveHlColor;
           existing.updatedAt = Date.now();
           if (existing.status === "exiting") {
             existing.status = "live";
@@ -5008,7 +5080,7 @@ function createWindows() {
             snapshotLayers: resolvedLayers,
             manualHighlights: bData.manualHighlights || [],
             verseOffsets: bData.verseOffsets || {},
-            bibleHighlightColor: latestOverlayStyle?.bibleHighlightColor || "#FFEB3B",
+            bibleHighlightColor: effectiveHlColor,
             transition: assignedTemplate.transition || {
               entrance: { type: "fade", duration: 400, easing: "ease-out" },
               exit: { type: "fade", duration: 300, easing: "ease-in" },
@@ -5060,7 +5132,7 @@ function createWindows() {
         liveBroadcastConfig.bibleLowerThird.version = version;
         liveBroadcastConfig.bibleLowerThird.manualHighlights = bData.manualHighlights || [];
         liveBroadcastConfig.bibleLowerThird.verseOffsets = bData.verseOffsets || {};
-        liveBroadcastConfig.bibleLowerThird.bibleHighlightColor = latestOverlayStyle?.bibleHighlightColor || "#FFEB3B";
+        liveBroadcastConfig.bibleLowerThird.bibleHighlightColor = effectiveHlColor;
         liveBroadcastConfig.bibleLowerThird.isShowing = true;
         broadcastLiveConfig();
       } else if (bibleTemplateId && !assignedTemplate) {
@@ -5088,19 +5160,6 @@ function createWindows() {
         ? "null (black)"
         : `${value.type || "?"} ${value.data && value.data.title ? value.data.title : ""}`.trim();
 
-    // FR-4.9 / Task-1 fix: if value carries a `target` array (Presentation path), respect it.
-    // When target is absent (Bible path), broadcast to all output windows (FR-1.3).
-    const allowedTargets = Array.isArray(value?.target) ? value.target : null;
-    const speakerOk =
-      speakerWindow &&
-      !speakerWindow.isDestroyed() &&
-      (allowedTargets === null || allowedTargets.includes("speaker"));
-    const generalOk =
-      generalWindow &&
-      !generalWindow.isDestroyed() &&
-      (allowedTargets === null || allowedTargets.includes("general"));
-    const controllerOk = controllerWindow && !controllerWindow.isDestroyed();
-
     console.log(
       "[IPC] activate_set_content",
       summary,
@@ -5120,6 +5179,9 @@ function createWindows() {
         type: value.type || "none",
         data: value.data || value,
       };
+      if (value.type === "bible" && value.data?.bibleHighlightColor) {
+        currentCanvasState.bibleHighlightColor = value.data.bibleHighlightColor;
+      }
     }
     if (
       currentCanvasState.contentSlot.type !== "live-camera" &&
@@ -5175,12 +5237,31 @@ function createWindows() {
 
     if (currentCanvasState) {
       currentCanvasState.bibleHighlightColor = latestOverlayStyle.bibleHighlightColor || "#FFEB3B";
+      if (
+        currentCanvasState.contentSlot?.data &&
+        (currentCanvasState.contentSlot.type === "bible" || currentCanvasState.contentSlot.type === "scripture")
+      ) {
+        currentCanvasState.contentSlot.data.bibleHighlightColor = latestOverlayStyle.bibleHighlightColor || "#FFEB3B";
+      }
       broadcastCanvasState();
     }
 
     if (liveBroadcastConfig) {
       liveBroadcastConfig.presentationStyle = { ...(liveBroadcastConfig.presentationStyle || {}), ...latestOverlayStyle };
       liveBroadcastConfig.bibleHighlightColor = latestOverlayStyle.bibleHighlightColor || "#FFEB3B";
+      if (liveBroadcastConfig.bibleLowerThird) {
+        liveBroadcastConfig.bibleLowerThird.bibleHighlightColor = latestOverlayStyle.bibleHighlightColor || "#FFEB3B";
+      }
+      const controls = Array.isArray(liveBroadcastConfig.activeStudioControls)
+        ? [...liveBroadcastConfig.activeStudioControls]
+        : [];
+      const existingIdx = controls.findIndex(
+        (c) => c && (c.id === "role_playback_bible" || c.role === "bible")
+      );
+      if (existingIdx >= 0) {
+        controls[existingIdx].bibleHighlightColor = latestOverlayStyle.bibleHighlightColor || "#FFEB3B";
+        liveBroadcastConfig.activeStudioControls = controls;
+      }
       broadcastLiveConfig();
     }
 

@@ -174,19 +174,7 @@ function getWordHighlightStyles({
   return style;
 }
 
-if (typeof module !== "undefined" && module.exports) {
-  module.exports = {
-    getContrastTextColor,
-    tokenizeVerseWithWhitespace,
-    tokenizeVerseWords,
-    makeTokenKey,
-    buildVerseOffsets,
-    isTokenHighlighted,
-    getWordHighlightStyles,
-  };
-}
-
-export {
+module.exports = {
   getContrastTextColor,
   tokenizeVerseWithWhitespace,
   tokenizeVerseWords,

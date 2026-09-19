@@ -747,7 +747,7 @@ function App({ mode: propMode }) {
       bibleBodyPosition: presentationStyle.bibleBodyPosition || 'center',
       bibleShowOrbs: presentationStyle.bibleShowOrbs !== false,
       bibleReadAlongTransition: presentationStyle.bibleReadAlongTransition || 'text-glow',
-      bibleHighlightColor: presentationStyle.bibleHighlightColor || '#FFEB3B',
+      bibleHighlightColor: presentationStyle.bibleHighlightColor || canvasState.contentSlot?.data?.bibleHighlightColor || canvasState.bibleHighlightColor || '#FFEB3B',
       textColor: presentationStyle.textColor || '#FFFFFF',
       fontFamily: presentationStyle.fontFamily || 'Outfit',
     };

@@ -183,6 +183,7 @@ export default function BibleController() {
   const [manualHighlights, setManualHighlights] = useState(new Set());
   const [bibleHighlightColor, setBibleHighlightColor] = useState("#FFEB3B");
   const activePresentationRef = useRef(null);
+  const currentLiveContentRef = useRef(null);
 
   // Fetch initial style and subscribe to live presentation style updates
   useEffect(() => {
@@ -454,6 +455,29 @@ export default function BibleController() {
           content != null &&
           (content.type === "bible" || content.type === "scripture");
         setIsLive(hasLive);
+        if (hasLive && content?.data) {
+          currentLiveContentRef.current = content.data;
+          activePresentationRef.current = {
+            bookIndex: content.data.bookIndex ?? (selectedBookIndex >= 0 ? selectedBookIndex : 0),
+            chapterIndex: content.data.chapterIndex ?? (selectedChapterIndex >= 0 ? selectedChapterIndex : 0),
+            version: (content.data.version || content.data.translation || selectedVersion || "kjv").toLowerCase(),
+            verseIndices: new Set(content.data.verseIndices || []),
+            title: content.data.title,
+            body: content.data.body,
+          };
+          if (content.data.manualHighlights !== undefined) {
+            const s = new Set(content.data.manualHighlights);
+            manualHighlightsRef.current = s;
+            setManualHighlights(s);
+          }
+          if (content.data.bibleHighlightColor) {
+            setBibleHighlightColor(content.data.bibleHighlightColor);
+          }
+        } else if (!hasLive) {
+          currentLiveContentRef.current = null;
+          activePresentationRef.current = null;
+        }
+
         if (content?.data?.readAlong) {
           currentLiveReadAlongRef.current = content.data.readAlong;
         } else if (!hasLive) {
@@ -468,7 +492,7 @@ export default function BibleController() {
         if (typeof unsub === "function") unsub();
       };
     }
-  }, []);
+  }, [selectedBookIndex, selectedChapterIndex, selectedVersion]);
 
   // Presentation Logic
   const presentVerses = (
@@ -553,6 +577,9 @@ export default function BibleController() {
       payloadData.readAlong = currentLiveReadAlongRef.current;
     }
 
+    currentLiveContentRef.current = payloadData;
+    manualHighlightsRef.current = activeHighlights;
+
     window.electron?.Presentation?.setContent?.({
       type: "bible",
       data: payloadData,
@@ -581,13 +608,94 @@ export default function BibleController() {
 
   /** Checks if a verse is currently part of the active live presentation on screen */
   const isVerseLive = (verseIdx) => {
-    if (!isLive || !activePresentationRef.current) return false;
-    const ap = activePresentationRef.current;
+    if (!isLive) return false;
+    const ap = activePresentationRef.current || currentLiveContentRef.current;
+    if (!ap) return false;
+    const currentBookIdx = selectedBookIndex >= 0 ? selectedBookIndex : 0;
+    const currentChapterIdx = selectedChapterIndex >= 0 ? selectedChapterIndex : 0;
     const isMatchingPassage =
-      ap.bookIndex === selectedBookIndex &&
-      ap.chapterIndex === selectedChapterIndex &&
+      (ap.bookIndex ?? 0) === currentBookIdx &&
+      (ap.chapterIndex ?? 0) === currentChapterIdx &&
       (ap.version || "").toLowerCase() === (selectedVersion || "").toLowerCase();
-    return Boolean(isMatchingPassage && ap.verseIndices && ap.verseIndices.has(verseIdx));
+
+    const indices =
+      ap.verseIndices instanceof Set
+        ? ap.verseIndices
+        : Array.isArray(ap.verseIndices)
+        ? new Set(ap.verseIndices)
+        : null;
+
+    return Boolean(isMatchingPassage && indices && indices.has(verseIdx));
+  };
+
+  /**
+   * Dedicated highlight-only synchronization path:
+   * Instantly synchronizes highlights to the controller UI and every matching active preview/output
+   * WITHOUT triggering a full verse presentation, re-evaluating layout, or requiring another verse click.
+   */
+  const syncHighlightsOnly = (nextHighlights) => {
+    manualHighlightsRef.current = nextHighlights;
+    setManualHighlights(nextHighlights);
+
+    // If a Bible passage is currently live on air, sync highlights immediately over IPC
+    if (isLive) {
+      const liveData = currentLiveContentRef.current || (activePresentationRef.current ? {
+        version: activePresentationRef.current.version,
+        bookIndex: activePresentationRef.current.bookIndex,
+        chapterIndex: activePresentationRef.current.chapterIndex,
+        verseIndices: Array.from(activePresentationRef.current.verseIndices || []),
+        title: activePresentationRef.current.title,
+        body: activePresentationRef.current.body,
+      } : null);
+
+      if (liveData) {
+        const currentBookIdx = selectedBookIndex >= 0 ? selectedBookIndex : 0;
+        const currentChapterIdx = selectedChapterIndex >= 0 ? selectedChapterIndex : 0;
+        const isMatchingPassage =
+          (liveData.bookIndex ?? 0) === currentBookIdx &&
+          (liveData.chapterIndex ?? 0) === currentChapterIdx &&
+          (liveData.version || "").toLowerCase() === (selectedVersion || "").toLowerCase();
+
+        if (isMatchingPassage) {
+          const sortedIndices = Array.isArray(liveData.verseIndices)
+            ? liveData.verseIndices
+            : liveData.verseIndices instanceof Set
+            ? Array.from(liveData.verseIndices).sort((a, b) => a - b)
+            : Array.from(selectedVerseIndices).sort((a, b) => a - b);
+
+          const currentVerses = verses.length > 0 ? verses : (liveData.currentVerses || []);
+
+          const offsets =
+            liveData.verseOffsets ||
+            buildVerseOffsets(
+              sortedIndices,
+              currentVerses,
+              liveData.version || selectedVersion,
+              currentBookIdx,
+              currentChapterIdx
+            );
+
+          const updatedPayload = {
+            ...liveData,
+            version: liveData.version || selectedVersion,
+            bookIndex: currentBookIdx,
+            chapterIndex: currentChapterIdx,
+            verseIndices: sortedIndices,
+            manualHighlights: Array.from(nextHighlights),
+            bibleHighlightColor: bibleHighlightColor || "#FFEB3B",
+            verseOffsets: offsets,
+            isHighlightOnlyUpdate: true,
+          };
+
+          currentLiveContentRef.current = updatedPayload;
+
+          window.electron?.Presentation?.setContent?.({
+            type: "bible",
+            data: updatedPayload,
+          });
+        }
+      }
+    }
   };
 
   const handleVerseClick = (index, e) => {
@@ -675,7 +783,9 @@ export default function BibleController() {
     e.preventDefault();
     e.stopPropagation();
 
-    const stableKey = makeTokenKey(selectedVersion, selectedBookIndex, selectedChapterIndex, verseIdx + 1, wordIdx);
+    const currentBookIdx = selectedBookIndex >= 0 ? selectedBookIndex : 0;
+    const currentChapterIdx = selectedChapterIndex >= 0 ? selectedChapterIndex : 0;
+    const stableKey = makeTokenKey(selectedVersion, currentBookIdx, currentChapterIdx, verseIdx + 1, wordIdx);
     const next = new Set(manualHighlightsRef.current);
     if (next.has(stableKey) || next.has(`${verseIdx}:${wordIdx}`)) {
       next.delete(stableKey);
@@ -683,13 +793,7 @@ export default function BibleController() {
     } else {
       next.add(stableKey);
     }
-    setManualHighlights(next);
-
-    // Only update live output in place if this verse is actively live on air
-    if (isVerseLive(verseIdx)) {
-      const ap = activePresentationRef.current;
-      presentVerses(ap?.verseIndices || selectedVerseIndices, verses, null, null, null, next);
-    }
+    syncHighlightsOnly(next);
   };
 
   /**
@@ -743,7 +847,9 @@ export default function BibleController() {
   /** Toggle highlight for a single word token. */
   const ctxToggleWord = (verseIdx, wordIdx) => {
     if (wordIdx == null) return;
-    const stableKey = makeTokenKey(selectedVersion, selectedBookIndex, selectedChapterIndex, verseIdx + 1, wordIdx);
+    const currentBookIdx = selectedBookIndex >= 0 ? selectedBookIndex : 0;
+    const currentChapterIdx = selectedChapterIndex >= 0 ? selectedChapterIndex : 0;
+    const stableKey = makeTokenKey(selectedVersion, currentBookIdx, currentChapterIdx, verseIdx + 1, wordIdx);
     const next = new Set(manualHighlightsRef.current);
     if (next.has(stableKey) || next.has(`${verseIdx}:${wordIdx}`)) {
       next.delete(stableKey);
@@ -751,20 +857,18 @@ export default function BibleController() {
     } else {
       next.add(stableKey);
     }
-    setManualHighlights(next);
-    if (isVerseLive(verseIdx)) {
-      const ap = activePresentationRef.current;
-      presentVerses(ap?.verseIndices || selectedVerseIndices, verses, null, null, null, next);
-    }
+    syncHighlightsOnly(next);
     setCtxMenu(null);
     lastActiveElementRef.current?.focus?.();
   };
 
   /** Toggle highlights for all word tokens in an entire verse. */
   const ctxToggleVerse = (verseIdx) => {
+    const currentBookIdx = selectedBookIndex >= 0 ? selectedBookIndex : 0;
+    const currentChapterIdx = selectedChapterIndex >= 0 ? selectedChapterIndex : 0;
     const tokens = tokenizeVerse(verses[verseIdx] || '');
     const allKeys = tokens.map((_, ti) =>
-      makeTokenKey(selectedVersion, selectedBookIndex, selectedChapterIndex, verseIdx + 1, ti)
+      makeTokenKey(selectedVersion, currentBookIdx, currentChapterIdx, verseIdx + 1, ti)
     );
     const next = new Set(manualHighlightsRef.current);
     const allHighlighted = allKeys.length > 0 && allKeys.every((k, ti) => next.has(k) || next.has(`${verseIdx}:${ti}`));
@@ -776,11 +880,7 @@ export default function BibleController() {
     } else {
       allKeys.forEach((k) => next.add(k));
     }
-    setManualHighlights(next);
-    if (isVerseLive(verseIdx)) {
-      const ap = activePresentationRef.current;
-      presentVerses(ap?.verseIndices || selectedVerseIndices, verses, null, null, null, next);
-    }
+    syncHighlightsOnly(next);
     setCtxMenu(null);
     lastActiveElementRef.current?.focus?.();
   };
@@ -789,18 +889,16 @@ export default function BibleController() {
    * Clear highlights only in this specific verse (does not affect other verses).
    */
   const ctxClearVerse = (verseIdx) => {
+    const currentBookIdx = selectedBookIndex >= 0 ? selectedBookIndex : 0;
+    const currentChapterIdx = selectedChapterIndex >= 0 ? selectedChapterIndex : 0;
     const tokens = tokenizeVerse(verses[verseIdx] || '');
     const next = new Set(manualHighlightsRef.current);
     tokens.forEach((_, ti) => {
-      const k = makeTokenKey(selectedVersion, selectedBookIndex, selectedChapterIndex, verseIdx + 1, ti);
+      const k = makeTokenKey(selectedVersion, currentBookIdx, currentChapterIdx, verseIdx + 1, ti);
       next.delete(k);
       next.delete(`${verseIdx}:${ti}`);
     });
-    setManualHighlights(next);
-    if (isVerseLive(verseIdx)) {
-      const ap = activePresentationRef.current;
-      presentVerses(ap?.verseIndices || selectedVerseIndices, verses, null, null, null, next);
-    }
+    syncHighlightsOnly(next);
     setCtxMenu(null);
     lastActiveElementRef.current?.focus?.();
   };
@@ -1611,7 +1709,9 @@ export default function BibleController() {
                       return <React.Fragment key={`ws-${pIdx}`}>{part}</React.Fragment>;
                     }
                     const currentWordIdx = wIdx++;
-                    const stableKey = makeTokenKey(selectedVersion, selectedBookIndex, selectedChapterIndex, index + 1, currentWordIdx);
+                    const currentBookIdx = selectedBookIndex >= 0 ? selectedBookIndex : 0;
+                    const currentChapterIdx = selectedChapterIndex >= 0 ? selectedChapterIndex : 0;
+                    const stableKey = makeTokenKey(selectedVersion, currentBookIdx, currentChapterIdx, index + 1, currentWordIdx);
                     const isHL = manualHighlights.has(stableKey) || manualHighlights.has(`${index}:${currentWordIdx}`);
                     const hlColor = bibleHighlightColor || "#FFEB3B";
                     const hlTextColor = getContrastTextColor(hlColor);
@@ -1685,7 +1785,9 @@ export default function BibleController() {
             >
               <span style={{ color: bibleHighlightColor || "#FFEB3B" }}>✦</span>
               {(() => {
-                const stableKey = makeTokenKey(selectedVersion, selectedBookIndex, selectedChapterIndex, ctxMenu.verseIdx + 1, ctxMenu.wordIdx);
+                const currentBookIdx = selectedBookIndex >= 0 ? selectedBookIndex : 0;
+                const currentChapterIdx = selectedChapterIndex >= 0 ? selectedChapterIndex : 0;
+                const stableKey = makeTokenKey(selectedVersion, currentBookIdx, currentChapterIdx, ctxMenu.verseIdx + 1, ctxMenu.wordIdx);
                 const isHL = manualHighlights.has(stableKey) || manualHighlights.has(`${ctxMenu.verseIdx}:${ctxMenu.wordIdx}`);
                 return isHL ? 'Remove Word Highlight' : 'Highlight Word';
               })()}
@@ -1699,9 +1801,11 @@ export default function BibleController() {
           >
             <span style={{ color: bibleHighlightColor || "#FFEB3B" }}>☰</span>
             {(() => {
+              const currentBookIdx = selectedBookIndex >= 0 ? selectedBookIndex : 0;
+              const currentChapterIdx = selectedChapterIndex >= 0 ? selectedChapterIndex : 0;
               const tks = tokenizeVerse(verses[ctxMenu.verseIdx] || '');
               const allHL = tks.length > 0 && tks.every((_, ti) => {
-                const k = makeTokenKey(selectedVersion, selectedBookIndex, selectedChapterIndex, ctxMenu.verseIdx + 1, ti);
+                const k = makeTokenKey(selectedVersion, currentBookIdx, currentChapterIdx, ctxMenu.verseIdx + 1, ti);
                 return manualHighlights.has(k) || manualHighlights.has(`${ctxMenu.verseIdx}:${ti}`);
               });
               return allHL ? 'Remove Verse Highlight' : 'Highlight Entire Verse';
