@@ -100,13 +100,13 @@ export default function AgendaPlannerModal({
         {/* Header */}
         <div className="px-6 py-5 border-b border-[#2E2542] bg-[#1A1428] flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-purple-900/30">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-violet-600 to-indigo-600 flex items-center justify-center text-white shadow-lg shadow-[#8B5CF6]/30">
               <PiCalendarCheck size={22} />
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base font-black uppercase tracking-wider text-white">Agenda Planner</h2>
-                <span className="px-2 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/30 text-[10px] font-bold text-purple-300">
+                <span className="px-2 py-0.5 rounded-full bg-[#8B5CF6]/20 border border-[#8B5CF6]/30 text-[10px] font-bold text-[#8B5CF6]/80">
                   Tier 2 Smart Automation
                 </span>
               </div>
@@ -135,7 +135,7 @@ export default function AgendaPlannerModal({
                 <button
                   type="button"
                   onClick={() => toggleRecordAll(true)}
-                  className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-violet-300 font-bold"
+                  className="px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-[#8B5CF6]/80 font-bold"
                 >
                   Record All
                 </button>
@@ -159,7 +159,7 @@ export default function AgendaPlannerModal({
                     onClick={() => setSelectedItemId(item._id)}
                     className={`p-3 rounded-2xl border transition-all cursor-pointer flex items-center justify-between gap-3 ${
                       isSelected
-                        ? 'bg-violet-600/20 border-violet-500/50 shadow-md shadow-violet-950/40'
+                        ? 'bg-[#8B5CF6]/20 border-[#8B5CF6]/50 shadow-md shadow-violet-950/40'
                         : 'bg-[#1A1428] border-[#2E2542] hover:bg-[#231A36]'
                     }`}
                   >
@@ -216,7 +216,7 @@ export default function AgendaPlannerModal({
                     <h3 className="text-sm font-black text-white">{currentItem.agenda || 'Session Configuration'}</h3>
                     <p className="text-[11px] text-white/40">Automate display background and media triggers for this item</p>
                   </div>
-                  <span className="px-2.5 py-1 rounded-xl bg-violet-500/15 border border-violet-500/30 text-violet-300 text-xs font-mono font-bold">
+                  <span className="px-2.5 py-1 rounded-xl bg-[#8B5CF6]/15 border border-[#8B5CF6]/30 text-[#8B5CF6]/80 text-xs font-mono font-bold">
                     {Math.floor((Number(currentItem.time) || 0) / 60)}:00
                   </span>
                 </div>
@@ -224,7 +224,7 @@ export default function AgendaPlannerModal({
                 {/* Trigger 1: When Agenda Starts */}
                 <div className="p-4 rounded-2xl bg-[#1A1428] border border-[#2E2542] space-y-3">
                   <div className="flex items-center justify-between">
-                    <label className="text-xs font-black uppercase tracking-wider text-violet-300 flex items-center gap-2">
+                    <label className="text-xs font-black uppercase tracking-wider text-[#8B5CF6]/80 flex items-center gap-2">
                       <PiSparkle size={14} /> 1. When Agenda Starts
                     </label>
                     <span className="text-[10px] text-white/40">Trigger on countdown start</span>
@@ -359,7 +359,7 @@ export default function AgendaPlannerModal({
             <button
               type="button"
               onClick={handleStartNow}
-              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-xs font-black uppercase tracking-wider text-white shadow-lg shadow-purple-950/50 flex items-center gap-2 transition-all"
+              className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-xs font-black uppercase tracking-wider text-white shadow-lg shadow-[#8B5CF6]/50 flex items-center gap-2 transition-all"
             >
               <PiPlay size={14} className="fill-white" /> Start Agenda With Plan
             </button>

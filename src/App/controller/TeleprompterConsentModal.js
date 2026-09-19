@@ -18,11 +18,11 @@ export default function TeleprompterConsentModal({
 
   return (
     <div className="fixed inset-0 z-[250] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-150 font-outfit">
-      <div className="bg-[#111018] border border-purple-500/30 rounded-3xl w-full max-w-md p-6 flex flex-col gap-5 shadow-2xl relative text-white">
+      <div className="bg-[#111018] border border-[#8B5CF6]/30 rounded-3xl w-full max-w-md p-6 flex flex-col gap-5 shadow-2xl relative text-white">
         
         {/* Header Icon */}
         <div className="flex items-center justify-between">
-          <div className="w-12 h-12 rounded-2xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-300">
+          <div className="w-12 h-12 rounded-2xl bg-[#8B5CF6]/20 border border-[#8B5CF6]/30 flex items-center justify-center text-[#8B5CF6]">
             <PiVideoCamera size={26} />
           </div>
           <button
@@ -39,7 +39,7 @@ export default function TeleprompterConsentModal({
             Video Recording Consent
           </h3>
           <p className="text-xs text-white/60 mt-1.5 leading-relaxed">
-            You are about to start a teleprompter recording with video capture enabled from your <span className="text-purple-300 font-semibold">{cameraSource}</span>.
+            You are about to start a teleprompter recording with video capture enabled from your <span className="text-[#8B5CF6] font-semibold">{cameraSource}</span>.
           </p>
         </div>
 
@@ -54,7 +54,7 @@ export default function TeleprompterConsentModal({
           </div>
 
           <div className="flex items-start gap-2.5">
-            <PiLockKey size={18} className="text-purple-400 shrink-0 mt-0.5" />
+            <PiLockKey size={18} className="text-[#8B5CF6] shrink-0 mt-0.5" />
             <div className="text-xs text-white/80">
               <span className="font-bold text-white block">Archive Integration</span>
               The video will be indexed with word-level speech transcripts in your Sessions tab for review and export.

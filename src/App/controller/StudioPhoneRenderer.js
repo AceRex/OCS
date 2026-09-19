@@ -220,7 +220,7 @@ export default function StudioPhoneRenderer({
       {/* Fallback standby state when waiting for stream */}
       {!hasReceivedFrame && (
         <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0c0d12] text-white/50 p-6 text-center">
-          <div className="w-14 h-14 rounded-[12px] bg-purple-500/10 border border-purple-500/30 flex items-center justify-center text-purple-300 animate-pulse">
+          <div className="w-14 h-14 rounded-[12px] bg-[#8B5CF6]/10 border border-[#8B5CF6]/30 flex items-center justify-center text-[#8B5CF6] animate-pulse">
             <PiVideoCamera size={30} />
           </div>
           <div>

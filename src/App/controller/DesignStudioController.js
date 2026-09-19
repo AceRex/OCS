@@ -540,7 +540,7 @@ export default function DesignStudioController() {
               <select
                 value={currentDesign.id}
                 onChange={(e) => handleSelectDesign(e.target.value)}
-                className="bg-white/5 border border-white/10 rounded-[12px] px-3 py-1 text-sm font-medium text-white focus:outline-none focus:border-blue-500/60"
+                className="bg-white/5 border border-white/10 rounded-[12px] px-3 py-1 text-sm font-medium text-white focus:outline-none focus:border-[#00A8FF]/60"
               >
                 {designs.map((d) => (
                   <option key={d.id} value={d.id} className="bg-[#1a1924] text-white">
@@ -561,7 +561,7 @@ export default function DesignStudioController() {
                   setCurrentDesign((prev) => ({ ...prev, name: e.target.value }));
                 }}
                 placeholder="Design Name"
-                className="bg-white/5 border border-white/10 rounded-[12px] px-3 py-1 text-sm text-white focus:outline-none focus:border-blue-500/60 w-48"
+                className="bg-white/5 border border-white/10 rounded-[12px] px-3 py-1 text-sm text-white focus:outline-none focus:border-[#00A8FF]/60 w-48"
               />
             </div>
           </div>
@@ -577,7 +577,7 @@ export default function DesignStudioController() {
             onClick={handleSaveDesign}
             className={`border text-xs font-semibold px-4 py-2 rounded-[12px] transition-all ${
               hasUnsavedChanges
-                ? "bg-blue-600 hover:bg-blue-500 border-blue-400 text-white shadow-lg shadow-blue-500/20"
+                ? "bg-[#00A8FF] hover:bg-[#00A8FF] border-[#00A8FF]/50 text-white shadow-lg shadow-[#00A8FF]/20"
                 : "bg-white/5 border-white/10 hover:bg-white/10 text-white/70"
             }`}
           >
@@ -623,7 +623,7 @@ export default function DesignStudioController() {
                   ? "bg-red-500/20 border-red-500/40 text-red-300"
                   : statusMessage.type === "success"
                   ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-300"
-                  : "bg-blue-500/20 border-blue-500/40 text-blue-300"
+                  : "bg-[#00A8FF]/20 border-[#00A8FF]/40 text-[#00A8FF]"
               }`}
             >
               {statusMessage.text}
@@ -664,7 +664,7 @@ export default function DesignStudioController() {
                 pushUndoSnapshot();
                 setCurrentDesign((prev) => ({ ...prev, target: e.target.value }));
               }}
-              className="bg-white/5 border border-white/10 rounded-[12px] px-2.5 py-1 text-xs font-medium text-white focus:outline-none focus:border-blue-500/60"
+              className="bg-white/5 border border-white/10 rounded-[12px] px-2.5 py-1 text-xs font-medium text-white focus:outline-none focus:border-[#00A8FF]/60"
             >
               <option value="both" className="bg-[#1a1924]">
                 All Outputs (Stream + Sanctuary)
@@ -730,7 +730,7 @@ export default function DesignStudioController() {
                 </p>
                 <ActionButton
                   onClick={() => handleImportImage()}
-                  className="bg-blue-600 hover:bg-blue-500 border border-blue-400 text-white text-xs font-bold px-5 py-2.5 rounded-[12px] transition-all shadow-lg shadow-blue-600/20"
+                  className="bg-[#00A8FF] hover:bg-[#00A8FF] border border-[#00A8FF]/50 text-white text-xs font-bold px-5 py-2.5 rounded-[12px] transition-all shadow-lg shadow-[#00A8FF]/20"
                 >
                   Import Overlay Image
                 </ActionButton>
@@ -747,7 +747,7 @@ export default function DesignStudioController() {
                   key={layer.id}
                   onMouseDown={(e) => handleMouseDownOnLayer(e, layer)}
                   className={`absolute transition-none cursor-move ${
-                    isSelected ? "ring-2 ring-blue-500 ring-offset-2 ring-offset-transparent" : ""
+                    isSelected ? "ring-2 ring-[#00A8FF]/30 ring-offset-2 ring-offset-transparent" : ""
                   }`}
                   style={{
                     left: `${layer.x}%`,
@@ -776,27 +776,27 @@ export default function DesignStudioController() {
                   {/* Selection Border and Resize Handles */}
                   {isSelected && (
                     <>
-                      <div className="absolute -inset-1 border border-blue-400/80 rounded-[12px] pointer-events-none" />
+                      <div className="absolute -inset-1 border border-[#00A8FF]/80 rounded-[12px] pointer-events-none" />
 
                       {/* Resize Corner Handles */}
                       <div
                         onMouseDown={(e) => handleMouseDownOnResize(e, layer, "bottom-right")}
-                        className="absolute -bottom-2 -right-2 w-4 h-4 bg-blue-500 border border-white rounded-full cursor-se-resize shadow-md"
+                        className="absolute -bottom-2 -right-2 w-4 h-4 bg-[#00A8FF] border border-white rounded-full cursor-se-resize shadow-md"
                         title="Drag to resize (aspect ratio locked)"
                       />
                       <div
                         onMouseDown={(e) => handleMouseDownOnResize(e, layer, "bottom-left")}
-                        className="absolute -bottom-2 -left-2 w-4 h-4 bg-blue-500 border border-white rounded-full cursor-sw-resize shadow-md"
+                        className="absolute -bottom-2 -left-2 w-4 h-4 bg-[#00A8FF] border border-white rounded-full cursor-sw-resize shadow-md"
                         title="Drag to resize (aspect ratio locked)"
                       />
                       <div
                         onMouseDown={(e) => handleMouseDownOnResize(e, layer, "top-right")}
-                        className="absolute -top-2 -right-2 w-4 h-4 bg-blue-500 border border-white rounded-full cursor-ne-resize shadow-md"
+                        className="absolute -top-2 -right-2 w-4 h-4 bg-[#00A8FF] border border-white rounded-full cursor-ne-resize shadow-md"
                         title="Drag to resize (aspect ratio locked)"
                       />
                       <div
                         onMouseDown={(e) => handleMouseDownOnResize(e, layer, "top-left")}
-                        className="absolute -top-2 -left-2 w-4 h-4 bg-blue-500 border border-white rounded-full cursor-nw-resize shadow-md"
+                        className="absolute -top-2 -left-2 w-4 h-4 bg-[#00A8FF] border border-white rounded-full cursor-nw-resize shadow-md"
                         title="Drag to resize (aspect ratio locked)"
                       />
                     </>
@@ -827,7 +827,7 @@ export default function DesignStudioController() {
             </span>
             <ActionButton
               onClick={() => handleImportImage()}
-              className="bg-blue-600 hover:bg-blue-500 border border-blue-400 text-white text-xs font-semibold px-3 py-1.5 rounded-[12px] transition-all"
+              className="bg-[#00A8FF] hover:bg-[#00A8FF] border border-[#00A8FF]/50 text-white text-xs font-semibold px-3 py-1.5 rounded-[12px] transition-all"
             >
               + Import Image
             </ActionButton>
@@ -846,7 +846,7 @@ export default function DesignStudioController() {
                     onClick={() => setSelectedLayerId(layer.id)}
                     className={`p-2.5 rounded-[12px] border transition-all flex items-center justify-between cursor-pointer ${
                       isSelected
-                        ? "bg-blue-500/10 border-blue-500/50 text-white"
+                        ? "bg-[#00A8FF]/10 border-[#00A8FF]/50 text-white"
                         : "bg-white/5 border-white/5 hover:bg-white/10 text-white/70"
                     }`}
                   >
@@ -910,7 +910,7 @@ export default function DesignStudioController() {
                 <span className="text-xs font-bold uppercase tracking-wider text-white/70">
                   Layer Properties
                 </span>
-                <span className="text-[10px] text-blue-400 font-medium">Selected</span>
+                <span className="text-[10px] text-[#00A8FF] font-medium">Selected</span>
               </div>
 
               {/* Layer Name */}
@@ -920,7 +920,7 @@ export default function DesignStudioController() {
                   type="text"
                   value={selectedLayer.name}
                   onChange={(e) => updateSelectedLayer({ name: e.target.value })}
-                  className="w-full bg-white/5 border border-white/10 rounded-[12px] px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500/60"
+                  className="w-full bg-white/5 border border-white/10 rounded-[12px] px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#00A8FF]/60"
                 />
               </div>
 

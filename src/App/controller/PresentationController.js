@@ -377,25 +377,25 @@ function SceneTab({
                                 isActive
                                     ? 'bg-orange-500/15 border-orange-500/50 shadow-md ring-1 ring-orange-500/30'
                                     : isPreviewingThisScene
-                                    ? 'bg-blue-500/15 border-blue-500/50 shadow-md ring-1 ring-blue-500/30'
+                                    ? 'bg-[#00A8FF]/15 border-[#00A8FF]/50 shadow-md ring-1 ring-[#00A8FF]/30'
                                     : 'bg-white/5 border-white/5 hover:border-white/20 hover:bg-white/10'
                             }`}
                         >
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2 flex-1 min-w-0 pointer-events-none">
                                     {isSong ? (
-                                        <PiMusicNotes size={16} className={isActive ? 'text-orange-400' : isPreviewingThisScene ? 'text-blue-400' : 'text-purple-400/90'} />
+                                        <PiMusicNotes size={16} className={isActive ? 'text-orange-400' : isPreviewingThisScene ? 'text-[#00A8FF]' : 'text-[#8B5CF6]/90'} />
                                     ) : (
-                                        <PiFileText size={16} className={isActive ? 'text-orange-400' : isPreviewingThisScene ? 'text-blue-400' : 'text-emerald-400/90'} />
+                                        <PiFileText size={16} className={isActive ? 'text-orange-400' : isPreviewingThisScene ? 'text-[#00A8FF]' : 'text-emerald-400/90'} />
                                     )}
-                                    <span className={`text-sm font-bold truncate ${isActive ? 'text-orange-300' : isPreviewingThisScene ? 'text-blue-300' : 'text-white/90'}`}>
+                                    <span className={`text-sm font-bold truncate ${isActive ? 'text-orange-300' : isPreviewingThisScene ? 'text-[#00A8FF]' : 'text-white/90'}`}>
                                         {scene.name}
                                     </span>
                                 </div>
                                 <div className="flex items-center gap-1 shrink-0">
                                     <ActionButton
                                         onClick={(e) => { e.stopPropagation(); onOpenModal(scene); }}
-                                        className="p-1.5 text-white/30 hover:text-blue-400 rounded transition-colors"
+                                        className="p-1.5 text-white/30 hover:text-[#00A8FF] rounded transition-colors"
                                         title="Edit Scene"
                                     >
                                         <PiPencil size={13} />
@@ -416,11 +416,11 @@ function SceneTab({
                                     <span>·</span>
                                     <span>{scene.pages.length} part{scene.pages.length !== 1 ? 's' : ''}</span>
                                     {isSong && scene.autoChorus && (
-                                        <span className="text-purple-400/80 font-medium">· Chorus Flow</span>
+                                        <span className="text-[#8B5CF6]/80 font-medium">· Chorus Flow</span>
                                     )}
                                 </span>
                                 {isPreviewingThisScene && (
-                                    <span className="text-[10px] font-bold uppercase tracking-wider text-blue-400 bg-blue-500/10 px-1.5 py-0.5 rounded border border-blue-500/20">
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#00A8FF] bg-[#00A8FF]/10 px-1.5 py-0.5 rounded border border-[#00A8FF]/20">
                                         Selected
                                     </span>
                                 )}
@@ -1455,10 +1455,10 @@ export default function PresentationController() {
             {/* Draggable Vertical Splitter handle (allows dragging up to ~50% of sidebar) */}
             <div
                 onMouseDown={handlePanelResizeStart}
-                className="w-full h-3 bg-[#18181c] hover:bg-blue-600/40 active:bg-blue-600/60 cursor-row-resize flex items-center justify-center border-b border-white/10 group transition-colors select-none shrink-0"
+                className="w-full h-3 bg-[#18181c] hover:bg-[#00A8FF]/40 active:bg-[#00A8FF]/60 cursor-row-resize flex items-center justify-center border-b border-white/10 group transition-colors select-none shrink-0"
                 title="Drag up or down to resize Layers panel (up to 50% of screen)"
             >
-                <div className="w-12 h-1 bg-white/25 group-hover:bg-blue-400 group-active:bg-blue-400 rounded-full transition-colors" />
+                <div className="w-12 h-1 bg-white/25 group-hover:bg-[#00A8FF] group-active:bg-[#00A8FF] rounded-full transition-colors" />
             </div>
 
             <div className="p-3 flex flex-col gap-2 flex-1 min-h-0 overflow-hidden">
@@ -1490,26 +1490,26 @@ export default function PresentationController() {
                                 onClick={() => setSelectedLayerId(layer.id)}
                                 className={`px-2 py-1.5 rounded-lg flex items-center justify-between text-xs cursor-pointer transition-all border group ${
                                     isSelected
-                                        ? 'bg-blue-500/20 text-blue-300 border-blue-500/40 shadow-sm'
+                                        ? 'bg-[#00A8FF]/20 text-[#00A8FF] border-[#00A8FF]/40 shadow-sm'
                                         : 'bg-white/5 text-white/70 border-transparent hover:bg-white/10'
-                                } ${draggedLayerIndex === idx ? 'opacity-40 border-dashed border-blue-400' : ''}`}
+                                } ${draggedLayerIndex === idx ? 'opacity-40 border-dashed border-[#00A8FF]/50' : ''}`}
                             >
                                 <div className="flex items-center gap-1.5 truncate min-w-0 pr-2">
                                     <span className="cursor-grab active:cursor-grabbing text-white/30 group-hover:text-white/70 p-0.5" title="Drag to reorder layer stack">
                                         <PiDotsSixVertical size={13} />
                                     </span>
                                     {layer.type === 'text' ? (
-                                        <PiTextT size={13} className="text-blue-400 shrink-0" />
+                                        <PiTextT size={13} className="text-[#00A8FF] shrink-0" />
                                     ) : layer.type === 'video' ? (
                                         <PiVideo size={13} className="text-cyan-400 shrink-0" />
                                     ) : (
-                                        <PiImage size={13} className="text-purple-400 shrink-0" />
+                                        <PiImage size={13} className="text-[#8B5CF6] shrink-0" />
                                     )}
                                     <span className="truncate font-medium text-xs">
                                         {layer.type === 'text' ? (layer.content || 'Text Layer') : layer.type === 'video' ? `Video Layer ${idx + 1}` : `Image Layer ${idx + 1}`}
                                     </span>
                                     {idx === 0 && (
-                                        <span className="text-[9px] bg-blue-500/25 text-blue-300 font-bold px-1.5 py-0.5 rounded tracking-wide shrink-0">
+                                        <span className="text-[9px] bg-[#00A8FF]/25 text-[#00A8FF] font-bold px-1.5 py-0.5 rounded tracking-wide shrink-0">
                                             Front
                                         </span>
                                     )}
@@ -1847,10 +1847,10 @@ export default function PresentationController() {
                                         >
                                             {isSelected && (
                                                 <>
-                                                    <div className="absolute -inset-2 border-2 border-blue-500 border-dashed rounded-lg pointer-events-none z-50" />
+                                                    <div className="absolute -inset-2 border-2 border-[#00A8FF]/50 border-dashed rounded-lg pointer-events-none z-50" />
                                                     {['nw','ne','sw','se','ml','mr','mt','mb'].map(h => {
                                                         const pos = { nw:'-top-2 -left-2 cursor-nwse-resize', ne:'-top-2 -right-2 cursor-nesw-resize', sw:'-bottom-2 -left-2 cursor-nesw-resize', se:'-bottom-2 -right-2 cursor-nwse-resize', ml:'top-1/2 -translate-y-1/2 -left-2 cursor-ew-resize', mr:'top-1/2 -translate-y-1/2 -right-2 cursor-ew-resize', mt:'left-1/2 -translate-x-1/2 -top-2 cursor-ns-resize', mb:'left-1/2 -translate-x-1/2 -bottom-2 cursor-ns-resize' }[h];
-                                                        return <div key={h} onMouseDown={(e) => handleMouseDown(e, layer.id, h)} className={`absolute w-3 h-3 bg-blue-500 border border-white rounded-full z-50 shadow-sm ${pos}`} />;
+                                                        return <div key={h} onMouseDown={(e) => handleMouseDown(e, layer.id, h)} className={`absolute w-3 h-3 bg-[#00A8FF] border border-white rounded-full z-50 shadow-sm ${pos}`} />;
                                                     })}
                                                 </>
                                             )}
@@ -2020,7 +2020,7 @@ export default function PresentationController() {
                                         <PiX size={14} /> Close Deck
                                     </ActionButton>
                                     <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5 border border-white/10 pl-2">
-                                        <span className="text-xs text-purple-300 font-bold pr-2 truncate max-w-[160px]">
+                                        <span className="text-xs text-[#8B5CF6] font-bold pr-2 truncate max-w-[160px]">
                                             {selectedPresentation.name}
                                         </span>
                                         <ActionButton
@@ -2255,7 +2255,7 @@ export default function PresentationController() {
                         <div className="shrink-0 bg-[#121215] border-t border-white/10 px-4 py-2.5 flex flex-col gap-2">
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-2">
-                                    <span className="text-[10px] uppercase font-bold tracking-widest text-purple-400 flex items-center gap-1">
+                                    <span className="text-[10px] uppercase font-bold tracking-widest text-[#8B5CF6] flex items-center gap-1">
                                         <PiSlidersHorizontal size={12} /> Image Layer
                                     </span>
                                     <div className="flex items-center gap-1 ml-2">
@@ -2285,7 +2285,7 @@ export default function PresentationController() {
                             </div>
                             <div className="grid grid-cols-3 gap-3 bg-black/30 px-3 py-1.5 rounded-lg border border-white/5">
                                 <div className="flex items-center gap-2">
-                                    <span className="text-[10px] text-white/50 w-14 shrink-0">Scale: <b className="text-purple-300 font-mono">{selectedLayer.style?.width || 30}%</b></span>
+                                    <span className="text-[10px] text-white/50 w-14 shrink-0">Scale: <b className="text-[#8B5CF6] font-mono">{selectedLayer.style?.width || 30}%</b></span>
                                     <input
                                         type="range"
                                         min="5"
@@ -2297,7 +2297,7 @@ export default function PresentationController() {
                                     />
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <span className="text-[10px] text-white/50 w-16 shrink-0">Opacity: <b className="text-purple-300 font-mono">{Math.round((selectedLayer.style?.opacity ?? 1) * 100)}%</b></span>
+                                    <span className="text-[10px] text-white/50 w-16 shrink-0">Opacity: <b className="text-[#8B5CF6] font-mono">{Math.round((selectedLayer.style?.opacity ?? 1) * 100)}%</b></span>
                                     <input
                                         type="range"
                                         min="0.05"
@@ -2309,7 +2309,7 @@ export default function PresentationController() {
                                     />
                                 </div>
                                 <div className="flex items-center gap-2">
-                                    <span className="text-[10px] text-white/50 w-14 shrink-0">Radius: <b className="text-purple-300 font-mono">{selectedLayer.style?.borderRadius ?? 8}px</b></span>
+                                    <span className="text-[10px] text-white/50 w-14 shrink-0">Radius: <b className="text-[#8B5CF6] font-mono">{selectedLayer.style?.borderRadius ?? 8}px</b></span>
                                     <input
                                         type="range"
                                         min="0"
@@ -2398,7 +2398,7 @@ export default function PresentationController() {
                         /* Edit Selected Text Layer Toolbar */
                         <div className="shrink-0 bg-[#121215] border-t border-white/10 px-4 py-2.5 flex flex-col gap-2">
                             <div className="flex items-center justify-between">
-                                <span className="text-[10px] uppercase font-bold tracking-widest text-blue-400 flex items-center gap-1">
+                                <span className="text-[10px] uppercase font-bold tracking-widest text-[#00A8FF] flex items-center gap-1">
                                     <PiTextAa size={12} /> Edit Text
                                 </span>
                                 <div className="flex items-center gap-3">
@@ -2427,7 +2427,7 @@ export default function PresentationController() {
                                 type="text"
                                 value={selectedLayer.content}
                                 onChange={(e) => updateLayer(selectedLayer.id, { content: e.target.value })}
-                                className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-blue-500 transition-colors font-sans"
+                                className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white focus:outline-none focus:border-[#00A8FF]/50 transition-colors font-sans"
                                 placeholder="Enter text..."
                             />
                         </div>
@@ -2460,8 +2460,8 @@ export default function PresentationController() {
                                         ? (tab.id === 'scene'
                                             ? 'bg-white/5 text-orange-400 border-b-2 border-orange-500'
                                             : tab.id === 'presentation'
-                                            ? 'bg-white/5 text-purple-400 border-b-2 border-purple-500'
-                                            : 'bg-white/5 text-blue-400 border-b-2 border-blue-500')
+                                            ? 'bg-white/5 text-[#8B5CF6] border-b-2 border-[#8B5CF6]/50'
+                                            : 'bg-white/5 text-[#00A8FF] border-b-2 border-[#00A8FF]/50')
                                         : 'text-white/40 hover:bg-white/5 hover:text-white/70'
                                 }`}
                             >
@@ -2484,7 +2484,7 @@ export default function PresentationController() {
                                             <ActionButton
                                                 type="button"
                                                 onClick={handleSelectAllAssets}
-                                                className="text-[10px] font-bold text-blue-400 hover:text-blue-300 transition-colors"
+                                                className="text-[10px] font-bold text-[#00A8FF] hover:text-[#00A8FF] transition-colors"
                                             >
                                                 {selectedAssetUrls.length === mediaFiles.length ? 'Deselect All' : 'Select All'}
                                             </ActionButton>
@@ -2492,7 +2492,7 @@ export default function PresentationController() {
                                     </div>
                                     <ActionButton
                                         onClick={handleImport} loadingLabel="Importing media…"
-                                        className="text-blue-400 hover:text-blue-300 bg-blue-400/10 hover:bg-blue-400/20 px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all"
+                                        className="text-[#00A8FF] hover:text-[#00A8FF] bg-[#00A8FF]/10 hover:bg-[#00A8FF]/20 px-2 py-1 rounded text-xs font-bold flex items-center gap-1 transition-all"
                                         title="Import Images or Videos"
                                     >
                                         <PiPlus size={13} /> Import
@@ -2501,8 +2501,8 @@ export default function PresentationController() {
 
                                 {/* Selected Assets Action Bar (Single or Multi-Select Menu) */}
                                 {selectedAssetUrls.length > 0 && (
-                                    <div className="flex items-center justify-between bg-blue-500/10 border border-blue-500/30 rounded-xl px-2.5 py-1.5 transition-all">
-                                        <span className="text-[10px] font-bold text-blue-300">
+                                    <div className="flex items-center justify-between bg-[#00A8FF]/10 border border-[#00A8FF]/30 rounded-xl px-2.5 py-1.5 transition-all">
+                                        <span className="text-[10px] font-bold text-[#00A8FF]">
                                             {selectedAssetUrls.length} Selected
                                         </span>
                                         <div className="flex items-center gap-1.5">
@@ -2517,7 +2517,7 @@ export default function PresentationController() {
                                             <ActionButton
                                                 type="button"
                                                 onClick={handleAddSelectedAsLayers}
-                                                className="px-2 py-0.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded text-[10px] font-bold transition-all"
+                                                className="px-2 py-0.5 bg-[#00A8FF]/20 hover:bg-[#00A8FF]/30 text-[#00A8FF] rounded text-[10px] font-bold transition-all"
                                                 title="Add as Layer"
                                             >
                                                 Add Layer
@@ -2554,7 +2554,7 @@ export default function PresentationController() {
                                                 onContextMenu={(e) => handleAssetContextMenu(e, fileUrl)}
                                                 className={`aspect-square w-full h-[90px] bg-[#141418] rounded-xl relative overflow-hidden border transition-all cursor-pointer group ${
                                                     isSelected
-                                                        ? 'border-blue-500 ring-2 ring-blue-500/40 shadow-lg'
+                                                        ? 'border-[#00A8FF]/50 ring-2 ring-[#00A8FF]/40 shadow-lg'
                                                         : 'border-white/10 hover:border-white/30 hover:scale-[1.02]'
                                                 }`}
                                                 title="Click to select, Double-click to add layer, Drag onto canvas, Right-click for menu"
@@ -2564,7 +2564,7 @@ export default function PresentationController() {
                                                     onClick={(e) => handleToggleSelectAsset(fileUrl, e)}
                                                     className={`absolute top-1.5 left-1.5 z-20 rounded p-0.5 transition-all ${
                                                         isSelected
-                                                            ? 'text-blue-400 bg-black/70'
+                                                            ? 'text-[#00A8FF] bg-black/70'
                                                             : 'text-white/40 opacity-0 group-hover:opacity-100 bg-black/50 hover:text-white'
                                                     }`}
                                                 >
@@ -2621,7 +2621,7 @@ export default function PresentationController() {
                                     <div className="text-center py-6 text-white/30 text-xs flex flex-col items-center gap-1.5 border border-dashed border-white/10 rounded-xl p-4">
                                         <PiImage size={24} />
                                         <span>No imported assets yet</span>
-                                        <ActionButton onClick={handleImport} loadingLabel="Importing media…" className="text-blue-400 hover:underline text-[11px] font-bold">Import Media</ActionButton>
+                                        <ActionButton onClick={handleImport} loadingLabel="Importing media…" className="text-[#00A8FF] hover:underline text-[11px] font-bold">Import Media</ActionButton>
                                     </div>
                                 )}
                             </div>
@@ -2629,13 +2629,13 @@ export default function PresentationController() {
 
                         {activeTab === 'text' && (
                             <div className="flex flex-col gap-4">
-                                <ActionButton onClick={() => addLayer('text', 'New Text Element')} className="w-full flex items-center justify-center gap-2 text-xs font-bold uppercase bg-blue-500 hover:bg-blue-600 text-white p-3 rounded-xl transition-all shadow-lg active:scale-95">
+                                <ActionButton onClick={() => addLayer('text', 'New Text Element')} className="w-full flex items-center justify-center gap-2 text-xs font-bold uppercase bg-[#00A8FF] hover:bg-[#00A8FF] text-white p-3 rounded-xl transition-all shadow-lg active:scale-95">
                                     <PiTextT size={16} /> Add New Text
                                 </ActionButton>
                                 {selectedLayer && selectedLayer.type === 'text' ? (
                                     <div className="flex flex-col gap-4 border-t border-white/10 pt-4">
                                         <span className="text-[10px] uppercase text-white/40 font-bold tracking-widest">Edit Selected Text</span>
-                                        <textarea value={selectedLayer.content} onChange={(e) => updateLayer(selectedLayer.id, { content: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-blue-500 transition-colors h-24 resize-none" placeholder="Enter text..." />
+                                        <textarea value={selectedLayer.content} onChange={(e) => updateLayer(selectedLayer.id, { content: e.target.value })} className="w-full bg-white/5 border border-white/10 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-[#00A8FF]/50 transition-colors h-24 resize-none" placeholder="Enter text..." />
                                         <div className="flex flex-col gap-3">
                                             <div className="flex justify-between items-center">
                                                 <span className="text-xs text-white/60">Font Size</span>
@@ -2681,14 +2681,14 @@ export default function PresentationController() {
                                             PowerPoint ({presentations.length}{!canMultiPptx ? "/1" : ""})
                                         </span>
                                         {!canMultiPptx && (
-                                            <span className="text-[9px] text-purple-300 bg-purple-500/15 border border-purple-500/20 px-1.5 py-0.2 rounded font-bold" title="1 PPTX Deck at a time on basic plan. Large & Premium plans allow unlimited decks.">
+                                            <span className="text-[9px] text-[#8B5CF6] bg-[#8B5CF6]/15 border border-[#8B5CF6]/20 px-1.5 py-0.2 rounded font-bold" title="1 PPTX Deck at a time on basic plan. Large & Premium plans allow unlimited decks.">
                                                 1 Deck Max
                                             </span>
                                         )}
                                     </div>
                                     <ActionButton
                                         onClick={handleImportPresentation} loadingLabel="Importing slides…"
-                                        className="flex items-center gap-1.5 px-2.5 py-1 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-lg text-xs font-bold uppercase tracking-wider border border-purple-500/30 transition-all shadow-sm active:scale-95"
+                                        className="flex items-center gap-1.5 px-2.5 py-1 bg-[#8B5CF6]/20 hover:bg-[#8B5CF6]/30 text-[#8B5CF6] rounded-lg text-xs font-bold uppercase tracking-wider border border-[#8B5CF6]/30 transition-all shadow-sm active:scale-95"
                                     >
                                         <PiPlus size={13} /> {!canMultiPptx && presentations.length >= 1 ? "Replace PPTX" : "Import PPTX"}
                                     </ActionButton>
@@ -2696,7 +2696,7 @@ export default function PresentationController() {
 
                                 {presentations.length === 0 ? (
                                     <div className="flex flex-col items-center justify-center py-12 text-white/30 text-center gap-2 border border-dashed border-white/10 rounded-2xl p-4">
-                                        <PiPresentation size={36} className="text-purple-400/50 mb-1" />
+                                        <PiPresentation size={36} className="text-[#8B5CF6]/50 mb-1" />
                                         <p className="text-xs font-bold text-white/60">No PowerPoint Decks Yet</p>
                                         <p className="text-[11px] text-white/40 max-w-[200px]">
                                             Click "Import PPTX" to convert your slides to high-res presentation graphics.
@@ -2719,7 +2719,7 @@ export default function PresentationController() {
                                                     }}
                                                     className={`p-2.5 rounded-xl border transition-all cursor-pointer flex flex-col gap-2 ${
                                                         isSelected
-                                                            ? 'bg-purple-500/15 border-purple-500/50 shadow-md shadow-purple-500/10'
+                                                            ? 'bg-[#8B5CF6]/15 border-[#8B5CF6]/50 shadow-md shadow-[#8B5CF6]/10'
                                                             : 'bg-white/5 border-white/5 hover:border-white/20 hover:bg-white/[0.07]'
                                                     }`}
                                                 >
@@ -2755,7 +2755,7 @@ export default function PresentationController() {
                                                                     e.stopPropagation();
                                                                     setShowFontAdvisoryModal(deck);
                                                                 }}
-                                                                className="p-1.5 text-white/40 hover:text-purple-400 hover:bg-purple-500/10 rounded-lg transition-colors"
+                                                                className="p-1.5 text-white/40 hover:text-[#8B5CF6] hover:bg-[#8B5CF6]/10 rounded-lg transition-colors"
                                                                 title="Font Info & Advisory"
                                                             >
                                                                 <PiTextT size={14} />
@@ -2795,7 +2795,7 @@ export default function PresentationController() {
                                                                     }}
                                                                     className={`aspect-video rounded overflow-hidden relative border cursor-pointer ${
                                                                         activeSlideIndex === idx
-                                                                            ? 'border-purple-400 ring-2 ring-purple-500/40'
+                                                                            ? 'border-[#8B5CF6]/50 ring-2 ring-[#8B5CF6]/40'
                                                                             : 'border-white/10 hover:border-white/30'
                                                                     }`}
                                                                 >
@@ -2867,7 +2867,7 @@ export default function PresentationController() {
                             addLayer(contextMenu.isVideo ? 'video' : 'image', contextMenu.url);
                             setContextMenu(null);
                         }}
-                        className="flex items-center gap-2 px-2.5 py-1.5 text-xs text-blue-300 hover:bg-blue-500/20 rounded-lg text-left font-semibold transition-colors"
+                        className="flex items-center gap-2 px-2.5 py-1.5 text-xs text-[#00A8FF] hover:bg-[#00A8FF]/20 rounded-lg text-left font-semibold transition-colors"
                     >
                         <PiStack size={14} /> Add as Layer
                     </ActionButton>

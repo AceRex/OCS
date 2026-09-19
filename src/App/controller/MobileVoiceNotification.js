@@ -63,13 +63,13 @@ export default function MobileVoiceNotification() {
 
   return (
     <div className="fixed top-6 right-6 z-50 animate-bounce-in max-w-sm w-full">
-      <div className="bg-[#18181b]/95 border border-blue-500/40 backdrop-blur-xl rounded-2xl p-4 shadow-2xl shadow-blue-500/20 flex items-start gap-3.5">
-        <div className="p-2.5 rounded-xl bg-blue-500/20 text-blue-400 border border-blue-500/30 flex-shrink-0 animate-pulse">
+      <div className="bg-[#18181b]/95 border border-[#00A8FF]/40 backdrop-blur-xl rounded-2xl p-4 shadow-2xl shadow-[#00A8FF]/20 flex items-start gap-3.5">
+        <div className="p-2.5 rounded-xl bg-[#00A8FF]/20 text-[#00A8FF] border border-[#00A8FF]/30 flex-shrink-0 animate-pulse">
           <PiMicrophone size={22} />
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-blue-400 flex items-center gap-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#00A8FF] flex items-center gap-1">
               <PiSparkle size={13} /> {notification.type === "intercom" ? "Live Intercom Voice" : "Remote Voice Command"}
             </span>
             <button

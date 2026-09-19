@@ -516,7 +516,7 @@ export default function SessionsController() {
                       />
                     </div>
                     <p className="text-[10px] text-white/30 mt-2">
-                      💡 Tip: {canEditPdf ? <>Edit timestamps and preacher notes directly above. Click "Save & Rebuild PDF" to regenerate <span className="text-violet-300 font-mono">transcript.pdf</span>.</> : <>Transcript view only. PDF & Transcript editing is unlocked on <span className="text-purple-300 font-bold">Large Setup</span> and <span className="text-purple-300 font-bold">Premium Setup</span>.</>}
+                      💡 Tip: {canEditPdf ? <>Edit timestamps and preacher notes directly above. Click "Save & Rebuild PDF" to regenerate <span className="text-violet-300 font-mono">transcript.pdf</span>.</> : <>Transcript view only. PDF & Transcript editing is unlocked on <span className="text-[#8B5CF6] font-bold">Large Setup</span> and <span className="text-[#8B5CF6] font-bold">Premium Setup</span>.</>}
                     </p>
                   </div>
                 )}

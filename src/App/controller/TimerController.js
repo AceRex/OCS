@@ -459,7 +459,7 @@ export default function TimerController() {
         {canAccessSessions && (
           <button
             onClick={() => setIsPlannerOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-violet-600 hover:bg-violet-500 rounded-xl text-white text-xs font-black uppercase tracking-wider shadow-lg shadow-purple-950/40 transition-all cursor-pointer"
+            className="flex items-center gap-1.5 px-3 py-2 bg-violet-600 hover:bg-violet-500 rounded-xl text-white text-xs font-black uppercase tracking-wider shadow-lg shadow-[#8B5CF6]/40 transition-all cursor-pointer"
             title="Open Agenda Planner"
           >
             <PiCalendarCheck size={16} />
@@ -732,7 +732,7 @@ export default function TimerController() {
               <button
                 type="button"
                 onClick={() => setShowSubscriptionNotice(false)}
-                className="w-full py-3 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-xs font-black uppercase tracking-wider text-white shadow-lg shadow-purple-950/50 transition-all cursor-pointer"
+                className="w-full py-3 rounded-2xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 text-xs font-black uppercase tracking-wider text-white shadow-lg shadow-[#8B5CF6]/50 transition-all cursor-pointer"
               >
                 Got It
               </button>

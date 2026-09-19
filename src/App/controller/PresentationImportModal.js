@@ -103,7 +103,7 @@ export function PresentationImportProgressModal({
         {/* Status Text */}
         <div className="flex flex-col gap-1 w-full">
           <h3 className="text-sm font-bold text-white flex items-center justify-center gap-1.5">
-            <PiFilePpt size={16} className="text-purple-400" />
+            <PiFilePpt size={16} className="text-[#8B5CF6]" />
             {isFailed ? 'Import Error' : isDone ? 'Conversion Finished' : 'Importing PowerPoint'}
           </h3>
           <p className="text-xs text-white/60 line-clamp-2 px-2">
@@ -158,7 +158,7 @@ export function PresentationFontAdvisoryModal({
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-white/10">
           <div className="flex items-center gap-2">
-            <div className="p-2 rounded-xl bg-purple-500/20 text-purple-400">
+            <div className="p-2 rounded-xl bg-[#8B5CF6]/20 text-[#8B5CF6]">
               <PiTextT size={20} />
             </div>
             <div>
@@ -227,7 +227,7 @@ export function PresentationFontAdvisoryModal({
                         </span>
                       )}
                       {isBundled && (
-                        <span className="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                        <span className="px-2 py-0.5 rounded-md text-[9px] font-bold uppercase tracking-wider bg-[#00A8FF]/20 text-[#00A8FF] border border-[#00A8FF]/30">
                           Bundled
                         </span>
                       )}
@@ -246,7 +246,7 @@ export function PresentationFontAdvisoryModal({
                         <ActionButton
                           type="button"
                           onClick={() => handleOpenUrl(f.googleFontsUrl)}
-                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 text-[10px] font-bold uppercase tracking-wider transition-all"
+                          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#8B5CF6]/20 hover:bg-[#8B5CF6]/30 text-[#8B5CF6] border border-[#8B5CF6]/30 text-[10px] font-bold uppercase tracking-wider transition-all"
                           title="Open Google Fonts"
                         >
                           <PiDownloadSimple size={12} /> Google Font <PiArrowSquareOut size={10} />

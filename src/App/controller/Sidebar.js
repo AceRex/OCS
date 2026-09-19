@@ -110,17 +110,17 @@ function SidebarAccount({ isCollapsed, onExpand }) {
         {waitingForBrowser ? (
           // Waiting for browser callback
           <div
-            className={`flex items-center p-2.5 rounded-2xl bg-purple-500/10 border border-purple-500/20 ${
+            className={`flex items-center p-2.5 rounded-2xl bg-[#8B5CF6]/10 border border-[#8B5CF6]/20 ${
               isCollapsed ? "justify-center" : "gap-2.5"
             }`}
           >
             <PiSpinner
               size={18}
-              className="text-purple-400 animate-spin flex-shrink-0"
+              className="text-[#8B5CF6] animate-spin flex-shrink-0"
             />
             {!isCollapsed && (
               <div className="flex flex-col overflow-hidden flex-1">
-                <span className="text-[11px] font-bold text-purple-300">
+                <span className="text-[11px] font-bold text-[#8B5CF6]">
                   Waiting for browser...
                 </span>
                 <div className="flex items-center gap-2 mt-1">
@@ -166,11 +166,11 @@ function SidebarAccount({ isCollapsed, onExpand }) {
                   : "linear-gradient(135deg, rgba(124,58,237,0.35) 0%, rgba(6,182,212,0.2) 100%)",
               }}
             >
-              <PiLockKey size={16} className={guestExpired ? "text-rose-300" : "text-purple-300"} />
+              <PiLockKey size={16} className={guestExpired ? "text-rose-300" : "text-[#8B5CF6]"} />
             </div>
             {!isCollapsed && (
               <div className="flex flex-col overflow-hidden flex-1 text-left">
-                <span className="text-xs font-black text-purple-200 truncate">
+                <span className="text-xs font-black text-[#8B5CF6] truncate">
                   {guestExpired ? "Log In to Unlock App" : "Log In via Browser"}
                 </span>
                 <span className="text-[10px] text-white/40 truncate">
@@ -181,7 +181,7 @@ function SidebarAccount({ isCollapsed, onExpand }) {
             {!isCollapsed && (
               <PiArrowSquareOut
                 size={14}
-                className={guestExpired ? "text-rose-400 flex-shrink-0" : "text-purple-400 flex-shrink-0"}
+                className={guestExpired ? "text-rose-400 flex-shrink-0" : "text-[#8B5CF6] flex-shrink-0"}
               />
             )}
           </button>
@@ -227,7 +227,7 @@ function SidebarAccount({ isCollapsed, onExpand }) {
                 <span className="text-xs font-bold text-white truncate">
                   {auth.orgName && auth.orgName !== "OCS Community Church" ? auth.orgName : (auth.name || (auth.email ? `${auth.email.split('@')[0]}'s Sanctuary` : "Sanctuary"))}
                 </span>
-                <span className="text-[9px] font-black uppercase px-1.5 py-0.2 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                <span className="text-[9px] font-black uppercase px-1.5 py-0.2 rounded bg-[#8B5CF6]/20 text-[#8B5CF6] border border-[#8B5CF6]/30">
                   {label}
                 </span>
               </div>
@@ -261,7 +261,7 @@ function SidebarAccount({ isCollapsed, onExpand }) {
           <div className="px-3 py-2 mb-1 rounded-xl bg-white/5 space-y-1">
             <p className="text-[10px] text-white/40 truncate">{auth.email}</p>
             <div className="flex items-center justify-between text-[10px] font-bold">
-              <span className="text-purple-300 uppercase tracking-wider">
+              <span className="text-[#8B5CF6] uppercase tracking-wider">
                 {auth.subscriptionPlan || auth.licenseTier || "trial"} plan
               </span>
               <span className="text-emerald-400 font-black">
@@ -397,7 +397,7 @@ export default function Sidebar({ activeTab, onTabChange }) {
               )}
 
               {isActive && (
-                <div className="absolute left-0 w-1 h-6 bg-blue-400 rounded-r-full" />
+                <div className="absolute left-0 w-1 h-6 bg-[#00A8FF] rounded-r-full" />
               )}
             </button>
           );

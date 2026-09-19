@@ -326,7 +326,7 @@ export default function TeleprompterFullscreenOverlay({
                 onClick={() => onChangeScrollSpeed && onChangeScrollSpeed(spd)}
                 className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all ${
                   scrollSpeed === spd
-                    ? "bg-purple-600 text-white"
+                    ? "bg-[#8B5CF6] text-white"
                     : "text-white/50 hover:text-white"
                 }`}
               >
@@ -358,7 +358,7 @@ export default function TeleprompterFullscreenOverlay({
                 onClick={onToggleMirror}
                 className={`px-2.5 py-1 rounded-xl text-[10px] font-bold border transition-all flex items-center gap-1 ${
                   isMirrored
-                    ? "bg-purple-600/30 border-purple-500/50 text-purple-200"
+                    ? "bg-[#8B5CF6]/30 border-[#8B5CF6]/50 text-[#8B5CF6]"
                     : "bg-white/5 border-white/10 text-white/60 hover:text-white"
                 }`}
                 title={isMirrored ? "Camera is mirrored (selfie view). Click for standard view." : "Camera is standard (unmirrored). Click to mirror."}
@@ -377,12 +377,12 @@ export default function TeleprompterFullscreenOverlay({
                 onClick={onOpenFilterModal}
                 className={`px-2.5 py-1 rounded-xl text-[10px] font-bold border transition-all flex items-center gap-1 ${
                   filterState?.presetId && filterState.presetId !== "normal"
-                    ? "bg-purple-600/30 border-purple-500/50 text-purple-200"
+                    ? "bg-[#8B5CF6]/30 border-[#8B5CF6]/50 text-[#8B5CF6]"
                     : "bg-white/5 border-white/10 text-white/60 hover:text-white"
                 }`}
                 title="Camera video sharpener, color grading & balancing effects"
               >
-                <PiSparkle size={12} className={filterState?.presetId && filterState.presetId !== "normal" ? "text-purple-300 animate-pulse" : ""} />
+                <PiSparkle size={12} className={filterState?.presetId && filterState.presetId !== "normal" ? "text-[#8B5CF6] animate-pulse" : ""} />
                 <span>
                   {filterState?.presetId && filterState.presetId !== "normal"
                     ? (PRO_FILTER_PRESETS.find((p) => p.id === filterState.presetId)?.label || "Graded")
@@ -396,7 +396,7 @@ export default function TeleprompterFullscreenOverlay({
 
           {/* Scene Break Quick Selector */}
           <div className="flex items-center gap-1">
-            <span className="text-purple-400 font-bold text-[10px] uppercase mr-1">
+            <span className="text-[#8B5CF6] font-bold text-[10px] uppercase mr-1">
               Break:
             </span>
             {[
@@ -409,7 +409,7 @@ export default function TeleprompterFullscreenOverlay({
                 onClick={() => setLocalBreakStyle(b.id)}
                 className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all ${
                   localBreakStyle === b.id
-                    ? "bg-purple-600 text-white"
+                    ? "bg-[#8B5CF6] text-white"
                     : "bg-white/5 text-white/50 hover:text-white"
                 }`}
               >
@@ -495,8 +495,8 @@ export default function TeleprompterFullscreenOverlay({
               }`}
             >
               {/* Scene Divider Card Header */}
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-purple-500/15 border border-purple-500/30 text-xs font-bold text-purple-200 mb-8 tracking-widest uppercase backdrop-blur-md shadow-lg shadow-purple-500/10">
-                <span className="w-2 h-2 rounded-full bg-purple-400 animate-pulse" />
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#8B5CF6]/15 border border-[#8B5CF6]/30 text-xs font-bold text-[#8B5CF6] mb-8 tracking-widest uppercase backdrop-blur-md shadow-lg shadow-[#8B5CF6]/10">
+                <span className="w-2 h-2 rounded-full bg-[#8B5CF6] animate-pulse" />
                 {sec.label || `Scene ${secIdx + 1}`}
               </div>
 

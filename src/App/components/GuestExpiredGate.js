@@ -54,7 +54,7 @@ export default function GuestExpiredGate({ onOpenSettings }) {
           </h2>
           <p className="text-xs text-white/60 leading-relaxed max-w-md mx-auto">
             Your 1-hour unauthenticated guest evaluation window has concluded.
-            Sign in with your OCS account to unlock presentation, lyrics, broadcast streaming, and your full <strong className="text-purple-300">60-Day Free Trial</strong>.
+            Sign in with your OCS account to unlock presentation, lyrics, broadcast streaming, and your full <strong className="text-[#8B5CF6]">60-Day Free Trial</strong>.
           </p>
         </div>
 
@@ -81,8 +81,8 @@ export default function GuestExpiredGate({ onOpenSettings }) {
         {/* Actions */}
         <div className="relative z-10 w-full space-y-3 pt-2">
           {waitingForBrowser ? (
-            <div className="flex items-center justify-center gap-3 py-3.5 px-6 rounded-2xl bg-purple-500/15 border border-purple-500/30 text-purple-200">
-              <PiSpinner size={20} className="animate-spin text-purple-400" />
+            <div className="flex items-center justify-center gap-3 py-3.5 px-6 rounded-2xl bg-[#8B5CF6]/15 border border-[#8B5CF6]/30 text-[#8B5CF6]">
+              <PiSpinner size={20} className="animate-spin text-[#8B5CF6]" />
               <span className="text-xs font-bold">Waiting for browser sign-in...</span>
               <button
                 onClick={cancelLogin}

@@ -1239,18 +1239,18 @@ export default function LiveSwitcherController() {
               <ActionButton
                 type="button"
                 onClick={() => setIsStudioModalOpen(true)}
-                className="relative w-full aspect-video rounded-[12px] bg-gradient-to-br from-[#161226] via-[#100d1d] to-[#0c0a17] border border-purple-500/40 hover:border-purple-400/80 p-3 flex flex-col justify-between text-left transition-all group shadow-lg hover:shadow-purple-950/40 cursor-pointer overflow-hidden active:scale-[0.99]"
+                className="relative w-full aspect-video rounded-[12px] bg-gradient-to-br from-[#161226] via-[#100d1d] to-[#0c0a17] border border-[#8B5CF6]/40 hover:border-[#8B5CF6]/80 p-3 flex flex-col justify-between text-left transition-all group shadow-lg hover:shadow-[#8B5CF6]/40 cursor-pointer overflow-hidden active:scale-[0.99]"
               >
                 {/* Background decorative glow */}
-                <div className="absolute -top-12 -right-12 w-32 h-32 bg-purple-600/10 rounded-full blur-2xl pointer-events-none group-hover:bg-purple-600/20 transition-all" />
+                <div className="absolute -top-12 -right-12 w-32 h-32 bg-[#8B5CF6]/10 rounded-full blur-2xl pointer-events-none group-hover:bg-[#8B5CF6]/20 transition-all" />
 
                 {/* Top bar header */}
                 <div className="flex items-center justify-between z-10 w-full">
                   <div className="flex items-center gap-2">
-                    <div className="w-6 h-6 rounded-[12px] bg-purple-500/25 border border-purple-400/40 flex items-center justify-center text-purple-300">
+                    <div className="w-6 h-6 rounded-[12px] bg-[#8B5CF6]/25 border border-[#8B5CF6]/40 flex items-center justify-center text-[#8B5CF6]">
                       <PiTelevision size={14} />
                     </div>
-                    <span className="text-[10px] font-black uppercase tracking-wider text-purple-300">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-[#8B5CF6]">
                       LIVE DESIGN STUDIO
                     </span>
                   </div>
@@ -1271,7 +1271,7 @@ export default function LiveSwitcherController() {
 
                 {/* Center visual: Click action & description */}
                 <div className="my-auto z-10 flex flex-col items-center justify-center text-center px-2 py-1">
-                  <span className="text-white font-black text-sm tracking-wide group-hover:text-purple-200 transition-colors">
+                  <span className="text-white font-black text-sm tracking-wide group-hover:text-[#8B5CF6] transition-colors">
                     Live Design Studio
                   </span>
                   <span className="text-white/50 text-[10px] mt-0.5">
@@ -1282,14 +1282,14 @@ export default function LiveSwitcherController() {
                 {/* Bottom button strip */}
                 <div className="z-10 w-full pt-1.5 border-t border-white/10 flex items-center justify-between text-[9px]">
                   <div className="flex items-center gap-1.5">
-                    <span className="px-1.5 py-0.5 rounded-[12px] bg-purple-500/20 text-purple-200 font-bold border border-purple-500/30">
+                    <span className="px-1.5 py-0.5 rounded-[12px] bg-[#8B5CF6]/20 text-[#8B5CF6] font-bold border border-[#8B5CF6]/30">
                       Air Layers: {cfg.layers?.length || 0}
                     </span>
                     <span className={`px-1.5 py-0.5 rounded-[12px] font-bold border ${isOverlayOnProgram ? "bg-emerald-500/20 border-emerald-500/30 text-emerald-300" : "bg-white/5 border-white/10 text-white/40"}`}>
                       Air: {isOverlayOnProgram ? "Active" : "Hidden"}
                     </span>
                   </div>
-                  <span className="px-2 py-0.5 rounded-[12px] bg-purple-600 text-white font-bold group-hover:bg-purple-500 transition-colors">
+                  <span className="px-2 py-0.5 rounded-[12px] bg-[#8B5CF6] text-white font-bold group-hover:bg-[#8B5CF6] transition-colors">
                     Open Live Studio ↗
                   </span>
                 </div>
@@ -2039,7 +2039,7 @@ export default function LiveSwitcherController() {
             <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-white/[0.02]">
               <div className="flex items-center gap-3">
                 <div className={`w-9 h-9 rounded-[12px] border flex items-center justify-center ${
-                  isAnyStreaming ? "bg-rose-500 text-white border-rose-400 animate-pulse" : isStreamArmed ? "bg-amber-500 text-white border-amber-400 animate-pulse" : "bg-purple-600/20 text-purple-300 border-purple-500/30"
+                  isAnyStreaming ? "bg-rose-500 text-white border-rose-400 animate-pulse" : isStreamArmed ? "bg-amber-500 text-white border-amber-400 animate-pulse" : "bg-[#8B5CF6]/20 text-[#8B5CF6] border-[#8B5CF6]/30"
                 }`}>
                   <PiBroadcast size={20} />
                 </div>
@@ -2092,7 +2092,7 @@ export default function LiveSwitcherController() {
                         : st === 'failed'
                         ? 'border-red-500/40 bg-red-950/10'
                         : dest.enabled
-                        ? 'border-purple-500/30 bg-purple-950/5'
+                        ? 'border-[#8B5CF6]/30 bg-[#8B5CF6]/5'
                         : 'border-white/10 bg-white/[0.02]'
                     }`}>
                       {/* Destination header row */}
@@ -2146,7 +2146,7 @@ export default function LiveSwitcherController() {
                             onClick={() => updateDestination(dest.id, { enabled: !dest.enabled })}
                             className={`px-3 py-1 rounded-[12px] text-[10px] font-bold border transition-all ${
                               dest.enabled
-                                ? 'bg-purple-600/25 border-purple-500/50 text-purple-200'
+                                ? 'bg-[#8B5CF6]/25 border-[#8B5CF6]/50 text-[#8B5CF6]'
                                 : 'bg-white/5 border-white/10 text-white/40 hover:text-white hover:bg-white/10'
                             } disabled:opacity-40`}
                           >
@@ -2166,7 +2166,7 @@ export default function LiveSwitcherController() {
                               onClick={() => updateDestination(dest.id, { label: p.label, url: p.url })}
                               className={`p-2 rounded-[12px] border text-[10px] font-bold transition-all text-center ${
                                 isSel
-                                  ? 'bg-purple-600/30 border-purple-500 text-white'
+                                  ? 'bg-[#8B5CF6]/30 border-[#8B5CF6]/50 text-white'
                                   : 'bg-white/[0.02] border-white/10 text-white/50 hover:text-white hover:bg-white/[0.05]'
                               } disabled:opacity-40`}
                             >
@@ -2186,7 +2186,7 @@ export default function LiveSwitcherController() {
                             disabled={isStreamArmed}
                             onChange={e => updateDestination(dest.id, { url: e.target.value })}
                             placeholder="rtmp://a.rtmp.youtube.com/live2"
-                            className="px-2.5 py-1.5 bg-black/40 border border-white/10 rounded-[12px] text-[11px] text-white placeholder-white/20 focus:outline-none focus:border-purple-500 disabled:opacity-50"
+                            className="px-2.5 py-1.5 bg-black/40 border border-white/10 rounded-[12px] text-[11px] text-white placeholder-white/20 focus:outline-none focus:border-[#8B5CF6]/50 disabled:opacity-50"
                           />
                         </div>
                         <div className="flex flex-col gap-1">
@@ -2198,7 +2198,7 @@ export default function LiveSwitcherController() {
                               disabled={isStreamArmed}
                               onChange={e => updateDestination(dest.id, { key: e.target.value })}
                               placeholder="Paste stream key…"
-                              className="w-full px-2.5 py-1.5 pr-8 bg-black/40 border border-white/10 rounded-[12px] text-[11px] text-white placeholder-white/20 focus:outline-none focus:border-purple-500 disabled:opacity-50"
+                              className="w-full px-2.5 py-1.5 pr-8 bg-black/40 border border-white/10 rounded-[12px] text-[11px] text-white placeholder-white/20 focus:outline-none focus:border-[#8B5CF6]/50 disabled:opacity-50"
                             />
                             <ActionButton
                               type="button"
@@ -2236,7 +2236,7 @@ export default function LiveSwitcherController() {
                   <ActionButton
                     disabled={isStreamArmed}
                     onClick={addDestination}
-                    className="flex items-center justify-center gap-1.5 p-2.5 rounded-[12px] border border-dashed border-white/20 hover:border-purple-500/50 bg-white/[0.01] hover:bg-purple-950/10 text-white/60 hover:text-white text-xs font-bold transition-all disabled:opacity-40"
+                    className="flex items-center justify-center gap-1.5 p-2.5 rounded-[12px] border border-dashed border-white/20 hover:border-[#8B5CF6]/50 bg-white/[0.01] hover:bg-[#8B5CF6]/10 text-white/60 hover:text-white text-xs font-bold transition-all disabled:opacity-40"
                   >
                     <PiPlus size={14} />
                     Add Broadcast Destination (Simulstream)
@@ -2280,7 +2280,7 @@ export default function LiveSwitcherController() {
                         onClick={() => { setStreamWidth(r.w); setStreamHeight(r.h); }}
                         className={`p-2 rounded-[12px] border text-xs font-bold transition-all ${
                           streamWidth === r.w
-                            ? 'bg-purple-600/30 border-purple-500 text-white'
+                            ? 'bg-[#8B5CF6]/30 border-[#8B5CF6]/50 text-white'
                             : 'bg-white/[0.03] border-white/10 text-white/60 hover:text-white'
                         } disabled:opacity-40`}
                       >
@@ -2293,7 +2293,7 @@ export default function LiveSwitcherController() {
                 <div className="flex flex-col gap-2">
                   <div className="flex items-center justify-between">
                     <span className="text-[10px] font-bold uppercase tracking-wider text-white/40">A/V Lip-Sync Delay</span>
-                    <span className="text-xs font-bold text-purple-300">{audioDelayMs} ms</span>
+                    <span className="text-xs font-bold text-[#8B5CF6]">{audioDelayMs} ms</span>
                   </div>
                   <input
                     type="range"
@@ -2380,7 +2380,7 @@ export default function LiveSwitcherController() {
                   className={`px-6 py-2.5 rounded-[12px] text-xs font-bold border flex items-center gap-2 transition-all shadow-lg disabled:opacity-40 ${
                     isStreamArmed
                       ? "bg-red-600 border-red-500 text-white hover:bg-red-500 shadow-red-950/40"
-                      : "bg-purple-600 border-purple-500 text-white hover:bg-purple-500 shadow-purple-950/40"
+                      : "bg-[#8B5CF6] border-[#8B5CF6]/50 text-white hover:bg-[#8B5CF6] shadow-[#8B5CF6]/40"
                   }`}
                 >
                   <PiRadio size={16} />

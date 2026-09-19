@@ -3787,16 +3787,16 @@ export default function BroadcastEngine() {
                 </div>
               )}
               {/* {detectedCommands.slice(0, 2).map(cmd => (
-                                <div key={cmd.id} className="flex items-center gap-2 px-3 py-1.5 rounded-[8px] bg-purple-500/10 border border-purple-500/30 animate-in slide-in-from-bottom-2 duration-300"
+                                <div key={cmd.id} className="flex items-center gap-2 px-3 py-1.5 rounded-[8px] bg-[#8B5CF6]/10 border border-[#8B5CF6]/30 animate-in slide-in-from-bottom-2 duration-300"
                                     style={{boxShadow: '0 0 12px rgba(168,85,247,0.15)'}}>
-                                    <span className="w-2 h-2 rounded-full bg-purple-400 animate-ping" style={{animationDuration:'1.5s'}} />
-                                    <span className="text-[9px] font-black text-purple-300 uppercase tracking-widest">⌘ {cmd.label}</span>
+                                    <span className="w-2 h-2 rounded-full bg-[#8B5CF6] animate-ping" style={{animationDuration:'1.5s'}} />
+                                    <span className="text-[9px] font-black text-[#8B5CF6] uppercase tracking-widest">⌘ {cmd.label}</span>
                                     <span className="ml-auto text-[9px] text-white/20">{cmd.stamp}</span>
                                 </div>
                             ))} */}
               {/* {detectedBiblePassages.slice(0, 2).map(passage => (
-                                <div key={passage.id} className="flex items-center gap-2 px-3 py-1.5 rounded-[8px] bg-blue-600/10 border border-blue-500/20 animate-in slide-in-from-bottom-2 duration-300">
-                                    <span className="text-[9px] font-black text-blue-400 uppercase">📖 {booksRef.current[passage.ref.bookIndex]?.name} {passage.ref.chapter}:{passage.ref.startVerse}</span>
+                                <div key={passage.id} className="flex items-center gap-2 px-3 py-1.5 rounded-[8px] bg-[#00A8FF]/10 border border-[#00A8FF]/20 animate-in slide-in-from-bottom-2 duration-300">
+                                    <span className="text-[9px] font-black text-[#00A8FF] uppercase">📖 {booksRef.current[passage.ref.bookIndex]?.name} {passage.ref.chapter}:{passage.ref.startVerse}</span>
                                     <span className="ml-auto text-[9px] text-white/20">{passage.timestamp}</span>
                                 </div>
                             ))} */}
@@ -3808,14 +3808,14 @@ export default function BroadcastEngine() {
         {/* <div className="flex-1 bg-[#121212] border border-white/5 rounded-[20px] flex flex-col overflow-hidden shadow-2xl min-h-[200px]">
                     <div className="py-[8px] px-[12px] border-b border-white/5 bg-white/[0.02] flex items-center justify-between shrink-0">
                         <div className="flex items-center gap-3">
-                            <div className="w-[28px] h-[28px] flex items-center justify-center bg-purple-600/20 rounded-[8px] text-purple-400">
+                            <div className="w-[28px] h-[28px] flex items-center justify-center bg-[#8B5CF6]/20 rounded-[8px] text-[#8B5CF6]">
                                 <PiMagicWandFill size={16} />
                             </div>
                             <h3 className="text-[10px] font-semibold uppercase tracking-widest">OCS AI</h3>
                         </div>
                         <div className="flex items-center gap-2">
                             {aiStatus.ollama
-                                ? <span className="text-[9px] font-black text-purple-400 uppercase tracking-widest bg-purple-500/10 px-2 py-0.5 rounded-full">● {aiStatus.model || 'Ollama'}</span>
+                                ? <span className="text-[9px] font-black text-[#8B5CF6] uppercase tracking-widest bg-[#8B5CF6]/10 px-2 py-0.5 rounded-full">● {aiStatus.model || 'Ollama'}</span>
                                 : <span className="text-[9px] font-black text-white/20 uppercase tracking-widest">Offline — run ollama serve</span>
                             }
                             {aiStatus.piper && <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest bg-emerald-500/10 px-2 py-0.5 rounded-full">🎙 Piper</span>}
@@ -3830,7 +3830,7 @@ export default function BroadcastEngine() {
                         )}
                         {aiChatHistory.map(msg => (
                             <div key={msg.id} className={`flex flex-col gap-1 ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
-                                <div className={`max-w-[90%] px-3 py-2 rounded-[10px] text-[11px] leading-relaxed ${msg.role === 'user' ? 'bg-white/10 text-white/80 rounded-tr-none' : 'bg-purple-600/15 border border-purple-500/20 text-purple-100 rounded-tl-none'}`}>
+                                <div className={`max-w-[90%] px-3 py-2 rounded-[10px] text-[11px] leading-relaxed ${msg.role === 'user' ? 'bg-white/10 text-white/80 rounded-tr-none' : 'bg-[#8B5CF6]/15 border border-[#8B5CF6]/20 text-white rounded-tl-none'}`}>
                                     {msg.text}
                                 </div>
                                 {msg.role === 'ai' && (
@@ -3845,9 +3845,9 @@ export default function BroadcastEngine() {
                         ))}
                         {aiChatLoading && (
                             <div className="flex items-center gap-2 px-3 py-2">
-                                <span className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce" style={{animationDelay:'0ms'}} />
-                                <span className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce" style={{animationDelay:'150ms'}} />
-                                <span className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce" style={{animationDelay:'300ms'}} />
+                                <span className="w-1.5 h-1.5 bg-[#8B5CF6] rounded-full animate-bounce" style={{animationDelay:'0ms'}} />
+                                <span className="w-1.5 h-1.5 bg-[#8B5CF6] rounded-full animate-bounce" style={{animationDelay:'150ms'}} />
+                                <span className="w-1.5 h-1.5 bg-[#8B5CF6] rounded-full animate-bounce" style={{animationDelay:'300ms'}} />
                             </div>
                         )}
                     </div>
@@ -3855,10 +3855,10 @@ export default function BroadcastEngine() {
                         <input value={aiChatInput} onChange={e => setAiChatInput(e.target.value)}
                             placeholder={aiStatus.ollama ? 'Ask about the scripture or service…' : 'Start Ollama: ollama serve'}
                             disabled={!aiStatus.ollama || aiChatLoading}
-                            className="flex-1 bg-white/5 border border-white/10 rounded-[8px] px-3 py-2 text-[11px] text-white placeholder:text-white/20 outline-none focus:border-purple-500/50 transition-colors disabled:opacity-30"
+                            className="flex-1 bg-white/5 border border-white/10 rounded-[8px] px-3 py-2 text-[11px] text-white placeholder:text-white/20 outline-none focus:border-[#8B5CF6]/50 transition-colors disabled:opacity-30"
                         />
                         <button type="submit" disabled={!aiStatus.ollama || aiChatLoading || !aiChatInput.trim()}
-                            className="px-4 bg-purple-600 hover:bg-purple-500 disabled:opacity-30 rounded-[8px] text-[11px] font-black text-white transition-all shadow-[0_0_15px_rgba(168,85,247,0.3)]">
+                            className="px-4 bg-[#8B5CF6] hover:bg-[#8B5CF6] disabled:opacity-30 rounded-[8px] text-[11px] font-black text-white transition-all shadow-[0_0_15px_rgba(139,92,246,0.3)]">
                             Send
                         </button>
                     </form>
@@ -3933,12 +3933,12 @@ export default function BroadcastEngine() {
           <div className="flex flex-col gap-1.5 h-full rounded-xl overflow-hidden">
             <div className="flex items-center justify-between px-3 h-6">
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.8)]" />
+                <div className="w-2 h-2 rounded-full bg-[#8B5CF6] shadow-[0_0_8px_rgba(139,92,246,0.8)]" />
                 <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/70">
                   General Display
                 </span>
               </div>
-              <span className="text-[9px] font-mono font-bold text-purple-300 bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded-md">
+              <span className="text-[9px] font-mono font-bold text-[#8B5CF6] bg-[#8B5CF6]/10 border border-[#8B5CF6]/20 px-2 py-0.5 rounded-md">
                 1080p60 · PGM
               </span>
             </div>
@@ -3953,7 +3953,7 @@ export default function BroadcastEngine() {
           <div className="flex flex-col gap-1.5 h-full rounded-xl overflow-hidden">
             <div className="flex items-center justify-between px-3 h-6">
               <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.8)]" />
+                <div className="w-2 h-2 rounded-full bg-[#00A8FF] shadow-[0_0_8px_rgba(0,168,255,0.8)]" />
                 <span className="text-[10px] font-bold uppercase tracking-[0.18em] text-white/70">
                   Speaker View
                 </span>
@@ -4209,7 +4209,7 @@ export default function BroadcastEngine() {
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                   1080p FHD Native (1920×1080 @ 60fps)
                 </span>
-                <span className="text-purple-400 font-bold uppercase">
+                <span className="text-[#8B5CF6] font-bold uppercase">
                   NDI &amp; Stage Feeds Active
                 </span>
               </div>

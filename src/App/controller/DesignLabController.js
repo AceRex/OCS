@@ -72,7 +72,7 @@ function DesignLabPanel() {
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                     <h2 className="text-xl font-bold text-ash uppercase tracking-widest flex items-center gap-2">
-                        <PiSparkle className="text-blue-400" /> AI Design Lab
+                        <PiSparkle className="text-[#00A8FF]" /> AI Design Lab
                     </h2>
                     {poster && (
                         <ActionButton 
@@ -84,7 +84,7 @@ function DesignLabPanel() {
                     )}
                 </div>
                 <div className="flex items-center gap-2 text-[10px] text-ash bg-white/5 px-3 py-1 rounded-full border border-white/10">
-                    <div className="w-2 h-2 rounded-full bg-blue-500 animate-pulse"></div>
+                    <div className="w-2 h-2 rounded-full bg-[#00A8FF] animate-pulse"></div>
                     Local AI Design Engine Active
                 </div>
             </div>
@@ -93,10 +93,10 @@ function DesignLabPanel() {
                 <ActionButton
                     loadingLabel="Opening poster…"
                     onClick={handleUpload}
-                    className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl hover:border-blue-500/50 hover:bg-blue-500/5 cursor-pointer transition-all p-12 group"
+                    className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-2xl hover:border-[#00A8FF]/50 hover:bg-[#00A8FF]/5 cursor-pointer transition-all p-12 group"
                 >
-                    <div className="w-20 h-20 bg-blue-500/10 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
-                        <PiUploadSimple size={40} className="text-blue-400" />
+                    <div className="w-20 h-20 bg-[#00A8FF]/10 rounded-full flex items-center justify-center mb-4 group-hover:scale-110 transition-transform">
+                        <PiUploadSimple size={40} className="text-[#00A8FF]" />
                     </div>
                     <h3 className="text-lg font-bold text-white mb-2">Upload Event Poster</h3>
                     <p className="text-ash text-sm text-center max-w-xs">
@@ -126,7 +126,7 @@ function DesignLabPanel() {
                             <label className="text-xs font-bold text-ash mb-1 block uppercase tracking-tighter">AI Perception</label>
                             {isAnalyzing ? (
                                 <div className="flex-1 bg-ash/5 rounded-xl border border-white/5 flex flex-col items-center justify-center gap-4 p-8">
-                                    <div className="w-12 h-12 border-4 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
+                                    <div className="w-12 h-12 border-4 border-[#00A8FF]/20 border-t-blue-500 rounded-full animate-spin"></div>
                                     <p className="text-sm text-ash animate-pulse italic">Reading poster details & theme...</p>
                                 </div>
                             ) : analysis ? (
@@ -139,7 +139,7 @@ function DesignLabPanel() {
                                         <div className="flex flex-wrap items-center gap-2 mt-1">
                                             {Array.isArray(analysis.dates_found) && analysis.dates_found.length > 0 ? (
                                                 analysis.dates_found.map((date, i) => (
-                                                    <span key={i} className="text-xs text-blue-400 font-medium bg-blue-500/10 px-2 py-0.5 rounded-full">{date}</span>
+                                                    <span key={i} className="text-xs text-[#00A8FF] font-medium bg-[#00A8FF]/10 px-2 py-0.5 rounded-full">{date}</span>
                                                 ))
                                             ) : (
                                                 <span className="text-xs text-ash/50 italic">No dates detected</span>
@@ -148,7 +148,7 @@ function DesignLabPanel() {
                                                 <span className="text-white/20">|</span>
                                             )}
                                             {Array.isArray(analysis.times_found) && analysis.times_found.map((time, i) => (
-                                                <span key={i} className="text-xs text-purple-400 font-medium">{time}</span>
+                                                <span key={i} className="text-xs text-[#8B5CF6] font-medium">{time}</span>
                                             ))}
                                             <span className="text-white/20">•</span>
                                             <span className="text-xs text-ash capitalize">{analysis.theme} • {analysis.mood}</span>
@@ -180,7 +180,7 @@ function DesignLabPanel() {
                     {analysis && analysis.generated_files && (
                         <div className="space-y-6">
                             <h3 className="text-lg font-bold text-white flex items-center gap-2">
-                                <PiPaintBrush className="text-blue-400" /> Generated Local Assets
+                                <PiPaintBrush className="text-[#00A8FF]" /> Generated Local Assets
                             </h3>
 
                             <div className="grid grid-cols-2 gap-6">
@@ -189,14 +189,14 @@ function DesignLabPanel() {
                                     <label className="text-[10px] text-ash font-bold uppercase tracking-widest">Background Variants</label>
                                     <div className="grid grid-cols-1 gap-4">
                                         {analysis.generated_files.backgrounds?.map((path, i) => (
-                                            <div key={i} className="bg-white/5 border border-white/10 rounded-xl overflow-hidden group hover:border-blue-500/50 transition-all">
+                                            <div key={i} className="bg-white/5 border border-white/10 rounded-xl overflow-hidden group hover:border-[#00A8FF]/50 transition-all">
                                                 <div className="aspect-video bg-black/40 relative">
                                                     <img src={`file://${path}`} className="w-full h-full object-cover" alt={`BG ${i+1}`} />
                                                     <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
                                                         <ActionButton className="p-2 bg-white/10 rounded-full hover:bg-white/20 transition-colors"><PiImage size={24} /></ActionButton>
                                                         <ActionButton 
                                                             onClick={() => handleApplyAsset(path, 'background')}
-                                                            className="p-2 bg-blue-600 rounded-full hover:bg-blue-500 transition-colors"
+                                                            className="p-2 bg-[#00A8FF] rounded-full hover:bg-[#00A8FF] transition-colors"
                                                         >
                                                             <PiCheckCircle size={24} />
                                                         </ActionButton>
@@ -216,13 +216,13 @@ function DesignLabPanel() {
                                     <label className="text-[10px] text-ash font-bold uppercase tracking-widest">Lower Third Overlays</label>
                                     <div className="grid grid-cols-1 gap-4">
                                         {analysis.generated_files.lower_thirds?.map((path, i) => (
-                                            <div key={i} className="bg-white/5 border border-white/10 rounded-xl overflow-hidden group hover:border-blue-500/50 transition-all">
+                                            <div key={i} className="bg-white/5 border border-white/10 rounded-xl overflow-hidden group hover:border-[#00A8FF]/50 transition-all">
                                                 <div className="h-24 bg-black/40 relative">
                                                     <img src={`file://${path}`} className="w-full h-full object-cover" alt={`LT ${i+1}`} />
                                                     <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4">
                                                         <ActionButton 
                                                             onClick={() => handleApplyAsset(path, 'lower_third')}
-                                                            className="p-2 bg-purple-600 rounded-full hover:bg-purple-500 transition-colors"
+                                                            className="p-2 bg-[#8B5CF6] rounded-full hover:bg-[#8B5CF6] transition-colors"
                                                         >
                                                             <PiCheckCircle size={24} />
                                                         </ActionButton>

@@ -182,7 +182,7 @@ export default function TeleprompterScriptModal({
         {/* Header */}
         <div className="h-16 px-6 border-b border-white/10 flex items-center justify-between bg-[#13121c] shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-300">
+            <div className="w-9 h-9 rounded-xl bg-[#8B5CF6]/20 border border-[#8B5CF6]/30 flex items-center justify-center text-[#8B5CF6]">
               <PiFileText size={20} />
             </div>
             <div>
@@ -202,7 +202,7 @@ export default function TeleprompterScriptModal({
                 onClick={() => setScrollMode("continuous")}
                 className={`px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5 transition-all ${
                   scrollMode === "continuous"
-                    ? "bg-purple-600 text-white shadow-inner"
+                    ? "bg-[#8B5CF6] text-white shadow-inner"
                     : "text-white/50 hover:text-white/80"
                 }`}
                 title="Continuous: words scroll smoothly as you speak"
@@ -229,7 +229,7 @@ export default function TeleprompterScriptModal({
             </button>
             <button
               onClick={handleSave}
-              className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-purple-600/30 transition-all active:scale-95"
+              className="px-4 py-2 rounded-xl bg-[#8B5CF6] hover:bg-[#8B5CF6] text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-[#8B5CF6]/30 transition-all active:scale-95"
             >
               <PiFloppyDisk size={15} /> Save Script
             </button>
@@ -257,7 +257,7 @@ export default function TeleprompterScriptModal({
                 value={scriptTitle}
                 onChange={(e) => setScriptTitle(e.target.value)}
                 placeholder="e.g. Opening Remarks / Keynote / Announcements"
-                className="w-full bg-[#1b1926] text-xs font-semibold text-white px-3 py-2 rounded-xl border border-white/10 outline-none focus:border-purple-500/50 transition-colors placeholder:text-white/20"
+                className="w-full bg-[#1b1926] text-xs font-semibold text-white px-3 py-2 rounded-xl border border-white/10 outline-none focus:border-[#8B5CF6]/50 transition-colors placeholder:text-white/20"
               />
             </div>
 
@@ -279,14 +279,14 @@ export default function TeleprompterScriptModal({
                     onClick={() => setActivePageIndex(idx)}
                     className={`p-3 rounded-2xl border transition-all cursor-pointer flex flex-col gap-1 relative group ${
                       isActive
-                        ? "bg-purple-600/20 border-purple-500/60 shadow-md text-white"
+                        ? "bg-[#8B5CF6]/20 border-[#8B5CF6]/60 shadow-md text-white"
                         : "bg-[#181622]/60 hover:bg-[#1f1d2b] border-white/5 text-white/70"
                     }`}
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <span className={`w-5 h-5 rounded-lg flex items-center justify-center text-[10px] font-black ${
-                          isActive ? "bg-purple-500 text-white" : "bg-white/10 text-white/60"
+                          isActive ? "bg-[#8B5CF6] text-white" : "bg-white/10 text-white/60"
                         }`}>
                           {idx + 1}
                         </span>
@@ -365,7 +365,7 @@ export default function TeleprompterScriptModal({
                   value={activePage.label || ""}
                   onChange={(e) => handleUpdatePageLabel(e.target.value)}
                   placeholder={`Section ${activePageIndex + 1} Title`}
-                  className="bg-[#15141e] text-sm font-bold text-white px-3 py-1.5 rounded-xl border border-white/10 outline-none focus:border-purple-500/50 min-w-[200px]"
+                  className="bg-[#15141e] text-sm font-bold text-white px-3 py-1.5 rounded-xl border border-white/10 outline-none focus:border-[#8B5CF6]/50 min-w-[200px]"
                 />
 
                 <div className="flex items-center gap-1 bg-white/5 rounded-xl p-1 border border-white/5 text-xs">
@@ -405,7 +405,7 @@ export default function TeleprompterScriptModal({
                 value={activePage.text || ""}
                 onChange={(e) => handleUpdatePageText(e.target.value)}
                 placeholder="Type or paste teleprompter text for this section here..."
-                className="w-full flex-1 bg-transparent text-white text-base md:text-lg leading-relaxed resize-none outline-none font-sans font-medium placeholder:text-white/20 selection:bg-purple-600/40 p-2 overflow-y-auto no-scrollbar"
+                className="w-full flex-1 bg-transparent text-white text-base md:text-lg leading-relaxed resize-none outline-none font-sans font-medium placeholder:text-white/20 selection:bg-[#8B5CF6]/40 p-2 overflow-y-auto no-scrollbar"
                 autoFocus
               />
 
@@ -427,7 +427,7 @@ export default function TeleprompterScriptModal({
             <div className="bg-[#12111a] border border-white/10 rounded-2xl w-full max-w-2xl flex flex-col p-6 gap-4 shadow-2xl">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <PiScissors size={16} className="text-purple-400" />
+                  <PiScissors size={16} className="text-[#8B5CF6]" />
                   Import / Paste Entire Script
                 </h3>
                 <button
@@ -445,7 +445,7 @@ export default function TeleprompterScriptModal({
                 onChange={(e) => setRawPasteText(e.target.value)}
                 placeholder="Paste full plain-text script here..."
                 rows={10}
-                className="w-full bg-[#1b1926] text-xs text-white p-3 rounded-xl border border-white/10 outline-none focus:border-purple-500/50 font-sans leading-relaxed resize-none"
+                className="w-full bg-[#1b1926] text-xs text-white p-3 rounded-xl border border-white/10 outline-none focus:border-[#8B5CF6]/50 font-sans leading-relaxed resize-none"
               />
               <div className="flex items-center justify-end gap-2 pt-2">
                 <button
@@ -456,7 +456,7 @@ export default function TeleprompterScriptModal({
                 </button>
                 <button
                   onClick={handleApplyRawPaste}
-                  className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md"
+                  className="px-4 py-2 rounded-xl bg-[#8B5CF6] hover:bg-[#8B5CF6] text-white text-xs font-bold shadow-md"
                 >
                   Split into Sections
                 </button>

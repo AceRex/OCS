@@ -47,9 +47,9 @@ export default function DisabledContainer({
           e.preventDefault();
         }}
       >
-        <div className="bg-[#1a1825]/95 backdrop-blur-md border border-purple-500/30 rounded-2xl px-6 py-5 flex flex-col items-center gap-3 shadow-2xl max-w-[240px] pointer-events-none">
-          <div className="w-10 h-10 rounded-xl bg-purple-500/15 border border-purple-500/30 flex items-center justify-center">
-            <PiDeviceMobileFill size={22} className="text-purple-400" />
+        <div className="bg-[#1a1825]/95 backdrop-blur-md border border-[#8B5CF6]/30 rounded-2xl px-6 py-5 flex flex-col items-center gap-3 shadow-2xl max-w-[240px] pointer-events-none">
+          <div className="w-10 h-10 rounded-xl bg-[#8B5CF6]/15 border border-[#8B5CF6]/30 flex items-center justify-center">
+            <PiDeviceMobileFill size={22} className="text-[#8B5CF6]" />
           </div>
           <p className="text-white/80 text-xs font-semibold leading-relaxed text-center">
             {message || "Your current plan does not support this feature."}

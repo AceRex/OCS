@@ -64,10 +64,10 @@ export default function UpdateModal() {
       
       {/* ─── 1. UPDATE AVAILABLE STATE ─── */}
       {isAvailable && (
-        <div className="bg-[#130E22]/95 border border-[#3E3159] p-5 rounded-3xl shadow-2xl shadow-purple-950/80 backdrop-blur-xl space-y-4 text-white">
+        <div className="bg-[#130E22]/95 border border-[#3E3159] p-5 rounded-3xl shadow-2xl shadow-[#8B5CF6]/80 backdrop-blur-xl space-y-4 text-white">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#A788FA] to-[#6366F1] flex items-center justify-center text-[#0B0814] shadow-lg shadow-purple-500/30">
+              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#A788FA] to-[#6366F1] flex items-center justify-center text-[#0B0814] shadow-lg shadow-[#8B5CF6]/30">
                 <PiSparkle size={20} className="animate-pulse" />
               </div>
               <div>
@@ -119,10 +119,10 @@ export default function UpdateModal() {
 
       {/* ─── 2. DOWNLOADING STATE ─── */}
       {isDownloading && (
-        <div className="bg-[#130E22]/95 border border-[#3E3159] p-5 rounded-3xl shadow-2xl shadow-purple-950/80 backdrop-blur-xl space-y-3.5 text-white">
+        <div className="bg-[#130E22]/95 border border-[#3E3159] p-5 rounded-3xl shadow-2xl shadow-[#8B5CF6]/80 backdrop-blur-xl space-y-3.5 text-white">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-[#A788FA] flex items-center justify-center">
+              <div className="w-8 h-8 rounded-xl bg-[#8B5CF6]/20 text-[#A788FA] flex items-center justify-center">
                 <PiArrowClockwise size={18} className="animate-spin" />
               </div>
               <div>

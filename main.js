@@ -104,8 +104,16 @@ app.setAsDefaultProtocolClient("waveio");
 // Retain existing ~/Library/Application Support/ocs profile path so databases,
 // saved designs, scenes.json, and license credentials are unconditionally preserved.
 try {
-  const legacyUserData = path.join(app.getPath("appData"), "ocs");
-  app.setPath("userData", legacyUserData);
+  const cliUserDataArg = process.argv.find((arg) => arg.startsWith("--user-data-dir="));
+  if (process.env.OCS_USER_DATA) {
+    app.setPath("userData", process.env.OCS_USER_DATA);
+  } else if (cliUserDataArg) {
+    const cliPath = cliUserDataArg.split("=")[1];
+    if (cliPath) app.setPath("userData", path.resolve(cliPath));
+  } else {
+    const legacyUserData = path.join(app.getPath("appData"), "ocs");
+    app.setPath("userData", legacyUserData);
+  }
 } catch (_) {}
 
 // ── Single Instance Lock (Enforce app only loads once) ──────────────────────

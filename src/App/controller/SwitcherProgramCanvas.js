@@ -2178,7 +2178,7 @@ export default function SwitcherProgramCanvas({
               {isManualMixing ? `T-BAR: ${Math.round(mixProgress * 100)}%` : isTransitioning ? "TRANSITION" : "LIVE OUTPUT"}
             </div>
             {isMirrored && (
-              <div className="bg-purple-600/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-[12px] shadow-sm">
+              <div className="bg-[#8B5CF6]/90 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-[12px] shadow-sm">
                 MIRRORED
               </div>
             )}
@@ -2193,7 +2193,7 @@ export default function SwitcherProgramCanvas({
               </span>
             )}
             {bConfig.scale < 1.0 && (
-              <span className="text-[9px] font-bold uppercase tracking-wider text-purple-300 bg-black/60 px-1.5 py-0.5 rounded-[12px] border border-purple-500/30">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-[#8B5CF6] bg-black/60 px-1.5 py-0.5 rounded-[12px] border border-[#8B5CF6]/30">
                 {Math.round(bConfig.scale * 100)}% INSET
               </span>
             )}

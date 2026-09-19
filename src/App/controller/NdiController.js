@@ -214,7 +214,7 @@ function NdiPanel() {
             disabled={!status.isRunning && !status.enabled}
             className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
               status.isRunning || status.enabled
-                ? "bg-[#1A1428] hover:bg-[#231A36] text-purple-300 border border-[#2E2542] cursor-pointer shadow-sm hover:border-purple-500/40"
+                ? "bg-[#1A1428] hover:bg-[#231A36] text-[#8B5CF6] border border-[#2E2542] cursor-pointer shadow-sm hover:border-[#8B5CF6]/40"
                 : "bg-[#120D1D] text-slate-600 border border-slate-800/40 cursor-not-allowed opacity-40 pointer-events-none"
             }`}
             title={status.isRunning || status.enabled ? "Refresh and restart all NDI & WebRTC video streams" : "Streaming must be started before restarting streams"}
@@ -242,7 +242,7 @@ function NdiPanel() {
             <p className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest">LAN Broadcast IP</p>
             <p className="text-sm font-mono font-bold text-white mt-1">{status.localIp}:{status.port}</p>
           </div>
-          <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-400">
+          <div className="p-2.5 rounded-xl bg-[#00A8FF]/10 text-[#00A8FF]">
             <PiRadio size={22} />
           </div>
         </div>
@@ -329,7 +329,7 @@ function NdiPanel() {
                 </div>
                 <button
                   onClick={() => copyToClipboard(programMjpegUrl, "mjpeg-program")}
-                  className="px-3 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-[#A788FA] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
+                  className="px-3 py-2 bg-[#8B5CF6]/20 hover:bg-[#8B5CF6]/30 text-[#A788FA] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
                 >
                   {copiedKey === "mjpeg-program" ? <PiCheck size={14} /> : <PiCopy size={14} />}
                   {copiedKey === "mjpeg-program" ? "Copied!" : "Copy"}
@@ -408,12 +408,12 @@ function NdiPanel() {
 
         {/* Stream 2: Stage Display */}
         <div className="bg-[#1A1428] border border-[#2E2542] p-6 rounded-3xl flex flex-col justify-between relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-purple-500/5 rounded-full blur-3xl pointer-events-none" />
+          <div className="absolute top-0 right-0 w-32 h-32 bg-[#8B5CF6]/5 rounded-full blur-3xl pointer-events-none" />
 
           <div>
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center">
+                <div className="w-9 h-9 rounded-xl bg-[#8B5CF6]/20 text-[#8B5CF6] flex items-center justify-center">
                   <PiTelevision size={20} />
                 </div>
                 <div>
@@ -421,7 +421,7 @@ function NdiPanel() {
                   <p className="text-xs text-[#8882A4]">Speaker confidence monitor, live timer & notes</p>
                 </div>
               </div>
-              <span className="px-2.5 py-1 rounded-lg bg-purple-500/10 text-purple-400 text-[10px] font-black uppercase tracking-wider">
+              <span className="px-2.5 py-1 rounded-lg bg-[#8B5CF6]/10 text-[#8B5CF6] text-[10px] font-black uppercase tracking-wider">
                 Stage Feed
               </span>
             </div>
@@ -431,14 +431,14 @@ function NdiPanel() {
               {/* Stage Browser URL */}
               <div className="bg-[#0B0814] p-3.5 rounded-2xl border border-[#2E2542] flex items-center justify-between gap-3">
                 <div className="flex-1 overflow-hidden">
-                  <span className="text-[10px] font-black uppercase tracking-wider text-purple-400 mb-1 block">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-[#8B5CF6] mb-1 block">
                     Stage Confidence Monitor Web View
                   </span>
                   <p className="text-xs font-mono text-[#8882A4] truncate">{stageOverlayUrl}</p>
                 </div>
                 <button
                   onClick={() => copyToClipboard(stageOverlayUrl, "obs-stage")}
-                  className="px-3 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
+                  className="px-3 py-2 bg-[#8B5CF6]/20 hover:bg-[#8B5CF6]/30 text-[#8B5CF6] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
                 >
                   {copiedKey === "obs-stage" ? <PiCheck size={14} /> : <PiCopy size={14} />}
                   {copiedKey === "obs-stage" ? "Copied!" : "Copy"}
@@ -455,7 +455,7 @@ function NdiPanel() {
                 </div>
                 <button
                   onClick={() => copyToClipboard(stageMjpegUrl, "mjpeg-stage")}
-                  className="px-3 py-2 bg-purple-500/20 hover:bg-purple-500/30 text-[#A788FA] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
+                  className="px-3 py-2 bg-[#8B5CF6]/20 hover:bg-[#8B5CF6]/30 text-[#A788FA] rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all"
                 >
                   {copiedKey === "mjpeg-stage" ? <PiCheck size={14} /> : <PiCopy size={14} />}
                   {copiedKey === "mjpeg-stage" ? "Copied!" : "Copy"}
@@ -477,7 +477,7 @@ function NdiPanel() {
       <div className="bg-[#1A1428] border border-[#2E2542] p-6 rounded-3xl">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-xl bg-[#00A8FF]/20 text-[#00A8FF] flex items-center justify-center">
               <PiVideoCamera size={18} />
             </div>
             <div>
@@ -575,7 +575,7 @@ function NdiPanel() {
               <p className="font-bold text-white mb-2">Connecting to vMix Live Production</p>
               <ol className="list-decimal pl-5 space-y-1.5 text-xs">
                 <li>In vMix, click <strong className="text-white">Add Input</strong> → select <strong className="text-white">NDI / Desktop Capture</strong>.</li>
-                <li>Select <strong className="text-emerald-400">"{status.programStreamName}"</strong> or <strong className="text-purple-400">"{status.stageStreamName}"</strong>.</li>
+                <li>Select <strong className="text-emerald-400">"{status.programStreamName}"</strong> or <strong className="text-[#8B5CF6]">"{status.stageStreamName}"</strong>.</li>
                 <li>Alternatively, add a <strong className="text-white">Web Browser</strong> input pointing to <code className="text-cyan-400 bg-white/5 px-2 py-0.5 rounded">{status.urls?.programOverlay}</code>.</li>
               </ol>
             </div>

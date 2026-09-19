@@ -393,7 +393,7 @@ export default function LiveStudioControlsRack({ onOpenStudio, showFeedback }) {
       {/* Header bar */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-[12px] bg-purple-500/25 border border-purple-400/40 flex items-center justify-center text-purple-300">
+          <div className="w-6 h-6 rounded-[12px] bg-[#8B5CF6]/25 border border-[#8B5CF6]/40 flex items-center justify-center text-[#8B5CF6]/80">
             <PiTelevision size={14} />
           </div>
           <div>
@@ -461,7 +461,7 @@ export default function LiveStudioControlsRack({ onOpenStudio, showFeedback }) {
               );
             } else if (isExiting) {
               statusBadge = (
-                <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-purple-500/30 text-purple-300 border border-purple-500/40">
+                <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-[#8B5CF6]/30 text-[#8B5CF6]/80 border border-[#8B5CF6]/40">
                   EXITING…
                 </span>
               );
@@ -526,13 +526,13 @@ export default function LiveStudioControlsRack({ onOpenStudio, showFeedback }) {
                         onBlur={() => handleSaveRename(ctrl.id)}
                         onKeyDown={(e) => e.key === "Enter" && handleSaveRename(ctrl.id)}
                         autoFocus
-                        className="w-full bg-black/60 border border-purple-400 rounded px-1 text-[10px] text-white focus:outline-none"
+                        className="w-full bg-black/60 border border-[#8B5CF6] rounded px-1 text-[10px] text-white focus:outline-none"
                       />
                     ) : (
                       <div className="flex flex-col min-w-0 flex-1">
                         <span
                           onDoubleClick={() => handleStartRename(ctrl)}
-                          className="text-[10px] font-bold text-white truncate hover:text-purple-300 cursor-text"
+                          className="text-[10px] font-bold text-white truncate hover:text-[#8B5CF6]/80 cursor-text"
                           title="Double-click to rename"
                         >
                           {ctrl.label}
@@ -673,7 +673,7 @@ function ControlSettingsModal({ control, onClose, onSave }) {
       <div className="bg-[#12141a] border border-white/15 rounded-[12px] max-w-sm w-full p-4 shadow-2xl flex flex-col gap-3.5 text-white animate-in fade-in zoom-in-95 duration-150">
         <div className="flex items-center justify-between border-b border-white/10 pb-2">
           <div className="flex items-center gap-2">
-            <PiClock size={16} className="text-purple-400" />
+            <PiClock size={16} className="text-[#8B5CF6]" />
             <h4 className="text-xs font-bold text-white truncate max-w-[240px]">
               Settings: {control.label}
             </h4>
@@ -689,7 +689,7 @@ function ControlSettingsModal({ control, onClose, onSave }) {
             type="button"
             onClick={() => setActiveTab("transition")}
             className={`py-1 rounded-[12px] text-xs font-bold transition-all ${
-              activeTab === "transition" ? "bg-purple-600 text-white shadow" : "text-white/50 hover:text-white"
+              activeTab === "transition" ? "bg-[#8B5CF6] text-white shadow" : "text-white/50 hover:text-white"
             }`}
           >
             Transitions
@@ -698,7 +698,7 @@ function ControlSettingsModal({ control, onClose, onSave }) {
             type="button"
             onClick={() => setActiveTab("timing")}
             className={`py-1 rounded-[12px] text-xs font-bold transition-all ${
-              activeTab === "timing" ? "bg-purple-600 text-white shadow" : "text-white/50 hover:text-white"
+              activeTab === "timing" ? "bg-[#8B5CF6] text-white shadow" : "text-white/50 hover:text-white"
             }`}
           >
             Timing & Schedule
@@ -804,7 +804,7 @@ function ControlSettingsModal({ control, onClose, onSave }) {
                 max="300"
                 value={delay}
                 onChange={(e) => setDelay(e.target.value)}
-                className="bg-black/50 border border-white/15 rounded-[12px] px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-purple-500"
+                className="bg-black/50 border border-white/15 rounded-[12px] px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-[#8B5CF6]"
               />
               <span className="text-[9px] text-white/40">0 = Show immediately on click</span>
             </div>
@@ -818,7 +818,7 @@ function ControlSettingsModal({ control, onClose, onSave }) {
                 max="3600"
                 value={autoRemove}
                 onChange={(e) => setAutoRemove(e.target.value)}
-                className="bg-black/50 border border-white/15 rounded-[12px] px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-purple-500"
+                className="bg-black/50 border border-white/15 rounded-[12px] px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-[#8B5CF6]"
               />
               <span className="text-[9px] text-white/40">0 = Disabled (stays live until manually hidden)</span>
             </div>
@@ -853,7 +853,7 @@ function ControlSettingsModal({ control, onClose, onSave }) {
                   type="checkbox"
                   checked={armed}
                   onChange={(e) => setArmed(e.target.checked)}
-                  className="w-4 h-4 rounded text-purple-600 focus:ring-0 cursor-pointer"
+                  className="w-4 h-4 rounded text-[#8B5CF6] focus:ring-0 cursor-pointer"
                 />
               </div>
             </div>
@@ -870,7 +870,7 @@ function ControlSettingsModal({ control, onClose, onSave }) {
           </button>
           <button
             onClick={handleSave}
-            className="px-4 py-1.5 rounded-[12px] bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-md"
+            className="px-4 py-1.5 rounded-[12px] bg-[#8B5CF6] hover:bg-[#8B5CF6]/90 text-white text-xs font-bold shadow-md"
           >
             Save Settings
           </button>

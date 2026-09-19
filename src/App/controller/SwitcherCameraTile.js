@@ -251,7 +251,7 @@ export default function SwitcherCameraTile({
           }}
           className="absolute inset-0 flex flex-col items-center justify-center gap-1.5 text-white/30 hover:text-white/80 hover:bg-white/[0.06] transition-all cursor-pointer p-2 text-center"
         >
-          <div className="w-7 h-7 rounded-[12px] bg-white/5 border border-white/10 flex items-center justify-center text-white/40 group-hover:text-purple-400 group-hover:border-purple-500/40 transition-colors">
+          <div className="w-7 h-7 rounded-[12px] bg-white/5 border border-white/10 flex items-center justify-center text-white/40 group-hover:text-[#8B5CF6] group-hover:border-[#8B5CF6]/40 transition-colors">
             <PiPlus size={15} />
           </div>
           <div>
@@ -335,7 +335,7 @@ export default function SwitcherCameraTile({
           <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/85 via-black/40 to-transparent px-2 py-1.5 flex items-center justify-between z-10">
             <div className="flex items-center gap-1 truncate mr-1">
               {isCamcorder ? (
-                <PiTelevision size={11} className="text-purple-400 flex-shrink-0" title="Hardware Camcorder / Video Input" />
+                <PiTelevision size={11} className="text-[#8B5CF6] flex-shrink-0" title="Hardware Camcorder / Video Input" />
               ) : (
                 <PiDeviceMobile size={11} className="text-emerald-400 flex-shrink-0" title="Mobile Companion" />
               )}
@@ -362,7 +362,7 @@ export default function SwitcherCameraTile({
                 title={isMirrored ? "Mirror active (click to unmirror)" : "Click to mirror camera horizontally"}
                 className={`px-1.5 py-0.5 rounded-[12px] text-[8px] font-black border transition-all flex items-center gap-0.5 ${
                   isMirrored
-                    ? "bg-purple-600 border-purple-400 text-white shadow-sm"
+                    ? "bg-[#8B5CF6] border-[#8B5CF6]/50 text-white shadow-sm"
                     : "bg-black/70 border-white/15 text-white/50 hover:text-white hover:bg-white/20"
                 }`}
               >

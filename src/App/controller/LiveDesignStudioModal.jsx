@@ -5905,7 +5905,7 @@ export default function LiveDesignStudioModal({
       <div className="w-full h-full bg-[#0d0b14] flex flex-col overflow-hidden text-white font-sans relative">
         {/* Floating In-Modal Actionable Feedback Banner */}
         {modalToast && (
-          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[10000] px-4 py-2 rounded-[12px] bg-[#1a1528] border border-purple-500/40 shadow-2xl flex items-center gap-2.5 text-xs animate-in fade-in slide-in-from-top-2 duration-200 pointer-events-none">
+          <div className="absolute top-16 left-1/2 -translate-x-1/2 z-[10000] px-4 py-2 rounded-[12px] bg-[#1a1528] border border-[#8B5CF6]/40 shadow-2xl flex items-center gap-2.5 text-xs animate-in fade-in slide-in-from-top-2 duration-200 pointer-events-none">
             <div className={`w-2 h-2 rounded-full ${modalToast.isSuccess ? "bg-green-400 shadow-[0_0_8px_rgba(74,222,128,0.6)]" : "bg-red-400 shadow-[0_0_8px_rgba(248,113,113,0.6)]"}`} />
             <span className={modalToast.isSuccess ? "text-white font-medium" : "text-red-200 font-medium"}>
               {modalToast.message}
@@ -5970,7 +5970,7 @@ export default function LiveDesignStudioModal({
           <div className="flex items-center gap-1.5 min-w-0" style={{ flex: "1 1 0" }}>
             {/* Studio icon */}
             <div
-              className="w-8 h-8 rounded-[12px] bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-400 shrink-0"
+              className="w-8 h-8 rounded-[12px] bg-[#8B5CF6]/20 border border-[#8B5CF6]/30 flex items-center justify-center text-[#8B5CF6] shrink-0"
               title="Live Design Studio"
             >
               <PiTelevision size={16} />
@@ -6008,7 +6008,7 @@ export default function LiveDesignStudioModal({
                 className={`shrink-0 px-2 py-0.5 rounded-[12px] text-[10px] font-bold uppercase tracking-wider border flex items-center gap-1.5 ${
                   roleAssignments.bible === currentDesign.id
                     ? "bg-amber-500/20 border-amber-500/40 text-amber-300"
-                    : "bg-purple-500/15 border-purple-500/30 text-purple-300"
+                    : "bg-[#8B5CF6]/15 border-[#8B5CF6]/30 text-[#8B5CF6]/80"
                 }`}
                 title={`Default Bible Template: ${designs.find((d) => d.id === roleAssignments.bible)?.name || roleAssignments.bible}`}
               >
@@ -6077,7 +6077,7 @@ export default function LiveDesignStudioModal({
                             onClick={() => { handleSelectDesign(d.id); setDocMenuOpen(false); }}
                             className={`w-full text-left px-3.5 py-1.5 text-[12px] truncate transition-colors flex items-center gap-2 ${
                               d.id === currentDesign.id
-                                ? "text-purple-300 bg-purple-500/10"
+                                ? "text-[#8B5CF6]/80 bg-[#8B5CF6]/10"
                                 : "text-white/70 hover:text-white hover:bg-white/8"
                             }`}
                             title={d.name}
@@ -6199,7 +6199,7 @@ export default function LiveDesignStudioModal({
                         <button
                           type="button"
                           onClick={() => handleSetRoleDefault("bible", currentDesign.id)}
-                          className="px-2 py-1 rounded-[12px] bg-purple-600 hover:bg-purple-500 text-white text-[10px] font-bold shrink-0 transition-colors"
+                          className="px-2 py-1 rounded-[12px] bg-[#8B5CF6] hover:bg-[#8B5CF6]/90 text-white text-[10px] font-bold shrink-0 transition-colors"
                           title="Assign current design as default Bible template"
                         >
                           Set Current
@@ -6228,7 +6228,7 @@ export default function LiveDesignStudioModal({
                           }}
                           className={`px-2.5 py-2 rounded-[12px] text-[11px] font-semibold border transition-colors text-left ${
                             (currentDesign.role || "custom") === value
-                              ? "bg-purple-500/25 border-purple-500/50 text-purple-200"
+                              ? "bg-[#8B5CF6]/25 border-[#8B5CF6]/50 text-[#8B5CF6]/70"
                               : "bg-white/5 border-white/10 text-white/60 hover:text-white hover:bg-white/8"
                           }`}
                         >
@@ -6296,7 +6296,7 @@ export default function LiveDesignStudioModal({
               onClick={handleSaveDesign}
               className={`h-8 px-3 rounded-[12px] text-[12px] font-semibold border transition-colors flex items-center gap-1.5 ${
                 hasUnsavedChanges
-                  ? "bg-purple-600 hover:bg-purple-500 border-purple-500 text-white shadow-sm shadow-purple-900/40"
+                  ? "bg-[#8B5CF6] hover:bg-[#8B5CF6]/90 border-[#8B5CF6]/50 text-white shadow-sm shadow-[#8B5CF6]/20"
                   : "bg-white/5 border-white/10 text-white/50 hover:text-white hover:bg-white/8"
               }`}
               title={hasUnsavedChanges ? "Save design — you have unsaved changes" : "Design saved"}
@@ -6449,7 +6449,7 @@ export default function LiveDesignStudioModal({
                     setClosingWithUnsaved(false);
                     onClose();
                   }}
-                  className="flex-1 h-9 rounded-[12px] bg-purple-600 hover:bg-purple-500 text-white text-[12px] font-semibold transition-colors"
+                  className="flex-1 h-9 rounded-[12px] bg-[#8B5CF6] hover:bg-[#8B5CF6]/90 text-white text-[12px] font-semibold transition-colors"
                 >
                   Save &amp; Close
                 </button>
@@ -6491,7 +6491,7 @@ export default function LiveDesignStudioModal({
                   onClick={() => setActiveToolTab(id)}
                   className={`py-2 flex flex-col items-center gap-1 text-[10px] font-bold rounded-[12px] transition-all ${
                     activeToolTab === id
-                      ? "bg-purple-500/20 text-purple-300 border border-purple-500/40"
+                      ? "bg-[#8B5CF6]/20 text-[#8B5CF6]/80 border border-[#8B5CF6]/40"
                       : "text-white/40 hover:text-white/80 hover:bg-white/5 border border-transparent"
                   }`}
                 >
@@ -6522,7 +6522,7 @@ export default function LiveDesignStudioModal({
                         onClick={() => setTemplateCategoryFilter(cat)}
                         className={`px-2 py-0.5 rounded-[12px] text-[9px] font-bold transition-all shrink-0 border ${
                           templateCategoryFilter === cat
-                            ? "bg-purple-600 border-purple-400 text-white shadow-sm"
+                            ? "bg-[#8B5CF6] border-[#8B5CF6] text-white shadow-sm"
                             : "bg-black/30 border-white/10 text-white/50 hover:text-white hover:border-white/20"
                         }`}
                       >
@@ -6543,19 +6543,19 @@ export default function LiveDesignStudioModal({
                       }}
                       role="button"
                       tabIndex={0}
-                      className="p-2.5 rounded-[12px] bg-white/[0.02] border border-white/10 hover:border-purple-500/50 hover:bg-white/[0.05] cursor-pointer transition-all group space-y-1.5 focus:outline-none focus:ring-1 focus:ring-purple-500"
+                      className="p-2.5 rounded-[12px] bg-white/[0.02] border border-white/10 hover:border-[#8B5CF6]/50 hover:bg-white/[0.05] cursor-pointer transition-all group space-y-1.5 focus:outline-none focus:ring-1 focus:ring-[#8B5CF6]/30"
                       title={`Insert ${tmpl.name}`}
                       aria-label={`Insert ${tmpl.name}`}
                     >
                       <div className="flex items-center justify-between gap-1">
-                        <span className="text-xs font-bold text-white group-hover:text-purple-300 transition-colors truncate">
+                        <span className="text-xs font-bold text-white group-hover:text-[#8B5CF6]/80 transition-colors truncate">
                           {tmpl.name}
                         </span>
-                        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-[12px] bg-purple-500/20 text-purple-300 border border-purple-500/30 shrink-0">
+                        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-[12px] bg-[#8B5CF6]/20 text-[#8B5CF6]/80 border border-[#8B5CF6]/30 shrink-0">
                           {tmpl.category}
                         </span>
                       </div>
-                      <div className="h-14 w-full rounded-[12px] overflow-hidden border border-white/10 bg-[#08070e] flex items-center justify-center group-hover:border-purple-500/40 transition-colors">
+                      <div className="h-14 w-full rounded-[12px] overflow-hidden border border-white/10 bg-[#08070e] flex items-center justify-center group-hover:border-[#8B5CF6]/40 transition-colors">
                         <TemplateThumbnailPreview tmpl={tmpl} />
                       </div>
                       <p className="text-[10px] text-white/40 leading-snug truncate">
@@ -6578,7 +6578,7 @@ export default function LiveDesignStudioModal({
 
                   <ActionButton
                     onClick={() => handleAddText("heading")}
-                    className="w-full p-3 rounded-[12px] bg-white/[0.03] border border-white/10 hover:border-purple-500/50 hover:bg-white/[0.06] text-left transition-all flex flex-col"
+                    className="w-full p-3 rounded-[12px] bg-white/[0.03] border border-white/10 hover:border-[#8B5CF6]/50 hover:bg-white/[0.06] text-left transition-all flex flex-col"
                   >
                     <span className="text-sm font-bold text-white">Add a Heading</span>
                     <span className="text-[10px] text-white/40">Bold title for speaker or topic</span>
@@ -6586,7 +6586,7 @@ export default function LiveDesignStudioModal({
 
                   <ActionButton
                     onClick={() => handleAddText("sub")}
-                    className="w-full p-3 rounded-[12px] bg-white/[0.03] border border-white/10 hover:border-purple-500/50 hover:bg-white/[0.06] text-left transition-all flex flex-col"
+                    className="w-full p-3 rounded-[12px] bg-white/[0.03] border border-white/10 hover:border-[#8B5CF6]/50 hover:bg-white/[0.06] text-left transition-all flex flex-col"
                   >
                     <span className="text-xs font-semibold text-white/90">Add a Subtitle</span>
                     <span className="text-[10px] text-white/40">Role, title, or reference</span>
@@ -6594,7 +6594,7 @@ export default function LiveDesignStudioModal({
 
                   <ActionButton
                     onClick={() => handleAddText("body")}
-                    className="w-full p-3 rounded-[12px] bg-white/[0.03] border border-white/10 hover:border-purple-500/50 hover:bg-white/[0.06] text-left transition-all flex flex-col"
+                    className="w-full p-3 rounded-[12px] bg-white/[0.03] border border-white/10 hover:border-[#8B5CF6]/50 hover:bg-white/[0.06] text-left transition-all flex flex-col"
                   >
                     <span className="text-xs text-white/70">Add Body Text</span>
                     <span className="text-[10px] text-white/40">Announcement or scripture verse text</span>
@@ -6620,7 +6620,7 @@ export default function LiveDesignStudioModal({
                         onClick={() => handleAddShape(item.id)}
                         title={item.tooltip}
                         aria-label={item.tooltip}
-                        className="p-2 rounded-[12px] bg-white/[0.03] border border-white/10 hover:border-purple-500/50 hover:bg-white/[0.06] flex flex-col items-center justify-center gap-1.5 transition-all text-center group"
+                        className="p-2 rounded-[12px] bg-white/[0.03] border border-white/10 hover:border-[#8B5CF6]/50 hover:bg-white/[0.06] flex flex-col items-center justify-center gap-1.5 transition-all text-center group"
                       >
                         <div className="w-7 h-6 flex items-center justify-center pointer-events-none">
                           {item.icon}
@@ -6646,7 +6646,7 @@ export default function LiveDesignStudioModal({
 
                   <ActionButton
                     onClick={() => handleImportImage()}
-                    className="w-full py-2.5 rounded-[12px] bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md"
+                    className="w-full py-2.5 rounded-[12px] bg-[#8B5CF6] hover:bg-[#8B5CF6]/90 text-white font-bold text-xs flex items-center justify-center gap-1.5 transition-all shadow-md"
                   >
                     <PiPlus size={14} />
                     <span>Upload Local Image</span>
@@ -6687,7 +6687,7 @@ export default function LiveDesignStudioModal({
                   onClick={() => setShowRulers((s) => !s)}
                   className={`px-2 py-1 rounded-[12px] text-[10px] font-bold border transition-all ${
                     showRulers
-                      ? "bg-purple-600/40 border-purple-400 text-white"
+                      ? "bg-[#8B5CF6]/40 border-[#8B5CF6]/50 text-white"
                       : "bg-black/30 border-white/10 text-white/50 hover:text-white"
                   }`}
                   title="Toggle Output Pixel Rulers (0-1280, 0-720)"
@@ -6702,7 +6702,7 @@ export default function LiveDesignStudioModal({
                     onClick={() => setActiveTool("select")}
                     className={`px-2 py-1 rounded-[12px] text-[10px] font-bold flex items-center gap-1 transition-all ${
                       activeTool === "select"
-                        ? "bg-purple-600 text-white shadow"
+                        ? "bg-[#8B5CF6] text-white shadow"
                         : "text-white/50 hover:text-white"
                     }`}
                     title="Select Tool (V) - Select and transform canvas layers"
@@ -6715,7 +6715,7 @@ export default function LiveDesignStudioModal({
                     onClick={() => setActiveTool("hand")}
                     className={`px-2 py-1 rounded-[12px] text-[10px] font-bold flex items-center gap-1 transition-all ${
                       activeTool === "hand"
-                        ? "bg-purple-600 text-white shadow"
+                        ? "bg-[#8B5CF6] text-white shadow"
                         : "text-white/50 hover:text-white"
                     }`}
                     title="Hand / Pan Tool (H / Space) - Click and drag anywhere to pan canvas"
@@ -6782,7 +6782,7 @@ export default function LiveDesignStudioModal({
                   type="button"
                   onClick={handleResetZoom}
                   className={`px-1.5 py-0.5 rounded-[12px] text-[10px] font-semibold transition-all ${
-                    zoom === 1 ? "bg-purple-600 text-white" : "text-white/50 hover:text-white"
+                    zoom === 1 ? "bg-[#8B5CF6] text-white" : "text-white/50 hover:text-white"
                   }`}
                   title="Reset Zoom to 100%"
                 >
@@ -6801,11 +6801,11 @@ export default function LiveDesignStudioModal({
 
               {/* Right helpers & pan status */}
               <div className="flex items-center gap-2 text-[10px] text-white/40">
-                <span className={isSpacePressed || activeTool === "hand" ? "text-purple-300 font-bold" : ""}>
+                <span className={isSpacePressed || activeTool === "hand" ? "text-[#8B5CF6]/80 font-bold" : ""}>
                   {isSpacePressed || activeTool === "hand" ? "🖐 Drag to Pan" : "Space / H to Pan"}
                 </span>
                 {cursorCanvasPos.x != null && (
-                  <span className="font-mono text-purple-300 bg-black/40 px-1.5 py-0.5 rounded-[12px] border border-white/5">
+                  <span className="font-mono text-[#8B5CF6]/80 bg-black/40 px-1.5 py-0.5 rounded-[12px] border border-white/5">
                     X: {cursorCanvasPos.x} Y: {cursorCanvasPos.y}
                   </span>
                 )}
@@ -6861,7 +6861,7 @@ export default function LiveDesignStudioModal({
                             </div>
                           ))}
                           {cursorScreenX != null && (
-                            <div className="absolute inset-y-0 w-[1px] bg-purple-400 z-10 pointer-events-none shadow" style={{ left: `${cursorScreenX}px` }} />
+                            <div className="absolute inset-y-0 w-[1px] bg-[#8B5CF6] z-10 pointer-events-none shadow" style={{ left: `${cursorScreenX}px` }} />
                           )}
                         </>
                       );
@@ -6904,7 +6904,7 @@ export default function LiveDesignStudioModal({
                             </div>
                           ))}
                           {cursorScreenY != null && (
-                            <div className="absolute inset-x-0 h-[1px] bg-purple-400 z-10 pointer-events-none shadow" style={{ top: `${cursorScreenY}px` }} />
+                            <div className="absolute inset-x-0 h-[1px] bg-[#8B5CF6] z-10 pointer-events-none shadow" style={{ top: `${cursorScreenY}px` }} />
                           )}
                         </>
                       );
@@ -6981,10 +6981,10 @@ export default function LiveDesignStudioModal({
 
                     {/* 2. Alignment Snap Guides */}
                     {snapGuide.x && (
-                      <div className="absolute inset-y-0 left-1/2 w-0.5 bg-purple-400 z-50 pointer-events-none shadow-sm" />
+                      <div className="absolute inset-y-0 left-1/2 w-0.5 bg-[#8B5CF6] z-50 pointer-events-none shadow-sm" />
                     )}
                     {snapGuide.y && (
-                      <div className="absolute inset-x-0 top-1/2 h-0.5 bg-purple-400 z-50 pointer-events-none shadow-sm" />
+                      <div className="absolute inset-x-0 top-1/2 h-0.5 bg-[#8B5CF6] z-50 pointer-events-none shadow-sm" />
                     )}
 
                     {/* 3. Design Layers Canvas Elements */}
@@ -7055,7 +7055,7 @@ export default function LiveDesignStudioModal({
                           {isSelected && !isInlineEditing && editingCropLayerId !== layer.id && (
                             <>
                               {/* Selection outline */}
-                              <div className="absolute -inset-1 border-2 border-purple-500 border-dashed rounded-[12px] pointer-events-none z-50" />
+                              <div className="absolute -inset-1 border-2 border-[#8B5CF6] border-dashed rounded-[12px] pointer-events-none z-50" />
 
                               {/* Handles only shown on active item */}
                               {selectedLayerId === layer.id && (
@@ -7085,7 +7085,7 @@ export default function LiveDesignStudioModal({
                                       key={h}
                                       onClick={(e) => e.stopPropagation()}
                                       onMouseDown={(e) => handleMouseDownOnHandle(e, layer, h)}
-                                      className={`absolute w-3.5 h-3.5 bg-purple-500 border-2 border-white rounded-full z-50 shadow-md ${pos}`}
+                                      className={`absolute w-3.5 h-3.5 bg-[#8B5CF6] border-2 border-white rounded-full z-50 shadow-md ${pos}`}
                                       style={{ pointerEvents: "auto", transform: `scale(${1 / (zoom || 1)})` }}
                                     />
                                   ))}
@@ -7095,7 +7095,7 @@ export default function LiveDesignStudioModal({
                                     <div
                                       onClick={(e) => e.stopPropagation()}
                                       onMouseDown={(e) => handleMouseDownOnHandle(e, layer, "rot")}
-                                      className="absolute -top-6 left-1/2 -translate-x-1/2 w-4 h-4 bg-purple-600 border-2 border-white rounded-full cursor-grab z-50 shadow-md flex items-center justify-center text-[8px] text-white"
+                                      className="absolute -top-6 left-1/2 -translate-x-1/2 w-4 h-4 bg-[#8B5CF6] border-2 border-white rounded-full cursor-grab z-50 shadow-md flex items-center justify-center text-[8px] text-white"
                                       style={{ pointerEvents: "auto", transform: `scale(${1 / (zoom || 1)})` }}
                                       title="Drag to rotate"
                                     >
@@ -7118,11 +7118,11 @@ export default function LiveDesignStudioModal({
                                           key={ch.id}
                                           onClick={(e) => e.stopPropagation()}
                                           onMouseDown={(e) => handleMouseDownOnCornerHandle(e, layer, ch.idx)}
-                                          className={`absolute w-2.5 h-2.5 rounded-full bg-white border border-purple-600 shadow z-50 flex items-center justify-center cursor-pointer pointer-events-auto ${ch.pos}`}
+                                          className={`absolute w-2.5 h-2.5 rounded-full bg-white border border-[#8B5CF6] shadow z-50 flex items-center justify-center cursor-pointer pointer-events-auto ${ch.pos}`}
                                           style={{ transform: `scale(${1 / (zoom || 1)})` }}
                                           title="Drag inward to round corner, drag outward to 0 for sharp corner"
                                         >
-                                          <div className="w-1 h-1 rounded-full bg-purple-600" />
+                                          <div className="w-1 h-1 rounded-full bg-[#8B5CF6]" />
                                         </div>
                                       ))}
                                     </>
@@ -7186,7 +7186,7 @@ export default function LiveDesignStudioModal({
                                             }}
                                             onMouseDown={(e) => handleMouseDownOnCurveNode(e, layer, i, "vertex")}
                                             className={`absolute w-3 h-3 rounded-full border-2 border-white shadow-lg cursor-grab pointer-events-auto ${
-                                              isNodeActive ? "bg-purple-500 ring-2 ring-purple-300" : "bg-blue-600"
+                                              isNodeActive ? "bg-[#8B5CF6] ring-2 ring-[#8B5CF6]/40" : "bg-[#00A8FF]"
                                             }`}
                                             style={{
                                               left: `${node.x}%`,
@@ -7216,7 +7216,7 @@ export default function LiveDesignStudioModal({
                                             <div
                                               onClick={(e) => e.stopPropagation()}
                                               onMouseDown={(e) => handleMouseDownOnCurveNode(e, layer, i, "cp2")}
-                                              className="absolute w-2.5 h-2.5 rounded-full bg-purple-400 border border-white shadow cursor-grab pointer-events-auto"
+                                              className="absolute w-2.5 h-2.5 rounded-full bg-[#8B5CF6] border border-white shadow cursor-grab pointer-events-auto"
                                               style={{
                                                 left: `${node.cp2.x}%`,
                                                 top: `${node.cp2.y}%`,
@@ -7350,7 +7350,7 @@ export default function LiveDesignStudioModal({
                                 onBlur={() => {
                                   setEditingTextLayerId(null);
                                 }}
-                                className="w-full bg-black/80 border border-purple-400 rounded-[12px] px-2 py-1 outline-none resize-none shadow-2xl text-white select-text"
+                                className="w-full bg-black/80 border border-[#8B5CF6] rounded-[12px] px-2 py-1 outline-none resize-none shadow-2xl text-white select-text"
                                 style={{
                                   fontFamily: layer.fontFamily || "Inter, sans-serif",
                                   fontSize: `calc(${(layer.fontSize || 22)} * 100cqh / 720)`,
@@ -7392,7 +7392,7 @@ export default function LiveDesignStudioModal({
                                 title="Double-click to edit text directly on canvas"
                               >
                                 {layer.fieldBinding && (
-                                  <span className="absolute -top-3 left-0 text-[8px] font-mono px-1 py-0.2 bg-purple-900/80 text-purple-200 rounded-[12px] border border-purple-500/30 pointer-events-none select-none z-10">
+                                  <span className="absolute -top-3 left-0 text-[8px] font-mono px-1 py-0.2 bg-[#1E1B4B]/80 text-[#8B5CF6]/70 rounded-[12px] border border-[#8B5CF6]/30 pointer-events-none select-none z-10">
                                     [{layer.fieldBinding}]
                                   </span>
                                 )}
@@ -7492,7 +7492,7 @@ export default function LiveDesignStudioModal({
                             }}
                           >
                             {/* Subdued dashed boundary outline */}
-                            <div className="absolute inset-0 border-2 border-purple-400 border-dashed rounded-[12px] shadow-sm pointer-events-none" />
+                            <div className="absolute inset-0 border-2 border-[#8B5CF6] border-dashed rounded-[12px] shadow-sm pointer-events-none" />
 
                             {/* 4 Corner Resize Nodes */}
                             {[
@@ -7504,7 +7504,7 @@ export default function LiveDesignStudioModal({
                               <div
                                 key={hId}
                                 onPointerDown={(e) => handlePointerDownOnCropHandle(e, cropLayer, hId, rotVal, zoomVal)}
-                                className={`absolute w-3.5 h-3.5 bg-purple-500 border-2 border-white rounded-[12px] pointer-events-auto hover:scale-125 transition-transform shadow-lg z-50 ${pos}`}
+                                className={`absolute w-3.5 h-3.5 bg-[#8B5CF6] border-2 border-white rounded-[12px] pointer-events-auto hover:scale-125 transition-transform shadow-lg z-50 ${pos}`}
                                 style={{ transform: `scale(${1 / (zoom || 1)})` }}
                                 title={title}
                               />
@@ -7540,12 +7540,12 @@ export default function LiveDesignStudioModal({
 
                           {/* Floating Crop Toolbar */}
                           <div
-                            className="absolute -top-12 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 bg-[#141124]/95 border border-purple-500/40 rounded-[12px] px-2.5 py-1 text-[11px] shadow-2xl backdrop-blur-md pointer-events-auto select-none whitespace-nowrap"
+                            className="absolute -top-12 left-1/2 -translate-x-1/2 z-50 flex items-center gap-1.5 bg-[#141124]/95 border border-[#8B5CF6]/40 rounded-[12px] px-2.5 py-1 text-[11px] shadow-2xl backdrop-blur-md pointer-events-auto select-none whitespace-nowrap"
                             style={{ transform: `scale(${Math.max(0.8, 1 / (zoom || 1))}) translate(-50%, 0)`, transformOrigin: "top left", left: "50%" }}
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <span className="text-purple-300 font-bold flex items-center gap-1">
-                              <PiCrop size={12} className="text-purple-400" />
+                            <span className="text-[#8B5CF6]/80 font-bold flex items-center gap-1">
+                              <PiCrop size={12} className="text-[#8B5CF6]" />
                               Editing Content
                             </span>
                             <span className="text-white/20">|</span>
@@ -7573,7 +7573,7 @@ export default function LiveDesignStudioModal({
                                   }}
                                   className={`px-2 py-0.5 rounded-[12px] font-bold text-[10px] transition-colors ${
                                     fitMode === mode
-                                      ? "bg-purple-600 text-white shadow-sm"
+                                      ? "bg-[#8B5CF6] text-white shadow-sm"
                                       : "text-white/60 hover:text-white hover:bg-white/10"
                                   }`}
                                   title={
@@ -7596,7 +7596,7 @@ export default function LiveDesignStudioModal({
                                 setEditingCropLayerId(null);
                                 setEditingCropTarget("image");
                               }}
-                              className="text-purple-200 hover:text-white px-2.5 py-0.5 rounded-[12px] bg-purple-600 hover:bg-purple-500 font-bold text-[10px] transition-colors"
+                              className="text-[#8B5CF6]/70 hover:text-white px-2.5 py-0.5 rounded-[12px] bg-[#8B5CF6] hover:bg-[#8B5CF6]/90 font-bold text-[10px] transition-colors"
                               title="Finish editing content (Escape)"
                             >
                               Done
@@ -7681,7 +7681,7 @@ export default function LiveDesignStudioModal({
                         }));
                         showFeedback(`Grouped ${selectedLayerIds.length} elements`, true);
                       }}
-                      className="w-full py-1.5 rounded-[12px] bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/30 text-purple-200 text-xs font-bold transition-all flex items-center justify-center gap-1.5"
+                      className="w-full py-1.5 rounded-[12px] bg-[#8B5CF6]/30 hover:bg-[#8B5CF6]/50 border border-[#8B5CF6]/30 text-[#8B5CF6]/70 text-xs font-bold transition-all flex items-center justify-center gap-1.5"
                     >
                       <PiStack size={13} />
                       <span>Group Elements</span>
@@ -7753,11 +7753,11 @@ export default function LiveDesignStudioModal({
                         value={selectedLayer.name || ""}
                         onChange={(e) => updateLayerDraft(selectedLayer.id, { name: e.target.value })}
                         onBlur={() => pushUndoSnapshot()}
-                        className="flex-1 min-w-0 bg-black/40 border border-white/15 px-2.5 py-1 text-xs font-bold text-white rounded-[12px] focus:outline-none focus:border-purple-500 truncate"
+                        className="flex-1 min-w-0 bg-black/40 border border-white/15 px-2.5 py-1 text-xs font-bold text-white rounded-[12px] focus:outline-none focus:border-[#8B5CF6] truncate"
                         placeholder="Element Name"
                         aria-label="Element Name"
                       />
-                      <span className="px-2 py-0.5 rounded-[12px] bg-purple-500/20 border border-purple-500/30 text-purple-300 text-[10px] font-bold uppercase shrink-0">
+                      <span className="px-2 py-0.5 rounded-[12px] bg-[#8B5CF6]/20 border border-[#8B5CF6]/30 text-[#8B5CF6]/80 text-[10px] font-bold uppercase shrink-0">
                         {selectedLayer.type}
                       </span>
                     </div>
@@ -7779,7 +7779,7 @@ export default function LiveDesignStudioModal({
                                 }));
                                 showFeedback("Ungrouped element", true);
                               }}
-                              className="p-1.5 rounded-[12px] bg-white/5 hover:bg-white/15 text-purple-300"
+                              className="p-1.5 rounded-[12px] bg-white/5 hover:bg-white/15 text-[#8B5CF6]/80"
                               title="Ungroup Element"
                               aria-label="Ungroup Element"
                             >
@@ -7790,7 +7790,7 @@ export default function LiveDesignStudioModal({
                                 const grpIds = currentDesign.layers.filter((l) => l.groupId === selectedLayer.groupId).map((l) => l.id);
                                 setSelectedLayerIds(grpIds);
                               }}
-                              className="p-1.5 rounded-[12px] bg-white/5 hover:bg-white/15 text-purple-300"
+                              className="p-1.5 rounded-[12px] bg-white/5 hover:bg-white/15 text-[#8B5CF6]/80"
                               title="Select Whole Group"
                               aria-label="Select Whole Group"
                             >
@@ -7828,7 +7828,7 @@ export default function LiveDesignStudioModal({
                           onClick={() => updateLayer(selectedLayer.id, { aspectLocked: !selectedLayer.aspectLocked })}
                           className={`px-2 py-0.5 rounded-[12px] text-[10px] font-bold flex items-center gap-1 transition-all ${
                             selectedLayer.aspectLocked
-                              ? "bg-purple-600/30 text-purple-300 border border-purple-500/40"
+                              ? "bg-[#8B5CF6]/30 text-[#8B5CF6]/80 border border-[#8B5CF6]/40"
                               : "bg-white/5 text-white/40 hover:text-white border border-white/10"
                           }`}
                           title={selectedLayer.aspectLocked ? "Aspect ratio locked: proportions preserved during resize (Click to unlock)" : "Aspect ratio unlocked: freeform width/height resize (Click to lock)"}
@@ -8039,7 +8039,7 @@ export default function LiveDesignStudioModal({
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-white/50 block">Text Layer</span>
                         {selectedLayer.fieldBinding && (
-                          <span className="text-[9px] font-mono text-purple-300 bg-purple-500/20 border border-purple-500/30 px-1.5 py-0.5 rounded-[12px]">
+                          <span className="text-[9px] font-mono text-[#8B5CF6]/80 bg-[#8B5CF6]/20 border border-[#8B5CF6]/30 px-1.5 py-0.5 rounded-[12px]">
                             Bound: {selectedLayer.fieldBinding}
                           </span>
                         )}
@@ -8055,7 +8055,7 @@ export default function LiveDesignStudioModal({
                             pushUndoSnapshot();
                             updateLayer(selectedLayer.id, { fieldBinding: val });
                           }}
-                          className="w-full px-2 py-1.5 rounded-[12px] bg-black/40 border border-white/15 text-xs text-white focus:outline-none focus:border-purple-500"
+                          className="w-full px-2 py-1.5 rounded-[12px] bg-black/40 border border-white/15 text-xs text-white focus:outline-none focus:border-[#8B5CF6]"
                           aria-label="Content Source Field Binding"
                         >
                           <option value="">Static Text (Custom)</option>
@@ -8104,7 +8104,7 @@ export default function LiveDesignStudioModal({
                             }));
                             setHasUnsavedChanges(true);
                           }}
-                          className="w-full px-2.5 py-1.5 rounded-[12px] bg-black/40 border border-white/15 text-xs text-white focus:outline-none focus:border-purple-500 resize-none"
+                          className="w-full px-2.5 py-1.5 rounded-[12px] bg-black/40 border border-white/15 text-xs text-white focus:outline-none focus:border-[#8B5CF6] resize-none"
                           placeholder={selectedLayer.fieldBinding ? `Default template fallback text for ${selectedLayer.fieldBinding}...` : "Enter text..."}
                           aria-label="Text content"
                         />
@@ -8144,7 +8144,7 @@ export default function LiveDesignStudioModal({
                         <select
                           value={selectedLayer.fontFamily || "Inter, sans-serif"}
                           onChange={(e) => updateLayer(selectedLayer.id, { fontFamily: e.target.value })}
-                          className="w-full px-2 py-1.5 rounded-[12px] bg-black/40 border border-white/15 text-xs text-white focus:outline-none focus:border-purple-500"
+                          className="w-full px-2 py-1.5 rounded-[12px] bg-black/40 border border-white/15 text-xs text-white focus:outline-none focus:border-[#8B5CF6]"
                           aria-label="Font Family"
                         >
                           <option value="Inter, sans-serif">Inter (Modern)</option>
@@ -8191,7 +8191,7 @@ export default function LiveDesignStudioModal({
                         <button
                           onClick={() => updateLayer(selectedLayer.id, { fontWeight: selectedLayer.fontWeight === "bold" ? "normal" : "bold" })}
                           className={`py-1 rounded-[12px] text-xs font-bold border transition-all flex items-center justify-center ${
-                            selectedLayer.fontWeight === "bold" ? "bg-purple-600/40 border-purple-500 text-purple-200" : "bg-white/5 border-white/10 text-white/50 hover:bg-white/10"
+                            selectedLayer.fontWeight === "bold" ? "bg-[#8B5CF6]/40 border-[#8B5CF6]/50 text-[#8B5CF6]/70" : "bg-white/5 border-white/10 text-white/50 hover:bg-white/10"
                           }`}
                           title="Toggle Bold"
                           aria-label="Toggle Bold"
@@ -8205,7 +8205,7 @@ export default function LiveDesignStudioModal({
                               key={al}
                               onClick={() => updateLayer(selectedLayer.id, { textAlign: al })}
                               className={`py-1 rounded-[12px] text-[10px] flex items-center justify-center transition-all ${
-                                (selectedLayer.textAlign || "left") === al ? "bg-purple-600 text-white" : "text-white/40 hover:text-white"
+                                (selectedLayer.textAlign || "left") === al ? "bg-[#8B5CF6] text-white" : "text-white/40 hover:text-white"
                               }`}
                               title={`Align ${al}`}
                               aria-label={`Align ${al}`}
@@ -8231,7 +8231,7 @@ export default function LiveDesignStudioModal({
                                 type="button"
                                 onClick={() => updateLayer(selectedLayer.id, { verticalAlign: val })}
                                 className={`py-0.5 rounded-[10px] text-[9px] font-bold flex items-center justify-center transition-all ${
-                                  (selectedLayer.verticalAlign || "top") === val ? "bg-purple-600 text-white" : "text-white/40 hover:text-white"
+                                  (selectedLayer.verticalAlign || "top") === val ? "bg-[#8B5CF6] text-white" : "text-white/40 hover:text-white"
                                 }`}
                                 title={`Vertical Align ${label}`}
                               >
@@ -8322,7 +8322,7 @@ export default function LiveDesignStudioModal({
                                   }}
                                   className={`px-2 py-0.5 rounded-[12px] font-semibold capitalize transition-all ${
                                     (selectedLayer.fillType || "solid") === type
-                                      ? "bg-purple-600 text-white shadow"
+                                      ? "bg-[#8B5CF6] text-white shadow"
                                       : "text-white/40 hover:text-white/80"
                                   }`}
                                 >
@@ -8398,7 +8398,7 @@ export default function LiveDesignStudioModal({
                                         gradient: { ...selectedLayer.gradient, stops: rev },
                                       });
                                     }}
-                                    className="text-purple-300 hover:text-purple-200 capitalize font-medium"
+                                    className="text-[#8B5CF6]/80 hover:text-[#8B5CF6]/70 capitalize font-medium"
                                   >
                                     Reverse Stops
                                   </button>
@@ -8429,7 +8429,7 @@ export default function LiveDesignStudioModal({
                                           setActiveGradStopIndex(idx);
                                         }}
                                         className={`absolute top-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 rounded-full border-2 cursor-pointer shadow-md transition-transform ${
-                                          isActive ? "border-white scale-125 z-20 shadow-purple-500/80 ring-2 ring-purple-500" : "border-black/80 hover:scale-110 z-10"
+                                          isActive ? "border-white scale-125 z-20 shadow-[#8B5CF6]/80 ring-2 ring-[#8B5CF6]/30" : "border-black/80 hover:scale-110 z-10"
                                         }`}
                                         style={{ left: `${s.position}%`, backgroundColor: s.color }}
                                         title={`Stop ${idx + 1}: ${s.position}%`}
@@ -8635,7 +8635,7 @@ export default function LiveDesignStudioModal({
                               <div>
                                 <div className="flex items-center justify-between text-[10px] mb-1">
                                   <span className="text-white/40 font-bold uppercase tracking-wider text-[9px]">Transparency / Opacity</span>
-                                  <span className="font-mono text-purple-300 font-bold">
+                                  <span className="font-mono text-[#8B5CF6]/80 font-bold">
                                     {Math.round((typeof selectedLayer.glassOpacity === "number" ? selectedLayer.glassOpacity : 0.25) * 100)}%
                                   </span>
                                 </div>
@@ -8674,7 +8674,7 @@ export default function LiveDesignStudioModal({
                               <div>
                                 <div className="flex items-center justify-between text-[10px] mb-1">
                                   <span className="text-white/40 font-bold uppercase tracking-wider text-[9px]">Background Blur</span>
-                                  <span className="font-mono text-purple-300 font-bold">
+                                  <span className="font-mono text-[#8B5CF6]/80 font-bold">
                                     {selectedLayer.lightweightGlass ? "Disabled (Lightweight)" : `${typeof selectedLayer.backgroundBlur === "number" ? selectedLayer.backgroundBlur : 16}px`}
                                   </span>
                                 </div>
@@ -8724,7 +8724,7 @@ export default function LiveDesignStudioModal({
                                     pushUndoSnapshot();
                                     updateLayer(selectedLayer.id, { lightweightGlass: e.target.checked });
                                   }}
-                                  className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 bg-black/50 border-white/20"
+                                  className="w-4 h-4 rounded text-[#8B5CF6] focus:ring-[#8B5CF6] bg-black/50 border-white/20"
                                 />
                               </label>
 
@@ -8741,7 +8741,7 @@ export default function LiveDesignStudioModal({
                                     pushUndoSnapshot();
                                     updateLayer(selectedLayer.id, { sweepHighlight: e.target.checked });
                                   }}
-                                  className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 bg-black/50 border-white/20"
+                                  className="w-4 h-4 rounded text-[#8B5CF6] focus:ring-[#8B5CF6] bg-black/50 border-white/20"
                                 />
                               </label>
 
@@ -8760,7 +8760,7 @@ export default function LiveDesignStudioModal({
                                       }}
                                       className={`py-1.5 text-xs font-semibold rounded-[12px] transition-colors ${
                                         selectedLayer.glassTarget !== "backdrop"
-                                          ? "bg-purple-600 text-white shadow-sm"
+                                          ? "bg-[#8B5CF6] text-white shadow-sm"
                                           : "text-white/60 hover:text-white"
                                       }`}
                                     >
@@ -8774,7 +8774,7 @@ export default function LiveDesignStudioModal({
                                       }}
                                       className={`py-1.5 text-xs font-semibold rounded-[12px] transition-colors ${
                                         selectedLayer.glassTarget === "backdrop"
-                                          ? "bg-purple-600 text-white shadow-sm"
+                                          ? "bg-[#8B5CF6] text-white shadow-sm"
                                           : "text-white/60 hover:text-white"
                                       }`}
                                     >
@@ -8843,7 +8843,7 @@ export default function LiveDesignStudioModal({
                               onClick={() => setCornersLinked((l) => !l)}
                               className={`p-1 rounded-[12px] text-[10px] flex items-center gap-1 border transition-all ${
                                 cornersLinked
-                                  ? "bg-purple-600/30 border-purple-500/40 text-purple-200"
+                                  ? "bg-[#8B5CF6]/30 border-[#8B5CF6]/40 text-[#8B5CF6]/70"
                                   : "bg-black/40 border-white/10 text-white/40 hover:text-white"
                               }`}
                               title={cornersLinked ? "Corners Linked (click to unlink)" : "Independent Corners (click to link)"}
@@ -8951,7 +8951,7 @@ export default function LiveDesignStudioModal({
                                 pushUndoSnapshot();
                                 updateLayer(selectedLayer.id, { borderRadius: 12 });
                               }}
-                              className="px-2 py-0.5 rounded-[12px] bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-[9px] text-purple-200"
+                              className="px-2 py-0.5 rounded-[12px] bg-[#8B5CF6]/30 hover:bg-[#8B5CF6]/50 border border-[#8B5CF6]/40 text-[9px] text-[#8B5CF6]/70"
                             >
                               12px (Mandate)
                             </button>
@@ -8976,7 +8976,7 @@ export default function LiveDesignStudioModal({
                           <button
                             type="button"
                             onClick={() => handlePlaceImageInsideShape(selectedLayer.id)}
-                            className="w-full py-2 rounded-[12px] bg-purple-600/30 hover:bg-purple-600/50 border border-purple-500/40 text-purple-200 text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm"
+                            className="w-full py-2 rounded-[12px] bg-[#8B5CF6]/30 hover:bg-[#8B5CF6]/50 border border-[#8B5CF6]/40 text-[#8B5CF6]/70 text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm"
                           >
                             <PiImage size={14} />
                             <span>Place Image Inside</span>
@@ -9007,7 +9007,7 @@ export default function LiveDesignStudioModal({
                                     className={`text-[9px] font-bold px-2 py-0.5 rounded-[8px] transition-all border ${
                                       editingCropLayerId === selectedLayer.id && editingCropTarget === "image"
                                         ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm"
-                                        : "bg-purple-600/30 text-purple-200 border-purple-500/40 hover:bg-purple-600/50"
+                                        : "bg-[#8B5CF6]/30 text-[#8B5CF6]/70 border-[#8B5CF6]/40 hover:bg-[#8B5CF6]/50"
                                     }`}
                                   >
                                     {editingCropLayerId === selectedLayer.id && editingCropTarget === "image" ? "✓ Editing Image" : "Edit Image"}
@@ -9020,7 +9020,7 @@ export default function LiveDesignStudioModal({
                                     }}
                                     className={`text-[9px] font-bold px-2 py-0.5 rounded-[8px] transition-all border ${
                                       editingCropLayerId === selectedLayer.id && editingCropTarget === "frame"
-                                        ? "bg-purple-500/20 text-purple-200 border-purple-500/40"
+                                        ? "bg-[#8B5CF6]/20 text-[#8B5CF6]/70 border-[#8B5CF6]/40"
                                         : "bg-white/5 text-white/70 border-white/10 hover:bg-white/10"
                                     }`}
                                   >
@@ -9072,7 +9072,7 @@ export default function LiveDesignStudioModal({
                                       }}
                                       className={`py-1 text-[10px] font-bold rounded-[8px] capitalize transition-all ${
                                         isCur
-                                          ? "bg-purple-600 text-white shadow"
+                                          ? "bg-[#8B5CF6] text-white shadow"
                                           : "text-white/40 hover:text-white"
                                       }`}
                                     >
@@ -9087,7 +9087,7 @@ export default function LiveDesignStudioModal({
                             <div>
                               <div className="flex items-center justify-between text-[9px] mb-1">
                                 <span className="text-white/40">Crop Zoom</span>
-                                <span className="font-mono text-purple-300">
+                                <span className="font-mono text-[#8B5CF6]/80">
                                   {Math.round((selectedLayer.maskImage?.zoom || 1) * 100)}%
                                 </span>
                               </div>
@@ -9114,7 +9114,7 @@ export default function LiveDesignStudioModal({
                               <div>
                                 <div className="flex items-center justify-between text-[9px] mb-1">
                                   <span className="text-white/40">Pan X</span>
-                                  <span className="font-mono text-purple-300">{selectedLayer.maskImage?.panX || 0}%</span>
+                                  <span className="font-mono text-[#8B5CF6]/80">{selectedLayer.maskImage?.panX || 0}%</span>
                                 </div>
                                 <input
                                   type="range"
@@ -9137,7 +9137,7 @@ export default function LiveDesignStudioModal({
                               <div>
                                 <div className="flex items-center justify-between text-[9px] mb-1">
                                   <span className="text-white/40">Pan Y</span>
-                                  <span className="font-mono text-purple-300">{selectedLayer.maskImage?.panY || 0}%</span>
+                                  <span className="font-mono text-[#8B5CF6]/80">{selectedLayer.maskImage?.panY || 0}%</span>
                                 </div>
                                 <input
                                   type="range"
@@ -9181,15 +9181,15 @@ export default function LiveDesignStudioModal({
 
                       {/* Active Shape Curves (Bézier) Controls (Secondary entry via Context Menu & More Menu) */}
                       {editingShapeLayerId === selectedLayer.id && (
-                        <div className="p-3 bg-[#151221] rounded-[12px] border border-purple-500/50 space-y-2.5">
+                        <div className="p-3 bg-[#151221] rounded-[12px] border border-[#8B5CF6]/50 space-y-2.5">
                           <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-bold uppercase tracking-wider text-purple-300">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-[#8B5CF6]/80">
                               Editing Bézier Curves
                             </span>
                             <button
                               type="button"
                               onClick={() => setEditingShapeLayerId(null)}
-                              className="text-[10px] text-purple-300 hover:text-white font-bold px-2 py-0.5 rounded-[12px] bg-purple-600/30 hover:bg-purple-600/50 transition-colors"
+                              className="text-[10px] text-[#8B5CF6]/80 hover:text-white font-bold px-2 py-0.5 rounded-[12px] bg-[#8B5CF6]/30 hover:bg-[#8B5CF6]/50 transition-colors"
                             >
                               Done
                             </button>
@@ -9225,7 +9225,7 @@ export default function LiveDesignStudioModal({
                         <button
                           type="button"
                           onClick={() => handleImportImage(selectedLayer.id)}
-                          className="px-2 py-0.5 rounded-[12px] bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 text-[10px] font-bold border border-purple-500/40 flex items-center gap-1 transition-all"
+                          className="px-2 py-0.5 rounded-[12px] bg-[#8B5CF6]/30 hover:bg-[#8B5CF6]/50 text-[#8B5CF6]/70 text-[10px] font-bold border border-[#8B5CF6]/40 flex items-center gap-1 transition-all"
                         >
                           <PiArrowsClockwise size={11} />
                           <span>Replace Image Asset</span>
@@ -9252,7 +9252,7 @@ export default function LiveDesignStudioModal({
                                 }}
                                 className={`py-1 px-1.5 text-[10px] font-semibold rounded-[12px] border transition-all text-center truncate ${
                                   isCur
-                                    ? "bg-purple-600/50 border-purple-400 text-white shadow-sm"
+                                    ? "bg-[#8B5CF6]/50 border-[#8B5CF6]/50 text-white shadow-sm"
                                     : "bg-black/30 border-white/10 text-white/60 hover:text-white"
                                 }`}
                               >
@@ -9281,7 +9281,7 @@ export default function LiveDesignStudioModal({
                                 }}
                                 className={`py-1 text-[11px] font-bold rounded-[12px] capitalize transition-all ${
                                   isCur
-                                    ? "bg-purple-600 text-white shadow"
+                                    ? "bg-[#8B5CF6] text-white shadow"
                                     : "text-white/40 hover:text-white"
                                 }`}
                               >
@@ -9304,7 +9304,7 @@ export default function LiveDesignStudioModal({
                                 frameCrop: { fitMode: "fill", zoom: 1, panX: 0, panY: 0 },
                               });
                             }}
-                            className="text-[9px] text-purple-300 hover:text-purple-200 font-bold"
+                            className="text-[9px] text-[#8B5CF6]/80 hover:text-[#8B5CF6]/70 font-bold"
                           >
                             Reset Crop
                           </button>
@@ -9397,23 +9397,23 @@ export default function LiveDesignStudioModal({
                       </div>
 
                       {/* Local Background Removal Action Card */}
-                      <div className="bg-purple-950/20 border border-purple-500/20 p-2.5 rounded-[12px] space-y-2">
+                      <div className="bg-[#8B5CF6]/10 border border-[#8B5CF6]/20 p-2.5 rounded-[12px] space-y-2">
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-purple-300">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-[#8B5CF6]/80">
                             Background Removal
                           </span>
-                          <span className="text-[9px] text-purple-400/60 font-semibold">100% Offline Local</span>
+                          <span className="text-[9px] text-[#8B5CF6]/60 font-semibold">100% Offline Local</span>
                         </div>
 
                         {bgRemovalProcessing ? (
                           <div className="space-y-1.5">
-                            <div className="flex items-center justify-between text-[10px] text-purple-200">
+                            <div className="flex items-center justify-between text-[10px] text-[#8B5CF6]/70">
                               <span>Segmenting background...</span>
                               <span className="font-mono">{bgRemovalProgress}%</span>
                             </div>
                             <div className="h-1.5 bg-black/60 rounded-full overflow-hidden">
                               <div
-                                className="h-full bg-purple-500 transition-all duration-150"
+                                className="h-full bg-[#8B5CF6] transition-all duration-150"
                                 style={{ width: `${bgRemovalProgress}%` }}
                               />
                             </div>
@@ -9462,7 +9462,7 @@ export default function LiveDesignStudioModal({
                           aria-label="Enable layer shadow"
                           checked={Boolean(selectedLayer.shadowEnabled)}
                           onChange={(e) => updateLayer(selectedLayer.id, { shadowEnabled: e.target.checked })}
-                          className="rounded text-purple-600 focus:ring-0 cursor-pointer"
+                          className="rounded text-[#8B5CF6] focus:ring-0 cursor-pointer"
                         />
                         <span className="text-[10px] text-white/70 font-semibold">Enable</span>
                       </label>
@@ -9588,7 +9588,7 @@ export default function LiveDesignStudioModal({
                         <button
                           type="button"
                           onClick={() => handleTriggerAnimationPreview(selectedLayer)}
-                          className="px-2 py-0.5 rounded-[12px] bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 text-[10px] font-bold border border-purple-500/40 flex items-center gap-1 transition-all"
+                          className="px-2 py-0.5 rounded-[12px] bg-[#8B5CF6]/30 hover:bg-[#8B5CF6]/50 text-[#8B5CF6]/70 text-[10px] font-bold border border-[#8B5CF6]/40 flex items-center gap-1 transition-all"
                         >
                           <PiPlay size={10} />
                           <span>Preview</span>
@@ -9704,7 +9704,7 @@ export default function LiveDesignStudioModal({
                                   },
                                 }));
                               }}
-                              className="w-3.5 h-3.5 rounded text-purple-600 focus:ring-purple-500 bg-black/50 border-white/20"
+                              className="w-3.5 h-3.5 rounded text-[#8B5CF6] focus:ring-[#8B5CF6] bg-black/50 border-white/20"
                             />
                             <span className="text-[9px] text-white/70 font-medium">Specular Highlight Sweep on Entrance</span>
                           </label>
@@ -9852,10 +9852,10 @@ export default function LiveDesignStudioModal({
             {/* Draggable Divider between Inspector and Layers Stack */}
             <div
               onMouseDown={handleLayersDividerMouseDown}
-              className="h-2 relative flex items-center justify-center bg-[#151221] hover:bg-purple-600/30 border-y border-white/10 cursor-row-resize select-none transition-colors group z-10 shrink-0"
+              className="h-2 relative flex items-center justify-center bg-[#151221] hover:bg-[#8B5CF6]/30 border-y border-white/10 cursor-row-resize select-none transition-colors group z-10 shrink-0"
               title="Drag to resize Inspector / Layers panes"
             >
-              <div className="w-8 h-1 rounded-full bg-white/20 group-hover:bg-purple-400 transition-colors" />
+              <div className="w-8 h-1 rounded-full bg-white/20 group-hover:bg-[#8B5CF6] transition-colors" />
             </div>
 
             {/* ── Bottom Pane: Layers Stack ───────────────────────────────── */}
@@ -9907,7 +9907,7 @@ export default function LiveDesignStudioModal({
                         }}
                         className={`p-2 rounded-[12px] border transition-all flex items-center justify-between cursor-pointer text-xs ${
                           isSelected
-                            ? "bg-purple-600/30 border-purple-500 text-purple-200"
+                            ? "bg-[#8B5CF6]/30 border-[#8B5CF6]/50 text-[#8B5CF6]/70"
                             : "bg-white/[0.02] border-white/5 text-white/70 hover:bg-white/[0.05]"
                         }`}
                       >
@@ -9919,7 +9919,7 @@ export default function LiveDesignStudioModal({
                             {layer.name}
                           </span>
                           {layer.maskImage?.url && (
-                            <span className="text-[9px] font-bold text-purple-300 bg-purple-500/20 border border-purple-500/30 px-1.5 py-0.2 rounded-[12px] shrink-0">
+                            <span className="text-[9px] font-bold text-[#8B5CF6]/80 bg-[#8B5CF6]/20 border border-[#8B5CF6]/30 px-1.5 py-0.2 rounded-[12px] shrink-0">
                               Mask
                             </span>
                           )}
@@ -10049,10 +10049,10 @@ export default function LiveDesignStudioModal({
                         handleCreateClippingMask();
                         setContextMenu(null);
                       }}
-                      className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-purple-600/30 text-purple-200 text-left flex items-center justify-between transition-colors"
+                      className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-[#8B5CF6]/30 text-[#8B5CF6]/70 text-left flex items-center justify-between transition-colors"
                     >
                       <span className="font-semibold">Create Clipping Mask</span>
-                      <span className="text-[10px] text-purple-300">Mask+Img</span>
+                      <span className="text-[10px] text-[#8B5CF6]/80">Mask+Img</span>
                     </button>
                   )}
                   <button
@@ -10103,10 +10103,10 @@ export default function LiveDesignStudioModal({
                         setContextMenu(null);
                         showFeedback(`Editing image inside ${targetLayer.name}`, true);
                       }}
-                      className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-purple-600/30 text-purple-200 text-left flex items-center justify-between transition-colors font-medium"
+                      className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-[#8B5CF6]/30 text-[#8B5CF6]/70 text-left flex items-center justify-between transition-colors font-medium"
                     >
                       <span>Edit Clipped Image</span>
-                      <span className="text-[10px] text-purple-300 font-mono">Crop</span>
+                      <span className="text-[10px] text-[#8B5CF6]/80 font-mono">Crop</span>
                     </button>
                     <button
                       type="button"
@@ -10116,10 +10116,10 @@ export default function LiveDesignStudioModal({
                         setContextMenu(null);
                         showFeedback(`Editing mask shape frame for ${targetLayer.name}`, true);
                       }}
-                      className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-purple-600/30 text-purple-200 text-left flex items-center justify-between transition-colors font-medium"
+                      className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-[#8B5CF6]/30 text-[#8B5CF6]/70 text-left flex items-center justify-between transition-colors font-medium"
                     >
                       <span>Edit Mask Shape</span>
-                      <span className="text-[10px] text-purple-300 font-mono">Frame</span>
+                      <span className="text-[10px] text-[#8B5CF6]/80 font-mono">Frame</span>
                     </button>
                     <button
                       type="button"
@@ -10143,7 +10143,7 @@ export default function LiveDesignStudioModal({
                         handlePlaceImageInsideShape(targetLayer.id);
                         setContextMenu(null);
                       }}
-                      className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-purple-600/30 text-purple-200 text-left flex items-center justify-between transition-colors font-medium"
+                      className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-[#8B5CF6]/30 text-[#8B5CF6]/70 text-left flex items-center justify-between transition-colors font-medium"
                     >
                       <span>Place Image Inside Mask...</span>
                     </button>
@@ -10170,7 +10170,7 @@ export default function LiveDesignStudioModal({
                         }
                         setContextMenu(null);
                       }}
-                      className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-purple-600/30 text-purple-200 text-left flex items-center justify-between transition-colors font-medium"
+                      className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-[#8B5CF6]/30 text-[#8B5CF6]/70 text-left flex items-center justify-between transition-colors font-medium"
                     >
                       <span>{editingShapeLayerId === targetLayer.id ? "Done Editing Curves" : "Edit Bézier Curves"}</span>
                     </button>

@@ -590,7 +590,7 @@ export default function SettingsController() {
       <div className="px-8 pt-6 pb-5 border-b border-[#2E2542] bg-[#0E0A1A]/80 backdrop-blur-md">
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#7C3AED]/30 to-[#06B6D4]/30 border border-[#A788FA]/30 flex items-center justify-center text-[#A788FA] shadow-lg shadow-purple-900/20">
+            <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-[#7C3AED]/30 to-[#06B6D4]/30 border border-[#A788FA]/30 flex items-center justify-center text-[#A788FA] shadow-lg shadow-[#8B5CF6]/20">
               <PiGear size={22} className="animate-spin-slow" />
             </div>
             <div>
@@ -647,7 +647,7 @@ export default function SettingsController() {
               onClick={() => setActiveTab(tab.id)}
               className={`flex items-center gap-2 px-4 py-2 rounded-2xl text-xs font-black uppercase tracking-wider transition-all whitespace-nowrap ${
                 activeTab === tab.id
-                  ? "bg-gradient-to-r from-[#A788FA] to-[#818cf8] text-[#0B0814] shadow-md shadow-purple-500/20"
+                  ? "bg-gradient-to-r from-[#A788FA] to-[#818cf8] text-[#0B0814] shadow-md shadow-[#8B5CF6]/20"
                   : "bg-[#1A1428] text-[#8882A4] hover:text-white hover:bg-[#231A36] border border-[#2E2542]"
               }`}
             >
@@ -1288,7 +1288,7 @@ export default function SettingsController() {
                     triggerSaveFeedback();
                   }
                 }}
-                className="flex items-center gap-2 text-xs bg-gradient-to-r from-[#A788FA] to-[#67E8F9] text-[#0B0814] px-5 py-2.5 rounded-full font-black uppercase hover:opacity-95 shadow-md shadow-purple-500/20 transition-all"
+                className="flex items-center gap-2 text-xs bg-gradient-to-r from-[#A788FA] to-[#67E8F9] text-[#0B0814] px-5 py-2.5 rounded-full font-black uppercase hover:opacity-95 shadow-md shadow-[#8B5CF6]/20 transition-all"
               >
                 <PiUploadSimple size={16} /> + Import Media
               </ActionButton>
@@ -1678,7 +1678,7 @@ export default function SettingsController() {
             {/* ASR Engine Status Badge */}
             <div className="flex items-center justify-between p-4 rounded-2xl bg-[#0B0814] border border-[#2E2542]">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-purple-500/20 flex items-center justify-center text-[#A788FA]">
+                <div className="w-9 h-9 rounded-xl bg-[#8B5CF6]/20 flex items-center justify-center text-[#A788FA]">
                   <PiCpu size={20} />
                 </div>
                 <div>
@@ -2009,7 +2009,7 @@ export default function SettingsController() {
                       {!authContext.isAuthenticated ? (
                         <ActionButton
                           onClick={() => authContext.login()}
-                          className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-purple-900/30"
+                          className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-[#8B5CF6]/30"
                         >
                           Log In to Activate 60-Day Free Trial
                         </ActionButton>
@@ -2098,7 +2098,7 @@ export default function SettingsController() {
                   <ActionButton
                     type="button"
                     onClick={() => updater.downloadUpdate()}
-                    className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-[#A788FA] to-[#818cf8] hover:from-[#9570f5] hover:to-[#6366f1] text-[#0B0814] text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-purple-500/25 flex items-center gap-2"
+                    className="px-5 py-2.5 rounded-2xl bg-gradient-to-r from-[#A788FA] to-[#818cf8] hover:from-[#9570f5] hover:to-[#6366f1] text-[#0B0814] text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-[#8B5CF6]/25 flex items-center gap-2"
                   >
                     <PiDownloadSimple size={16} />
                     <span>

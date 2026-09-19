@@ -56,7 +56,7 @@ export default function SessionFolderCard({
       <div
         className={`relative w-full aspect-[1.14/1] select-none transition-all ${
           selected
-            ? "ring-2 ring-blue-400 ring-offset-2 ring-offset-black/80 rounded-[20px]"
+            ? "ring-2 ring-[#00A8FF]/30 ring-offset-2 ring-offset-black/80 rounded-[20px]"
             : ""
         }`}
       >
@@ -77,7 +77,7 @@ export default function SessionFolderCard({
             }}
             className={`w-4.5 h-4.5 rounded-md flex items-center justify-center border transition-all ${
               selected
-                ? "bg-blue-600 border-white text-white opacity-100"
+                ? "bg-[#00A8FF] border-white text-white opacity-100"
                 : "bg-black/35 border-white/50 text-transparent hover:border-white hover:bg-black/60 opacity-0 group-hover:opacity-100"
             }`}
             aria-label={selected ? "Deselect session" : "Select session"}

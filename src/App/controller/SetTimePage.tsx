@@ -257,7 +257,7 @@ export default function SetTimePage() {
               type="button"
               disabled={!canUseStartTime}
               onClick={() => setPeriod((p) => (p === "AM" ? "PM" : "AM"))}
-              className={`py-3 bg-transparent text-[35px] font-bold text-blue-500 transition-colors select-none ${
+              className={`py-3 bg-transparent text-[35px] font-bold text-[#00A8FF] transition-colors select-none ${
                 !canUseStartTime ? "opacity-40 cursor-not-allowed" : ""
               }`}
             >
@@ -275,7 +275,7 @@ export default function SetTimePage() {
             </Button>
           ) : (
             <div className="px-3 text-center">
-              <p className="text-xs text-purple-300/80 font-medium leading-relaxed">
+              <p className="text-xs text-[#8B5CF6]/80 font-medium leading-relaxed">
                 You cannot use this feature because your current subscription plan does not support scheduled start times.
               </p>
             </div>
@@ -321,7 +321,7 @@ export default function SetTimePage() {
             </div>
           ) : (
             <div className="px-3 text-center">
-              <p className="text-xs text-purple-300/80 font-medium leading-relaxed">
+              <p className="text-xs text-[#8B5CF6]/80 font-medium leading-relaxed">
                 Your current plan does not support agenda start intervals.
               </p>
             </div>

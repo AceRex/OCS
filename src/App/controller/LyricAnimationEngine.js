@@ -1411,7 +1411,7 @@ function renderSectionStyledLyrics(text, currentWordIndex, sectionType = "verse"
   return (
     <div className={`p-4 rounded-2xl border transition-all duration-300 w-full flex flex-col items-center gap-2 ${
       isChorus
-        ? "bg-purple-500/10 border-purple-500/40 shadow-[0_0_30px_rgba(168,85,247,0.2)] ring-1 ring-purple-500/30"
+        ? "bg-[#8B5CF6]/10 border-[#8B5CF6]/40 shadow-[0_0_30px_rgba(168,85,247,0.2)] ring-1 ring-[#8B5CF6]/30"
         : isBridge
         ? "bg-amber-500/10 border-amber-500/40 shadow-[0_0_30px_rgba(245,158,11,0.2)] ring-1 ring-amber-500/30"
         : "bg-white/5 border-white/10"
@@ -1419,7 +1419,7 @@ function renderSectionStyledLyrics(text, currentWordIndex, sectionType = "verse"
       {sectionLabel && (
         <span className={`text-[10px] uppercase font-bold tracking-widest px-2.5 py-0.5 rounded-full ${
           isChorus
-            ? "bg-purple-500/30 text-purple-200 border border-purple-500/50"
+            ? "bg-[#8B5CF6]/30 text-[#8B5CF6] border border-[#8B5CF6]/50"
             : isBridge
             ? "bg-amber-500/30 text-amber-200 border border-amber-500/50"
             : "bg-white/10 text-white/60"

@@ -130,7 +130,7 @@ const SearchableDropdown = ({
                     setIsOpen(false);
                     setSearch("");
                   }}
-                  className={`w-full text-left px-3 py-2 rounded text-sm flex items-center justify-between ${value === opt.value ? "bg-blue-500/20 text-blue-400" : "text-light/80 hover:bg-white/5"}`}
+                  className={`w-full text-left px-3 py-2 rounded text-sm flex items-center justify-between ${value === opt.value ? "bg-[#00A8FF]/20 text-[#00A8FF]" : "text-light/80 hover:bg-white/5"}`}
                 >
                   <span className="truncate">{opt.label}</span>
                   {value === opt.value && <PiCheck />}
@@ -1014,13 +1014,13 @@ export default function BibleController() {
                     onClick={() => handleSelectBook(b)}
                     className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center justify-between transition-colors ${
                       idx === activeSuggestionIndex
-                        ? "bg-blue-600/30 text-blue-400 font-semibold"
+                        ? "bg-[#00A8FF]/30 text-[#00A8FF] font-semibold"
                         : "text-white/80 hover:bg-white/5"
                     }`}
                   >
                     <span>{b.name}</span>
                     {selectedBookIndex >= 0 && books[selectedBookIndex]?.name === b.name && (
-                      <PiCheck className="text-blue-400" />
+                      <PiCheck className="text-[#00A8FF]" />
                     )}
                   </button>
                 ))}
@@ -1138,13 +1138,13 @@ export default function BibleController() {
                     onClick={() => handleSelectVersion(v.key)}
                     className={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center justify-between transition-colors ${
                       idx === activeTranslationIndex
-                        ? "bg-blue-600/30 text-blue-400 font-semibold"
+                        ? "bg-[#00A8FF]/30 text-[#00A8FF] font-semibold"
                         : "text-white/80 hover:bg-white/5"
                     }`}
                   >
                     <span className="truncate pr-2">{v.name}</span>
                     {selectedVersion === v.key && (
-                      <PiCheck className="text-blue-400 shrink-0" />
+                      <PiCheck className="text-[#00A8FF] shrink-0" />
                     )}
                   </button>
                 ))}
@@ -1225,10 +1225,10 @@ export default function BibleController() {
                 key={index}
                 id={`verse-${index}`}
                 onClick={(e) => handleVerseClick(index, e)}
-                className={`flex gap-4 p-2 rounded-lg transition-all group cursor-pointer border ${isSelected ? "bg-blue-600/20 border-blue-500/30" : "border-transparent hover:bg-white/5"}`}
+                className={`flex gap-4 p-2 rounded-lg transition-all group cursor-pointer border ${isSelected ? "bg-[#00A8FF]/20 border-[#00A8FF]/30" : "border-transparent hover:bg-white/5"}`}
               >
                 <span
-                  className={`font-bold min-w-[24px] text-right pt-1 text-sm ${isSelected ? "text-blue-400" : "text-ash/50 group-hover:text-ash/80"}`}
+                  className={`font-bold min-w-[24px] text-right pt-1 text-sm ${isSelected ? "text-[#00A8FF]" : "text-ash/50 group-hover:text-ash/80"}`}
                 >
                   {index + 1}
                 </span>

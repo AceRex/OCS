@@ -86,7 +86,7 @@ export default function DisabledContainer({
             border: '1px solid rgba(168, 85, 247, 0.3)',
           }}
         >
-          <PiLockKey size={26} className="text-purple-300" />
+          <PiLockKey size={26} className="text-[#8B5CF6]" />
         </div>
 
         {/* Text */}

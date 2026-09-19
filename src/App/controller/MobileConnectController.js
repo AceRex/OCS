@@ -363,8 +363,8 @@ function MobileConnectPanel() {
                   const role = device.deviceRole || (device.isAdmin ? "admin" : null);
 
                   const roleStyles = {
-                    admin: { badge: "bg-purple-500/20 border-purple-500/35 text-purple-300", label: "Admin" },
-                    stageManager: { badge: "bg-blue-500/20 border-blue-500/35 text-blue-300", label: "Stage Mgr" },
+                    admin: { badge: "bg-[#8B5CF6]/20 border-[#8B5CF6]/35 text-[#8B5CF6]", label: "Admin" },
+                    stageManager: { badge: "bg-[#00A8FF]/20 border-[#00A8FF]/35 text-[#00A8FF]", label: "Stage Mgr" },
                     speaker: { badge: "bg-white/10 border-white/15 text-white/50", label: "Speaker" },
                   };
                   const roleStyle = roleStyles[role] || null;
@@ -466,8 +466,8 @@ function MobileConnectPanel() {
                               <div className="px-3 py-1 mb-1">
                                 <p className="text-[9px] uppercase tracking-[0.15em] text-white/25 font-bold mb-2">Set Role</p>
                                 {[
-                                  { role: "admin", label: "Admin", icon: <PiShieldCheck size={14} className="text-purple-400" />, desc: "Full control & peer access" },
-                                  { role: "stageManager", label: "Stage Manager", icon: <PiStar size={14} className="text-blue-400" />, desc: "Stage controls only" },
+                                  { role: "admin", label: "Admin", icon: <PiShieldCheck size={14} className="text-[#8B5CF6]" />, desc: "Full control & peer access" },
+                                  { role: "stageManager", label: "Stage Manager", icon: <PiStar size={14} className="text-[#00A8FF]" />, desc: "Stage controls only" },
                                   { role: "speaker", label: "Speaker", icon: <PiPerson size={14} className="text-white/40" />, desc: "Peers & microphone only" },
                                 ].map(({ role: r, label, icon, desc }) => {
                                   const isActive = (device.deviceRole || (device.isAdmin ? "admin" : "speaker")) === r;

@@ -214,11 +214,11 @@ export default function TeleprompterFilterModal({
       {/* SVG Sharpener Definition */}
       <TeleprompterSharpenerSvgDef sharpness={customSettings.sharpness} />
 
-      <div className="bg-[#11101a] border border-purple-500/30 rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
+      <div className="bg-[#11101a] border border-[#8B5CF6]/30 rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
         {/* Header */}
         <div className="p-5 border-b border-white/10 flex items-center justify-between bg-[#161424]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-300 shadow-md shadow-purple-500/10">
+            <div className="w-10 h-10 rounded-2xl bg-[#8B5CF6]/20 border border-[#8B5CF6]/40 flex items-center justify-center text-[#8B5CF6] shadow-md shadow-[#8B5CF6]/10">
               <PiSparkle size={20} />
             </div>
             <div>
@@ -269,7 +269,7 @@ export default function TeleprompterFilterModal({
               <div className="min-w-0">
                 <span className="text-xs font-bold text-white block truncate">
                   Active Look:{" "}
-                  <span className="text-purple-400">
+                  <span className="text-[#8B5CF6]">
                     {selectedPresetId === "custom"
                       ? "Custom Manual Grading"
                       : PRO_FILTER_PRESETS.find((p) => p.id === selectedPresetId)?.label}
@@ -282,7 +282,7 @@ export default function TeleprompterFilterModal({
                   <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[10px] text-amber-300 font-mono">
                     Temp: {customSettings.warmth > 0 ? `+${customSettings.warmth}` : customSettings.warmth}
                   </span>
-                  <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[10px] text-purple-300 font-mono">
+                  <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[10px] text-[#8B5CF6] font-mono">
                     Contrast: {customSettings.contrast}%
                   </span>
                 </div>
@@ -299,7 +299,7 @@ export default function TeleprompterFilterModal({
 
           {/* Section 1: Color Grading Presets */}
           <div>
-            <label className="text-xs font-bold uppercase tracking-wider text-purple-400 block mb-3">
+            <label className="text-xs font-bold uppercase tracking-wider text-[#8B5CF6] block mb-3">
               Cinematic Camera Profiles
             </label>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
@@ -311,14 +311,14 @@ export default function TeleprompterFilterModal({
                     onClick={() => handleSelectPreset(preset)}
                     className={`p-3 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between gap-1.5 relative group ${
                       isSelected
-                        ? "bg-purple-900/30 border-purple-500/80 shadow-lg shadow-purple-500/20"
+                        ? "bg-[#8B5CF6]/30 border-[#8B5CF6]/80 shadow-lg shadow-[#8B5CF6]/20"
                         : "bg-[#181624]/60 border-white/5 hover:border-white/20 hover:bg-[#181624]"
                     }`}
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-white">{preset.label}</span>
                       {isSelected && (
-                        <div className="w-4 h-4 rounded-full bg-purple-500 flex items-center justify-center text-white text-[9px]">
+                        <div className="w-4 h-4 rounded-full bg-[#8B5CF6] flex items-center justify-center text-white text-[9px]">
                           <PiCheck size={10} />
                         </div>
                       )}
@@ -435,8 +435,8 @@ export default function TeleprompterFilterModal({
 
           {/* Section 4: Pro Color Grading & Tone */}
           <div className="bg-[#181624]/40 p-4 rounded-2xl border border-white/5 space-y-4">
-            <label className="text-xs font-bold uppercase tracking-wider text-purple-300 flex items-center gap-1.5">
-              <PiSlidersHorizontal size={14} className="text-purple-400" />
+            <label className="text-xs font-bold uppercase tracking-wider text-[#8B5CF6] flex items-center gap-1.5">
+              <PiSlidersHorizontal size={14} className="text-[#8B5CF6]" />
               Color Grading & Tone Curves
             </label>
 
@@ -444,7 +444,7 @@ export default function TeleprompterFilterModal({
             <div className="space-y-1">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-white/60 font-semibold">Brightness / Exposure</span>
-                <span className="font-mono text-purple-300">{customSettings.brightness}%</span>
+                <span className="font-mono text-[#8B5CF6]">{customSettings.brightness}%</span>
               </div>
               <input
                 type="range"
@@ -460,7 +460,7 @@ export default function TeleprompterFilterModal({
             <div className="space-y-1">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-white/60 font-semibold">Contrast & Punch</span>
-                <span className="font-mono text-purple-300">{customSettings.contrast}%</span>
+                <span className="font-mono text-[#8B5CF6]">{customSettings.contrast}%</span>
               </div>
               <input
                 type="range"
@@ -476,7 +476,7 @@ export default function TeleprompterFilterModal({
             <div className="space-y-1">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-white/60 font-semibold">Saturation & Color Depth</span>
-                <span className="font-mono text-purple-300">{customSettings.saturation}%</span>
+                <span className="font-mono text-[#8B5CF6]">{customSettings.saturation}%</span>
               </div>
               <input
                 type="range"
@@ -492,7 +492,7 @@ export default function TeleprompterFilterModal({
             <div className="space-y-1">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-white/60 font-semibold">Black & White (B&W Conversion)</span>
-                <span className="font-mono text-purple-300">{customSettings.grayscale}%</span>
+                <span className="font-mono text-[#8B5CF6]">{customSettings.grayscale}%</span>
               </div>
               <input
                 type="range"

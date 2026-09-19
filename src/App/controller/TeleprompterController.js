@@ -1033,12 +1033,12 @@ export default function TeleprompterController() {
                 onClick={() => setIsFilterModalOpen(true)}
                 className={`px-2.5 py-1 rounded-xl text-[10px] font-bold border transition-all flex items-center gap-1 ${
                   filterState?.presetId && filterState.presetId !== "normal"
-                    ? "bg-purple-600/30 border-purple-500/50 text-purple-200 shadow-sm shadow-purple-500/20"
+                    ? "bg-[#8B5CF6]/30 border-[#8B5CF6]/50 text-[#8B5CF6] shadow-sm shadow-[#8B5CF6]/20"
                     : "bg-white/5 border-white/10 text-white/60 hover:text-white"
                 }`}
                 title="Camera video sharpener, color grading & balancing effects"
               >
-                <PiSparkle size={12} className={filterState?.presetId && filterState.presetId !== "normal" ? "text-purple-300 animate-pulse" : ""} />
+                <PiSparkle size={12} className={filterState?.presetId && filterState.presetId !== "normal" ? "text-[#8B5CF6] animate-pulse" : ""} />
                 <span>
                   {filterState?.presetId && filterState.presetId !== "normal"
                     ? (PRO_FILTER_PRESETS.find((p) => p.id === filterState.presetId)?.label || "Graded")
@@ -1073,7 +1073,7 @@ export default function TeleprompterController() {
                   onClick={handleToggleMirror}
                   className={`px-2.5 py-1 rounded-xl text-[10px] font-bold border transition-all ${
                     isMirrored
-                      ? "bg-purple-600/30 border-purple-500/50 text-purple-200"
+                      ? "bg-[#8B5CF6]/30 border-[#8B5CF6]/50 text-[#8B5CF6]"
                       : "bg-white/5 border-white/10 text-white/60 hover:text-white"
                   }`}
                   title={isMirrored ? "Camera is mirrored (selfie view). Click for standard view." : "Camera is standard (unmirrored). Click to mirror."}
@@ -1115,7 +1115,7 @@ export default function TeleprompterController() {
                           });
                         }
                       }}
-                      className="px-4 py-2 rounded-xl bg-purple-600/90 hover:bg-purple-600 text-white text-xs font-bold transition-all shadow-lg backdrop-blur-sm flex items-center gap-2 border border-purple-400/30"
+                      className="px-4 py-2 rounded-xl bg-[#8B5CF6]/90 hover:bg-[#8B5CF6] text-white text-xs font-bold transition-all shadow-lg backdrop-blur-sm flex items-center gap-2 border border-[#8B5CF6]/30"
                     >
                       <PiDeviceMobile size={15} />
                       <span>Request Phone Stream</span>
@@ -1191,7 +1191,7 @@ export default function TeleprompterController() {
         <div className="col-start-1 col-end-2 row-start-4 row-end-7 bg-[#111019]/90 border border-white/10 rounded-2xl p-4 flex flex-col overflow-y-auto no-scrollbar shadow-xl backdrop-blur-md gap-4">
           <div className="flex items-center justify-between pb-2 border-b border-white/10">
             <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
-              <PiSlidersHorizontal size={14} className="text-purple-400" />
+              <PiSlidersHorizontal size={14} className="text-[#8B5CF6]" />
               Teleprompter Controls
             </h3>
           </div>
@@ -1218,7 +1218,7 @@ export default function TeleprompterController() {
 
             <button
               onClick={() => setIsFullscreenOpen(true)}
-              className="py-3 px-4 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-purple-600/30 transition-all active:scale-98"
+              className="py-3 px-4 rounded-xl bg-[#8B5CF6] hover:bg-[#8B5CF6] text-white text-xs font-bold flex items-center justify-center gap-2 shadow-md shadow-[#8B5CF6]/30 transition-all active:scale-98"
             >
               <PiArrowsOut size={16} />
               <span>Go Fullscreen</span>
@@ -1249,7 +1249,7 @@ export default function TeleprompterController() {
                 title={pairedDevices.length === 0 ? "No phone paired. Pair a mobile device in Remote tab first." : ""}
                 className={`py-2 px-3 rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all relative ${
                   cameraSource === "phone"
-                    ? "bg-purple-600 text-white shadow-sm"
+                    ? "bg-[#8B5CF6] text-white shadow-sm"
                     : pairedDevices.length > 0
                     ? "text-white/40 hover:text-white"
                     : "text-white/20 cursor-not-allowed opacity-40"
@@ -1291,7 +1291,7 @@ export default function TeleprompterController() {
 
           {/* Scene Break & Line Animation Customization Controls */}
           <div className="flex flex-col gap-2.5 bg-[#181624]/60 p-3 rounded-xl border border-white/5">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-purple-400 flex items-center gap-1.5">
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[#8B5CF6] flex items-center gap-1.5">
               <PiSparkle size={13} />
               Scene Break & Line Animation
             </span>
@@ -1311,7 +1311,7 @@ export default function TeleprompterController() {
                     onClick={() => setSceneBreakStyle(opt.id)}
                     className={`py-1 rounded-md transition-all text-center ${
                       sceneBreakStyle === opt.id
-                        ? "bg-purple-600 text-white shadow-sm"
+                        ? "bg-[#8B5CF6] text-white shadow-sm"
                         : "text-white/40 hover:text-white"
                     }`}
                   >
@@ -1379,14 +1379,14 @@ export default function TeleprompterController() {
           {/* Header & Controls */}
           <div className="flex items-center justify-between pb-4 border-b border-white/10 shrink-0 flex-wrap gap-2">
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-300">
+              <div className="w-8 h-8 rounded-xl bg-[#8B5CF6]/20 border border-[#8B5CF6]/30 flex items-center justify-center text-[#8B5CF6]">
                 <PiArticle size={18} />
               </div>
               <div>
                 <select
                   value={activeScriptId}
                   onChange={(e) => setActiveScriptId(e.target.value)}
-                  className="bg-[#1b1926] text-xs font-bold text-white px-3 py-1.5 rounded-xl border border-white/10 outline-none focus:border-purple-500/50 cursor-pointer"
+                  className="bg-[#1b1926] text-xs font-bold text-white px-3 py-1.5 rounded-xl border border-white/10 outline-none focus:border-[#8B5CF6]/50 cursor-pointer"
                 >
                   {scripts.map((s) => (
                     <option key={s.id} value={s.id}>
@@ -1417,7 +1417,7 @@ export default function TeleprompterController() {
                   setScriptToEdit(null);
                   setIsScriptModalOpen(true);
                 }}
-                className="px-3.5 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-purple-600/30 transition-all active:scale-95"
+                className="px-3.5 py-1.5 rounded-xl bg-[#8B5CF6] hover:bg-[#8B5CF6] text-white text-xs font-bold flex items-center gap-1.5 shadow-md shadow-[#8B5CF6]/30 transition-all active:scale-95"
               >
                 <PiPlus size={14} /> Add Content
               </button>
@@ -1439,7 +1439,7 @@ export default function TeleprompterController() {
                 className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all shadow-md active:scale-95 ${
                   isAutoScrolling
                     ? "bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-600/30 animate-pulse"
-                    : "bg-purple-600 hover:bg-purple-500 text-white shadow-purple-600/30"
+                    : "bg-[#8B5CF6] hover:bg-[#8B5CF6] text-white shadow-[#8B5CF6]/30"
                 }`}
                 title="Toggle Continuous Auto-Scroll (Spacebar)"
               >
@@ -1466,7 +1466,7 @@ export default function TeleprompterController() {
                     onClick={() => setScrollSpeed(spd)}
                     className={`px-2 py-0.5 rounded-lg text-[11px] font-bold transition-all ${
                       scrollSpeed === spd
-                        ? "bg-purple-600 text-white shadow-sm"
+                        ? "bg-[#8B5CF6] text-white shadow-sm"
                         : "text-white/50 hover:text-white"
                     }`}
                   >
@@ -1560,8 +1560,8 @@ export default function TeleprompterController() {
                     }`}
                   >
                     {/* Scene Divider Header */}
-                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/20 text-[11px] font-bold text-purple-300 mb-4 tracking-wider uppercase">
-                      <span className="w-1.5 h-1.5 rounded-full bg-purple-400" />
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#8B5CF6]/10 border border-[#8B5CF6]/20 text-[11px] font-bold text-[#8B5CF6] mb-4 tracking-wider uppercase">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#8B5CF6]" />
                       {sec.label || `Scene ${secIdx + 1}`}
                     </div>
 
@@ -1715,12 +1715,12 @@ export default function TeleprompterController() {
 
       {/* ─── Toast Notification: Content Shared from Mobile ─── */}
       {contentReceivedToast && (
-        <div className="fixed top-6 right-6 z-[999] bg-gradient-to-r from-purple-950/95 to-[#131024]/95 border border-purple-500/50 text-white px-5 py-3.5 rounded-2xl shadow-2xl backdrop-blur-xl flex items-center gap-3 animate-in slide-in-from-top-4 duration-300">
-          <div className="w-8 h-8 rounded-xl bg-purple-500/30 border border-purple-400/40 flex items-center justify-center text-purple-200">
+        <div className="fixed top-6 right-6 z-[999] bg-gradient-to-r from-purple-950/95 to-[#131024]/95 border border-[#8B5CF6]/50 text-white px-5 py-3.5 rounded-2xl shadow-2xl backdrop-blur-xl flex items-center gap-3 animate-in slide-in-from-top-4 duration-300">
+          <div className="w-8 h-8 rounded-xl bg-[#8B5CF6]/30 border border-[#8B5CF6]/40 flex items-center justify-center text-[#8B5CF6]">
             <PiArticle size={18} />
           </div>
           <div>
-            <div className="text-[10px] font-black uppercase tracking-wider text-purple-300">New Content Received</div>
+            <div className="text-[10px] font-black uppercase tracking-wider text-[#8B5CF6]">New Content Received</div>
             <div className="text-xs font-bold text-white">{contentReceivedToast}</div>
           </div>
         </div>

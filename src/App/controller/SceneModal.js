@@ -588,7 +588,7 @@ export default function SceneModal({
                                     onClick={() => handleSceneTypeChange("song")}
                                     className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs font-bold transition-all ${
                                         isSong
-                                            ? "bg-purple-600 text-white shadow-md"
+                                            ? "bg-[#8B5CF6] text-white shadow-md"
                                             : "text-white/40 hover:text-white hover:bg-white/5"
                                     }`}
                                 >
@@ -599,7 +599,7 @@ export default function SceneModal({
                                     onClick={() => handleSceneTypeChange("text")}
                                     className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-xl text-xs font-bold transition-all ${
                                         !isSong
-                                            ? "bg-purple-600 text-white shadow-md"
+                                            ? "bg-[#8B5CF6] text-white shadow-md"
                                             : "text-white/40 hover:text-white hover:bg-white/5"
                                     }`}
                                 >
@@ -618,18 +618,18 @@ export default function SceneModal({
                                 value={currentScene.name || ""}
                                 onChange={(e) => setCurrentScene(prev => ({ ...prev, name: e.target.value }))}
                                 placeholder={isSong ? "e.g. Amazing Grace" : "Type Title here..."}
-                                className="w-full bg-[#1b1b22] text-xs font-semibold text-white/90 p-2.5 rounded-2xl border border-white/10 outline-none focus:border-purple-500/50 transition-colors placeholder:text-white/20"
+                                className="w-full bg-[#1b1b22] text-xs font-semibold text-white/90 p-2.5 rounded-2xl border border-white/10 outline-none focus:border-[#8B5CF6]/50 transition-colors placeholder:text-white/20"
                             />
                         </div>
 
                         {/* If Song: Chorus Flow Setting */}
                         {isSong && (
-                            <div className={`bg-purple-500/10 border border-purple-500/20 rounded-2xl p-3 flex flex-col gap-2 ${!canChorusFlow ? "opacity-70" : ""}`}>
+                            <div className={`bg-[#8B5CF6]/10 border border-[#8B5CF6]/20 rounded-2xl p-3 flex flex-col gap-2 ${!canChorusFlow ? "opacity-70" : ""}`}>
                                 <div className="flex items-center justify-between">
-                                    <span className="text-[10px] font-bold uppercase tracking-wider text-purple-300 flex items-center gap-1.5">
+                                    <span className="text-[10px] font-bold uppercase tracking-wider text-[#8B5CF6] flex items-center gap-1.5">
                                         <PiRepeat size={13} /> Chorus Flow
                                         {!canChorusFlow && (
-                                            <span className="text-[8px] font-bold uppercase tracking-tight bg-purple-900/60 text-purple-200 border border-purple-400/30 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+                                            <span className="text-[8px] font-bold uppercase tracking-tight bg-[#8B5CF6]/60 text-[#8B5CF6] border border-[#8B5CF6]/30 px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
                                                 <PiLockKey size={9} /> Large/Premium
                                             </span>
                                         )}
@@ -643,7 +643,7 @@ export default function SceneModal({
                                             }
                                         }}
                                         className={`w-7 h-4 rounded-full p-0.5 transition-colors relative ${
-                                            canChorusFlow && currentScene.autoChorus ? "bg-purple-500" : "bg-white/10"
+                                            canChorusFlow && currentScene.autoChorus ? "bg-[#8B5CF6]" : "bg-white/10"
                                         } ${!canChorusFlow ? "cursor-not-allowed" : ""}`}
                                         title={canChorusFlow ? "Toggle Chorus Flow" : "Chorus Flow requires Large Setup or Premium plan"}
                                     >
@@ -736,9 +736,9 @@ export default function SceneModal({
                                                 isActive
                                                     ? "bg-white text-black border-white shadow-md"
                                                     : isChorus
-                                                    ? "bg-purple-950/40 text-purple-200 border-purple-500/30 hover:border-purple-500/50"
+                                                    ? "bg-[#8B5CF6]/40 text-[#8B5CF6] border-[#8B5CF6]/30 hover:border-[#8B5CF6]/50"
                                                     : isBridge
-                                                    ? "bg-blue-950/40 text-blue-200 border-blue-500/30 hover:border-blue-500/50"
+                                                    ? "bg-[#00A8FF]/40 text-[#00A8FF] border-[#00A8FF]/30 hover:border-[#00A8FF]/50"
                                                     : "bg-[#1b1b22] text-white/80 border-white/5 hover:border-white/20 hover:text-white"
                                             }`}
                                         >
@@ -747,7 +747,7 @@ export default function SceneModal({
                                                     {p.label || (isSong ? `Verse ${idx + 1}` : `Page ${idx + 1}`)}
                                                 </span>
                                                 {isChorus && (
-                                                    <span className={`text-[9px] font-bold uppercase px-1.5 py-0.2 rounded ${isActive ? 'bg-black/10 text-black' : 'bg-purple-500/20 text-purple-300'}`}>
+                                                    <span className={`text-[9px] font-bold uppercase px-1.5 py-0.2 rounded ${isActive ? 'bg-black/10 text-black' : 'bg-[#8B5CF6]/20 text-[#8B5CF6]'}`}>
                                                         Chorus
                                                     </span>
                                                 )}
@@ -793,7 +793,7 @@ export default function SceneModal({
                                 <ActionButton
                                     type="button"
                                     onClick={() => handleAddPage("chorus")}
-                                    className="bg-purple-600/20 hover:bg-purple-600/30 text-purple-300 text-xs font-bold py-2.5 px-3 rounded-xl border border-purple-500/30 flex items-center justify-center gap-1 transition-all active:scale-98"
+                                    className="bg-[#8B5CF6]/20 hover:bg-[#8B5CF6]/30 text-[#8B5CF6] text-xs font-bold py-2.5 px-3 rounded-xl border border-[#8B5CF6]/30 flex items-center justify-center gap-1 transition-all active:scale-98"
                                 >
                                     <PiPlus size={13} /> Chorus
                                 </ActionButton>
@@ -850,7 +850,7 @@ export default function SceneModal({
                                             onClick={() => handleSectionTypeChange(sec)}
                                             className={`px-2.5 py-1 rounded-lg font-bold text-[10px] uppercase tracking-wider transition-all ${
                                                 activePage.sectionType === sec
-                                                    ? "bg-purple-600 text-white shadow-sm"
+                                                    ? "bg-[#8B5CF6] text-white shadow-sm"
                                                     : "text-white/40 hover:text-white"
                                             }`}
                                         >
@@ -1113,7 +1113,7 @@ export default function SceneModal({
                                                 }}
                                                 className={`w-full text-left px-2.5 py-1.5 rounded-xl transition-all flex flex-col gap-0.5 group ${
                                                     isSelected
-                                                        ? "bg-purple-500/25 text-white border border-purple-500/40 shadow-sm"
+                                                        ? "bg-[#8B5CF6]/25 text-white border border-[#8B5CF6]/40 shadow-sm"
                                                         : "hover:bg-white/10 text-white/80 hover:text-white border border-transparent"
                                                 }`}
                                             >
@@ -1121,7 +1121,7 @@ export default function SceneModal({
                                                     <span className="text-xs font-bold flex items-center gap-1.5">
                                                         {anim.badge?.split(" ")[0]} {anim.name}
                                                     </span>
-                                                    {isSelected && <PiCheck size={14} className="text-purple-400" />}
+                                                    {isSelected && <PiCheck size={14} className="text-[#8B5CF6]" />}
                                                 </div>
                                                 <p className="text-[10px] text-white/40 group-hover:text-white/70 leading-tight">
                                                     {anim.description}
@@ -1242,7 +1242,7 @@ export default function SceneModal({
                                         !canAnimate
                                             ? "bg-[#18181c] text-white/40 border-white/5 opacity-60 cursor-not-allowed"
                                             : isAnimMenuOpen
-                                            ? "bg-purple-600 text-white border-purple-500 shadow-md"
+                                            ? "bg-[#8B5CF6] text-white border-[#8B5CF6]/50 shadow-md"
                                             : "bg-[#24242a] text-white/90 border-white/10 hover:bg-[#2b2b33]"
                                     }`}
                                     title={canAnimate ? `Choose ${isSong ? 'Sing-Along' : 'Read-Along'} Animation` : "Scene animations and transitions require Large Setup or Premium plan"}
@@ -1272,7 +1272,7 @@ export default function SceneModal({
                                     }}
                                     className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-colors border ${
                                         currentScene.style.backgroundImage
-                                            ? "bg-purple-500/20 text-purple-300 border-purple-500/40"
+                                            ? "bg-[#8B5CF6]/20 text-[#8B5CF6] border-[#8B5CF6]/40"
                                             : "bg-[#24242a] text-white/70 border-white/10 hover:bg-[#2b2b33] hover:text-white"
                                     }`}
                                     title="Choose Background Image"
@@ -1422,7 +1422,7 @@ export default function SceneModal({
                         {/* Modal Header */}
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2.5">
-                                <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-300 flex items-center justify-center">
+                                <div className="w-8 h-8 rounded-xl bg-[#8B5CF6]/20 text-[#8B5CF6] flex items-center justify-center">
                                     <PiImage size={18} />
                                 </div>
                                 <div>
@@ -1444,7 +1444,7 @@ export default function SceneModal({
                             <ActionButton
                                 type="button"
                                 onClick={handleUploadNewBg}
-                                className="flex-1 bg-blue-600 hover:bg-blue-500 text-white font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 text-xs transition-all shadow-lg shadow-blue-600/20"
+                                className="flex-1 bg-[#00A8FF] hover:bg-[#00A8FF] text-white font-bold py-2.5 px-4 rounded-xl flex items-center justify-center gap-2 text-xs transition-all shadow-lg shadow-[#00A8FF]/20"
                             >
                                 <PiUploadSimple size={16} />
                                 Upload New Image
@@ -1521,7 +1521,7 @@ export default function SceneModal({
                                             }}
                                             className={`aspect-video rounded-xl overflow-hidden relative cursor-pointer border-2 transition-all group ${
                                                 isSelected
-                                                    ? "border-purple-500 ring-2 ring-purple-500/30"
+                                                    ? "border-[#8B5CF6]/50 ring-2 ring-[#8B5CF6]/30"
                                                     : "border-white/10 hover:border-white/40"
                                             }`}
                                         >
@@ -1530,7 +1530,7 @@ export default function SceneModal({
                                                 style={{ backgroundImage: imgUrl.startsWith('url(') ? imgUrl : `url("${imgUrl}")` }}
                                             />
                                             {isSelected && (
-                                                <div className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-purple-500 text-white flex items-center justify-center shadow-lg">
+                                                <div className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-[#8B5CF6] text-white flex items-center justify-center shadow-lg">
                                                     <PiCheck size={12} />
                                                 </div>
                                             )}

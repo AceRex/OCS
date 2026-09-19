@@ -80,8 +80,8 @@ export default function IncomingAssetModal() {
         {/* Header */}
         <div className="p-6 border-b border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="p-2.5 bg-blue-500/15 border border-blue-500/30 rounded-xl">
-              <PiDeviceMobile size={22} className="text-blue-400" />
+            <div className="p-2.5 bg-[#00A8FF]/15 border border-[#00A8FF]/30 rounded-xl">
+              <PiDeviceMobile size={22} className="text-[#00A8FF]" />
             </div>
             <div>
               <h2 className="text-white font-bold text-lg">Incoming Mobile Asset</h2>
@@ -181,8 +181,8 @@ export default function IncomingAssetModal() {
           )}
 
           {(isImage || isVideo) && (
-            <div className="bg-blue-500/10 border border-blue-500/20 rounded-xl p-4 flex flex-col gap-2.5">
-              <div className="text-blue-300 font-bold text-xs uppercase tracking-wider">
+            <div className="bg-[#00A8FF]/10 border border-[#00A8FF]/20 rounded-xl p-4 flex flex-col gap-2.5">
+              <div className="text-[#00A8FF] font-bold text-xs uppercase tracking-wider">
                 Media Library Placement
               </div>
               <label className="flex items-center gap-3 cursor-pointer select-none">
@@ -191,7 +191,7 @@ export default function IncomingAssetModal() {
                   disabled={processing}
                   checked={applyToCanvas}
                   onChange={(e) => setApplyToCanvas(e.target.checked)}
-                  className="w-4 h-4 rounded border-white/20 text-blue-600 focus:ring-0 bg-black/40"
+                  className="w-4 h-4 rounded border-white/20 text-[#00A8FF] focus:ring-0 bg-black/40"
                 />
                 <span className="text-white/80 text-xs">
                   Apply directly as Background Layer on General & Speaker Views
@@ -237,8 +237,8 @@ export default function IncomingAssetModal() {
             disabled={processing || request.uploading}
             className={`px-6 py-2.5 rounded-xl font-bold text-xs shadow-lg transition-all flex items-center gap-1.5 ${
               processing || request.uploading
-                ? "bg-blue-600/40 text-white/50 cursor-not-allowed"
-                : "bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/30 cursor-pointer"
+                ? "bg-[#00A8FF]/40 text-white/50 cursor-not-allowed"
+                : "bg-[#00A8FF] hover:bg-[#00A8FF] text-white shadow-[#00A8FF]/30 cursor-pointer"
             }`}
           >
             <PiCheck size={16} />

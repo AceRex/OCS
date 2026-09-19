@@ -506,7 +506,7 @@ export default function DisplayCanvas({
             {/* Ambient Background Glows */}
             {showOrbs && (
               <>
-                <div className="absolute -top-[20%] -left-[10%] w-[50%] h-[55%] rounded-full bg-purple-600/20 blur-[90px] pointer-events-none" />
+                <div className="absolute -top-[20%] -left-[10%] w-[50%] h-[55%] rounded-full bg-[#8B5CF6]/20 blur-[90px] pointer-events-none" />
                 <div className="absolute -bottom-[20%] -right-[10%] w-[50%] h-[55%] rounded-full bg-teal-500/20 blur-[90px] pointer-events-none" />
               </>
             )}
@@ -876,7 +876,7 @@ export default function DisplayCanvas({
                   }}
                 >
                   {isSelected && isEditable && (
-                    <div className="absolute -inset-2 border-2 border-blue-500 border-dashed rounded-lg pointer-events-none z-50" />
+                    <div className="absolute -inset-2 border-2 border-[#00A8FF]/50 border-dashed rounded-lg pointer-events-none z-50" />
                   )}
 
                   {layer.type === "text" ? (
@@ -1073,7 +1073,7 @@ export default function DisplayCanvas({
                   <img
                     src={layer.url || layer.content}
                     alt="pinned"
-                    className={`w-full h-auto ${isSelected ? "ring-2 ring-purple-500" : ""}`}
+                    className={`w-full h-auto ${isSelected ? "ring-2 ring-[#8B5CF6]/30" : ""}`}
                     style={{
                       opacity: layer.opacity ?? 1,
                       borderRadius: layer.mask === "circle" ? "50%" : layer.mask === "diamond" ? "0px" : `${layer.borderRadius ?? 12}px`,
@@ -1082,7 +1082,7 @@ export default function DisplayCanvas({
                   />
                 ) : (
                   <div
-                    className={`w-full aspect-square flex items-center justify-center bg-zinc-900 ${isSelected ? "ring-2 ring-purple-500" : ""}`}
+                    className={`w-full aspect-square flex items-center justify-center bg-zinc-900 ${isSelected ? "ring-2 ring-[#8B5CF6]/30" : ""}`}
                     style={{
                       opacity: layer.opacity ?? 1,
                       borderRadius: layer.mask === "circle" ? "50%" : layer.mask === "diamond" ? "0px" : `${layer.borderRadius ?? 12}px`,
@@ -1103,14 +1103,14 @@ export default function DisplayCanvas({
                   loop
                   muted
                   className={`w-full h-auto rounded-[12px] ${
-                    isSelected ? "ring-2 ring-purple-500" : ""
+                    isSelected ? "ring-2 ring-[#8B5CF6]/30" : ""
                   }`}
                   style={{ opacity: layer.opacity ?? 1 }}
                 />
               ) : layer.type === "text" ? (
                 <div
                   className={`p-2 font-bold whitespace-pre-wrap ${
-                    isSelected ? "ring-2 ring-purple-500 rounded bg-purple-900/40" : ""
+                    isSelected ? "ring-2 ring-[#8B5CF6]/30 rounded bg-[#8B5CF6]/40" : ""
                   }`}
                   style={{
                     color: layer.color || "#FFFFFF",
