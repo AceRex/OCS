@@ -383,6 +383,7 @@ function detectPython() {
   const candidates = IS_WIN
     ? ["py", "python", "python3"]
     : [
+        "python3.14",
         "python3.13",
         "python3.12",
         "python3.11",
@@ -401,7 +402,7 @@ function detectPython() {
       const m = ver.match(/Python 3\.(\d+)/);
       if (!m) continue;
       const minor = parseInt(m[1], 10);
-      if (minor >= 9 && minor <= 13) {
+      if (minor >= 9) {
         return cmd === "py" ? "py -3" : cmd;
       }
     } catch (_) {}
@@ -1212,25 +1213,29 @@ let currentDesignProcess = null;
 
 ipcMain.handle("design-analyze", async (event, imagePath) => {
   try {
-    // Kill existing process if running to prevent memory overflow
+    if (!imagePath) return { error: "No image path provided" };
+
+    // Kill existing process if running
     if (currentDesignProcess) {
-      currentDesignProcess.kill("SIGTERM");
+      try { currentDesignProcess.kill("SIGTERM"); } catch (_) {}
       currentDesignProcess = null;
     }
 
     const scriptPath = path.join(__dirname, "ocs_image_engine", "engine.py");
     const posterPath = imagePath.replace("file://", "");
     const outputDir = path.join(app.getPath("userData"), "generated_assets");
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
 
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const pythonCmd =
         detectPython() || (process.platform === "win32" ? "python" : "python3");
 
       try {
-        // Pass --generate to trigger inference and --out to ensure files are written outside the project root
         currentDesignProcess = spawn(pythonCmd, [
           scriptPath,
-          "--generate",
+          "--analyze",
           posterPath,
           "--out",
           outputDir,
@@ -1262,7 +1267,6 @@ ipcMain.handle("design-analyze", async (event, imagePath) => {
         if (currentDesignProcess === proc) currentDesignProcess = null;
         if (code === 0) {
           try {
-            // Extract JSON from the output (handles any stray logs)
             const jsonMatch = output.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
               const result = JSON.parse(jsonMatch[0]);
@@ -1279,7 +1283,7 @@ ipcMain.handle("design-analyze", async (event, imagePath) => {
         } else {
           resolve({
             error: `Engine failed with code ${code}`,
-            details: errorOutput,
+            details: errorOutput || output,
           });
         }
       });
@@ -1289,13 +1293,113 @@ ipcMain.handle("design-analyze", async (event, imagePath) => {
   }
 });
 
+ipcMain.handle("design-generate-lab-assets", async (event, { imagePath, reviewedData }) => {
+  try {
+    if (!imagePath) return { error: "No image path provided" };
+
+    if (currentDesignProcess) {
+      try { currentDesignProcess.kill("SIGTERM"); } catch (_) {}
+      currentDesignProcess = null;
+    }
+
+    const scriptPath = path.join(__dirname, "ocs_image_engine", "engine.py");
+    const posterPath = imagePath.replace("file://", "");
+    const outputDir = path.join(app.getPath("userData"), "generated_assets");
+    if (!fs.existsSync(outputDir)) {
+      fs.mkdirSync(outputDir, { recursive: true });
+    }
+
+    // Write reviewedData to a temporary review JSON file
+    const reviewFilePath = path.join(outputDir, `review_${Date.now()}.json`);
+    fs.writeFileSync(reviewFilePath, JSON.stringify(reviewedData || {}, null, 2), "utf-8");
+
+    return new Promise((resolve) => {
+      const pythonCmd =
+        detectPython() || (process.platform === "win32" ? "python" : "python3");
+
+      try {
+        currentDesignProcess = spawn(pythonCmd, [
+          scriptPath,
+          "--generate-assets",
+          posterPath,
+          "--review",
+          reviewFilePath,
+          "--out",
+          outputDir,
+        ]);
+      } catch (err) {
+        return resolve({
+          error: `Could not start Python engine: ${err.message}`,
+        });
+      }
+
+      const proc = currentDesignProcess;
+
+      proc.on("error", (err) => {
+        if (currentDesignProcess === proc) currentDesignProcess = null;
+        resolve({ error: `Python engine error: ${err.message}` });
+      });
+
+      let output = "";
+      let errorOutput = "";
+
+      proc.stdout.on("data", (data) => {
+        output += data.toString();
+      });
+      proc.stderr.on("data", (data) => {
+        errorOutput += data.toString();
+      });
+
+      proc.on("close", (code) => {
+        if (currentDesignProcess === proc) currentDesignProcess = null;
+        // Clean up temp review file
+        try { fs.unlinkSync(reviewFilePath); } catch (_) {}
+
+        if (code === 0) {
+          try {
+            const jsonMatch = output.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+              const result = JSON.parse(jsonMatch[0]);
+              resolve(result);
+            } else {
+              resolve({
+                error: "No valid JSON found in generation output",
+                details: output,
+              });
+            }
+          } catch (e) {
+            resolve({ error: "Failed to parse generation output", details: output });
+          }
+        } else {
+          resolve({
+            error: `Generation engine failed with code ${code}`,
+            details: errorOutput || output,
+          });
+        }
+      });
+    });
+  } catch (err) {
+    return { error: err.message };
+  }
+});
+
+ipcMain.handle("design-cancel-lab", async () => {
+  if (currentDesignProcess) {
+    try {
+      currentDesignProcess.kill("SIGTERM");
+      currentDesignProcess = null;
+      return { success: true };
+    } catch (e) {
+      return { success: false, error: e.message };
+    }
+  }
+  return { success: true };
+});
+
 ipcMain.handle("design-generate", async (event, prompt) => {
-  // For the local engine, generation happens during the analysis phase
-  // or as a follow-up. Since engine.py currently does both in process_poster,
-  // we can return the already generated files.
   return {
     success: true,
-    message: "Assets already generated during analysis.",
+    message: "Use design-generate-lab-assets for verified AI Lab workflow.",
   };
 });
 

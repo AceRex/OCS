@@ -382,6 +382,8 @@ contextBridge.exposeInMainWorld("electron", {
   Design: {
     analyzePoster: (imagePath) => ipcRenderer.invoke("design-analyze", imagePath),
     generateAsset: (prompt) => ipcRenderer.invoke("design-generate", prompt),
+    generateLabAssets: (payload) => ipcRenderer.invoke("design-generate-lab-assets", payload),
+    cancelLabAnalysis: () => ipcRenderer.invoke("design-cancel-lab"),
   },
   DesignStudio: {
     listDesigns: () => ipcRenderer.invoke("design:list"),

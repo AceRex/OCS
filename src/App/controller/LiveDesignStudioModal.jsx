@@ -50,6 +50,18 @@ import {
   PiHandPalm,
   PiCursor,
   PiDotsThreeVertical,
+  PiUploadSimple,
+  PiWarning,
+  PiCalendar,
+  PiClock,
+  PiMapPin,
+  PiUser,
+  PiPhone,
+  PiGlobe,
+  PiPalette,
+  PiDesktop,
+  PiBookOpen,
+  PiArrowSquareOut,
 } from "react-icons/pi";
 import ActionButton from "../components/feedback/ActionButton";
 import { calculateCropMetrics } from "./designStudioCrop";
@@ -3295,6 +3307,8 @@ export default function LiveDesignStudioModal({
   liveBroadcastConfig,
   onUpdateBroadcastConfig,
   showFeedback: externalShowFeedback,
+  embedded = false,
+  initialToolTab = "templates",
 }) {
   const electron = typeof window !== "undefined" ? window.electron : null;
   const designApi = electron?.DesignStudio;
@@ -3313,6 +3327,24 @@ export default function LiveDesignStudioModal({
       externalShowFeedback(message, isSuccess);
     }
   }, [externalShowFeedback]);
+
+  // Integrated AI Design Lab State
+  const [labPoster, setLabPoster] = useState(null);
+  const [labAnalysis, setLabAnalysis] = useState(null);
+  const [isLabAnalyzing, setIsLabAnalyzing] = useState(false);
+  const [isLabGenerating, setIsLabGenerating] = useState(false);
+  const [labGeneratedAssets, setLabGeneratedAssets] = useState(null);
+  const [labReviewData, setLabReviewData] = useState(null);
+  const [isLabReviewOpen, setIsLabReviewOpen] = useState(false);
+  const [labShowOcrBoxes, setLabShowOcrBoxes] = useState(false);
+  const [labOutputOptions, setLabOutputOptions] = useState({
+    editable_layout: true,
+    landscape_design: true,
+    clean_bg_original: true,
+    clean_bg_screen: true,
+    clean_bg_bible: true,
+  });
+  const [labPreviewMode, setLabPreviewMode] = useState("clean"); // 'clean' | 'original' | 'screen' | 'bible' | 'mask'
 
   // Designs list & active design
   const [designs, setDesigns] = useState([]);
@@ -3338,7 +3370,7 @@ export default function LiveDesignStudioModal({
   }, []);
 
   const [editingTextLayerId, setEditingTextLayerId] = useState(null);
-  const [activeToolTab, setActiveToolTab] = useState("templates"); // 'templates' | 'text' | 'shapes' | 'images' | 'layers'
+  const [activeToolTab, setActiveToolTab] = useState(initialToolTab || "templates"); // 'templates' | 'text' | 'shapes' | 'images' | 'lab' | 'layers'
   const [templateCategoryFilter, setTemplateCategoryFilter] = useState("All");
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [moveGroupWithSelected, setMoveGroupWithSelected] = useState(false);
@@ -4647,6 +4679,223 @@ export default function LiveDesignStudioModal({
     }
   };
 
+  // ─── Integrated AI Design Lab Handlers ──────────────────────────────────────
+  const handleLabUpload = async () => {
+    const file = await window.electron?.Media?.import?.();
+    if (file) {
+      setLabPoster(file);
+      await analyzeLabPoster(file);
+    }
+  };
+
+  const initReviewDataFromAnalysis = (analysis) => {
+    const pRoles = analysis?.palette_roles || {};
+    const pColors = Array.isArray(analysis?.palette_hex) ? analysis.palette_hex : [];
+    return {
+      event_name: analysis?.event_name || "",
+      theme_subtitle: analysis?.theme_subtitle || "",
+      dates: analysis?.dates || "",
+      times: analysis?.times || "",
+      venue: analysis?.venue || "",
+      organizers: analysis?.organizers || "",
+      speakers: analysis?.speakers || "",
+      contact: analysis?.contact || "",
+      website: analysis?.website || "",
+      palette_roles: {
+        background: pRoles.background || pColors[0] || "#1A1A24",
+        heading: pRoles.heading || pColors[1] || "#FFFFFF",
+        body: pRoles.body || pColors[2] || "#D0D0E0",
+        accent: pRoles.accent || pColors[3] || "#00A8FF",
+      },
+      font_family: analysis?.dominant_font_style?.matched_font || "Inter",
+      font_category: analysis?.dominant_font_style?.category || "sans-serif",
+    };
+  };
+
+  const analyzeLabPoster = async (imagePath) => {
+    setIsLabAnalyzing(true);
+    setLabAnalysis(null);
+    setLabGeneratedAssets(null);
+    try {
+      const result = await window.electron?.Design?.analyzePoster?.(imagePath);
+      if (result?.error) {
+        console.error("Design Lab Error:", result.error, result.details);
+        showFeedback(`AI Analysis failed: ${result.error}`, false);
+      } else {
+        setLabAnalysis(result);
+        setLabReviewData(initReviewDataFromAnalysis(result));
+        setIsLabReviewOpen(true);
+        setLabPreviewMode("original");
+        showFeedback("Event flyer analyzed successfully! Review detected details.", true);
+      }
+    } catch (err) {
+      showFeedback(`AI Analysis failed: ${err.message}`, false);
+    } finally {
+      setIsLabAnalyzing(false);
+    }
+  };
+
+  const handleCancelLab = async () => {
+    try {
+      await window.electron?.Design?.cancelLabAnalysis?.();
+      setIsLabAnalyzing(false);
+      setIsLabGenerating(false);
+      showFeedback("AI Lab operation cancelled.", true);
+    } catch (err) {
+      showFeedback(`Cancel failed: ${err.message}`, false);
+    }
+  };
+
+  const handleGenerateLabAssets = async () => {
+    if (!labPoster || !labReviewData) return;
+    setIsLabGenerating(true);
+    try {
+      const payload = {
+        imagePath: labPoster,
+        reviewedData: {
+          ...labReviewData,
+          output_options: labOutputOptions,
+        },
+      };
+      const result = await window.electron?.Design?.generateLabAssets?.(payload);
+      if (result?.error) {
+        console.error("AI Lab Generation Error:", result.error, result.details);
+        showFeedback(`Generation failed: ${result.error}`, false);
+      } else {
+        setLabGeneratedAssets(result);
+        setLabPreviewMode("clean");
+        showFeedback("AI outputs generated successfully! Ready to add to draft.", true);
+      }
+    } catch (err) {
+      showFeedback(`Generation failed: ${err.message}`, false);
+    } finally {
+      setIsLabGenerating(false);
+    }
+  };
+
+  const handleAddLabLayoutToDraft = (layoutType = "portrait") => {
+    if (!labGeneratedAssets) {
+      showFeedback("No generated assets available", false);
+      return;
+    }
+    pushUndoSnapshot();
+
+    const layout = layoutType === "landscape"
+      ? labGeneratedAssets.landscape_layout
+      : labGeneratedAssets.portrait_layout;
+
+    if (!layout || !Array.isArray(layout.layers) || layout.layers.length === 0) {
+      showFeedback("No reconstructed layers found for this layout", false);
+      return;
+    }
+
+    const currentMaxZ = currentDesign.layers.reduce((acc, l) => Math.max(acc, l.zIndex || 0), 0);
+    const timePrefix = Date.now().toString(36);
+
+    const newLayers = layout.layers.map((l, idx) => ({
+      ...l,
+      id: `layer_lab_${timePrefix}_${idx}_${Math.random().toString(36).substr(2, 4)}`,
+      zIndex: currentMaxZ + 1 + idx,
+      borderRadius: 12, // Strict universal 12px border radius mandate
+    }));
+
+    setCurrentDesign((prev) => ({
+      ...prev,
+      layers: [...prev.layers, ...newLayers],
+    }));
+    setHasUnsavedChanges(true);
+    setIsLabReviewOpen(false);
+    showFeedback(`Added ${newLayers.length} editable layers to draft design!`, true);
+  };
+
+  const handleAddLabBackgroundToDraft = (bgUrl, name = "Clean Background") => {
+    if (!bgUrl) return;
+    pushUndoSnapshot();
+    const newId = `layer_bg_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`;
+    const newLayer = {
+      id: newId,
+      name,
+      type: "image",
+      url: bgUrl,
+      content: bgUrl,
+      x: 50,
+      y: 50,
+      width: 100,
+      height: 100,
+      opacity: 1,
+      zIndex: 0,
+      visible: true,
+      aspectRatio: 1.777778,
+      borderRadius: 12, // Strict universal 12px border radius mandate
+    };
+    setCurrentDesign((prev) => ({
+      ...prev,
+      layers: [newLayer, ...prev.layers],
+    }));
+    setSelectedLayerId(newId);
+    setHasUnsavedChanges(true);
+    setIsLabReviewOpen(false);
+    showFeedback(`Added "${name}" to draft canvas!`, true);
+  };
+
+  const handleSaveLabAsset = async (filePath, name = "Clean Background") => {
+    if (!filePath) return;
+    try {
+      const cleanPath = filePath.replace("file://", "");
+      if (designApi?.importImage) {
+        const res = await designApi.importImage(cleanPath);
+        if (res?.ok || res?.asset) {
+          showFeedback(`Saved "${name}" to Asset Library!`, true);
+          return;
+        }
+      }
+      showFeedback(`Saved to: ${cleanPath}`, true);
+    } catch (err) {
+      showFeedback(`Failed to save asset: ${err.message}`, false);
+    }
+  };
+
+  const handleAddLabToLiveControlsHidden = async (name, bgUrl) => {
+    try {
+      const payload = {
+        name: name || "AI Background",
+        label: name || "AI Background",
+        type: "background",
+        status: "hidden", // STRICT MANDATE: status MUST be hidden
+        visible: false,
+        content: {
+          backgroundImage: bgUrl,
+          backgroundColor: "#000000",
+        },
+        target: "general",
+        createdAt: new Date().toISOString(),
+      };
+      if (designApi?.saveLiveControl) {
+        const saved = await designApi.saveLiveControl(payload);
+        await refreshExistingControls();
+        showFeedback(`Added "${saved?.label || name}" to Live Controls (Hidden)`, true);
+      } else {
+        const stored = JSON.parse(localStorage.getItem("ocs_live_controls") || "[]");
+        payload.id = `ctrl_${Date.now()}`;
+        stored.push(payload);
+        localStorage.setItem("ocs_live_controls", JSON.stringify(stored));
+        await refreshExistingControls();
+        showFeedback(`Added "${name}" to Live Controls (Hidden)`, true);
+      }
+    } catch (err) {
+      showFeedback(`Failed to add to Live Controls: ${err.message}`, false);
+    }
+  };
+
+  const handleClearScreenStyle = () => {
+    window.electron?.Presentation?.setStyle?.({
+      backgroundImage: null,
+      lowerThirdImage: null,
+      target: ["general"],
+    });
+    showFeedback("Live screen style cleared", true);
+  };
+
   const handleUpdateSavedControl = async (targetId = null) => {
     const controlId = targetId || selectedUpdateControlId;
     if (!controlId) {
@@ -5248,11 +5497,14 @@ export default function LiveDesignStudioModal({
         layers: prev.layers.map((l) => {
           if (l.id !== drag.layerId) return l;
           const patch = { width: newW, x: newX };
-          if (l.type === "shape") {
-            if (drag.aspectLocked && isCorner) {
+          if (l.type === "shape" || l.type === "text") {
+            if (drag.aspectLocked && isCorner && l.type === "shape") {
               patch.height = newH;
               patch.y = newY;
             } else if (handle.includes("n") || handle.includes("s") || handle === "mt" || handle === "mb") {
+              patch.height = newH;
+              patch.y = newY;
+            } else if (isCorner && !drag.aspectLocked) {
               patch.height = newH;
               patch.y = newY;
             }
@@ -5894,12 +6146,16 @@ export default function LiveDesignStudioModal({
     }
   }, [hasUnsavedChanges, onClose]);
 
-  if (!isOpen || typeof document === "undefined") return null;
+  if (!embedded && (!isOpen || typeof document === "undefined")) return null;
 
-  return createPortal(
+  const studioInner = (
     <div
       data-studio-modal="true"
-      className="fixed inset-0 z-[9999] bg-black/90 backdrop-blur-md flex flex-col select-none animate-in fade-in duration-150"
+      className={
+        embedded
+          ? "w-full h-full flex flex-col select-none relative overflow-hidden"
+          : "fixed inset-0 z-[9999] bg-black/90 backdrop-blur-md flex flex-col select-none animate-in fade-in duration-150"
+      }
       onMouseUp={handleCanvasMouseUp}
     >
       <div className="w-full h-full bg-[#0d0b14] flex flex-col overflow-hidden text-white font-sans relative">
@@ -6420,16 +6676,18 @@ export default function LiveDesignStudioModal({
               )}
             </div>
 
-            {/* Close (guarded) */}
-            <button
-              type="button"
-              onClick={handleGuardedClose}
-              className="w-8 h-8 rounded-[12px] bg-white/5 hover:bg-white/10 text-white/45 hover:text-white border border-white/10 flex items-center justify-center transition-colors"
-              title="Close Design Studio"
-              aria-label="Close Design Studio"
-            >
-              <PiX size={14} />
-            </button>
+            {/* Close (guarded) - hidden in embedded mode */}
+            {!embedded && (
+              <button
+                type="button"
+                onClick={handleGuardedClose}
+                className="w-8 h-8 rounded-[12px] bg-white/5 hover:bg-white/10 text-white/45 hover:text-white border border-white/10 flex items-center justify-center transition-colors"
+                title="Close Design Studio"
+                aria-label="Close Design Studio"
+              >
+                <PiX size={14} />
+              </button>
+            )}
           </div>
         </header>
 
@@ -6478,25 +6736,27 @@ export default function LiveDesignStudioModal({
           {/* ── Left Shelf: Tools & Templates ─────────────────────────────────── */}
           <div className="w-72 bg-[#100e1b] border-r border-white/10 flex flex-col shrink-0 overflow-hidden">
             {/* Tool Category Tabs */}
-            <div className="grid grid-cols-4 p-1 gap-1 border-b border-white/10 bg-white/[0.01]">
+            <div className="grid grid-cols-5 p-1 gap-1 border-b border-white/10 bg-white/[0.01]">
               {[
                 { id: "templates", label: "Templates", icon: PiTelevision },
                 { id: "text", label: "Text", icon: PiTextT },
                 { id: "shapes", label: "Shapes", icon: PiSquare },
                 { id: "images", label: "Media", icon: PiImage },
+                { id: "lab", label: "Design Lab", icon: PiSparkle },
               ].map(({ id, label, icon: Icon }) => (
                 <button
                   key={id}
                   data-studio-tool-tab={id}
                   onClick={() => setActiveToolTab(id)}
-                  className={`py-2 flex flex-col items-center gap-1 text-[10px] font-bold rounded-[12px] transition-all ${
+                  className={`py-2 flex flex-col items-center gap-1 text-[9px] font-bold rounded-[12px] transition-all ${
                     activeToolTab === id
                       ? "bg-[#8B5CF6]/20 text-[#8B5CF6]/80 border border-[#8B5CF6]/40"
                       : "text-white/40 hover:text-white/80 hover:bg-white/5 border border-transparent"
                   }`}
+                  title={label}
                 >
-                  <Icon size={15} />
-                  <span>{label}</span>
+                  <Icon size={14} />
+                  <span className="truncate max-w-full">{label}</span>
                 </button>
               ))}
             </div>
@@ -6655,6 +6915,244 @@ export default function LiveDesignStudioModal({
                   <div className="p-3 rounded-[12px] bg-white/[0.02] border border-white/5 text-[11px] text-white/50 leading-relaxed">
                     Transparent PNGs are automatically supported for church logos, speaker headshots, and custom frames.
                   </div>
+                </div>
+              )}
+
+              {/* TAB: Integrated AI Design Lab */}
+              {activeToolTab === "lab" && (
+                <div className="space-y-3">
+                  <div className="pb-1">
+                    <span className="text-[10px] uppercase font-bold tracking-widest text-[#00A8FF] flex items-center gap-1.5">
+                      <PiSparkle size={12} /> AI Design Lab
+                    </span>
+                    <p className="text-[10px] text-white/40">Flyer analysis, editable layout & clean inpainting</p>
+                  </div>
+
+                  {!labPoster ? (
+                    <ActionButton
+                      loadingLabel="Opening flyer…"
+                      onClick={handleLabUpload}
+                      className="w-full flex flex-col items-center justify-center border-2 border-dashed border-white/10 rounded-[12px] hover:border-[#00A8FF]/50 hover:bg-[#00A8FF]/5 cursor-pointer transition-all p-6 group text-center"
+                    >
+                      <div className="w-12 h-12 bg-[#00A8FF]/10 rounded-full flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
+                        <PiUploadSimple size={24} className="text-[#00A8FF]" />
+                      </div>
+                      <h4 className="text-xs font-bold text-white mb-1">Upload Event Flyer</h4>
+                      <p className="text-[10px] text-white/40 max-w-[190px]">
+                        Extract information, colors & fonts, reconstruct editable layout, and inpaint clean backgrounds.
+                      </p>
+                    </ActionButton>
+                  ) : (
+                    <div className="space-y-3">
+                      {/* Flyer Summary Card */}
+                      <div className="p-2.5 bg-black/40 rounded-[12px] border border-white/10 flex gap-2.5 items-center">
+                        <img
+                          src={labPoster.startsWith("file://") ? labPoster : `file://${labPoster}`}
+                          alt="Flyer"
+                          className="w-12 h-16 object-cover rounded-[12px] border border-white/10 shrink-0"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-[11px] font-bold text-white block truncate">
+                            {labReviewData?.event_name || labAnalysis?.event_name || "Event Flyer"}
+                          </span>
+                          <span className="text-[9px] text-white/40 block truncate">
+                            {labReviewData?.dates || labAnalysis?.dates || "Analyzed"}
+                          </span>
+                          <div className="flex gap-2 mt-1.5">
+                            <button
+                              type="button"
+                              onClick={handleLabUpload}
+                              className="text-[9px] text-[#00A8FF] hover:underline font-semibold"
+                            >
+                              Change Flyer
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => analyzeLabPoster(labPoster)}
+                              className="text-[9px] text-white/60 hover:text-white hover:underline"
+                            >
+                              Re-Analyze
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Progress state during analysis */}
+                      {isLabAnalyzing && (
+                        <div className="p-4 bg-black/40 rounded-[12px] border border-[#00A8FF]/20 flex flex-col items-center justify-center gap-2.5 text-center">
+                          <div className="w-6 h-6 border-2 border-[#00A8FF]/20 border-t-[#00A8FF] rounded-full animate-spin" />
+                          <div className="space-y-0.5">
+                            <span className="text-[10px] text-white/80 font-bold block animate-pulse">Analyzing Flyer Content...</span>
+                            <span className="text-[9px] text-white/40 block">OCR text, color roles, hierarchy, and fonts</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={handleCancelLab}
+                            className="text-[9px] px-2.5 py-1 rounded-[12px] bg-white/5 hover:bg-white/10 text-white/60 border border-white/10"
+                          >
+                            Cancel Analysis
+                          </button>
+                        </div>
+                      )}
+
+                      {/* Review & Generation Launch Button */}
+                      {labAnalysis && !isLabAnalyzing && (
+                        <div className="space-y-2.5">
+                          <button
+                            type="button"
+                            onClick={() => setIsLabReviewOpen(true)}
+                            className="w-full py-2.5 px-3 bg-gradient-to-r from-[#00A8FF]/25 to-[#8B5CF6]/25 hover:from-[#00A8FF]/35 hover:to-[#8B5CF6]/35 text-white font-bold text-[11px] rounded-[12px] border border-[#00A8FF]/40 flex items-center justify-center gap-2 shadow transition-all group"
+                          >
+                            <PiArrowSquareOut size={14} className="text-[#00A8FF] group-hover:scale-110 transition-transform" />
+                            <span>Open Side-by-Side Review Studio</span>
+                          </button>
+
+                          {/* Quick Palette Swatches */}
+                          <div className="p-2 bg-white/[0.02] rounded-[12px] border border-white/5 space-y-1.5">
+                            <div className="flex items-center justify-between text-[9px] text-white/40 font-bold uppercase tracking-wider">
+                              <span>Role Colors</span>
+                              <span className="text-white/60 font-mono text-[8px]">{labReviewData?.font_family || "Inter"}</span>
+                            </div>
+                            <div className="grid grid-cols-4 gap-1 text-center">
+                              {Object.entries(labReviewData?.palette_roles || {}).map(([role, hex]) => (
+                                <div key={role} className="flex flex-col items-center gap-0.5">
+                                  <div
+                                    className="w-full h-5 rounded-[12px] border border-white/20 shadow-inner"
+                                    style={{ backgroundColor: hex }}
+                                    title={`${role}: ${hex}`}
+                                  />
+                                  <span className="text-[7px] uppercase text-white/50 truncate w-full">{role}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* Generation Trigger & Progress */}
+                          {isLabGenerating ? (
+                            <div className="p-3 bg-black/40 rounded-[12px] border border-[#8B5CF6]/30 flex flex-col items-center gap-2 text-center">
+                              <div className="w-5 h-5 border-2 border-[#8B5CF6]/30 border-t-[#8B5CF6] rounded-full animate-spin" />
+                              <span className="text-[10px] text-white/70 font-bold animate-pulse">Inpainting & Reconstructing...</span>
+                              <button
+                                type="button"
+                                onClick={handleCancelLab}
+                                className="text-[9px] px-2 py-0.5 rounded-[12px] bg-white/5 text-white/60 border border-white/10 hover:bg-white/10"
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          ) : (
+                            <button
+                              type="button"
+                              onClick={handleGenerateLabAssets}
+                              className="w-full py-2 rounded-[12px] bg-[#8B5CF6] hover:bg-[#8B5CF6]/90 text-white font-bold text-[10px] flex items-center justify-center gap-1.5 shadow transition-all"
+                            >
+                              <PiSparkle size={13} />
+                              <span>{labGeneratedAssets ? "Re-Generate Outputs" : "Generate All Outputs"}</span>
+                            </button>
+                          )}
+
+                          {/* Quick Add To Draft Actions when assets are generated */}
+                          {labGeneratedAssets && (
+                            <div className="space-y-2 pt-2 border-t border-white/5">
+                              <span className="text-[9px] font-bold text-white/40 uppercase tracking-wider block">Generated Assets</span>
+                              
+                              {/* Editable Layouts */}
+                              <div className="p-2 bg-black/40 rounded-[12px] border border-white/10 space-y-1.5">
+                                <span className="text-[9px] text-white/70 font-bold block">Reconstructed Layouts</span>
+                                <div className="grid grid-cols-2 gap-1.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAddLabLayoutToDraft("portrait")}
+                                    className="py-1.5 px-2 rounded-[12px] bg-white/5 hover:bg-[#8B5CF6]/20 hover:border-[#8B5CF6]/40 border border-white/10 text-white text-[9px] font-semibold text-center transition-colors"
+                                  >
+                                    + Canvas (Portrait)
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleAddLabLayoutToDraft("landscape")}
+                                    className="py-1.5 px-2 rounded-[12px] bg-white/5 hover:bg-[#00A8FF]/20 hover:border-[#00A8FF]/40 border border-white/10 text-white text-[9px] font-semibold text-center transition-colors"
+                                  >
+                                    + Canvas (16:9 Screen)
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Clean Background Variants */}
+                              <div className="p-2 bg-black/40 rounded-[12px] border border-white/10 space-y-2">
+                                <span className="text-[9px] text-white/70 font-bold block">Clean Backgrounds</span>
+                                
+                                {labGeneratedAssets.clean_background && (
+                                  <div className="flex items-center justify-between text-[9px] bg-white/[0.02] p-1.5 rounded-[12px] border border-white/5">
+                                    <span className="text-white/80 font-medium">Original Aspect</span>
+                                    <div className="flex gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleAddLabBackgroundToDraft(labGeneratedAssets.clean_background_url || `file://${labGeneratedAssets.clean_background}`, "Clean Background")}
+                                        className="px-2 py-0.5 rounded-[12px] bg-[#8B5CF6]/30 hover:bg-[#8B5CF6]/50 text-white font-medium"
+                                      >
+                                        + Canvas
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSaveLabAsset(labGeneratedAssets.clean_background, "Clean Background")}
+                                        className="px-2 py-0.5 rounded-[12px] bg-white/10 hover:bg-white/20 text-white font-medium"
+                                      >
+                                        Save
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {labGeneratedAssets.screen_sized_background && (
+                                  <div className="flex items-center justify-between text-[9px] bg-white/[0.02] p-1.5 rounded-[12px] border border-white/5">
+                                    <span className="text-white/80 font-medium">16:9 Screen</span>
+                                    <div className="flex gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleAddLabBackgroundToDraft(labGeneratedAssets.screen_sized_background_url || `file://${labGeneratedAssets.screen_sized_background}`, "16:9 Screen Background")}
+                                        className="px-2 py-0.5 rounded-[12px] bg-[#00A8FF]/30 hover:bg-[#00A8FF]/50 text-white font-medium"
+                                      >
+                                        + Canvas
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSaveLabAsset(labGeneratedAssets.screen_sized_background, "16:9 Screen Background")}
+                                        className="px-2 py-0.5 rounded-[12px] bg-white/10 hover:bg-white/20 text-white font-medium"
+                                      >
+                                        Save
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {labGeneratedAssets.bible_friendly_background && (
+                                  <div className="flex items-center justify-between text-[9px] bg-white/[0.02] p-1.5 rounded-[12px] border border-white/5">
+                                    <span className="text-white/80 font-medium">Bible Zone</span>
+                                    <div className="flex gap-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleAddLabBackgroundToDraft(labGeneratedAssets.bible_friendly_background_url || `file://${labGeneratedAssets.bible_friendly_background}`, "Bible-Friendly Background")}
+                                        className="px-2 py-0.5 rounded-[12px] bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-200 font-medium"
+                                      >
+                                        + Canvas
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSaveLabAsset(labGeneratedAssets.bible_friendly_background, "Bible-Friendly Background")}
+                                        className="px-2 py-0.5 rounded-[12px] bg-white/10 hover:bg-white/20 text-white font-medium"
+                                      >
+                                        Save
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -7334,7 +7832,7 @@ export default function LiveDesignStudioModal({
                                   e.stopPropagation();
                                   if (e.key === "Escape") {
                                     setEditingTextLayerId(null);
-                                  } else if (e.key === "Enter" && !e.shiftKey) {
+                                  } else if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                                     e.preventDefault();
                                     setEditingTextLayerId(null);
                                   }
@@ -7358,8 +7856,12 @@ export default function LiveDesignStudioModal({
                                   color: layer.color || "#ffffff",
                                   textAlign: layer.textAlign || "left",
                                   textTransform: layer.textTransform || "none",
-                                  lineHeight: 1.25,
+                                  lineHeight: typeof layer.lineHeight === "number" ? layer.lineHeight : (typeof layer.lineSpacing === "number" ? layer.lineSpacing : 1.25),
+                                  whiteSpace: layer.wrap !== false ? "pre-wrap" : "pre",
+                                  wordBreak: layer.wrap !== false ? "break-word" : "normal",
+                                  overflowWrap: layer.wrap !== false ? "break-word" : "normal",
                                   minHeight: "2em",
+                                  height: "100%",
                                 }}
                               />
                             ) : (
@@ -7377,8 +7879,10 @@ export default function LiveDesignStudioModal({
                                   color: layer.color || "#ffffff",
                                   textAlign: layer.textAlign || "left",
                                   textTransform: layer.textTransform || "none",
-                                  lineHeight: typeof layer.lineHeight === "number" ? layer.lineHeight : 1.25,
-                                  whiteSpace: "pre-wrap",
+                                  lineHeight: typeof layer.lineHeight === "number" ? layer.lineHeight : (typeof layer.lineSpacing === "number" ? layer.lineSpacing : 1.25),
+                                  whiteSpace: layer.wrap !== false ? "pre-wrap" : "pre",
+                                  wordBreak: layer.wrap !== false ? "break-word" : "normal",
+                                  overflowWrap: layer.wrap !== false ? "break-word" : "normal",
                                   cursor: "text",
                                   pointerEvents: "auto",
                                   textShadow: layer.shadowEnabled ? formatLayerShadow(layer) : "none",
@@ -7394,6 +7898,11 @@ export default function LiveDesignStudioModal({
                                 {layer.fieldBinding && (
                                   <span className="absolute -top-3 left-0 text-[8px] font-mono px-1 py-0.2 bg-[#0B1020]/80 text-[#8B5CF6]/70 rounded-[12px] border border-[#8B5CF6]/30 pointer-events-none select-none z-10">
                                     [{layer.fieldBinding}]
+                                  </span>
+                                )}
+                                {selectedLayerId === layer.id && (
+                                  <span className="absolute -bottom-3 right-0 text-[8px] font-medium px-1 py-0.2 bg-[#0B1020]/90 text-emerald-400/90 rounded-[12px] border border-emerald-500/30 pointer-events-none select-none z-10">
+                                    No Truncation • Paginated
                                   </span>
                                 )}
                                 <span>{layer.text || "Heading Text"}</span>
@@ -8140,6 +8649,15 @@ export default function LiveDesignStudioModal({
                         </label>
                       </div>
 
+                      {/* Overflow & Pagination Indicator */}
+                      <div className="flex items-center justify-between px-2.5 py-1.5 bg-black/40 border border-white/15 rounded-[12px] text-[10px]">
+                        <span className="text-white/50 font-bold">Overflow Policy</span>
+                        <span className="text-emerald-400 font-semibold flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                          Auto-Paginate (No Truncation)
+                        </span>
+                      </div>
+
                       <div className="grid grid-cols-2 gap-2">
                         <select
                           value={selectedLayer.fontFamily || "Inter, sans-serif"}
@@ -8216,8 +8734,8 @@ export default function LiveDesignStudioModal({
                         </div>
                       </div>
 
-                      {/* Vertical Alignment & Padding & Auto-Fit */}
-                      <div className="grid grid-cols-3 gap-2 pt-1 border-t border-white/5">
+                      {/* Vertical Alignment & Line Spacing & Padding & Auto-Fit */}
+                      <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/5">
                         <div className="space-y-0.5">
                           <span className="text-[9px] font-bold text-white/40 block">V-Align</span>
                           <div className="grid grid-cols-3 gap-0.5 bg-black/40 border border-white/15 p-0.5 rounded-[12px]">
@@ -8241,6 +8759,28 @@ export default function LiveDesignStudioModal({
                           </div>
                         </div>
 
+                        <div className="space-y-0.5">
+                          <span className="text-[9px] font-bold text-white/40 block">Line Spacing</span>
+                          <div className="flex items-center bg-black/40 border border-white/15 px-1.5 py-0.5 rounded-[12px]">
+                            <input
+                              type="number"
+                              min="0.8"
+                              max="3.0"
+                              step="0.05"
+                              value={typeof selectedLayer.lineHeight === "number" ? selectedLayer.lineHeight : (typeof selectedLayer.lineSpacing === "number" ? selectedLayer.lineSpacing : 1.25)}
+                              onChange={(e) => {
+                                const v = parseFloat(e.target.value);
+                                if (!isNaN(v)) updateLayer(selectedLayer.id, { lineHeight: v, lineSpacing: v });
+                              }}
+                              className="w-full bg-transparent text-xs text-white focus:outline-none"
+                              aria-label="Line spacing multiplier"
+                            />
+                            <span className="text-[9px] text-white/40">x</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 pt-1 border-t border-white/5">
                         <div className="space-y-0.5">
                           <span className="text-[9px] font-bold text-white/40 block">Padding</span>
                           <div className="flex items-center bg-black/40 border border-white/15 px-1.5 py-0.5 rounded-[12px]">
@@ -8269,7 +8809,7 @@ export default function LiveDesignStudioModal({
                               onChange={(e) => updateLayer(selectedLayer.id, { autoFit: e.target.checked })}
                               className="rounded accent-purple-500"
                             />
-                            <span>Fit</span>
+                            <span>Fit Height</span>
                           </label>
                         </div>
                       </div>
@@ -10277,7 +10817,743 @@ export default function LiveDesignStudioModal({
           })()}
         </div>
       )}
-    </div>,
-    document.body
+
+      {/* ── Side-by-Side AI Design Lab Review & Reconstructed Asset Studio Overlay ── */}
+      {isLabReviewOpen && labPoster && (
+        <div className="absolute inset-0 z-50 bg-[#0b0914]/95 backdrop-blur-xl flex flex-col p-4 select-none overflow-hidden animate-fadeIn">
+          {/* Studio Header Bar */}
+          <div className="flex items-center justify-between pb-3 border-b border-white/10 shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-[12px] bg-gradient-to-br from-[#00A8FF]/20 to-[#8B5CF6]/20 border border-[#00A8FF]/40 flex items-center justify-center">
+                <PiSparkle size={18} className="text-[#00A8FF]" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                  <span>AI Design Lab • Event Flyer Review & Reconstructed Assets</span>
+                  <span className="text-[10px] font-normal px-2 py-0.5 rounded-[12px] bg-white/5 border border-white/10 text-white/60">
+                    {labAnalysis?.aspect_ratio ? `${labAnalysis.aspect_ratio} flyer` : "Analysis"}
+                  </span>
+                </h3>
+                <p className="text-[11px] text-white/40">
+                  Review extracted fields, assign color roles, choose matching fonts, and generate editable layouts & clean inpainting.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              {Array.isArray(labAnalysis?.uncertain_fields) && labAnalysis.uncertain_fields.length > 0 && (
+                <div className="px-2.5 py-1 rounded-[12px] bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-bold flex items-center gap-1.5">
+                  <PiWarning size={13} />
+                  <span>{labAnalysis.uncertain_fields.length} Uncertain Field{labAnalysis.uncertain_fields.length > 1 ? "s" : ""} Flagged</span>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={() => setIsLabReviewOpen(false)}
+                className="px-3 py-1.5 rounded-[12px] bg-white/10 hover:bg-white/15 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors"
+              >
+                <PiX size={14} />
+                <span>Return to Canvas</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Studio Main Body: 2 Columns Side-by-Side */}
+          <div className="flex-1 min-h-0 flex gap-4 overflow-hidden mt-3">
+            {/* ── Left Column: Flyer Viewer & Before/After Inspection ── */}
+            <div className="w-[45%] flex flex-col gap-2 shrink-0 overflow-hidden">
+              {/* Preview View Mode Tabs */}
+              <div className="flex items-center gap-1 bg-black/40 p-1 rounded-[12px] border border-white/10 text-[10px] shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setLabPreviewMode("original")}
+                  className={`flex-1 py-1 px-2 rounded-[12px] font-bold text-center transition-all ${
+                    labPreviewMode === "original"
+                      ? "bg-[#00A8FF]/30 text-[#00A8FF] border border-[#00A8FF]/40 shadow-sm"
+                      : "text-white/50 hover:text-white"
+                  }`}
+                >
+                  Original Flyer
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLabPreviewMode("clean")}
+                  disabled={!labGeneratedAssets?.clean_background}
+                  className={`flex-1 py-1 px-2 rounded-[12px] font-bold text-center transition-all ${
+                    labPreviewMode === "clean"
+                      ? "bg-[#8B5CF6]/30 text-[#8B5CF6] border border-[#8B5CF6]/40 shadow-sm"
+                      : labGeneratedAssets?.clean_background
+                      ? "text-white/50 hover:text-white"
+                      : "text-white/20 cursor-not-allowed"
+                  }`}
+                  title={!labGeneratedAssets?.clean_background ? "Generate assets first" : "Morphologically inpainted clean background"}
+                >
+                  Clean Inpaint
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLabPreviewMode("screen")}
+                  disabled={!labGeneratedAssets?.screen_sized_background}
+                  className={`flex-1 py-1 px-2 rounded-[12px] font-bold text-center transition-all ${
+                    labPreviewMode === "screen"
+                      ? "bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 shadow-sm"
+                      : labGeneratedAssets?.screen_sized_background
+                      ? "text-white/50 hover:text-white"
+                      : "text-white/20 cursor-not-allowed"
+                  }`}
+                  title={!labGeneratedAssets?.screen_sized_background ? "Generate assets first" : "16:9 Screen-sized clean background"}
+                >
+                  16:9 Screen
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLabPreviewMode("bible")}
+                  disabled={!labGeneratedAssets?.bible_friendly_background}
+                  className={`flex-1 py-1 px-2 rounded-[12px] font-bold text-center transition-all ${
+                    labPreviewMode === "bible"
+                      ? "bg-amber-500/30 text-amber-300 border border-amber-500/40 shadow-sm"
+                      : labGeneratedAssets?.bible_friendly_background
+                      ? "text-white/50 hover:text-white"
+                      : "text-white/20 cursor-not-allowed"
+                  }`}
+                  title={!labGeneratedAssets?.bible_friendly_background ? "Generate assets first" : "Feathered quiet contrast zone for scriptures"}
+                >
+                  Bible Zone
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLabPreviewMode("mask")}
+                  disabled={!labGeneratedAssets?.text_mask}
+                  className={`flex-1 py-1 px-2 rounded-[12px] font-bold text-center transition-all ${
+                    labPreviewMode === "mask"
+                      ? "bg-rose-500/30 text-rose-300 border border-rose-500/40 shadow-sm"
+                      : labGeneratedAssets?.text_mask
+                      ? "text-white/50 hover:text-white"
+                      : "text-white/20 cursor-not-allowed"
+                  }`}
+                  title={!labGeneratedAssets?.text_mask ? "Generate assets first" : "Morphological text mask preview"}
+                >
+                  Text Mask
+                </button>
+              </div>
+
+              {/* Flyer Display Box */}
+              <div className="flex-1 min-h-0 bg-black/60 rounded-[12px] border border-white/10 flex items-center justify-center p-3 relative overflow-hidden">
+                {(() => {
+                  let activeUrl = labPoster.startsWith("file://") ? labPoster : `file://${labPoster}`;
+                  if (labPreviewMode === "clean" && labGeneratedAssets?.clean_background) {
+                    activeUrl = labGeneratedAssets.clean_background_url || `file://${labGeneratedAssets.clean_background}`;
+                  } else if (labPreviewMode === "screen" && labGeneratedAssets?.screen_sized_background) {
+                    activeUrl = labGeneratedAssets.screen_sized_background_url || `file://${labGeneratedAssets.screen_sized_background}`;
+                  } else if (labPreviewMode === "bible" && labGeneratedAssets?.bible_friendly_background) {
+                    activeUrl = labGeneratedAssets.bible_friendly_background_url || `file://${labGeneratedAssets.bible_friendly_background}`;
+                  } else if (labPreviewMode === "mask" && labGeneratedAssets?.text_mask) {
+                    activeUrl = labGeneratedAssets.text_mask_url || `file://${labGeneratedAssets.text_mask}`;
+                  }
+
+                  return (
+                    <div className="relative w-full h-full flex items-center justify-center">
+                      <img
+                        src={activeUrl}
+                        alt="Preview"
+                        className="max-w-full max-h-full object-contain rounded-[12px] border border-white/10 shadow-2xl"
+                      />
+
+                      {/* Optional OCR Bounding Boxes Overlay */}
+                      {labPreviewMode === "original" && labShowOcrBoxes && Array.isArray(labAnalysis?.text_blocks) && (
+                        <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                          <div className="relative w-full h-full max-w-full max-h-full">
+                            {labAnalysis.text_blocks.map((block, bIdx) => {
+                              const imgW = labAnalysis.image_width || 1000;
+                              const imgH = labAnalysis.image_height || 1000;
+                              const [bx, by, bw, bh] = block.bbox || [0, 0, 0, 0];
+                              const leftPct = (bx / imgW) * 100;
+                              const topPct = (by / imgH) * 100;
+                              const widthPct = (bw / imgW) * 100;
+                              const heightPct = (bh / imgH) * 100;
+                              const isUncertain = (block.confidence || 0) < 60;
+
+                              return (
+                                <div
+                                  key={bIdx}
+                                  className={`absolute border text-[8px] font-bold px-0.5 truncate ${
+                                    isUncertain
+                                      ? "border-amber-400 bg-amber-400/20 text-amber-200"
+                                      : "border-[#00A8FF] bg-[#00A8FF]/20 text-[#00A8FF]"
+                                  }`}
+                                  style={{
+                                    left: `${leftPct}%`,
+                                    top: `${topPct}%`,
+                                    width: `${widthPct}%`,
+                                    height: `${heightPct}%`,
+                                  }}
+                                  title={`${block.text} (${block.confidence || 0}%)`}
+                                >
+                                  {block.text}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Bottom Viewer Controls */}
+              <div className="flex items-center justify-between text-[10px] text-white/50 px-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setLabShowOcrBoxes((s) => !s)}
+                  className={`px-2.5 py-1 rounded-[12px] border transition-colors flex items-center gap-1.5 ${
+                    labShowOcrBoxes
+                      ? "bg-[#00A8FF]/20 border-[#00A8FF]/40 text-white font-bold"
+                      : "bg-white/5 border-white/10 text-white/60 hover:text-white"
+                  }`}
+                >
+                  <PiEye size={12} />
+                  <span>OCR Bounding Boxes: {labShowOcrBoxes ? "ON" : "OFF"}</span>
+                </button>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono">
+                    {labAnalysis?.image_width || 0} × {labAnalysis?.image_height || 0}
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded-[12px] bg-white/5 border border-white/10 capitalize">
+                    {labAnalysis?.aspect_ratio || "portrait"}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* ── Right Column: Information Review, Color Roles, Fonts & Generation ── */}
+            <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto pr-2">
+              {/* Section 1: Extracted Information & Confidence Review */}
+              <div className="p-3 bg-black/40 rounded-[12px] border border-white/10 space-y-3">
+                <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                  <span className="text-[11px] font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                    <PiFileText size={13} className="text-[#00A8FF]" /> Extracted Information & Details
+                  </span>
+                  <span className="text-[10px] text-white/40">Edit any field to correct OCR mistakes</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2.5 text-left">
+                  {/* Event Title */}
+                  <div className="col-span-2 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold text-white/70">Event Name / Headline</label>
+                      {labAnalysis?.field_confidences?.event_name !== undefined && labAnalysis.field_confidences.event_name < 60 && (
+                        <span className="text-[9px] text-amber-300 font-bold flex items-center gap-1">
+                          <PiWarning size={11} /> Low Confidence ({labAnalysis.field_confidences.event_name}%)
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      value={labReviewData?.event_name || ""}
+                      onChange={(e) => setLabReviewData((prev) => ({ ...prev, event_name: e.target.value }))}
+                      placeholder="e.g. ANNUAL PRAISE NIGHT"
+                      className="w-full px-2.5 py-1.5 rounded-[12px] bg-white/5 border border-white/10 text-white text-xs font-semibold focus:border-[#00A8FF] focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Subtitle / Theme */}
+                  <div className="col-span-2 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold text-white/70">Theme / Subtitle</label>
+                      {labAnalysis?.field_confidences?.theme_subtitle !== undefined && labAnalysis.field_confidences.theme_subtitle < 60 && (
+                        <span className="text-[9px] text-amber-300 font-bold flex items-center gap-1">
+                          <PiWarning size={11} /> Low Confidence ({labAnalysis.field_confidences.theme_subtitle}%)
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      value={labReviewData?.theme_subtitle || ""}
+                      onChange={(e) => setLabReviewData((prev) => ({ ...prev, theme_subtitle: e.target.value }))}
+                      placeholder="e.g. A Night of Supernatural Worship"
+                      className="w-full px-2.5 py-1.5 rounded-[12px] bg-white/5 border border-white/10 text-white text-xs focus:border-[#00A8FF] focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Dates */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold text-white/70 flex items-center gap-1">
+                        <PiCalendar size={11} /> Date(s)
+                      </label>
+                      {labAnalysis?.field_confidences?.dates !== undefined && labAnalysis.field_confidences.dates < 60 && (
+                        <span className="text-[8px] text-amber-300 font-bold flex items-center gap-0.5">
+                          <PiWarning size={10} /> {labAnalysis.field_confidences.dates}%
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      value={labReviewData?.dates || ""}
+                      onChange={(e) => setLabReviewData((prev) => ({ ...prev, dates: e.target.value }))}
+                      placeholder="e.g. Sunday, Oct 24, 2026"
+                      className="w-full px-2.5 py-1.5 rounded-[12px] bg-white/5 border border-white/10 text-white text-xs focus:border-[#00A8FF] focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Times */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold text-white/70 flex items-center gap-1">
+                        <PiClock size={11} /> Time(s)
+                      </label>
+                      {labAnalysis?.field_confidences?.times !== undefined && labAnalysis.field_confidences.times < 60 && (
+                        <span className="text-[8px] text-amber-300 font-bold flex items-center gap-0.5">
+                          <PiWarning size={10} /> {labAnalysis.field_confidences.times}%
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      value={labReviewData?.times || ""}
+                      onChange={(e) => setLabReviewData((prev) => ({ ...prev, times: e.target.value }))}
+                      placeholder="e.g. 6:00 PM GMT"
+                      className="w-full px-2.5 py-1.5 rounded-[12px] bg-white/5 border border-white/10 text-white text-xs focus:border-[#00A8FF] focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Venue */}
+                  <div className="col-span-2 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold text-white/70 flex items-center gap-1">
+                        <PiMapPin size={11} /> Venue / Location
+                      </label>
+                      {labAnalysis?.field_confidences?.venue !== undefined && labAnalysis.field_confidences.venue < 60 && (
+                        <span className="text-[8px] text-amber-300 font-bold flex items-center gap-0.5">
+                          <PiWarning size={10} /> {labAnalysis.field_confidences.venue}%
+                        </span>
+                      )}
+                    </div>
+                    <input
+                      type="text"
+                      value={labReviewData?.venue || ""}
+                      onChange={(e) => setLabReviewData((prev) => ({ ...prev, venue: e.target.value }))}
+                      placeholder="e.g. Main Auditorium, 12 Grace Avenue"
+                      className="w-full px-2.5 py-1.5 rounded-[12px] bg-white/5 border border-white/10 text-white text-xs focus:border-[#00A8FF] focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Organizers & Speakers */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold text-white/70 flex items-center gap-1">
+                        <PiUser size={11} /> Organizer(s)
+                      </label>
+                    </div>
+                    <input
+                      type="text"
+                      value={labReviewData?.organizers || ""}
+                      onChange={(e) => setLabReviewData((prev) => ({ ...prev, organizers: e.target.value }))}
+                      placeholder="e.g. Grace Fellowship"
+                      className="w-full px-2.5 py-1.5 rounded-[12px] bg-white/5 border border-white/10 text-white text-xs focus:border-[#00A8FF] focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold text-white/70 flex items-center gap-1">
+                        <PiUser size={11} /> Minister(s) / Speaker(s)
+                      </label>
+                    </div>
+                    <input
+                      type="text"
+                      value={labReviewData?.speakers || ""}
+                      onChange={(e) => setLabReviewData((prev) => ({ ...prev, speakers: e.target.value }))}
+                      placeholder="e.g. Pastor John Doe"
+                      className="w-full px-2.5 py-1.5 rounded-[12px] bg-white/5 border border-white/10 text-white text-xs focus:border-[#00A8FF] focus:outline-none"
+                    />
+                  </div>
+
+                  {/* Contact & Website */}
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-white/70 flex items-center gap-1">
+                      <PiPhone size={11} /> Contact Info
+                    </label>
+                    <input
+                      type="text"
+                      value={labReviewData?.contact || ""}
+                      onChange={(e) => setLabReviewData((prev) => ({ ...prev, contact: e.target.value }))}
+                      placeholder="e.g. +1 (555) 019-2834"
+                      className="w-full px-2.5 py-1.5 rounded-[12px] bg-white/5 border border-white/10 text-white text-xs focus:border-[#00A8FF] focus:outline-none"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-white/70 flex items-center gap-1">
+                      <PiGlobe size={11} /> Website
+                    </label>
+                    <input
+                      type="text"
+                      value={labReviewData?.website || ""}
+                      onChange={(e) => setLabReviewData((prev) => ({ ...prev, website: e.target.value }))}
+                      placeholder="e.g. www.gracefellowship.org"
+                      className="w-full px-2.5 py-1.5 rounded-[12px] bg-white/5 border border-white/10 text-white text-xs focus:border-[#00A8FF] focus:outline-none"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 2: Color Palette Roles */}
+              <div className="p-3 bg-black/40 rounded-[12px] border border-white/10 space-y-2.5">
+                <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                  <span className="text-[11px] font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                    <PiPalette size={13} className="text-[#8B5CF6]" /> Color Palette & Roles
+                  </span>
+                  <span className="text-[10px] text-white/40">Assign semantic roles or edit HEX</span>
+                </div>
+
+                <div className="grid grid-cols-4 gap-2">
+                  {[
+                    { role: "background", label: "Background" },
+                    { role: "heading", label: "Heading Text" },
+                    { role: "body", label: "Body Text" },
+                    { role: "accent", label: "Accent / Border" },
+                  ].map(({ role, label }) => {
+                    const currentHex = labReviewData?.palette_roles?.[role] || "#FFFFFF";
+                    return (
+                      <div key={role} className="p-2 bg-white/[0.02] rounded-[12px] border border-white/5 flex flex-col gap-1.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[9px] font-bold text-white/70">{label}</span>
+                          <label className="cursor-pointer">
+                            <input
+                              type="color"
+                              value={currentHex.startsWith("#") ? currentHex : `#${currentHex}`}
+                              onChange={(e) => {
+                                const newHex = e.target.value;
+                                setLabReviewData((prev) => ({
+                                  ...prev,
+                                  palette_roles: {
+                                    ...prev.palette_roles,
+                                    [role]: newHex,
+                                  },
+                                }));
+                              }}
+                              className="w-4 h-4 rounded-full border border-white/20 p-0 cursor-pointer overflow-hidden opacity-0 absolute"
+                            />
+                            <div
+                              className="w-4 h-4 rounded-full border border-white/30 shadow hover:scale-110 transition-transform"
+                              style={{ backgroundColor: currentHex }}
+                            />
+                          </label>
+                        </div>
+                        <input
+                          type="text"
+                          value={currentHex}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setLabReviewData((prev) => ({
+                              ...prev,
+                              palette_roles: {
+                                ...prev.palette_roles,
+                                [role]: val,
+                              },
+                            }));
+                          }}
+                          className="w-full px-1.5 py-1 rounded-[12px] bg-black/50 border border-white/10 text-white font-mono text-[9px] text-center uppercase focus:border-[#00A8FF] focus:outline-none"
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Section 3: Typography & Matching Fonts */}
+              <div className="p-3 bg-black/40 rounded-[12px] border border-white/10 space-y-2.5">
+                <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                  <span className="text-[11px] font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                    <PiTextT size={13} className="text-emerald-400" /> Typography & Matching Fonts
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="px-2 py-0.5 rounded-[12px] bg-white/5 border border-white/10 text-[9px] text-white/60 capitalize">
+                      {labAnalysis?.dominant_font_style?.category || "sans-serif"}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-[12px] bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[9px] font-bold">
+                      {labAnalysis?.dominant_font_style?.status || "Matched"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 space-y-1 text-left">
+                    <label className="text-[10px] font-bold text-white/70">Selected Typography Font</label>
+                    <select
+                      value={labReviewData?.font_family || "Inter"}
+                      onChange={(e) => setLabReviewData((prev) => ({ ...prev, font_family: e.target.value }))}
+                      className="w-full px-2.5 py-1.5 rounded-[12px] bg-white/5 border border-white/10 text-white text-xs font-semibold focus:border-[#00A8FF] focus:outline-none"
+                    >
+                      <option value="Inter" className="bg-[#1a1728] text-white">Inter (Clean Modern Sans)</option>
+                      <option value="Roboto" className="bg-[#1a1728] text-white">Roboto (Balanced Sans)</option>
+                      <option value="Georgia" className="bg-[#1a1728] text-white">Georgia (Warm Elegant Serif)</option>
+                      <option value="Impact" className="bg-[#1a1728] text-white">Impact (Bold Heavy Display)</option>
+                      <option value="Arial" className="bg-[#1a1728] text-white">Arial (Universal Neutral Sans)</option>
+                      <option value="Playfair Display" className="bg-[#1a1728] text-white">Playfair Display (High-Contrast Editorial Serif)</option>
+                    </select>
+                  </div>
+                  <div className="w-48 p-2 rounded-[12px] bg-white/[0.02] border border-white/5 text-center">
+                    <span className="text-[14px] font-bold text-white block truncate" style={{ fontFamily: labReviewData?.font_family || "Inter" }}>
+                      Praise & Worship
+                    </span>
+                    <span className="text-[9px] text-white/40 block">Font preview sample</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 4: Multi-Output Generation Choices */}
+              <div className="p-3 bg-black/40 rounded-[12px] border border-white/10 space-y-3">
+                <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                  <span className="text-[11px] font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                    <PiSlidersHorizontal size={13} className="text-[#00A8FF]" /> Outputs to Generate
+                  </span>
+                  <span className="text-[10px] text-white/40">Select required assets</span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-left">
+                  <label className="p-2 rounded-[12px] bg-white/[0.02] border border-white/5 hover:border-white/20 flex items-start gap-2 cursor-pointer transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={labOutputOptions.editable_layout}
+                      onChange={(e) => setLabOutputOptions((prev) => ({ ...prev, editable_layout: e.target.checked }))}
+                      className="mt-0.5 rounded-[12px] accent-[#8B5CF6]"
+                    />
+                    <div>
+                      <span className="text-[10px] font-bold text-white block">Editable Event Layout</span>
+                      <span className="text-[9px] text-white/40 block">Reconstructed text layers, shapes, and portrait</span>
+                    </div>
+                  </label>
+
+                  <label className="p-2 rounded-[12px] bg-white/[0.02] border border-white/5 hover:border-white/20 flex items-start gap-2 cursor-pointer transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={labOutputOptions.landscape_design}
+                      onChange={(e) => setLabOutputOptions((prev) => ({ ...prev, landscape_design: e.target.checked }))}
+                      className="mt-0.5 rounded-[12px] accent-[#8B5CF6]"
+                    />
+                    <div>
+                      <span className="text-[10px] font-bold text-white block">16:9 Screen Design (1920×1080)</span>
+                      <span className="text-[9px] text-white/40 block">2-column broadcast landscape reflow</span>
+                    </div>
+                  </label>
+
+                  <label className="p-2 rounded-[12px] bg-white/[0.02] border border-white/5 hover:border-white/20 flex items-start gap-2 cursor-pointer transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={labOutputOptions.clean_bg_original}
+                      onChange={(e) => setLabOutputOptions((prev) => ({ ...prev, clean_bg_original: e.target.checked }))}
+                      className="mt-0.5 rounded-[12px] accent-[#8B5CF6]"
+                    />
+                    <div>
+                      <span className="text-[10px] font-bold text-white block">Clean Background (Original)</span>
+                      <span className="text-[9px] text-white/40 block">Morphological text-mask inpainting</span>
+                    </div>
+                  </label>
+
+                  <label className="p-2 rounded-[12px] bg-white/[0.02] border border-white/5 hover:border-white/20 flex items-start gap-2 cursor-pointer transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={labOutputOptions.clean_bg_screen}
+                      onChange={(e) => setLabOutputOptions((prev) => ({ ...prev, clean_bg_screen: e.target.checked }))}
+                      className="mt-0.5 rounded-[12px] accent-[#8B5CF6]"
+                    />
+                    <div>
+                      <span className="text-[10px] font-bold text-white block">16:9 Clean Screen Background</span>
+                      <span className="text-[9px] text-white/40 block">Ambient edge extension, no distortion</span>
+                    </div>
+                  </label>
+
+                  <label className="col-span-2 p-2 rounded-[12px] bg-white/[0.02] border border-white/5 hover:border-white/20 flex items-start gap-2 cursor-pointer transition-colors">
+                    <input
+                      type="checkbox"
+                      checked={labOutputOptions.clean_bg_bible}
+                      onChange={(e) => setLabOutputOptions((prev) => ({ ...prev, clean_bg_bible: e.target.checked }))}
+                      className="mt-0.5 rounded-[12px] accent-[#8B5CF6]"
+                    />
+                    <div>
+                      <span className="text-[10px] font-bold text-white block">Bible-Friendly Presentation Background</span>
+                      <span className="text-[9px] text-white/40 block">Feathered quiet contrast zone for high legibility scripture reading</span>
+                    </div>
+                  </label>
+                </div>
+
+                {/* Generate Button / Progress Bar */}
+                <div className="pt-2">
+                  {isLabGenerating ? (
+                    <div className="p-3 bg-black/50 rounded-[12px] border border-[#8B5CF6]/40 flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-5 h-5 border-2 border-[#8B5CF6]/30 border-t-[#8B5CF6] rounded-full animate-spin" />
+                        <span className="text-xs text-white/90 font-bold animate-pulse">Inpainting backgrounds & reconstructing layouts...</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleCancelLab}
+                        className="px-3 py-1 rounded-[12px] bg-white/10 hover:bg-white/20 text-white text-xs font-semibold"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleGenerateLabAssets}
+                      className="w-full py-2.5 rounded-[12px] bg-gradient-to-r from-[#00A8FF] to-[#8B5CF6] hover:opacity-90 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg transition-all"
+                    >
+                      <PiSparkle size={15} />
+                      <span>{labGeneratedAssets ? "Re-Generate Selected Outputs" : "Generate Selected Outputs"}</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Section 5: Draft Canvas & Asset Actions */}
+              {labGeneratedAssets && (
+                <div className="p-3 bg-black/40 rounded-[12px] border border-emerald-500/30 space-y-3 animate-fadeIn">
+                  <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                    <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1.5">
+                      <PiCheck size={13} /> Generated Assets Ready for Draft Canvas
+                    </span>
+                    <span className="text-[10px] text-white/40">Click to add to draft design</span>
+                  </div>
+
+                  {/* Layout Reconstructions */}
+                  <div className="grid grid-cols-2 gap-2 text-left">
+                    <div className="p-2.5 bg-white/[0.02] rounded-[12px] border border-white/5 flex flex-col justify-between gap-2">
+                      <div>
+                        <span className="text-xs font-bold text-white block">Editable Event Layout</span>
+                        <span className="text-[9px] text-white/40 block">
+                          {labGeneratedAssets.portrait_layout?.layers?.length || 0} editable text, shape, and image layers
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleAddLabLayoutToDraft("portrait")}
+                        className="w-full py-1.5 rounded-[12px] bg-[#8B5CF6] hover:bg-[#8B5CF6]/90 text-white font-bold text-[10px] flex items-center justify-center gap-1 shadow"
+                      >
+                        <PiPlus size={12} />
+                        <span>+ Canvas (Add to Draft)</span>
+                      </button>
+                    </div>
+
+                    <div className="p-2.5 bg-white/[0.02] rounded-[12px] border border-white/5 flex flex-col justify-between gap-2">
+                      <div>
+                        <span className="text-xs font-bold text-white block">16:9 Screen Design</span>
+                        <span className="text-[9px] text-white/40 block">
+                          1920×1080 2-column landscape layout ({labGeneratedAssets.landscape_layout?.layers?.length || 0} layers)
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleAddLabLayoutToDraft("landscape")}
+                        className="w-full py-1.5 rounded-[12px] bg-[#00A8FF] hover:bg-[#00A8FF]/90 text-white font-bold text-[10px] flex items-center justify-center gap-1 shadow"
+                      >
+                        <PiDesktop size={12} />
+                        <span>+ Canvas (Add to Draft)</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Clean Background Outputs */}
+                  <div className="space-y-1.5 pt-1">
+                    <span className="text-[10px] font-bold text-white/60 block">Inpainted Clean Backgrounds:</span>
+                    
+                    {/* Original Clean */}
+                    {labGeneratedAssets.clean_background && (
+                      <div className="p-2 bg-white/[0.02] rounded-[12px] border border-white/5 flex items-center justify-between">
+                        <div>
+                          <span className="text-xs font-bold text-white block">Original Aspect Clean Background</span>
+                          <span className="text-[9px] text-white/40 block">Text morphologically removed</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleAddLabBackgroundToDraft(labGeneratedAssets.clean_background_url || `file://${labGeneratedAssets.clean_background}`, "Clean Background")}
+                            className="px-2.5 py-1 rounded-[12px] bg-[#8B5CF6]/30 hover:bg-[#8B5CF6]/50 text-white text-[10px] font-bold"
+                          >
+                            + Canvas
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveLabAsset(labGeneratedAssets.clean_background, "Clean Background")}
+                            className="px-2.5 py-1 rounded-[12px] bg-white/10 hover:bg-white/20 text-white text-[10px] font-medium"
+                          >
+                            Save Asset
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAddLabToLiveControlsHidden("Clean Background", labGeneratedAssets.clean_background_url || `file://${labGeneratedAssets.clean_background}`)}
+                            className="px-2 py-1 rounded-[12px] bg-white/5 hover:bg-white/10 text-white/60 text-[10px]"
+                            title="Adds to Live Controls strictly in Hidden status"
+                          >
+                            Live Controls (Hidden)
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* 16:9 Screen Clean */}
+                    {labGeneratedAssets.screen_sized_background && (
+                      <div className="p-2 bg-white/[0.02] rounded-[12px] border border-white/5 flex items-center justify-between">
+                        <div>
+                          <span className="text-xs font-bold text-white block">16:9 Screen-Sized Background</span>
+                          <span className="text-[9px] text-white/40 block">Edge extended for 1920×1080 screens</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleAddLabBackgroundToDraft(labGeneratedAssets.screen_sized_background_url || `file://${labGeneratedAssets.screen_sized_background}`, "16:9 Screen Background")}
+                            className="px-2.5 py-1 rounded-[12px] bg-[#00A8FF]/30 hover:bg-[#00A8FF]/50 text-white text-[10px] font-bold"
+                          >
+                            + Canvas
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveLabAsset(labGeneratedAssets.screen_sized_background, "16:9 Screen Background")}
+                            className="px-2.5 py-1 rounded-[12px] bg-white/10 hover:bg-white/20 text-white text-[10px] font-medium"
+                          >
+                            Save Asset
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Bible Zone */}
+                    {labGeneratedAssets.bible_friendly_background && (
+                      <div className="p-2 bg-white/[0.02] rounded-[12px] border border-white/5 flex items-center justify-between">
+                        <div>
+                          <span className="text-xs font-bold text-white block">Bible Presentation Background</span>
+                          <span className="text-[9px] text-white/40 block">Feathered quiet reading contrast zone</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => handleAddLabBackgroundToDraft(labGeneratedAssets.bible_friendly_background_url || `file://${labGeneratedAssets.bible_friendly_background}`, "Bible Presentation Background")}
+                            className="px-2.5 py-1 rounded-[12px] bg-emerald-600/30 hover:bg-emerald-600/50 text-emerald-200 text-[10px] font-bold"
+                          >
+                            + Canvas
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveLabAsset(labGeneratedAssets.bible_friendly_background, "Bible Presentation Background")}
+                            className="px-2.5 py-1 rounded-[12px] bg-white/10 hover:bg-white/20 text-white text-[10px] font-medium"
+                          >
+                            Save Asset
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
+
+  return embedded ? studioInner : createPortal(studioInner, document.body);
 }

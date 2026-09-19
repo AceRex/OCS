@@ -85,10 +85,15 @@ class PosterAnalysis:
     # Graphical Elements
     elements: list[ImageRegion] = field(default_factory=list)
 
-    # Derived metadata (used by GAN conditioning)
+    # Derived metadata
     event_name: Optional[str] = None
+    theme_subtitle: Optional[str] = None
     event_date: Optional[str] = None
     event_location: Optional[str] = None
+    organizer: Optional[str] = None
+    speakers: list[str] = field(default_factory=list)
+    contact: Optional[str] = None
+    website: Optional[str] = None
     primary_color: Optional[RGB] = None
     secondary_color: Optional[RGB] = None
     background_suggestion: Optional[RGB] = None
@@ -100,8 +105,14 @@ class PosterAnalysis:
         """Serialisable summary for suggestions.json output."""
         return {
             "event_name": self.event_name,
+            "theme_subtitle": self.theme_subtitle,
             "event_date": self.event_date,
             "event_location": self.event_location,
+            "venue": self.event_location,
+            "organizer": self.organizer,
+            "speakers": self.speakers,
+            "contact": self.contact,
+            "website": self.website,
             "theme": self.theme,
             "theme_confidence": float(self.theme_confidence),
             "mood": self.mood,
@@ -112,8 +123,24 @@ class PosterAnalysis:
             "secondary_accent": [int(c) for c in self.palette.secondary_accent] if self.palette else None,
             "text_color": [int(c) for c in self.text_color] if self.text_color else [255, 255, 255],
             "text_extracted": self.ocr.all_lines if self.ocr else [],
+            "dates": ", ".join(self.ocr.dates) if (self.ocr and self.ocr.dates) else (self.event_date or ""),
+            "times": ", ".join(self.ocr.times) if (self.ocr and self.ocr.times) else "",
             "dates_found": self.ocr.dates if self.ocr else [],
             "times_found": self.ocr.times if self.ocr else [],
+            "field_confidences": self.ocr.field_confidences if self.ocr else {},
+            "uncertain_fields": self.ocr.uncertain_fields if self.ocr else [],
+            "dominant_font_style": self.ocr.font_characteristics if self.ocr else {
+                "category": "sans-serif", "matched_font": "Inter", "status": "confirmed"
+            },
+            "font_characteristics": self.ocr.font_characteristics if self.ocr else {},
+            "palette_roles": {
+                "background": f"#{self.primary_color[0]:02x}{self.primary_color[1]:02x}{self.primary_color[2]:02x}" if self.primary_color else "#0F172A",
+                "heading": f"#{self.text_color[0]:02x}{self.text_color[1]:02x}{self.text_color[2]:02x}" if self.text_color else "#FFFFFF",
+                "body": "#E2E8F0",
+                "accent": (f"#{self.palette.accent_color[0]:02x}{self.palette.accent_color[1]:02x}{self.palette.accent_color[2]:02x}"
+                           if (self.palette and self.palette.accent_color)
+                           else (f"#{self.secondary_color[0]:02x}{self.secondary_color[1]:02x}{self.secondary_color[2]:02x}" if self.secondary_color else "#00A8FF"))
+            },
             "layout_composition": self.layout.composition if self.layout else "unknown",
             "safe_zones": self.layout.safe_zones if self.layout else [],
             "recreated_text": [
@@ -127,6 +154,17 @@ class PosterAnalysis:
                     }
                 }
                 for b in self.ocr.big_texts
+            ] if self.ocr else [],
+            "ocr_blocks": [
+                {
+                    "text": b.text,
+                    "x": int(b.x),
+                    "y": int(b.y),
+                    "w": int(b.w),
+                    "h": int(b.h),
+                    "conf": float(b.conf)
+                }
+                for b in self.ocr.blocks
             ] if self.ocr else [],
             "faces": [
                 {
@@ -209,8 +247,13 @@ class PosterAnalyzer:
             theme_alternatives=theme_preds[1:],
             layout=layout,
             event_name=ocr_result.event_name,
+            theme_subtitle=ocr_result.theme_subtitle,
             event_date=ocr_result.dates[0] if ocr_result.dates else None,
-            event_location=ocr_result.location,
+            event_location=ocr_result.venue,
+            organizer=ocr_result.organizer,
+            speakers=ocr_result.speakers if isinstance(ocr_result.speakers, list) else ([ocr_result.speakers] if ocr_result.speakers else []),
+            contact=ocr_result.contact,
+            website=ocr_result.website,
             primary_color=primary,
             secondary_color=secondary,
             background_suggestion=bg_sug,

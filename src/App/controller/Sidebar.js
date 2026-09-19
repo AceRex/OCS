@@ -322,7 +322,7 @@ export default function Sidebar({ activeTab, onTabChange }) {
     { id: "camera", label: "Live", icon: PiCamera, isBlock: false },
     { id: "ndi", label: "NDI & Stream", icon: PiBroadcast, isBlock: false },
     { id: "mobile", label: "Remote", icon: PiDeviceMobile, isBlock: false },
-    { id: "design", label: "Design Lab", icon: PiSparkle, isBlock: true },
+    { id: "design", label: "Design Studio", icon: PiSparkle, isBlock: true },
     { id: "settings", label: "Settings", icon: PiGear, isBlock: false },
     { id: "apps", label: "More Apps", icon: PiSquaresFour, isBlock: true },
   ];
