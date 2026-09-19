@@ -48,6 +48,9 @@ mac:
   entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.inherit.plist
   extendInfo:
+    CFBundleName: "wave.io"
+    CFBundleDisplayName: "wave.io"
+    CFBundleExecutable: "wave.io"
     NSCameraUsageDescription: "This app needs access to your camera for teleprompter recording."
     NSMicrophoneUsageDescription: "This app needs access to your microphone for live speech alignment."
   target:
@@ -78,6 +81,7 @@ win:
       arch:
         - x64
         - ia32
+  legalTrademarks: "wave.io"
 
 nsis:
   oneClick: false

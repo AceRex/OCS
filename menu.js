@@ -3,8 +3,7 @@ const { app, shell } = require("electron");
 exports.createTemplate = (electronApp, actions = {}) => {
   const isMac = process.platform === "darwin";
   const appInstance = electronApp || app;
-  const appName =
-    appInstance?.name || (appInstance?.getName ? appInstance.getName() : "wave.io");
+  const appName = "wave.io";
 
   const template = [
     // App Menu (macOS only)
@@ -13,7 +12,7 @@ exports.createTemplate = (electronApp, actions = {}) => {
           {
             label: appName,
             submenu: [
-              { role: "about" },
+              { role: "about", label: "About wave.io" },
               { type: "separator" },
               {
                 label: "Sanctuary Shortcuts Guide...",

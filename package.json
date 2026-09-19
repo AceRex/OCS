@@ -1,5 +1,6 @@
 {
   "name": "ocs",
+  "productName": "wave.io",
   "version": "1.0.0",
   "description": "wave.io - Live Worship & Presentation Suite",
   "main": "main.js",

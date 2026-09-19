@@ -118,7 +118,18 @@ if (!gotTheLock) {
   process.exit(0);
 }
 
+app.name = "wave.io";
 app.setName("wave.io");
+if (typeof app.setAboutPanelOptions === "function") {
+  app.setAboutPanelOptions({
+    applicationName: "wave.io",
+    applicationVersion: "1.0.0",
+    version: "1.0.0",
+    copyright: "Copyright © 2026 Are Oluwasegun Johnson",
+    credits: "wave.io - Live Presentation & Broadcast Suite",
+    iconPath: path.join(__dirname, "assets", "icon.png"),
+  });
+}
 if (process.platform === "win32") {
   app.setAppUserModelId("com.acerex.ocs");
 }
