@@ -26,6 +26,7 @@ async function runTests() {
   assert.strictEqual(initial.styles.bibleTranslation, 'KJV');
   assert.strictEqual(initial.styles.bibleRefPosition, 'top-center');
   assert.strictEqual(initial.styles.bibleShowOrbs, true);
+  assert.strictEqual(initial.styles.bibleHighlightColor, '#FFEB3B');
   assert.strictEqual(initial.sleepPrevention, 'always');
   assert.strictEqual(initial.transcriptionLanguage, 'en');
   assert.strictEqual(initial.languageGateEnabled, true);
@@ -37,12 +38,14 @@ async function runTests() {
       backgroundColor: '#1E1B4B',
       fontFamily: 'Space Grotesk',
       bibleTranslation: 'NIV',
+      bibleHighlightColor: '#3B82F6',
     }
   });
 
   assert.strictEqual(patched1.styles.backgroundColor, '#1E1B4B');
   assert.strictEqual(patched1.styles.fontFamily, 'Space Grotesk');
   assert.strictEqual(patched1.styles.bibleTranslation, 'NIV');
+  assert.strictEqual(patched1.styles.bibleHighlightColor, '#3B82F6');
   // Sibling style properties should still be preserved
   assert.strictEqual(patched1.styles.textColor, '#F5F2FA', 'textColor should be preserved');
   assert.strictEqual(patched1.styles.bibleRefPosition, 'top-center', 'bibleRefPosition should be preserved');
@@ -61,6 +64,7 @@ async function runTests() {
   assert.strictEqual(patched2.sleepPrevention, 'live');
   assert.strictEqual(patched2.sessionTranscriptCleanup, true);
   assert.strictEqual(patched2.styles.backgroundColor, '#1E1B4B', 'styles should be preserved across top-level updates');
+  assert.strictEqual(patched2.styles.bibleHighlightColor, '#3B82F6', 'bibleHighlightColor preserved across top-level updates');
   console.log('✓ Top-level settings updates preserved nested styles');
 
   // 5. Test disk persistence by reading directly from filesystem
@@ -69,6 +73,7 @@ async function runTests() {
   assert.strictEqual(rawFile.transcriptionLanguage, 'fr');
   assert.strictEqual(rawFile.styles.backgroundColor, '#1E1B4B');
   assert.strictEqual(rawFile.styles.bibleTranslation, 'NIV');
+  assert.strictEqual(rawFile.styles.bibleHighlightColor, '#3B82F6');
   console.log('✓ Settings successfully written and read from disk');
 
   // 6. Test resetDefaults()
@@ -79,6 +84,7 @@ async function runTests() {
   assert.strictEqual(reset.styles.backgroundColor, '#0B0814');
   assert.strictEqual(reset.styles.fontFamily, 'Outfit');
   assert.strictEqual(reset.styles.bibleTranslation, 'KJV');
+  assert.strictEqual(reset.styles.bibleHighlightColor, '#FFEB3B');
   console.log('✓ resetDefaults() restores clean factory configuration');
 
   // Clean up

@@ -6,6 +6,21 @@ import { renderAnimatedLyrics } from "../controller/LyricAnimationEngine";
 // can always target the same canvas element even when the component re-renders.
 const _liveCameraImgCache = {}; // keyed by deviceId
 
+function getContrastTextColor(hexColor) {
+  if (!hexColor || typeof hexColor !== "string") return "#000000";
+  let hex = hexColor.replace("#", "").trim();
+  if (hex.length === 3) {
+    hex = hex.split("").map((c) => c + c).join("");
+  }
+  if (hex.length !== 6) return "#000000";
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  if (isNaN(r) || isNaN(g) || isNaN(b)) return "#000000";
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.55 ? "#000000" : "#FFFFFF";
+}
+
 function getShadowRgba(color = "#000000", opacity = 60) {
   const alpha = typeof opacity === "number" ? Math.max(0, Math.min(100, opacity)) / 100 : 0.6;
   if (!color) return `rgba(0,0,0,${alpha})`;
@@ -440,6 +455,35 @@ export default function DisplayCanvas({
         const useReadAlong =
           !!readAlong?.enabled && Array.isArray(readAlong.tokens) && readAlong.tokens.length > 0;
 
+        // Manual highlight support — configurable colour with stable identity resolution
+        const manualHighlightSet = new Set(data?.manualHighlights || []);
+        const verseOffsets = data?.verseOffsets || {};
+        const hasManualHighlights = manualHighlightSet.size > 0;
+        const highlightColor = canvasState?.bibleHighlightColor || data?.bibleHighlightColor || "#FFEB3B";
+        const highlightTextColor = getContrastTextColor(highlightColor);
+
+        /**
+         * Resolve whether an absolute token index (within the joined body) is manually highlighted.
+         * Resolves via verseOffsets using stable schema `${version}:${bookIndex}:${chapterIndex}:${verseNumber}:${wordIdx}`
+         * and falls back to legacy `${vi}:${wordIdx}`.
+         */
+        const isTokenHighlighted = (absIdx) => {
+          if (!hasManualHighlights) return false;
+          for (const [vi, offsetInfo] of Object.entries(verseOffsets)) {
+            const { start, count, version, bookIndex, chapterIndex, verseNumber } = offsetInfo || {};
+            if (absIdx >= start && absIdx < start + count) {
+              const wordIdx = absIdx - start;
+              const vNum = verseNumber || (parseInt(vi, 10) + 1);
+              const ver = (version || data?.version || "KJV").toUpperCase();
+              const bIdx = bookIndex ?? data?.bookIndex ?? 0;
+              const cIdx = chapterIndex ?? data?.chapterIndex ?? 0;
+              const stableKey = `${ver}:${bIdx}:${cIdx}:${vNum}:${wordIdx}`;
+              return manualHighlightSet.has(stableKey) || manualHighlightSet.has(`${vi}:${wordIdx}`);
+            }
+          }
+          return false;
+        };
+
         let bookLabel = "";
         let chapterStr = "";
         let verseStr = "";
@@ -550,6 +594,8 @@ export default function DisplayCanvas({
                       const trans = bibleReadAlongTransition || "text-glow";
                       const isUnderline = trans === "underline";
                       const isPop = trans === "text-pop" || trans === "pop";
+                      // Manual highlight tint (additive with ASR cursor effect)
+                      const isManualHL = isTokenHighlighted(i);
 
                       let wordStyle = {
                         color: "#FFFFFF",
@@ -598,6 +644,18 @@ export default function DisplayCanvas({
                         }
                       }
 
+                      // Apply manual highlight background tint on top of ASR cursor style
+                      if (isManualHL) {
+                        wordStyle = {
+                          ...wordStyle,
+                          backgroundColor: highlightColor,
+                          color: highlightTextColor,
+                          borderRadius: '4px',
+                          padding: '0 3px',
+                          boxShadow: isCurrent ? '0 0 0 3px #00E5FF, 0 0 16px rgba(0,229,255,0.85)' : undefined,
+                        };
+                      }
+
                       return (
                         <React.Fragment key={i}>
                           <span style={wordStyle}>
@@ -607,7 +665,37 @@ export default function DisplayCanvas({
                         </React.Fragment>
                       );
                     })
-                  : safeBody}"
+                  : (() => {
+                      const bodyParts = safeBody.split(/(\s+)/).filter((p) => p.length > 0);
+                      let wordCount = 0;
+                      return bodyParts.map((part, i) => {
+                        if (/^\s+$/.test(part)) {
+                          return <React.Fragment key={`ws-${i}`}>{part}</React.Fragment>;
+                        }
+                        const absWordIdx = wordCount++;
+                        const isHL = isTokenHighlighted(absWordIdx);
+                        return (
+                          <span
+                            key={`w-${i}`}
+                            style={
+                              isHL
+                                ? {
+                                    backgroundColor: highlightColor,
+                                    color: highlightTextColor,
+                                    borderRadius: "4px",
+                                    padding: "0 3px",
+                                    display: "inline-block",
+                                    transition: "background 160ms, color 160ms",
+                                  }
+                                : { display: "inline-block" }
+                            }
+                          >
+                            {part}
+                          </span>
+                        );
+                      });
+                    })()
+                }"
               </div>
             </div>
 

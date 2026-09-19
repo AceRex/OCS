@@ -1,9 +1,27 @@
 import { Button } from "../../../components/button";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useLayoutEffect } from "react";
+import { createPortal } from "react-dom";
 import { PiCaretDown, PiMagnifyingGlass, PiCheck } from "react-icons/pi";
 import { filterBooksFuzzy, resolveBookName } from "./smartBibleMatch";
 
 const electron = (typeof window !== "undefined" && window.electron) || {};
+
+import {
+  getContrastTextColor,
+  tokenizeVerseWithWhitespace,
+  tokenizeVerseWords,
+  makeTokenKey,
+  buildVerseOffsets,
+} from "../utils/bibleHighlightUtils";
+
+export {
+  getContrastTextColor,
+  tokenizeVerseWithWhitespace,
+  makeTokenKey,
+  buildVerseOffsets,
+};
+
+const tokenizeVerse = tokenizeVerseWords;
 
 const versions = {
   // ── Most Popular Modern ──────────────────────────────────────────────────
@@ -161,6 +179,47 @@ export default function BibleController() {
   const [selectedVerseIndices, setSelectedVerseIndices] = useState(new Set());
   const [isLive, setIsLive] = useState(false);
 
+  // Manual Highlight State — Set of stable "VERSION:bookIdx:chIdx:vNum:tokenIdx" keys
+  const [manualHighlights, setManualHighlights] = useState(new Set());
+  const [bibleHighlightColor, setBibleHighlightColor] = useState("#FFEB3B");
+  const activePresentationRef = useRef(null);
+
+  // Fetch initial style and subscribe to live presentation style updates
+  useEffect(() => {
+    if (window.electron?.Presentation?.getStyle) {
+      window.electron.Presentation.getStyle().then((st) => {
+        if (st?.bibleHighlightColor) setBibleHighlightColor(st.bibleHighlightColor);
+      }).catch(() => {});
+    }
+    if (window.electron?.Presentation?.onSetStyle) {
+      const unsub = window.electron.Presentation.onSetStyle((st) => {
+        if (st?.bibleHighlightColor) setBibleHighlightColor(st.bibleHighlightColor);
+      });
+      return () => {
+        if (typeof unsub === "function") unsub();
+      };
+    }
+  }, []);
+
+  // Context menu state — null | { x, y, verseIdx, wordIdx }
+  const [ctxMenu, setCtxMenu] = useState(null);
+  const [ctxMenuPos, setCtxMenuPos] = useState({ top: 0, left: 0, ready: false });
+  const ctxMenuRef = useRef(null);
+  const lastActiveElementRef = useRef(null);
+  const singleClickTimerRef = useRef(null);
+  const mouseDownCoordRef = useRef(null);
+  const currentLiveReadAlongRef = useRef(null);
+
+  // Clean up single-click timer on unmount and passage navigation
+  useEffect(() => {
+    return () => {
+      if (singleClickTimerRef.current) {
+        clearTimeout(singleClickTimerRef.current);
+        singleClickTimerRef.current = null;
+      }
+    };
+  }, [selectedBookIndex, selectedChapterIndex, selectedVersion]);
+
   // Quick Reference 2XL Inputs State (Empty on first load)
   const [bookQuery, setBookQuery] = useState("");
   const [isBookDropdownOpen, setIsBookDropdownOpen] = useState(false);
@@ -183,6 +242,9 @@ export default function BibleController() {
   const isUserEditingVerseRef = useRef(false);
   const isUserEditingTranslationRef = useRef(false);
   const hasUserSelectedRef = useRef(false);
+  // Stable ref to current manualHighlights so presentVerses closure doesn't stale-capture
+  const manualHighlightsRef = useRef(new Set());
+  useEffect(() => { manualHighlightsRef.current = manualHighlights; }, [manualHighlights]);
 
   // Sync State to Mobile
   useEffect(() => {
@@ -392,6 +454,11 @@ export default function BibleController() {
           content != null &&
           (content.type === "bible" || content.type === "scripture");
         setIsLive(hasLive);
+        if (content?.data?.readAlong) {
+          currentLiveReadAlongRef.current = content.data.readAlong;
+        } else if (!hasLive) {
+          currentLiveReadAlongRef.current = null;
+        }
         if (!content) {
           setSelectedVerseIndices(new Set());
           if (!isUserEditingVerseRef.current) setVerseInput("");
@@ -410,16 +477,17 @@ export default function BibleController() {
     overrideBookIndex = null,
     overrideChapterIndex = null,
     overrideVersion = null,
+    highlightsOverride = null,
   ) => {
     if (indices.size === 0) {
       setIsLive(false);
+      activePresentationRef.current = null;
       window.electron?.Presentation?.setContent?.(null);
       return;
     }
     setIsLive(true);
 
     const sortedIndices = Array.from(indices).sort((a, b) => a - b);
-    // Safety check
     const verseText = sortedIndices
       .map((i) => currentVerses[i] || "")
       .join(" ");
@@ -436,7 +504,15 @@ export default function BibleController() {
       overrideChapterIndex != null && overrideChapterIndex >= 0
         ? overrideChapterIndex + 1
         : selectedChapterIndex + 1;
+    const actualChIdx = chapterNum - 1;
     const verCode = overrideVersion || selectedVersion;
+
+    activePresentationRef.current = {
+      bookIndex: actualBookIdx,
+      chapterIndex: actualChIdx,
+      version: verCode,
+      verseIndices: new Set(sortedIndices),
+    };
 
     let verseRef = `${bookName} ${chapterNum}:`.trimStart();
     if (sortedIndices.length === 1) {
@@ -454,13 +530,32 @@ export default function BibleController() {
       }
     }
 
+    // Use caller-supplied highlights override (avoids stale-closure on rapid click)
+    // or fall back to stable ref so the closure doesn't need manualHighlights in deps
+    const activeHighlights = highlightsOverride ?? manualHighlightsRef.current;
+
+    const payloadData = {
+      title: verseRef,
+      body: verseText,
+      version: verCode,
+      bookIndex: actualBookIdx,
+      chapterIndex: actualChIdx,
+      verseIndices: sortedIndices,
+      verseNumbers: sortedIndices.map((i) => i + 1),
+      // Manual highlight token keys — consumed by DisplayCanvas, Switcher, & Previews
+      manualHighlights: Array.from(activeHighlights),
+      bibleHighlightColor: bibleHighlightColor || "#FFEB3B",
+      // Verse→absolute-offset map for the renderer to resolve keys
+      verseOffsets: buildVerseOffsets(sortedIndices, currentVerses, verCode, actualBookIdx, actualChIdx),
+    };
+
+    if (currentLiveReadAlongRef.current) {
+      payloadData.readAlong = currentLiveReadAlongRef.current;
+    }
+
     window.electron?.Presentation?.setContent?.({
       type: "bible",
-      data: {
-        title: verseRef,
-        body: verseText,
-        version: verCode,
-      },
+      data: payloadData,
     });
 
     // Keep voice engine context in sync so "verse 20" works after manual selection
@@ -482,10 +577,23 @@ export default function BibleController() {
     );
   };
 
+  // ─── Word Highlight & Selection Handlers ────────────────────────────────────
+
+  /** Checks if a verse is currently part of the active live presentation on screen */
+  const isVerseLive = (verseIdx) => {
+    if (!isLive || !activePresentationRef.current) return false;
+    const ap = activePresentationRef.current;
+    const isMatchingPassage =
+      ap.bookIndex === selectedBookIndex &&
+      ap.chapterIndex === selectedChapterIndex &&
+      (ap.version || "").toLowerCase() === (selectedVersion || "").toLowerCase();
+    return Boolean(isMatchingPassage && ap.verseIndices && ap.verseIndices.has(verseIdx));
+  };
+
   const handleVerseClick = (index, e) => {
     let newSelection = new Set(selectedVerseIndices);
 
-    if (e.shiftKey && newSelection.size > 0) {
+    if (e?.shiftKey && newSelection.size > 0) {
       const allIndices = Array.from(newSelection);
       const min = Math.min(...allIndices);
       const max = Math.max(...allIndices);
@@ -496,7 +604,7 @@ export default function BibleController() {
       for (let i = start; i <= end; i++) {
         newSelection.add(i);
       }
-    } else if (e.metaKey || e.ctrlKey) {
+    } else if (e?.metaKey || e?.ctrlKey) {
       if (newSelection.has(index)) newSelection.delete(index);
       else newSelection.add(index);
     } else {
@@ -507,18 +615,266 @@ export default function BibleController() {
     presentVerses(newSelection);
   };
 
-  // Clear verse selection when changing chapter/book (manual picker browse).
-  // Must NOT wipe live AV output when the change was driven by voice-bible-sync or translation change.
+  /**
+   * Handle single click on a word token.
+   * Disambiguates drag-selection, double-click sequences (e.detail > 1), and single clicks.
+   * Debounced with a 280ms timer to allow a natural double-click to cancel presentation.
+   */
+  const handleWordClick = (e, verseIdx) => {
+    // 1. Drag detection: if mouse moved > 5px from mousedown, user was selecting/dragging text
+    if (mouseDownCoordRef.current) {
+      const dx = e.clientX - mouseDownCoordRef.current.x;
+      const dy = e.clientY - mouseDownCoordRef.current.y;
+      if (Math.hypot(dx, dy) > 5) {
+        return;
+      }
+    }
+
+    // 2. Double-click sequence detection: click #2 of a double click
+    if (e.detail > 1) {
+      if (singleClickTimerRef.current) {
+        clearTimeout(singleClickTimerRef.current);
+        singleClickTimerRef.current = null;
+      }
+      return;
+    }
+
+    e.stopPropagation();
+
+    if (singleClickTimerRef.current) {
+      clearTimeout(singleClickTimerRef.current);
+      singleClickTimerRef.current = null;
+    }
+
+    const clickEvent = { shiftKey: e.shiftKey, metaKey: e.metaKey, ctrlKey: e.ctrlKey };
+
+    singleClickTimerRef.current = setTimeout(() => {
+      singleClickTimerRef.current = null;
+      handleVerseClick(verseIdx, clickEvent);
+    }, 280);
+  };
+
+  /**
+   * Double-click a word token:
+   * Cancels any pending single-click presentation and toggles highlight for that exact word occurrence.
+   * Clears native text selection so text remains clean.
+   */
+  const handleWordDoubleClick = (e, verseIdx, wordIdx) => {
+    if (singleClickTimerRef.current) {
+      clearTimeout(singleClickTimerRef.current);
+      singleClickTimerRef.current = null;
+    }
+
+    // Clear browser-native selection on double-click so the text doesn't look blue/selected
+    if (typeof window !== "undefined" && window.getSelection) {
+      try {
+        window.getSelection().removeAllRanges?.();
+      } catch (_) {}
+    }
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const stableKey = makeTokenKey(selectedVersion, selectedBookIndex, selectedChapterIndex, verseIdx + 1, wordIdx);
+    const next = new Set(manualHighlightsRef.current);
+    if (next.has(stableKey) || next.has(`${verseIdx}:${wordIdx}`)) {
+      next.delete(stableKey);
+      next.delete(`${verseIdx}:${wordIdx}`);
+    } else {
+      next.add(stableKey);
+    }
+    setManualHighlights(next);
+
+    // Only update live output in place if this verse is actively live on air
+    if (isVerseLive(verseIdx)) {
+      const ap = activePresentationRef.current;
+      presentVerses(ap?.verseIndices || selectedVerseIndices, verses, null, null, null, next);
+    }
+  };
+
+  /**
+   * Single click directly on the verse container (outside words).
+   */
+  const handleVerseContainerClick = (e, index) => {
+    if (mouseDownCoordRef.current) {
+      const dx = e.clientX - mouseDownCoordRef.current.x;
+      const dy = e.clientY - mouseDownCoordRef.current.y;
+      if (Math.hypot(dx, dy) > 5) {
+        return;
+      }
+    }
+    if (singleClickTimerRef.current) {
+      clearTimeout(singleClickTimerRef.current);
+      singleClickTimerRef.current = null;
+    }
+    handleVerseClick(index, e);
+  };
+
+  /** Open context menu targeting a specific word token */
+  const handleWordContextMenu = (e, verseIdx, wordIdx) => {
+    e.preventDefault();
+    e.stopPropagation();
+    lastActiveElementRef.current = document.activeElement;
+    setCtxMenu({ x: e.clientX, y: e.clientY, verseIdx, wordIdx });
+    setCtxMenuPos({ top: e.clientY, left: e.clientX, ready: false });
+  };
+
+  /** Open context menu targeting the verse (e.g. clicking on row whitespace) */
+  const handleVerseContextMenu = (e, verseIdx) => {
+    e.preventDefault();
+    e.stopPropagation();
+    lastActiveElementRef.current = document.activeElement;
+    setCtxMenu({ x: e.clientX, y: e.clientY, verseIdx, wordIdx: null });
+    setCtxMenuPos({ top: e.clientY, left: e.clientX, ready: false });
+  };
+
+  /**
+   * Select Verse action:
+   * Selects and immediately presents the containing verse through normal presentation flow.
+   */
+  const ctxSelectVerse = (verseIdx) => {
+    const newSelection = new Set([verseIdx]);
+    setSelectedVerseIndices(newSelection);
+    presentVerses(newSelection);
+    setCtxMenu(null);
+    lastActiveElementRef.current?.focus?.();
+  };
+
+  /** Toggle highlight for a single word token. */
+  const ctxToggleWord = (verseIdx, wordIdx) => {
+    if (wordIdx == null) return;
+    const stableKey = makeTokenKey(selectedVersion, selectedBookIndex, selectedChapterIndex, verseIdx + 1, wordIdx);
+    const next = new Set(manualHighlightsRef.current);
+    if (next.has(stableKey) || next.has(`${verseIdx}:${wordIdx}`)) {
+      next.delete(stableKey);
+      next.delete(`${verseIdx}:${wordIdx}`);
+    } else {
+      next.add(stableKey);
+    }
+    setManualHighlights(next);
+    if (isVerseLive(verseIdx)) {
+      const ap = activePresentationRef.current;
+      presentVerses(ap?.verseIndices || selectedVerseIndices, verses, null, null, null, next);
+    }
+    setCtxMenu(null);
+    lastActiveElementRef.current?.focus?.();
+  };
+
+  /** Toggle highlights for all word tokens in an entire verse. */
+  const ctxToggleVerse = (verseIdx) => {
+    const tokens = tokenizeVerse(verses[verseIdx] || '');
+    const allKeys = tokens.map((_, ti) =>
+      makeTokenKey(selectedVersion, selectedBookIndex, selectedChapterIndex, verseIdx + 1, ti)
+    );
+    const next = new Set(manualHighlightsRef.current);
+    const allHighlighted = allKeys.length > 0 && allKeys.every((k, ti) => next.has(k) || next.has(`${verseIdx}:${ti}`));
+    if (allHighlighted) {
+      allKeys.forEach((k, ti) => {
+        next.delete(k);
+        next.delete(`${verseIdx}:${ti}`);
+      });
+    } else {
+      allKeys.forEach((k) => next.add(k));
+    }
+    setManualHighlights(next);
+    if (isVerseLive(verseIdx)) {
+      const ap = activePresentationRef.current;
+      presentVerses(ap?.verseIndices || selectedVerseIndices, verses, null, null, null, next);
+    }
+    setCtxMenu(null);
+    lastActiveElementRef.current?.focus?.();
+  };
+
+  /**
+   * Clear highlights only in this specific verse (does not affect other verses).
+   */
+  const ctxClearVerse = (verseIdx) => {
+    const tokens = tokenizeVerse(verses[verseIdx] || '');
+    const next = new Set(manualHighlightsRef.current);
+    tokens.forEach((_, ti) => {
+      const k = makeTokenKey(selectedVersion, selectedBookIndex, selectedChapterIndex, verseIdx + 1, ti);
+      next.delete(k);
+      next.delete(`${verseIdx}:${ti}`);
+    });
+    setManualHighlights(next);
+    if (isVerseLive(verseIdx)) {
+      const ap = activePresentationRef.current;
+      presentVerses(ap?.verseIndices || selectedVerseIndices, verses, null, null, null, next);
+    }
+    setCtxMenu(null);
+    lastActiveElementRef.current?.focus?.();
+  };
+
+  // Edge-aware measurement: ensures context menu is kept strictly within viewport
+  useLayoutEffect(() => {
+    if (!ctxMenu || !ctxMenuRef.current) return;
+    const rect = ctxMenuRef.current.getBoundingClientRect();
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const margin = 12;
+
+    let left = ctxMenu.x;
+    if (left + rect.width + margin > vw) {
+      left = Math.max(margin, ctxMenu.x - rect.width);
+      if (left + rect.width + margin > vw) {
+        left = Math.max(margin, vw - rect.width - margin);
+      }
+    } else {
+      left = Math.max(margin, left);
+    }
+
+    let top = ctxMenu.y;
+    if (top + rect.height + margin > vh) {
+      top = Math.max(margin, ctxMenu.y - rect.height);
+      if (top + rect.height + margin > vh) {
+        top = Math.max(margin, vh - rect.height - margin);
+      }
+    } else {
+      top = Math.max(margin, top);
+    }
+
+    setCtxMenuPos({ top, left, ready: true });
+    ctxMenuRef.current?.focus?.();
+  }, [ctxMenu]);
+
+  // Close context menu on outside click or Escape key, with focus restoration
+  useEffect(() => {
+    if (!ctxMenu) return;
+
+    const handleOutsideClick = (e) => {
+      if (ctxMenuRef.current && !ctxMenuRef.current.contains(e.target)) {
+        setCtxMenu(null);
+        lastActiveElementRef.current?.focus?.();
+      }
+    };
+
+    const handleKeyDown = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setCtxMenu(null);
+        lastActiveElementRef.current?.focus?.();
+      }
+    };
+
+    const timer = setTimeout(() => {
+      document.addEventListener("mousedown", handleOutsideClick, true);
+      document.addEventListener("keydown", handleKeyDown, true);
+    }, 0);
+
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("mousedown", handleOutsideClick, true);
+      document.removeEventListener("keydown", handleKeyDown, true);
+    };
+  }, [ctxMenu]);
+
+  // Reset verse selection when changing chapter/book (manual picker browse).
+  // Must NOT wipe live AV output or clear manual highlights (preserves on-air presentation).
   useEffect(() => {
     if (Date.now() < skipPresentationClearUntilRef.current) {
-      console.log(
-        "[Bible] skip presentation clear (voice nav/translation window)",
-      );
       return;
     }
     setSelectedVerseIndices(new Set());
-    console.log("[Bible] clear presentation on book/chapter change");
-    window.electron?.Presentation?.setContent?.(null);
   }, [selectedBookIndex, selectedChapterIndex]);
 
   // Sync 2XL Header Inputs with selection state when user has interacted and is not actively editing
@@ -900,6 +1256,11 @@ export default function BibleController() {
   };
 
   const handleStop = () => {
+    if (singleClickTimerRef.current) {
+      clearTimeout(singleClickTimerRef.current);
+      singleClickTimerRef.current = null;
+    }
+    currentLiveReadAlongRef.current = null;
     setSelectedVerseIndices(new Set());
     setVerseInput("");
     setIsLive(false);
@@ -1215,27 +1576,70 @@ export default function BibleController() {
       {/* Content */}
       <div
         id="verse-container"
+        onMouseDown={(e) => {
+          mouseDownCoordRef.current = { x: e.clientX, y: e.clientY };
+        }}
         className="flex-1 bg-ash/10 rounded-xl p-4 overflow-y-auto space-y-4 relative z-0"
       >
         {verses.length > 0 ? (
           verses.map((verse, index) => {
             const isSelected = selectedVerseIndices.has(index);
+            const verseParts = tokenizeVerseWithWhitespace(verse);
+            let wIdx = 0;
             return (
               <div
                 key={index}
                 id={`verse-${index}`}
-                onClick={(e) => handleVerseClick(index, e)}
+                onMouseDown={(e) => {
+                  mouseDownCoordRef.current = { x: e.clientX, y: e.clientY };
+                }}
+                onClick={(e) => handleVerseContainerClick(e, index)}
+                onContextMenu={(e) => handleVerseContextMenu(e, index)}
                 className={`flex gap-4 p-2 rounded-lg transition-all group cursor-pointer border ${isSelected ? "bg-[#00A8FF]/20 border-[#00A8FF]/30" : "border-transparent hover:bg-white/5"}`}
               >
                 <span
-                  className={`font-bold min-w-[24px] text-right pt-1 text-sm ${isSelected ? "text-[#00A8FF]" : "text-ash/50 group-hover:text-ash/80"}`}
+                  className={`font-bold min-w-[24px] text-right pt-1 text-sm shrink-0 ${isSelected ? "text-[#00A8FF]" : "text-ash/50 group-hover:text-ash/80"}`}
                 >
                   {index + 1}
                 </span>
+                {/* Tokenized verse text — preserves exact whitespace and punctuation */}
                 <p
                   className={`text-lg leading-relaxed ${isSelected ? "text-white" : "text-light/80"}`}
                 >
-                  {verse}
+                  {verseParts.map((part, pIdx) => {
+                    if (/^\s+$/.test(part)) {
+                      return <React.Fragment key={`ws-${pIdx}`}>{part}</React.Fragment>;
+                    }
+                    const currentWordIdx = wIdx++;
+                    const stableKey = makeTokenKey(selectedVersion, selectedBookIndex, selectedChapterIndex, index + 1, currentWordIdx);
+                    const isHL = manualHighlights.has(stableKey) || manualHighlights.has(`${index}:${currentWordIdx}`);
+                    const hlColor = bibleHighlightColor || "#FFEB3B";
+                    const hlTextColor = getContrastTextColor(hlColor);
+
+                    return (
+                      <span
+                        key={`w-${pIdx}`}
+                        data-word-key={stableKey}
+                        onClick={(e) => handleWordClick(e, index)}
+                        onDoubleClick={(e) => handleWordDoubleClick(e, index, currentWordIdx)}
+                        onContextMenu={(e) => handleWordContextMenu(e, index, currentWordIdx)}
+                        className={[
+                          // Operator-only hover affordance: subtle dashed underline (no layout shift, not on audience outputs)
+                          'hover:underline hover:decoration-dashed hover:decoration-[#00E5FF]/70 hover:underline-offset-4',
+                          // Highlighted state
+                          isHL ? 'rounded-[3px] px-[2px]' : '',
+                        ].join(' ')}
+                        style={{
+                          backgroundColor: isHL ? hlColor : 'transparent',
+                          color: isHL ? hlTextColor : undefined,
+                          transition: 'background 120ms, color 120ms',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {part}
+                      </span>
+                    );
+                  })}
                 </p>
               </div>
             );
@@ -1247,6 +1651,76 @@ export default function BibleController() {
           </div>
         )}
       </div>
+
+      {/* ─── Word & Verse Context Menu (Rendered in Portal above all scrolling containers) ─── */}
+      {ctxMenu && typeof document !== "undefined" && createPortal(
+        <div
+          ref={ctxMenuRef}
+          tabIndex={-1}
+          role="menu"
+          aria-label="Scripture Context Menu"
+          className="fixed z-[99999] bg-[#1a1a1a] border border-white/10 rounded-xl shadow-2xl py-1 min-w-[220px] max-w-[calc(100vw-24px)] max-h-[calc(100vh-24px)] overflow-y-auto backdrop-blur-md focus:outline-none"
+          style={{
+            top: `${ctxMenuPos.top}px`,
+            left: `${ctxMenuPos.left}px`,
+            opacity: ctxMenuPos.ready ? 1 : 0,
+            pointerEvents: ctxMenuPos.ready ? "auto" : "none",
+            transition: "opacity 60ms ease-out",
+          }}
+        >
+          {/* 1. Select Verse */}
+          <button
+            onClick={() => ctxSelectVerse(ctxMenu.verseIdx)}
+            className="w-full text-left px-4 py-2 text-sm text-white/90 hover:bg-white/10 flex items-center gap-3 transition-colors font-medium"
+          >
+            <span className="text-[#00E5FF] font-bold">✓</span>
+            Select Verse
+          </button>
+
+          {/* 2. Highlight Word / Remove Word Highlight (only when word is targeted) */}
+          {ctxMenu.wordIdx !== null && (
+            <button
+              onClick={() => ctxToggleWord(ctxMenu.verseIdx, ctxMenu.wordIdx)}
+              className="w-full text-left px-4 py-2 text-sm text-white/80 hover:bg-white/10 flex items-center gap-3 transition-colors"
+            >
+              <span style={{ color: bibleHighlightColor || "#FFEB3B" }}>✦</span>
+              {(() => {
+                const stableKey = makeTokenKey(selectedVersion, selectedBookIndex, selectedChapterIndex, ctxMenu.verseIdx + 1, ctxMenu.wordIdx);
+                const isHL = manualHighlights.has(stableKey) || manualHighlights.has(`${ctxMenu.verseIdx}:${ctxMenu.wordIdx}`);
+                return isHL ? 'Remove Word Highlight' : 'Highlight Word';
+              })()}
+            </button>
+          )}
+
+          {/* 3. Highlight Entire Verse / Remove Verse Highlight */}
+          <button
+            onClick={() => ctxToggleVerse(ctxMenu.verseIdx)}
+            className="w-full text-left px-4 py-2 text-sm text-white/80 hover:bg-white/10 flex items-center gap-3 transition-colors"
+          >
+            <span style={{ color: bibleHighlightColor || "#FFEB3B" }}>☰</span>
+            {(() => {
+              const tks = tokenizeVerse(verses[ctxMenu.verseIdx] || '');
+              const allHL = tks.length > 0 && tks.every((_, ti) => {
+                const k = makeTokenKey(selectedVersion, selectedBookIndex, selectedChapterIndex, ctxMenu.verseIdx + 1, ti);
+                return manualHighlights.has(k) || manualHighlights.has(`${ctxMenu.verseIdx}:${ti}`);
+              });
+              return allHL ? 'Remove Verse Highlight' : 'Highlight Entire Verse';
+            })()}
+          </button>
+
+          <hr className="border-white/10 my-1" />
+
+          {/* 4. Clear Highlights in This Verse */}
+          <button
+            onClick={() => ctxClearVerse(ctxMenu.verseIdx)}
+            className="w-full text-left px-4 py-2 text-sm text-red-400/80 hover:bg-red-500/10 flex items-center gap-3 transition-colors"
+          >
+            <span>✕</span>
+            Clear Highlights in This Verse
+          </button>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

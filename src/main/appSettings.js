@@ -24,6 +24,7 @@ const DEFAULT_STYLES = {
   bibleServiceLabel: '',
   bibleShowOrbs: true,
   bibleReadAlongTransition: 'text-glow', // 'text-glow' | 'underline' | 'text-pop'
+  bibleHighlightColor: '#FFEB3B', // Default readable yellow
 };
 
 const DEFAULTS = {

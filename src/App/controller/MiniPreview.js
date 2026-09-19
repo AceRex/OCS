@@ -1,6 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { renderAnimatedLyrics } from './LyricAnimationEngine';
 import logoIconGray from "@/assets/wave/wave_icon_gray.png";
+import {
+  tokenizeVerseWithWhitespace,
+  isTokenHighlighted,
+  getWordHighlightStyles,
+} from '../utils/bibleHighlightUtils';
 
 export default function MiniPreview({ mode }) {
     const [countdown, setCountDown] = useState(null);
@@ -239,8 +244,23 @@ export default function MiniPreview({ mode }) {
 
     const renderBibleContent = () => {
         if (!presentationContent || !presentationContent.data) return null;
-        const { title, body, readAlong, rangeStart, rangeEnd, currentVerse } = presentationContent.data;
+        const {
+            title,
+            body,
+            readAlong,
+            rangeStart,
+            rangeEnd,
+            currentVerse,
+            manualHighlights = [],
+            bibleHighlightColor = '#FFEB3B',
+            verseOffsets = {},
+            version = 'KJV',
+            bookIndex = 0,
+            chapterIndex = 0,
+        } = presentationContent.data;
         const safeBody = body || "";
+        const manualHighlightSet = new Set(manualHighlights || []);
+        const effectiveHlColor = bibleHighlightColor || presentationStyle.bibleHighlightColor || '#FFEB3B';
         const length = safeBody.length;
         const useReadAlong = readAlong?.enabled
             && Array.isArray(readAlong.tokens)
@@ -376,56 +396,20 @@ export default function MiniPreview({ mode }) {
                             readAlong.tokens.map((tok, i) => {
                                 const isActive = i === activeIdx;
                                 const isPast = activeIdx >= 0 && i < activeIdx;
+                                const isManualHL = isTokenHighlighted(i, manualHighlightSet, verseOffsets, {
+                                    version,
+                                    bookIndex,
+                                    chapterIndex,
+                                });
                                 const trans = bibleReadAlongTransition || 'text-glow';
-                                const isUnderline = trans === 'underline';
-                                const isPop = trans === 'text-pop' || trans === 'pop';
-
-                                let wordStyle = {
-                                    display: 'inline-block',
-                                    color: '#FFFFFF',
-                                    opacity: isPast ? 0.85 : 0.45,
-                                    fontWeight: isPast ? 600 : 500,
-                                    textShadow: '0 2px 10px rgba(0,0,0,0.5)',
-                                    transition: 'all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)',
-                                };
-
-                                if (isActive) {
-                                    if (isUnderline) {
-                                        wordStyle = {
-                                            display: 'inline-block',
-                                            color: '#FFFFFF',
-                                            opacity: 1,
-                                            fontWeight: 800,
-                                            textDecoration: 'underline',
-                                            textDecorationColor: '#38bdf8',
-                                            textUnderlineOffset: '4px',
-                                            textDecorationThickness: '2px',
-                                            textShadow: '0 2px 10px rgba(0,0,0,0.6)',
-                                            transition: 'all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)',
-                                        };
-                                    } else if (isPop) {
-                                        wordStyle = {
-                                            display: 'inline-block',
-                                            color: '#FFFFFF',
-                                            opacity: 1,
-                                            fontWeight: 800,
-                                            transform: 'scale(1.18) translateY(-2px)',
-                                            textShadow: '0 4px 14px rgba(0,0,0,0.8), 0 0 12px rgba(255,255,255,0.4)',
-                                            transition: 'all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)',
-                                        };
-                                    } else {
-                                        // text-glow
-                                        wordStyle = {
-                                            display: 'inline-block',
-                                            color: '#FFFFFF',
-                                            opacity: 1,
-                                            fontWeight: 800,
-                                            transform: 'scale(1.05)',
-                                            textShadow: '0 0 16px rgba(56,189,248,0.95), 0 0 28px rgba(56,189,248,0.6), 0 2px 10px rgba(0,0,0,0.7)',
-                                            transition: 'all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)',
-                                        };
-                                    }
-                                }
+                                const wordStyle = getWordHighlightStyles({
+                                    isManualHL,
+                                    isActiveVoice: isActive,
+                                    isPastVoice: isPast,
+                                    highlightColor: effectiveHlColor,
+                                    voiceTransition: trans,
+                                    baseTextColor: '#FFFFFF',
+                                });
 
                                 return (
                                     <React.Fragment key={`${i}-${tok}`}>
@@ -441,7 +425,38 @@ export default function MiniPreview({ mode }) {
                                 );
                             })
                         ) : (
-                            <span dangerouslySetInnerHTML={{ __html: safeBody }} />
+                            (() => {
+                                const bodyParts = tokenizeVerseWithWhitespace(safeBody);
+                                let wordCount = 0;
+                                return bodyParts.map((part, i) => {
+                                    if (/^\s+$/.test(part)) {
+                                        return <React.Fragment key={`ws-${i}`}>{part}</React.Fragment>;
+                                    }
+                                    const absWordIdx = wordCount++;
+                                    const isHL = isTokenHighlighted(absWordIdx, manualHighlightSet, verseOffsets, {
+                                        version,
+                                        bookIndex,
+                                        chapterIndex,
+                                    });
+                                    const wordStyle = getWordHighlightStyles({
+                                        isManualHL: isHL,
+                                        isActiveVoice: false,
+                                        isPastVoice: false,
+                                        highlightColor: effectiveHlColor,
+                                        baseTextColor: '#FFFFFF',
+                                    });
+
+                                    return (
+                                        <span
+                                            key={`w-${i}`}
+                                            data-i={absWordIdx}
+                                            style={wordStyle}
+                                        >
+                                            {part}
+                                        </span>
+                                    );
+                                });
+                            })()
                         )}
                     </p>
                 </div>

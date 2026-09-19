@@ -168,7 +168,7 @@ const COLOR_PRESETS = [
   "#0B0814",
   "#000000",
   "#0F172A",
-  "#1E1B4B",
+  "#0B1020",
   "#142018",
   "#2A1116",
   "#1F1A24",
@@ -210,6 +210,21 @@ function formatBumperBytes(n) {
   return `${(n / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+export function getContrastTextColor(hexColor) {
+  if (!hexColor || typeof hexColor !== "string") return "#000000";
+  let hex = hexColor.replace("#", "").trim();
+  if (hex.length === 3) {
+    hex = hex.split("").map((c) => c + c).join("");
+  }
+  if (hex.length !== 6) return "#000000";
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  if (isNaN(r) || isNaN(g) || isNaN(b)) return "#000000";
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.55 ? "#000000" : "#FFFFFF";
+}
+
 export default function SettingsController() {
   const { hasPermission } = useAuth();
   const canAccessBumpers = hasPermission("session.bumper");
@@ -237,6 +252,7 @@ export default function SettingsController() {
     bibleServiceLabel: "",
     bibleShowOrbs: true,
     bibleReadAlongTransition: "text-glow", // 'text-glow' | 'underline' | 'text-pop'
+    bibleHighlightColor: "#FFEB3B", // Default readable yellow
   });
 
   // App Preferences state
@@ -1004,6 +1020,7 @@ export default function SettingsController() {
                     return sampleTokens.map((tok, i) => {
                       const isCurrent = i === activeIndex;
                       const isPast = activeIndex >= 0 && i < activeIndex;
+                      const isSampleHighlighted = i === 3;
 
                       let wordStyle = {
                         color: "#FFFFFF",
@@ -1013,6 +1030,18 @@ export default function SettingsController() {
                         transition: "all 160ms cubic-bezier(0.2, 0.8, 0.2, 1)",
                         display: "inline-block",
                       };
+
+                      if (isSampleHighlighted && !isCurrent) {
+                        const hlColor = styles.bibleHighlightColor || "#FFEB3B";
+                        wordStyle = {
+                          ...wordStyle,
+                          backgroundColor: hlColor,
+                          color: getContrastTextColor(hlColor),
+                          borderRadius: "4px",
+                          padding: "0 4px",
+                          opacity: 1,
+                        };
+                      }
 
                       if (isCurrent) {
                         if (isUnderline) {
@@ -1260,6 +1289,101 @@ export default function SettingsController() {
                     </ActionButton>
                   );
                 })}
+              </div>
+            </div>
+
+            {/* Manual Highlight Colour Configuration */}
+            <div className="bg-[#1A1428] border border-[#2E2542] p-5 rounded-3xl space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div>
+                  <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest flex items-center gap-2">
+                    <PiSparkle className="text-[#FFEB3B]" /> Manual Highlight Colour
+                  </label>
+                  <p className="text-[10px] text-[#8882A4] mt-0.5">
+                    Choose the colour used for manually highlighted scripture words across controller and live outputs.
+                  </p>
+                </div>
+                <ActionButton
+                  onClick={() => updateStyle("bibleHighlightColor", "#FFEB3B")}
+                  className="self-start sm:self-auto flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-white transition-colors"
+                  title="Reset to default yellow (#FFEB3B)"
+                >
+                  <PiArrowCounterClockwise size={13} />
+                  <span>Reset to Default</span>
+                </ActionButton>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-4 pt-1">
+                {/* Native Colour Picker & Hex Input */}
+                <div className="flex items-center gap-3 bg-[#0B0814] border border-[#2E2542] px-3.5 py-2.5 rounded-xl">
+                  <input
+                    type="color"
+                    value={styles.bibleHighlightColor || "#FFEB3B"}
+                    onChange={(e) => updateStyle("bibleHighlightColor", e.target.value)}
+                    className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0 p-0 shrink-0"
+                    title="Choose highlight colour"
+                  />
+                  <div className="flex flex-col">
+                    <span className="text-[9px] font-black text-[#8882A4] uppercase tracking-wider">HEX Input</span>
+                    <input
+                      type="text"
+                      value={styles.bibleHighlightColor || "#FFEB3B"}
+                      onChange={(e) => {
+                        let val = e.target.value;
+                        if (!val.startsWith("#")) val = "#" + val;
+                        updateStyle("bibleHighlightColor", val);
+                      }}
+                      maxLength={7}
+                      className="bg-transparent font-mono text-xs font-bold text-white uppercase outline-none w-24"
+                      placeholder="#FFEB3B"
+                    />
+                  </div>
+                </div>
+
+                {/* Quick Selection Presets */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[9px] font-black text-[#8882A4] uppercase tracking-wider mr-1">Presets:</span>
+                  {[
+                    { color: "#FFEB3B", label: "Yellow (Default)" },
+                    { color: "#FDE047", label: "Amber" },
+                    { color: "#67E8F9", label: "Cyan" },
+                    { color: "#A788FA", label: "Purple" },
+                    { color: "#86EFAC", label: "Green" },
+                    { color: "#F97316", label: "Orange" },
+                    { color: "#F43F5E", label: "Rose" },
+                  ].map((preset) => {
+                    const isSelected =
+                      (styles.bibleHighlightColor || "#FFEB3B").toUpperCase() === preset.color.toUpperCase();
+                    return (
+                      <button
+                        key={preset.color}
+                        type="button"
+                        onClick={() => updateStyle("bibleHighlightColor", preset.color)}
+                        className={`w-7 h-7 rounded-xl transition-all border ${
+                          isSelected
+                            ? "scale-110 border-white shadow-lg ring-2 ring-white/30"
+                            : "border-white/20 hover:scale-105 opacity-80 hover:opacity-100"
+                        }`}
+                        style={{ backgroundColor: preset.color }}
+                        title={preset.label}
+                      />
+                    );
+                  })}
+                </div>
+
+                {/* Contrast Preview Swatch */}
+                <div className="ml-auto flex items-center gap-2.5 bg-[#0B0814] px-4 py-2.5 rounded-xl border border-[#2E2542]">
+                  <span className="text-[10px] font-bold text-[#8882A4] uppercase tracking-wider">Sample:</span>
+                  <span
+                    className="px-2.5 py-1 rounded text-xs font-bold shadow-sm transition-all"
+                    style={{
+                      backgroundColor: styles.bibleHighlightColor || "#FFEB3B",
+                      color: getContrastTextColor(styles.bibleHighlightColor || "#FFEB3B"),
+                    }}
+                  >
+                    Highlighted Verse
+                  </span>
+                </div>
               </div>
             </div>
           </div>

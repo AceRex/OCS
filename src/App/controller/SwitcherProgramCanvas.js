@@ -7,6 +7,21 @@ import { calculateCropMetrics } from "./designStudioCrop";
 const _programImageCache = {};
 const _designLayerImageCache = new Map();
 
+export function getContrastTextColor(hexColor) {
+  if (!hexColor || typeof hexColor !== "string") return "#000000";
+  let hex = hexColor.replace("#", "").trim();
+  if (hex.length === 3) {
+    hex = hex.split("").map((c) => c + c).join("");
+  }
+  if (hex.length !== 6) return "#000000";
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  if (isNaN(r) || isNaN(g) || isNaN(b)) return "#000000";
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.55 ? "#000000" : "#FFFFFF";
+}
+
 // Module-level callback registered by SwitcherProgramCanvas to trigger redraws
 // whenever an async image load completes.
 let _onImageLoadCallback = null;
@@ -593,7 +608,7 @@ export function renderGlassPanelBackgroundBlur(ctx, layer, shape, rx, ry, layerW
   }
 }
 
-export function drawDesignStudioLayer(ctx, layer, w, h, animOffset = { x: 0, y: 0, alpha: 1, wipeProgress: 1 }) {
+export function drawDesignStudioLayer(ctx, layer, w, h, animOffset = { x: 0, y: 0, alpha: 1, wipeProgress: 1 }, ctrlContext = null) {
   if (!layer || layer.visible === false) return;
   const xPct = typeof layer.x === "number" ? layer.x : 50;
   const yPct = typeof layer.y === "number" ? layer.y : 80;
@@ -1010,30 +1025,81 @@ export function drawDesignStudioLayer(ctx, layer, w, h, animOffset = { x: 0, y: 
     const maxW = innerW > 0 ? innerW : 9999;
     const maxH = innerH > 0 ? innerH : 9999;
 
+    const isBibleControl = Boolean(
+      ctrlContext && (
+        ctrlContext.role === "bible" ||
+        ctrlContext.id === "role_playback_bible" ||
+        ctrlContext.id?.startsWith?.("role_playback_bible")
+      )
+    );
+    const isScriptureField = Boolean(
+      layer.fieldBinding &&
+      ["verseText", "scripture", "verse", "body", "text", "passageText"].includes(layer.fieldBinding)
+    );
+    const bibleHLSet = new Set(ctrlContext?.manualHighlights || []);
+    const hasBibleHighlights = Boolean(
+      (isBibleControl || isScriptureField) && bibleHLSet.size > 0
+    );
+    const bibleHighlightColor = ctrlContext?.bibleHighlightColor || "#FFEB3B";
+    const bibleHighlightTextColor = getContrastTextColor(bibleHighlightColor);
+    const verseOffsets = ctrlContext?.verseOffsets || {};
+
+    const isWordHighlighted = (absIdx) => {
+      if (!hasBibleHighlights) return false;
+      for (const [vi, offsetInfo] of Object.entries(verseOffsets)) {
+        const { start, count, version, bookIndex, chapterIndex, verseNumber } = offsetInfo || {};
+        if (absIdx >= start && absIdx < start + count) {
+          const wordIdx = absIdx - start;
+          const vNum = verseNumber || (parseInt(vi, 10) + 1);
+          const ver = (version || "KJV").toUpperCase();
+          const bIdx = bookIndex ?? 0;
+          const cIdx = chapterIndex ?? 0;
+          const stableKey = `${ver}:${bIdx}:${cIdx}:${vNum}:${wordIdx}`;
+          return bibleHLSet.has(stableKey) || bibleHLSet.has(`${vi}:${wordIdx}`);
+        }
+      }
+      return false;
+    };
+
     const breakTextIntoLines = (fs) => {
       ctx.font = `${fontWeight} ${fs}px ${fontFamily}`;
       const lines = [];
       const rawLines = String(text).split("\n");
+      let globalWordCounter = 0;
+
       for (const rawLine of rawLines) {
         if (!shouldWrap || maxW <= 0) {
-          lines.push(rawLine);
-          continue;
-        }
-        const words = rawLine.split(" ");
-        if (words.length <= 1) {
-          lines.push(rawLine);
-        } else {
-          let currentLine = words[0];
-          for (let wIdx = 1; wIdx < words.length; wIdx++) {
-            const testLine = currentLine + " " + words[wIdx];
-            if (ctx.measureText(testLine).width > maxW) {
-              lines.push(currentLine);
-              currentLine = words[wIdx];
-            } else {
-              currentLine = testLine;
+          const rawWords = rawLine.split(/(\s+)/).filter((p) => p.length > 0);
+          const lineWords = [];
+          for (const part of rawWords) {
+            if (!/^\s+$/.test(part)) {
+              lineWords.push({ word: part, absIdx: globalWordCounter++ });
             }
           }
-          lines.push(currentLine);
+          lines.push({ text: rawLine, words: lineWords });
+          continue;
+        }
+
+        const rawWords = rawLine.split(/(\s+)/).filter((p) => p.length > 0);
+        let currentLineText = "";
+        let currentLineWords = [];
+
+        for (const part of rawWords) {
+          const isSpace = /^\s+$/.test(part);
+          const wordObj = isSpace ? null : { word: part, absIdx: globalWordCounter++ };
+
+          const candidate = currentLineText + part;
+          if (ctx.measureText(candidate.trim()).width > maxW && currentLineText.trim().length > 0) {
+            lines.push({ text: currentLineText.trimEnd(), words: currentLineWords });
+            currentLineText = isSpace ? "" : part;
+            currentLineWords = wordObj ? [wordObj] : [];
+          } else {
+            currentLineText = candidate;
+            if (wordObj) currentLineWords.push(wordObj);
+          }
+        }
+        if (currentLineText.length > 0) {
+          lines.push({ text: currentLineText.trimEnd(), words: currentLineWords });
         }
       }
       return lines;
@@ -1084,8 +1150,54 @@ export function drawDesignStudioLayer(ctx, layer, w, h, animOffset = { x: 0, y: 
       ctx.rect(-layerW / 2, -layerH / 2, layerW, layerH);
       ctx.clip();
     }
-    renderLines.forEach((line, i) => {
-      ctx.fillText(line, tx, baselineY + i * lineHeight);
+    renderLines.forEach((lineObj, i) => {
+      const lineY = baselineY + i * lineHeight;
+      const lineStr = lineObj.text;
+      const hasAnyHl = hasBibleHighlights && lineObj.words.some((w) => isWordHighlighted(w.absIdx));
+
+      if (!hasAnyHl) {
+        ctx.fillStyle = layer.color || "#ffffff";
+        ctx.fillText(lineStr, tx, lineY);
+      } else {
+        const totalW = ctx.measureText(lineStr).width;
+        let curX = tx;
+        if (layer.textAlign === "center") curX = -totalW / 2;
+        else if (layer.textAlign === "right") curX = innerW / 2 - totalW;
+
+        const parts = lineStr.split(/(\s+)/).filter((p) => p.length > 0);
+        let wordPointer = 0;
+
+        parts.forEach((part) => {
+          const partW = ctx.measureText(part).width;
+          if (/^\s+$/.test(part)) {
+            curX += partW;
+            return;
+          }
+          const wordMeta = lineObj.words[wordPointer++];
+          const isHL = wordMeta && isWordHighlighted(wordMeta.absIdx);
+
+          if (isHL) {
+            ctx.save();
+            ctx.fillStyle = bibleHighlightColor;
+            const padPill = Math.max(2, Math.round(3 * (h / 720)));
+            const pillH = Math.round(lineHeight * 0.88);
+            if (typeof ctx.roundRect === "function") {
+              ctx.beginPath();
+              ctx.roundRect(curX - padPill, lineY - pillH / 2, partW + padPill * 2, pillH, 3);
+              ctx.fill();
+            } else {
+              ctx.fillRect(curX - padPill, lineY - pillH / 2, partW + padPill * 2, pillH);
+            }
+            ctx.fillStyle = bibleHighlightTextColor;
+            ctx.fillText(part, curX, lineY);
+            ctx.restore();
+          } else {
+            ctx.fillStyle = layer.color || "#ffffff";
+            ctx.fillText(part, curX, lineY);
+          }
+          curX += partW;
+        });
+      }
     });
     if (padPx > 0 || (layerW > 0 && layerH > 0)) {
       ctx.restore();
@@ -1330,7 +1442,7 @@ export default function SwitcherProgramCanvas({
             }
 
             try {
-              drawDesignStudioLayer(ctx, layer, w, h, animOffset);
+              drawDesignStudioLayer(ctx, layer, w, h, animOffset, ctrl);
             } catch (layerErr) {
               console.error("[SwitcherProgramCanvas] Layer draw error:", layer.id, layerErr);
             }
@@ -1443,39 +1555,93 @@ export default function SwitcherProgramCanvas({
       ctx.fillText(`📖 ${cfg.bibleLowerThird.currentRef || 'Scripture'} (${cfg.bibleLowerThird.version || 'KJV'})`, bx + padX, headerY);
 
       // Scripture Body Text
-      ctx.fillStyle = textColor;
+      const hlColor = cfg.presentationStyle?.bibleHighlightColor || cfg.bibleHighlightColor || cfg.bibleLowerThird?.bibleHighlightColor || "#FFEB3B";
+      const hlTextColor = getContrastTextColor(hlColor);
+      const manualHLSet = new Set(cfg.bibleLowerThird?.manualHighlights || []);
+      const verseOffsets = cfg.bibleLowerThird?.verseOffsets || {};
+      const hasHL = manualHLSet.size > 0;
+
+      const isWordHighlighted = (absIdx) => {
+        if (!hasHL) return false;
+        for (const [vi, offsetInfo] of Object.entries(verseOffsets)) {
+          const { start, count, version, bookIndex, chapterIndex, verseNumber } = offsetInfo || {};
+          if (absIdx >= start && absIdx < start + count) {
+            const wordIdx = absIdx - start;
+            const vNum = verseNumber || (parseInt(vi, 10) + 1);
+            const ver = (version || cfg.bibleLowerThird?.version || "KJV").toUpperCase();
+            const bIdx = bookIndex ?? 0;
+            const cIdx = chapterIndex ?? 0;
+            const stableKey = `${ver}:${bIdx}:${cIdx}:${vNum}:${wordIdx}`;
+            return manualHLSet.has(stableKey) || manualHLSet.has(`${vi}:${wordIdx}`);
+          }
+        }
+        return false;
+      };
+
       ctx.font = `${Math.round(13.5 * (h / 720))}px ${fontFamily}`;
       const maxTextW = bw - padX * 2 - Math.round(40 * (w / 1280));
-      const rawBody = `"${cfg.bibleLowerThird.currentText || ''}"`;
 
-      // Word wrapping up to 2 lines
-      const words = rawBody.split(" ");
-      let line1 = "";
-      let line2 = "";
+      const rawWords = (cfg.bibleLowerThird.currentText || "").split(/\s+/).filter((w) => w.length > 0);
+      let line1Words = [];
+      let line2Words = [];
       let line1Filled = false;
-      for (const word of words) {
+      for (const word of rawWords) {
         if (!line1Filled) {
-          const test = line1 ? `${line1} ${word}` : word;
+          const test = [...line1Words, word].join(" ");
           if (ctx.measureText(test).width > maxTextW) {
             line1Filled = true;
-            line2 = word;
+            line2Words.push(word);
           } else {
-            line1 = test;
+            line1Words.push(word);
           }
         } else {
-          const test = line2 ? `${line2} ${word}` : word;
+          const test = [...line2Words, word].join(" ");
           if (ctx.measureText(test + "...").width > maxTextW) {
-            line2 = `${line2}...`;
+            if (line2Words.length > 0) {
+              line2Words[line2Words.length - 1] = line2Words[line2Words.length - 1] + "...";
+            }
             break;
           } else {
-            line2 = test;
+            line2Words.push(word);
           }
         }
       }
 
-      ctx.fillText(line1, bx + padX, by + Math.round(48 * (h / 720)));
-      if (line2) {
-        ctx.fillText(line2, bx + padX, by + Math.round(68 * (h / 720)));
+      const drawLineOfWords = (lineWords, startWordIdx, lineY) => {
+        let curX = bx + padX;
+        const spaceW = ctx.measureText(" ").width;
+        lineWords.forEach((word, wOffset) => {
+          const absWordIdx = startWordIdx + wOffset;
+          const isHL = isWordHighlighted(absWordIdx);
+          const cleanWord = word.replace(/\.\.\.$/, "");
+          const isEllipsis = word.endsWith("...");
+          const wordW = ctx.measureText(word).width;
+          if (isHL) {
+            ctx.save();
+            ctx.fillStyle = hlColor;
+            const padPill = Math.round(2 * (w / 1280));
+            const pillH = Math.round(18 * (h / 720));
+            if (typeof ctx.roundRect === "function") {
+              ctx.beginPath();
+              ctx.roundRect(curX - padPill, lineY - pillH / 2, wordW + padPill * 2, pillH, 3);
+              ctx.fill();
+            } else {
+              ctx.fillRect(curX - padPill, lineY - pillH / 2, wordW + padPill * 2, pillH);
+            }
+            ctx.fillStyle = hlTextColor;
+            ctx.fillText(word, curX, lineY);
+            ctx.restore();
+          } else {
+            ctx.fillStyle = textColor;
+            ctx.fillText(word, curX, lineY);
+          }
+          curX += wordW + spaceW;
+        });
+      };
+
+      drawLineOfWords(line1Words, 0, by + Math.round(48 * (h / 720)));
+      if (line2Words.length > 0) {
+        drawLineOfWords(line2Words, line1Words.length, by + Math.round(68 * (h / 720)));
       }
 
       ctx.restore();

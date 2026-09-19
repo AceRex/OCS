@@ -1281,6 +1281,20 @@ export default function BroadcastEngine() {
       currentVerse: meta?.currentVerse,
       version: version || currentBibleVersionRef.current || "kjv",
     });
+    payload.data.isVoiceUpdate = true;
+    payload.data.voiceTimestamp = Date.now();
+    // Preserve active manual highlights, verse offsets, and color from live state
+    if (liveContentState?.data) {
+      if (liveContentState.data.manualHighlights !== undefined) {
+        payload.data.manualHighlights = liveContentState.data.manualHighlights;
+      }
+      if (liveContentState.data.verseOffsets) {
+        payload.data.verseOffsets = liveContentState.data.verseOffsets;
+      }
+      if (liveContentState.data.bibleHighlightColor) {
+        payload.data.bibleHighlightColor = liveContentState.data.bibleHighlightColor;
+      }
+    }
     // If bible is opened over an active presentation, flag it for return capability
     if (isPresentationBibleOverlayRef.current) {
       payload.data.isPresentationOverlay = true;

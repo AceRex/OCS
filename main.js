@@ -4884,6 +4884,72 @@ function createWindows() {
         "KJV"
       ).toUpperCase();
 
+      // ── Authoritative State Synchronization for Bible & Voice Tracking ──
+      const prevSlot = currentCanvasState.contentSlot;
+      const isPrevBible = Boolean(
+        prevSlot &&
+        (prevSlot.type === "bible" || prevSlot.type === "scripture") &&
+        prevSlot.data
+      );
+      const prevData = isPrevBible ? prevSlot.data : null;
+      const prevPassageKey = prevData
+        ? `${(prevData.version || prevData.translation || "KJV").toUpperCase()}:${(prevData.title || "").trim()}`
+        : null;
+      const currentPassageKey = `${version}:${ref}`;
+      const isSamePassage = Boolean(prevPassageKey && prevPassageKey === currentPassageKey);
+
+      // Check if this update is purely an ASR cursor advance
+      const isVoiceAdvanceOnly = Boolean(
+        bData.readAlong &&
+        typeof bData.readAlong.activeIndex === "number" &&
+        bData.readAlong.activeIndex >= 0 &&
+        !bData.verseIndices &&
+        bData.manualHighlights === undefined
+      );
+
+      // Invariant: Voice stop clears transient cue; voice advance must NOT reopen dismissed scripture
+      if (!isPrevBible && isVoiceAdvanceOnly) {
+        console.log(`[IPC] Suppressed voice read-along advance for dismissed scripture: "${ref}"`);
+        return;
+      }
+
+      if (isSamePassage) {
+        // 1. An omitted manual-highlight field must preserve existing highlights for the same passage
+        if (bData.manualHighlights === undefined && prevData.manualHighlights !== undefined) {
+          bData.manualHighlights = prevData.manualHighlights;
+          bData.verseOffsets = bData.verseOffsets || prevData.verseOffsets;
+          bData.bibleHighlightColor = bData.bibleHighlightColor || prevData.bibleHighlightColor;
+        }
+
+        // 2. Preserve active voice readAlong if omitted by a manual highlight edit
+        if (bData.readAlong === undefined && prevData.readAlong) {
+          bData.readAlong = prevData.readAlong;
+        }
+
+        // 3. Delayed voice updates must not overwrite newer manual edits
+        if (
+          prevData.lastManualEditTime &&
+          bData.isVoiceUpdate &&
+          bData.voiceTimestamp &&
+          bData.voiceTimestamp < prevData.lastManualEditTime
+        ) {
+          console.log(`[IPC] Dropped stale voice update timestamped before last manual edit.`);
+          return;
+        }
+      } else {
+        // Different passages/translations must never inherit each other's highlights
+        if (isVoiceAdvanceOnly) {
+          console.log(`[IPC] Dropped stale voice update for previous passage: "${prevPassageKey}" vs "${currentPassageKey}"`);
+          return;
+        }
+      }
+
+      if (bData.manualHighlights !== undefined) {
+        bData.lastManualEditTime = Date.now();
+      }
+
+      value.data = bData;
+
       const reqId = `req_bible_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`;
       const bibleTemplateId = designStudioService.getRoleAssignments()?.bible;
       const assignedTemplate = bibleTemplateId ? designStudioService.getDesign(bibleTemplateId) : null;
@@ -4922,6 +4988,9 @@ function createWindows() {
           existing.snapshotLayers = resolvedLayers;
           existing.label = `Scripture: ${ref || "Passage"}`;
           existing.reqId = reqId;
+          existing.manualHighlights = bData.manualHighlights || [];
+          existing.verseOffsets = bData.verseOffsets || {};
+          existing.bibleHighlightColor = latestOverlayStyle?.bibleHighlightColor || "#FFEB3B";
           existing.updatedAt = Date.now();
           if (existing.status === "exiting") {
             existing.status = "live";
@@ -4937,6 +5006,9 @@ function createWindows() {
             reqId,
             label: `Scripture: ${ref || "Passage"}`,
             snapshotLayers: resolvedLayers,
+            manualHighlights: bData.manualHighlights || [],
+            verseOffsets: bData.verseOffsets || {},
+            bibleHighlightColor: latestOverlayStyle?.bibleHighlightColor || "#FFEB3B",
             transition: assignedTemplate.transition || {
               entrance: { type: "fade", duration: 400, easing: "ease-out" },
               exit: { type: "fade", duration: 300, easing: "ease-in" },
@@ -4986,6 +5058,9 @@ function createWindows() {
         liveBroadcastConfig.bibleLowerThird.currentRef = ref;
         liveBroadcastConfig.bibleLowerThird.currentText = body;
         liveBroadcastConfig.bibleLowerThird.version = version;
+        liveBroadcastConfig.bibleLowerThird.manualHighlights = bData.manualHighlights || [];
+        liveBroadcastConfig.bibleLowerThird.verseOffsets = bData.verseOffsets || {};
+        liveBroadcastConfig.bibleLowerThird.bibleHighlightColor = latestOverlayStyle?.bibleHighlightColor || "#FFEB3B";
         liveBroadcastConfig.bibleLowerThird.isShowing = true;
         broadcastLiveConfig();
       } else if (bibleTemplateId && !assignedTemplate) {
@@ -5097,6 +5172,17 @@ function createWindows() {
     try {
       await appSettings.save({ styles: latestOverlayStyle });
     } catch (_) {}
+
+    if (currentCanvasState) {
+      currentCanvasState.bibleHighlightColor = latestOverlayStyle.bibleHighlightColor || "#FFEB3B";
+      broadcastCanvasState();
+    }
+
+    if (liveBroadcastConfig) {
+      liveBroadcastConfig.presentationStyle = { ...(liveBroadcastConfig.presentationStyle || {}), ...latestOverlayStyle };
+      liveBroadcastConfig.bibleHighlightColor = latestOverlayStyle.bibleHighlightColor || "#FFEB3B";
+      broadcastLiveConfig();
+    }
 
     // FR-4.9 fix: respect target array just like activate_set_content
     const allowedTargets = Array.isArray(value?.target) ? value.target : null;

@@ -7392,7 +7392,7 @@ export default function LiveDesignStudioModal({
                                 title="Double-click to edit text directly on canvas"
                               >
                                 {layer.fieldBinding && (
-                                  <span className="absolute -top-3 left-0 text-[8px] font-mono px-1 py-0.2 bg-[#1E1B4B]/80 text-[#8B5CF6]/70 rounded-[12px] border border-[#8B5CF6]/30 pointer-events-none select-none z-10">
+                                  <span className="absolute -top-3 left-0 text-[8px] font-mono px-1 py-0.2 bg-[#0B1020]/80 text-[#8B5CF6]/70 rounded-[12px] border border-[#8B5CF6]/30 pointer-events-none select-none z-10">
                                     [{layer.fieldBinding}]
                                   </span>
                                 )}
