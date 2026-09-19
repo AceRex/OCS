@@ -94,10 +94,7 @@ export default function GuestExpiredGate({ onOpenSettings }) {
           ) : (
             <button
               onClick={login}
-              className="flex items-center justify-center gap-3 w-full py-4 rounded-2xl font-black text-sm text-white uppercase tracking-wider transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 shadow-xl shadow-purple-900/40"
-              style={{
-                background: 'linear-gradient(135deg, #7c3aed 0%, #db2777 100%)',
-              }}
+              className="flex items-center justify-center gap-3 w-full py-4 rounded-[12px] font-bold text-sm text-[#0B1020] bg-[#00A8FF] hover:bg-[#00A8FF]/90 uppercase tracking-wider transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 shadow-xl shadow-[#00A8FF]/25"
             >
               <PiArrowSquareOut size={18} />
               Log In to Unlock Workstation

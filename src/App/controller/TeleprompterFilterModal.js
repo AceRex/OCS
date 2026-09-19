@@ -510,13 +510,13 @@ export default function TeleprompterFilterModal({
         <div className="p-4 border-t border-white/10 bg-[#161424] flex items-center justify-end gap-3">
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs font-semibold transition-colors"
+            className="px-4 py-2 rounded-[12px] bg-white/5 hover:bg-white/10 text-white/70 hover:text-white text-xs font-semibold transition-colors"
           >
             Cancel
           </button>
           <button
             onClick={handleSaveAndApply}
-            className="px-5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow-lg shadow-purple-600/30 transition-all active:scale-95 flex items-center gap-2"
+            className="px-5 py-2 rounded-[12px] bg-[#00A8FF] hover:bg-[#00A8FF]/90 text-[#0B1020] text-xs font-bold shadow-lg shadow-[#00A8FF]/25 transition-all active:scale-95 flex items-center gap-2"
           >
             <PiCheck size={14} />
             Apply Look

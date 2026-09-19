@@ -40,7 +40,7 @@ export const Button = ({
     return (
       <button
         onClick={onClick}
-        className={`px-8 py-3 h-[30px] flex items-center bg-blue-600 hover:bg-blue-500 text-white rounded-[12px] text-[10px] font-semibold  justify-center uppercase tracking-widest transition-all shadow-[0_0_30px_rgba(37,99,235,0.3)] flex items-center justify-center ${className}`}
+        className={`px-8 py-3 h-[30px] flex items-center bg-[#00A8FF] hover:bg-[#00A8FF]/90 text-[#0B1020] rounded-[12px] text-[10px] font-bold justify-center uppercase tracking-widest transition-all shadow-[0_0_30px_rgba(0,168,255,0.3)] ${className}`}
         {...props}
       >
         {children}

@@ -99,9 +99,9 @@ export default function DisabledContainer({
         <div className="w-full relative z-10 space-y-2">
           {waitingForBrowser ? (
             <>
-              <div className="flex items-center justify-center gap-2.5 w-full py-3.5 rounded-2xl border border-purple-500/30 bg-purple-500/10">
-                <PiSpinner size={16} className="text-purple-400 animate-spin" />
-                <span className="text-purple-300 text-sm font-semibold">
+              <div className="flex items-center justify-center gap-2.5 w-full py-3.5 rounded-[12px] border border-[#8B5CF6]/30 bg-[#8B5CF6]/10">
+                <PiSpinner size={16} className="text-[#8B5CF6] animate-spin" />
+                <span className="text-white text-sm font-semibold">
                   Complete login in your browser...
                 </span>
               </div>
@@ -116,11 +116,7 @@ export default function DisabledContainer({
             <>
               <button
                 onClick={login}
-                className="flex items-center justify-center gap-2.5 w-full py-3.5 rounded-2xl font-bold text-sm text-white transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0"
-                style={{
-                  background: 'linear-gradient(135deg, #7c3aed 0%, #a855f7 100%)',
-                  boxShadow: '0 6px 20px rgba(124, 58, 237, 0.35)',
-                }}
+                className="flex items-center justify-center gap-2.5 w-full py-3.5 rounded-[12px] font-bold text-sm text-[#0B1020] bg-[#00A8FF] hover:bg-[#00A8FF]/90 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0 shadow-lg shadow-[#00A8FF]/25"
               >
                 <PiArrowSquareOut size={16} />
                 {displayActionText}

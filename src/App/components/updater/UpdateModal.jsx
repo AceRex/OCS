@@ -101,14 +101,14 @@ export default function UpdateModal() {
             <button
               type="button"
               onClick={dismissNotification}
-              className="flex-1 px-4 py-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-[#8882A4] hover:text-white transition-colors"
+              className="flex-1 px-4 py-2.5 rounded-[12px] bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-[#8882A4] hover:text-white transition-colors"
             >
               Later
             </button>
             <button
               type="button"
               onClick={() => downloadUpdate()}
-              className="flex-1 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-[#A788FA] to-[#818cf8] hover:from-[#9570f5] hover:to-[#6366f1] text-[#0B0814] text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-purple-500/25 flex items-center justify-center gap-1.5"
+              className="flex-1 px-4 py-2.5 rounded-[12px] bg-[#00A8FF] hover:bg-[#00A8FF]/90 text-[#0B1020] text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-[#00A8FF]/25 flex items-center justify-center gap-1.5"
             >
               <PiDownloadSimple size={16} />
               <span>Download</span>
@@ -189,7 +189,7 @@ export default function UpdateModal() {
             <button
               type="button"
               onClick={dismissNotification}
-              className="flex-1 px-4 py-2.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-[#8882A4] hover:text-white transition-colors"
+              className="flex-1 px-4 py-2.5 rounded-[12px] bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-[#8882A4] hover:text-white transition-colors"
             >
               Later
             </button>
@@ -197,7 +197,7 @@ export default function UpdateModal() {
               type="button"
               disabled={installing}
               onClick={() => handleInstallClick(false)}
-              className="flex-1 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-[#0B0814] text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-1.5"
+              className="flex-1 px-4 py-2.5 rounded-[12px] bg-[#00A8FF] hover:bg-[#00A8FF]/90 text-[#0B1020] text-xs font-black uppercase tracking-wider transition-all shadow-lg shadow-[#00A8FF]/25 flex items-center justify-center gap-1.5"
             >
               {installing ? (
                 <>
@@ -217,9 +217,9 @@ export default function UpdateModal() {
 
       {/* ─── 3b. LIVE SESSION SAFETY CONFIRMATION (PRD FR-14.6) ─── */}
       {isDownloaded && confirmLiveRestart && (
-        <div className="bg-[#1A101C]/95 border border-amber-500/40 p-5 rounded-3xl shadow-2xl shadow-amber-950/80 backdrop-blur-xl space-y-4 text-white">
+        <div className="bg-[#1A101C]/95 border border-white/20 p-5 rounded-[12px] shadow-2xl backdrop-blur-xl space-y-4 text-white">
           <div className="flex items-center gap-3 text-amber-400">
-            <div className="w-10 h-10 rounded-2xl bg-amber-500/20 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-[12px] bg-amber-500/20 flex items-center justify-center">
               <PiWarning size={22} />
             </div>
             <div>
@@ -239,14 +239,14 @@ export default function UpdateModal() {
                 setConfirmLiveRestart(false);
                 dismissNotification();
               }}
-              className="flex-1 px-4 py-2.5 rounded-2xl bg-white/10 hover:bg-white/15 text-xs font-bold text-white transition-colors"
+              className="flex-1 px-4 py-2.5 rounded-[12px] bg-white/10 hover:bg-white/15 text-xs font-bold text-white transition-colors"
             >
               Wait Until After
             </button>
             <button
               type="button"
               onClick={() => handleInstallClick(true)}
-              className="flex-1 px-4 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-black text-xs font-black uppercase tracking-wider transition-colors shadow-lg shadow-amber-500/30"
+              className="flex-1 px-4 py-2.5 rounded-[12px] bg-[#303030] hover:bg-[#303030]/80 border border-white/20 text-white text-xs font-black uppercase tracking-wider transition-colors shadow-lg"
             >
               Restart Anyway
             </button>

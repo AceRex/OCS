@@ -265,7 +265,7 @@ export function PresentationFontAdvisoryModal({
           <ActionButton
             type="button"
             onClick={onClose}
-            className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold uppercase tracking-wider transition-all shadow-lg shadow-purple-600/20 active:scale-95"
+            className="px-4 py-2 rounded-[12px] bg-[#00A8FF] hover:bg-[#00A8FF]/90 text-[#0B1020] text-xs font-bold uppercase tracking-wider transition-all shadow-lg shadow-[#00A8FF]/20 active:scale-95"
           >
             Got It
           </ActionButton>
