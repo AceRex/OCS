@@ -37,8 +37,10 @@ export default function TimerController() {
 
   const time = useSelector((state) => state.util.time);
   const agenda = useSelector((state) => state.util.agenda);
+  const loadedAgenda = useSelector((state) => state.util?.loadedAgenda);
   const isEventMode = useSelector((state) => state.util.isEventMode);
   const isPaused = useSelector((state) => state.util.isPaused);
+  const isRunning = useSelector((state) => state.util.isRunning);
   const activeId = useSelector((state) => state.util.activeId);
   const theme = useSelector((state) => state.util.theme);
   const nextStartInterval = useSelector(
@@ -69,14 +71,10 @@ export default function TimerController() {
   const dispatch = useDispatch();
 
   const formatTime = (timeToFormat) => {
-    const totalSeconds = Number(timeToFormat);
-    if (isNaN(totalSeconds) || !isFinite(totalSeconds)) {
-      return "Set Timer";
-    }
-
-    let hr = Math.floor(totalSeconds / 3600);
-    let min = Math.floor((totalSeconds % 3600) / 60);
-    let sec = Math.floor(totalSeconds % 60);
+    if (isNaN(timeToFormat)) return "00:00:00";
+    let hr = Math.floor(timeToFormat / 3600);
+    let min = Math.floor((timeToFormat % 3600) / 60);
+    let sec = Math.floor(timeToFormat % 60);
 
     if (hr < 10) {
       hr = "0" + hr;
@@ -93,6 +91,22 @@ export default function TimerController() {
   const prevTime = useRef(time);
   const prevActiveId = useRef(activeId);
 
+  const isAgendaDrivenRef = useRef(false);
+
+  // Reconcile with authoritative engine state on mount
+  useEffect(() => {
+    window.electron?.Agenda?.getExecutionState?.().then((engState) => {
+      if (engState) {
+        const isEngRunning = engState.status === "running" || engState.status === "interval";
+        isAgendaDrivenRef.current = !!(engState.agendaId || isEngRunning);
+        dispatch(utilAction.setIsRunning(isEngRunning));
+        if (typeof engState.sessionRemainingSec === "number") {
+          setCountDown(engState.sessionRemainingSec);
+        }
+      }
+    }).catch(() => {});
+  }, [dispatch]);
+
   useEffect(() => {
     let timeToSend = countdown;
 
@@ -106,8 +120,25 @@ export default function TimerController() {
       timeToSend = countdown;
     }
 
-    window.electron?.Timer?.setTimer?.({ time: timeToSend, isEventMode, isPaused, theme });
-  }, [time, isEventMode, isPaused, theme, countdown, activeId]);
+    // Only broadcast timer to display windows if running, or if explicitly in event mode
+    if (isRunning || isEventMode) {
+      window.electron?.Timer?.setTimer?.({
+        time: timeToSend,
+        isEventMode,
+        isPaused,
+        theme,
+        fromAgenda: isAgendaDrivenRef.current,
+      });
+    } else if (time === 0) {
+      window.electron?.Timer?.setTimer?.({
+        time: 0,
+        isEventMode: false,
+        isPaused: false,
+        theme,
+        fromAgenda: isAgendaDrivenRef.current,
+      });
+    }
+  }, [time, isEventMode, isPaused, isRunning, theme, countdown, activeId]);
 
   // Listener for Mobile Actions
   useEffect(() => {
@@ -119,8 +150,10 @@ export default function TimerController() {
             dispatch(utilAction.setEventMode(false));
             dispatch(utilAction.setTime(Number(action.payload.time) || 0));
             dispatch(utilAction.setPaused(false));
+            dispatch(utilAction.setIsRunning(true));
             dispatch(utilAction.setActiveId(null));
           } else if (action.type === "stop-timer") {
+            dispatch(utilAction.setIsRunning(false));
             dispatch(utilAction.setTime(0));
             dispatch(utilAction.setPaused(false));
             dispatch(utilAction.setActiveId(null));
@@ -151,13 +184,21 @@ export default function TimerController() {
   useEffect(() => {
     if (timer.current) {
       clearInterval(timer.current);
+      timer.current = null;
     }
 
-    if (!isPaused && time > 0) {
+    // STRICT CHECK: Must be explicitly running! Loaded/Ready state must never count down.
+    if (isRunning && !isPaused && time > 0) {
+      if (isAgendaDrivenRef.current) {
+        // Authoritative monotonic clock in AgendaExecutionEngine drives countdown via onTimerSync.
+        // Inhibit local interval to prevent dual-decrement jitter and accidental auto-blackout.
+        return;
+      }
       timer.current = setInterval(() => {
         setCountDown((prevCountdown) => {
           if (prevCountdown <= 1) {
             clearInterval(timer.current);
+            timer.current = null;
             setTimeUp(true);
 
             // ── AUTO-BLACKOUT on time up ──
@@ -287,12 +328,49 @@ export default function TimerController() {
     }
   }, [countdown]);
 
+  useEffect(() => {
+    const unsub = window.electron?.Agenda?.onTimerSync?.((sync) => {
+      if (sync) {
+        isAgendaDrivenRef.current = true;
+      }
+      if (typeof sync?.isRunning === "boolean") {
+        dispatch(utilAction.setIsRunning(sync.isRunning));
+      }
+      if (sync && typeof sync.remainingSec === "number") {
+        setCountDown(sync.remainingSec);
+      }
+      if (sync && typeof sync.durationSec === "number" && sync.durationSec > 0) {
+        dispatch(utilAction.setTime(sync.durationSec));
+      }
+      if (sync && typeof sync.isPaused === "boolean") {
+        dispatch(utilAction.setPaused(sync.isPaused));
+      }
+      if (typeof sync?.sessionIndex === "number" && agenda && agenda[sync.sessionIndex]) {
+        dispatch(utilAction.setActiveId(agenda[sync.sessionIndex]._id));
+      }
+    });
+    return () => {
+      if (typeof unsub === "function") unsub();
+    };
+  }, [dispatch, agenda]);
+
   const handleStart = (item, customPlanConfig) => {
     dispatch(utilAction.setEventMode(false));
     dispatch(utilAction.setTime(Number(item.time) || 0));
     dispatch(utilAction.setActiveId(item._id));
     dispatch(utilAction.setPaused(false));
+    dispatch(utilAction.setIsRunning(true));
     setActiveMenuId(null);
+
+    isAgendaDrivenRef.current = true;
+    const sessIdx = agenda ? agenda.findIndex((a) => a._id === item._id) : 0;
+    window.electron?.Agenda?.controlExecution?.({
+      command: "start",
+      payload: {
+        sessionIndex: Math.max(0, sessIdx),
+        agenda: loadedAgenda || undefined,
+      },
+    }).catch(() => {});
 
     const activeConf = (customPlanConfig || plannerConfig)[item._id];
     const shouldRecordAudio = canAccessSessions ? (activeConf?.recordAudio !== false) : false;
@@ -335,6 +413,11 @@ export default function TimerController() {
   const handlePause = () => {
     const next = !isPaused;
     dispatch(utilAction.setPaused(next));
+
+    window.electron?.Agenda?.controlExecution?.({
+      command: next ? "pause" : "resume",
+    }).catch(() => {});
+
     window.electron?.Session?.emitTimerLifecycle?.({
       type: next ? "timer:paused" : "timer:resumed",
       timerId: activeId,
@@ -362,12 +445,19 @@ export default function TimerController() {
       time > 0 && countdown >= 0
         ? Math.max(0, Number(time) - Number(countdown))
         : Number(time) || 0;
+
+    isAgendaDrivenRef.current = false;
+    window.electron?.Agenda?.controlExecution?.({
+      command: "stop",
+    }).catch(() => {});
+
     window.electron?.Session?.emitTimerLifecycle?.({
       type: "timer:stopped",
       timerId: activeId,
       elapsedSec: elapsed,
       title: agenda?.find?.((a) => a._id === activeId)?.agenda,
     });
+    dispatch(utilAction.setIsRunning(false));
     dispatch(utilAction.setTime(0));
     dispatch(utilAction.setPaused(false));
     dispatch(utilAction.setActiveId(null));
@@ -512,7 +602,7 @@ export default function TimerController() {
             {timeUp && countdown === 0 ? "00:00:00" : formatTime(countdown)}
           </p>
 
-          {time > 0 && (
+          {time > 0 && isRunning && (
             <div className="absolute bottom-4 right-4 flex gap-2">
               <button
                 onClick={handlePause}
@@ -564,7 +654,7 @@ export default function TimerController() {
                     >
                       {!isEditing ? (
                         <div className="flex flex-row justify-between items-center w-full">
-                          <div className="flex flex-col gap-1 w-[60%]">
+                           <div className="flex flex-col gap-1 w-[60%]">
                             <p className="font-bold capitalize text-sm">
                               {agenda}
                             </p>
@@ -634,7 +724,7 @@ export default function TimerController() {
                           className="flex flex-row gap-4 mt-2 justify-end items-center bg-primary p-2 rounded-lg"
                           onClick={(e) => e.stopPropagation()}
                         >
-                          {!isPaused && !isActive && (
+                          {(!isRunning || !isActive) && (
                             <Button
                               variant="secondary"
                               onClick={() => handleStart(item)}
@@ -643,7 +733,7 @@ export default function TimerController() {
                               <PiPlay size={12} />
                             </Button>
                           )}
-                          {isActive && (
+                          {isActive && isRunning && (
                             <Button variant="secondary" onClick={handlePause}>
                               <p> {isPaused ? "Resume" : "Pause"}</p>
                               {isPaused ? (

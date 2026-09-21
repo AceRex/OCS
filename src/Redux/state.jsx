@@ -8,14 +8,37 @@ const utilSlice = createSlice({
     agenda: [],
     isEventMode: false,
     isPaused: false,
+    isRunning: false,
     activeId: null,
     theme: "default",
     nextStartInterval: 0,
     delayCountdown: 0,
     isDelayRunning: false,
     nextItemToStart: null,
+    loadedAgenda: null,
   },
   reducers: {
+    setIsRunning: (state, action) => {
+      state.isRunning = Boolean(action.payload);
+    },
+    setLoadedAgenda: (state, action) => {
+      state.loadedAgenda = action.payload;
+      state.isRunning = false;
+      if (action.payload && Array.isArray(action.payload.sessions)) {
+        // Sync sessions into state.agenda for full backward compatibility
+        state.agenda = action.payload.sessions.map((s, idx) => ({
+          _id: s.id || `sess_${idx}`,
+          time: s.durationSec || 300,
+          agenda: s.name || `Session ${idx + 1}`,
+          anchor: s.notes || '',
+          intervalSec: s.intervalSec || 0,
+          transitionMode: s.transitionMode || 'manual',
+        }));
+      }
+    },
+    clearLoadedAgenda: (state) => {
+      state.loadedAgenda = null;
+    },
     setTheme: (state, action) => {
       state.theme = action.payload;
     },
@@ -66,7 +89,6 @@ const utilSlice = createSlice({
       const existingItem = state.agenda.find(
         (item) => item._id === action.payload.id
       );
-      console.log(existingItem);
       if (existingItem) {
         state.agenda = state.agenda.filter(
           (item) => item._id !== action.payload.id

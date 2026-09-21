@@ -30,6 +30,8 @@ class ProgramRecorder {
 
     this.ffmpegProcess = null;
     this.isRecording = false;
+    this.isPaused = false;
+    this.owner = null; // 'manual' | 'agenda' | null
     this.config = null;
     this.startTime = 0;
     this.framesRecorded = 0;
@@ -111,6 +113,15 @@ class ProgramRecorder {
    */
   start(options = {}) {
     if (this.isRecording) {
+      if (options.owner === 'agenda') {
+        return Promise.resolve({
+          ok: false,
+          reason: 'already_recording',
+          recordingId: this.recordingId,
+          outputPath: this.outputPath,
+          owner: this.owner,
+        });
+      }
       return Promise.reject(new Error('Program recorder is already active'));
     }
 
@@ -151,6 +162,8 @@ class ProgramRecorder {
     }
 
     this.state = 'STARTING';
+    this.owner = options.owner || 'manual';
+    this.isPaused = false;
     this.recordingId = options.recordingId || `rec_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     this.processStartTime = Date.now();
     this.processExitTime = null;
@@ -308,6 +321,31 @@ class ProgramRecorder {
   }
 
   /**
+   * Pauses the active recording stream. Incoming video frames and audio chunks
+   * are dropped without closing FFmpeg pipes, saving disk storage.
+   */
+  pause() {
+    if (this.isRecording) {
+      this.isPaused = true;
+      console.log(`[ProgramRecorder] Recording paused (owner=${this.owner})`);
+      return { ok: true, isPaused: true };
+    }
+    return { ok: false, reason: 'Not recording' };
+  }
+
+  /**
+   * Resumes the paused recording stream.
+   */
+  resume() {
+    if (this.isRecording) {
+      this.isPaused = false;
+      console.log(`[ProgramRecorder] Recording resumed (owner=${this.owner})`);
+      return { ok: true, isPaused: false };
+    }
+    return { ok: false, reason: 'Not recording' };
+  }
+
+  /**
    * Writes a raw RGBA video frame buffer into the recording stream.
    *
    * @param {Buffer} buffer - Raw RGBA frame data
@@ -316,6 +354,10 @@ class ProgramRecorder {
   writeVideoFrame(buffer) {
     if (!this.isRecording || !this.ffmpegProcess || !this.ffmpegProcess.stdin) {
       return false;
+    }
+
+    if (this.isPaused) {
+      return true; // Discard frame safely while paused
     }
 
     const expectedFrameBytes = (this.config?.width || 1280) * (this.config?.height || 720) * 4;
@@ -351,6 +393,10 @@ class ProgramRecorder {
       return false;
     }
 
+    if (this.isPaused) {
+      return true; // Discard audio safely while paused
+    }
+
     try {
       const canAcceptMore = this.ffmpegProcess.stdio[3].write(buffer);
       this.audioBytesRecorded += buffer.length;
@@ -368,7 +414,7 @@ class ProgramRecorder {
    *
    * @returns {Promise<{ok: boolean, recordingId: string, state: string, outputPath: string, durationSec: number, bytesWritten: number, framesRecorded: number}>}
    */
-  stop() {
+  stop(options = {}) {
     if (!this.isRecording || !this.ffmpegProcess) {
       return Promise.resolve({
         ok: false,
@@ -376,6 +422,16 @@ class ProgramRecorder {
         recordingId: this.recordingId,
         state: this.state,
         outputPath: this.outputPath
+      });
+    }
+
+    if (options.owner === 'agenda' && this.owner === 'manual') {
+      console.log('[ProgramRecorder] Agenda attempted to stop manual recording. Preserving manual operator session.');
+      return Promise.resolve({
+        ok: true,
+        reason: 'manual_preserved',
+        recordingId: this.recordingId,
+        outputPath: this.outputPath,
       });
     }
 
@@ -392,11 +448,12 @@ class ProgramRecorder {
           console.warn('[ProgramRecorder] Finalize timeout, sending SIGTERM to FFmpeg');
           proc.kill('SIGTERM');
         } catch (_) {}
-      }, 10000);
-
-      proc.once('exit', (code, signal) => {
+      }, 10000);        proc.once('exit', (code, signal) => {
         clearTimeout(finalizeTimeout);
         this.isRecording = false;
+        this.isPaused = false;
+        const previousOwner = this.owner;
+        this.owner = null;
         this.processExitTime = Date.now();
         this.exitCode = code;
         this.exitSignal = signal;
@@ -422,11 +479,12 @@ class ProgramRecorder {
           this.lastError = `Recording finalization failed: exitCode=${code}, exitSignal=${signal}, bytesWritten=${bytesWritten}`;
         }
 
-        console.log(`[ProgramRecorder] Finalized recording ${recordingId}: state=${this.state}, ${outputPath} (${bytesWritten} bytes, ${framesRecorded} frames, ${durationSec}s)`);
+        console.log(`[ProgramRecorder] Finalized recording ${recordingId}: state=${this.state}, owner=${previousOwner}, ${outputPath} (${bytesWritten} bytes, ${framesRecorded} frames, ${durationSec}s)`);
         resolve({
           ok: this.state === 'COMPLETED',
           recordingId,
           state: this.state,
+          owner: previousOwner,
           outputPath,
           durationSec: Number(durationSec),
           bytesWritten,
@@ -474,6 +532,8 @@ class ProgramRecorder {
       // Stage 9.9 Section 7: 14 Required Telemetry Fields
       recordingId: this.recordingId,
       state: this.state,
+      owner: this.owner,
+      isPaused: this.isPaused,
       processPid: this.processPid,
       processStartTime: this.processStartTime,
       processExitTime: this.processExitTime,

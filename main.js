@@ -96,6 +96,17 @@ process.on("unhandledRejection", (reason) => {
 const path = require("path");
 const APP_ICON_PATH = path.join(__dirname, "assets", "icon.png");
 
+// ── Agenda Modules (Standalone Agenda Planner) ───────────────────────────────
+const AgendaTransferManager = require("./src/main/agenda/agendaTransferManager");
+const AgendaExecutionEngine = require("./src/main/agenda/agendaExecutionEngine");
+const {
+  validateAgendaDocument,
+  calculateAgendaSummary,
+  migrateLegacyAgenda,
+} = require("./src/main/agenda/agendaModel");
+let agendaTransferManager = null;
+let agendaExecutionEngine = null;
+
 // ── Custom Protocol Schemes for Authentication & Deep Links (FR-13.8, FR-13.3) ───
 app.setAsDefaultProtocolClient("ocs");
 app.setAsDefaultProtocolClient("waveio");
@@ -593,6 +604,18 @@ const saveScenes = () => {
     );
   } catch (_) {}
 };
+
+// ── Initialize Agenda Transfer Manager ──────────────────────────────────────
+agendaTransferManager = new AgendaTransferManager(app.getPath("userData"));
+agendaTransferManager.init().catch((err) => {
+  console.warn("[AgendaTransferManager] init error:", err.message);
+});
+agendaTransferManager.onProgress((prog) => {
+  broadcastToAllWindows("agenda-transfer-progress", prog);
+  if (io) {
+    io.emit("agenda-transfer-progress", prog);
+  }
+});
 
 ipcMain.handle("presentation-list", () => presentationsStore);
 ipcMain.handle("presentation-save", (event, deck) => {
@@ -1211,9 +1234,50 @@ const FormData = require("form-data");
 
 let currentDesignProcess = null;
 
+function resolvePosterNativePath(imagePath) {
+  if (!imagePath || typeof imagePath !== "string") return null;
+  let nativePath = imagePath;
+  if (nativePath.startsWith("file://")) {
+    try {
+      nativePath = fileURLToPath(nativePath);
+    } catch (_) {
+      try {
+        nativePath = fileURLToPath(new URL(nativePath));
+      } catch (_) {
+        nativePath = decodeURIComponent(nativePath.replace(/^file:\/\//, ""));
+      }
+    }
+  }
+
+  // 1. Check direct native path
+  if (fs.existsSync(nativePath)) {
+    return nativePath;
+  }
+
+  // 2. Check in media directory
+  const filename = path.basename(nativePath);
+  const inMedia = path.join(mediaPath, filename);
+  if (fs.existsSync(inMedia)) {
+    return inMedia;
+  }
+
+  // 3. Check in agenda_assets
+  const inAgendaAssets = path.join(app.getPath("userData"), "agenda_assets", filename);
+  if (fs.existsSync(inAgendaAssets)) {
+    return inAgendaAssets;
+  }
+
+  return nativePath;
+}
+
 ipcMain.handle("design-analyze", async (event, imagePath) => {
   try {
     if (!imagePath) return { error: "No image path provided" };
+
+    const posterPath = resolvePosterNativePath(imagePath);
+    if (!posterPath || !fs.existsSync(posterPath)) {
+      return { error: `Poster not found: ${posterPath || imagePath}` };
+    }
 
     // Kill existing process if running
     if (currentDesignProcess) {
@@ -1222,7 +1286,6 @@ ipcMain.handle("design-analyze", async (event, imagePath) => {
     }
 
     const scriptPath = path.join(__dirname, "ocs_image_engine", "engine.py");
-    const posterPath = imagePath.replace("file://", "");
     const outputDir = path.join(app.getPath("userData"), "generated_assets");
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });
@@ -1297,13 +1360,17 @@ ipcMain.handle("design-generate-lab-assets", async (event, { imagePath, reviewed
   try {
     if (!imagePath) return { error: "No image path provided" };
 
+    const posterPath = resolvePosterNativePath(imagePath);
+    if (!posterPath || !fs.existsSync(posterPath)) {
+      return { error: `Poster not found: ${posterPath || imagePath}` };
+    }
+
     if (currentDesignProcess) {
       try { currentDesignProcess.kill("SIGTERM"); } catch (_) {}
       currentDesignProcess = null;
     }
 
     const scriptPath = path.join(__dirname, "ocs_image_engine", "engine.py");
-    const posterPath = imagePath.replace("file://", "");
     const outputDir = path.join(app.getPath("userData"), "generated_assets");
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true });
@@ -2027,6 +2094,74 @@ serverApp.get("/api/ndi/status", (_req, res) => {
 });
 serverApp.get("/api/ndi/sources", async (_req, res) => {
   res.json(await ndiEngine.discoverSources());
+});
+
+// ── Agenda Transfer & Synchronization Endpoints ──────────────────────────────
+serverApp.post("/api/agenda/offer", express.json({ limit: "10mb" }), async (req, res) => {
+  try {
+    const { agenda, deviceName } = req.body || {};
+    const result = await agendaTransferManager.handleOffer({
+      agenda,
+      deviceName,
+      deviceIp: req.ip || req.socket.remoteAddress,
+    });
+    if (result.ok) {
+      broadcastToAllWindows("agenda-offer-received", result);
+    }
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+serverApp.post("/api/agenda/upload-chunk", express.raw({ type: "*/*", limit: "50mb" }), async (req, res) => {
+  try {
+    const transferId = req.headers["x-transfer-id"];
+    const hash = req.headers["x-asset-hash"];
+    const chunkIndex = parseInt(req.headers["x-chunk-index"] || "0", 10);
+    const totalChunks = parseInt(req.headers["x-total-chunks"] || "1", 10);
+
+    const result = await agendaTransferManager.writeChunk({
+      transferId,
+      hash,
+      chunkIndex,
+      totalChunks,
+      data: req.body,
+    });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+serverApp.post("/api/agenda/finalize-asset", express.json(), async (req, res) => {
+  try {
+    const { transferId, hash, originalName } = req.body || {};
+    const result = await agendaTransferManager.finalizeAsset({ transferId, hash, originalName });
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+serverApp.post("/api/agenda/finalize-transfer", express.json(), async (req, res) => {
+  try {
+    const { transferId } = req.body || {};
+    const result = await agendaTransferManager.finalizeTransfer(transferId);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+serverApp.post("/api/agenda/abort-transfer", express.json(), async (req, res) => {
+  try {
+    const { transferId } = req.body || {};
+    const result = await agendaTransferManager.abortTransfer(transferId);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message });
+  }
 });
 
 let pendingAssetTransfers = new Map();
@@ -3713,6 +3848,95 @@ io.on("connection", (socket) => {
     }
   });
 
+  // ── Mobile Agenda Transfer & Controls ─────────────────────────────────────
+  socket.on("mobile-agenda-offer", async (payload = {}, ack = () => {}) => {
+    if (!isPaired(socket.id)) {
+      return ack({ ok: false, error: "Pairing required before sending agenda" });
+    }
+    try {
+      const result = await agendaTransferManager.handleOffer({
+        agenda: payload.agenda,
+        deviceName: device.name,
+        deviceIp: device.ip,
+      });
+      if (result.ok) {
+        broadcastToAllWindows("agenda-offer-received", {
+          ...result,
+          deviceId: socket.id,
+          deviceName: device.name,
+        });
+
+        if (Notification.isSupported()) {
+          try {
+            const notif = new Notification({
+              title: "wave.io — Incoming Agenda Offer",
+              body: `${device.name} wants to transfer "${result.agendaName}" (${result.sessionCount} sessions, ${result.mediaCount} assets).`,
+              silent: false,
+            });
+            notif.show();
+          } catch (_) {}
+        }
+      }
+      ack(result);
+    } catch (err) {
+      ack({ ok: false, error: err.message });
+    }
+  });
+
+  socket.on("mobile-agenda-chunk", async (payload = {}, ack = () => {}) => {
+    if (!isPaired(socket.id)) return ack({ ok: false, error: "Pairing required" });
+    try {
+      const res = await agendaTransferManager.writeChunk(payload);
+      ack(res);
+    } catch (err) {
+      ack({ ok: false, error: err.message });
+    }
+  });
+
+  socket.on("mobile-agenda-finalize-asset", async (payload = {}, ack = () => {}) => {
+    if (!isPaired(socket.id)) return ack({ ok: false, error: "Pairing required" });
+    try {
+      const res = await agendaTransferManager.finalizeAsset(payload);
+      ack(res);
+    } catch (err) {
+      ack({ ok: false, error: err.message });
+    }
+  });
+
+  socket.on("mobile-agenda-finalize-transfer", async (payload = {}, ack = () => {}) => {
+    if (!isPaired(socket.id)) return ack({ ok: false, error: "Pairing required" });
+    try {
+      const res = await agendaTransferManager.finalizeTransfer(payload.transferId);
+      broadcastToAllWindows("agenda-transfer-complete", res);
+      ack(res);
+    } catch (err) {
+      ack({ ok: false, error: err.message });
+    }
+  });
+
+  socket.on("mobile-agenda-action", async (payload = {}, ack = () => {}) => {
+    if (!isPaired(socket.id)) return ack({ ok: false, error: "Pairing required" });
+    const isController = switcherControllerSocketId === socket.id || adminDeviceIds.has(socket.id) || !!device.isAdmin;
+    if (!isController && payload.command !== "get-state") {
+      return ack({ ok: false, error: "Unauthorized: Controller permission required to control running agenda" });
+    }
+    try {
+      const { command, args } = payload;
+      if (agendaExecutionEngine) {
+        if (command === "start") agendaExecutionEngine.start(args?.sessionIndex);
+        else if (command === "pause") agendaExecutionEngine.pause();
+        else if (command === "resume") agendaExecutionEngine.resume();
+        else if (command === "stop") agendaExecutionEngine.stop();
+        else if (command === "next") agendaExecutionEngine.nextSession();
+        ack({ ok: true, state: agendaExecutionEngine.getState() });
+      } else {
+        ack({ ok: false, error: "Agenda engine uninitialized" });
+      }
+    } catch (err) {
+      ack({ ok: false, error: err.message });
+    }
+  });
+
   // Task 3: Asset transfer from mobile
   socket.on("mobile-asset-transfer", async (payload = {}, ack = () => {}) => {
     if (!isPaired(socket.id)) {
@@ -4367,6 +4591,164 @@ function broadcastCanvasState(state, allowedTargets = null) {
   }
 }
 
+// ── Initialize Agenda Execution Engine ───────────────────────────────────────
+agendaExecutionEngine = new AgendaExecutionEngine({
+  assetsDir: path.join(app.getPath("userData"), "agenda_assets"),
+  mediaDir: mediaPath,
+  startRecording: async ({ agendaName, sessionName, sessionId }) => {
+    try {
+      const cleanAgenda = (agendaName || 'Agenda').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const cleanSession = (sessionName || 'Session').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `${cleanAgenda}_${cleanSession}_${Date.now()}.mp4`;
+      const outputPath = getDeterministicRecordingPath(null, filename);
+
+      let opts = {
+        owner: 'agenda',
+        outputPath,
+        title: `${agendaName} - ${sessionName}`,
+        width: 1280,
+        height: 720,
+        fps: 30,
+      };
+
+      if (recordingIndex) {
+        const entry = recordingIndex.createEntry({
+          outputPath: opts.outputPath,
+          title: opts.title,
+          width: opts.width,
+          height: opts.height,
+          fps: opts.fps,
+        });
+        opts._recordingIndexId = entry.id;
+      }
+
+      const res = await programRecorder.start(opts);
+      return res;
+    } catch (err) {
+      console.error('[AgendaRecording] start error:', err.message);
+      return { ok: false, error: err.message };
+    }
+  },
+  stopRecording: async () => {
+    try {
+      const pendingIndexId = programRecorder.config?._recordingIndexId || null;
+      const result = await programRecorder.stop({ owner: 'agenda' });
+      if (result && result.reason === 'manual_preserved') {
+        return result;
+      }
+      if (recordingIndex && pendingIndexId) {
+        recordingIndex.finalizeEntry(pendingIndexId, {
+          durationSec: result.durationSec || 0,
+          bytesWritten: result.bytesWritten || 0,
+          framesRecorded: result.framesRecorded || 0,
+        });
+      }
+      return result;
+    } catch (err) {
+      console.error('[AgendaRecording] stop error:', err.message);
+      return { ok: false, error: err.message };
+    }
+  },
+  pauseRecording: async () => {
+    return programRecorder.pause();
+  },
+  resumeRecording: async () => {
+    return programRecorder.resume();
+  },
+  getRecorderStatus: () => {
+    return programRecorder.getStatus();
+  },
+  dispatchBackground: (bgPayload) => {
+    currentCanvasState.background = {
+      ...currentCanvasState.background,
+      ...bgPayload,
+      fromAgenda: true,
+    };
+    const allowedTargets = bgPayload?.destination ? (bgPayload.destination === 'all' ? null : [bgPayload.destination]) : null;
+    broadcastCanvasState(currentCanvasState, allowedTargets);
+
+    // Sync into presentation style and broadcast set-style so MiniPreview and Views redraw immediately
+    if (!latestOverlayStyle) latestOverlayStyle = {};
+    if (bgPayload.type === 'image') {
+      latestOverlayStyle.backgroundImage = bgPayload.url;
+      latestOverlayStyle.backgroundVideo = null;
+    } else if (bgPayload.type === 'video') {
+      latestOverlayStyle.backgroundVideo = bgPayload.url;
+      latestOverlayStyle.backgroundImage = null;
+    } else if (bgPayload.type === 'color') {
+      latestOverlayStyle.backgroundColor = bgPayload.color || '#000000';
+      latestOverlayStyle.backgroundImage = null;
+      latestOverlayStyle.backgroundVideo = null;
+    }
+    latestOverlayStyle.target = allowedTargets;
+
+    if (allowedTargets === null || allowedTargets.includes("speaker")) {
+      safeWebContentsSend(speakerWindow, "set-style", latestOverlayStyle);
+    }
+    if (allowedTargets === null || allowedTargets.includes("general")) {
+      safeWebContentsSend(generalWindow, "set-style", latestOverlayStyle);
+    }
+    safeWebContentsSend(controllerWindow, "set-style", latestOverlayStyle);
+  },
+  dispatchPresentation: (contentPayload) => {
+    if (!contentPayload || contentPayload.type === 'clear' || contentPayload.command === 'stop') {
+      // If cleared from Agenda, ensure we do NOT clear scripture or user manual content that isn't video/image!
+      if (contentPayload?.fromAgenda && currentCanvasState.contentSlot?.type && currentCanvasState.contentSlot.type !== 'video' && currentCanvasState.contentSlot.type !== 'image' && currentCanvasState.contentSlot.type !== 'none') {
+        console.log(`[AgendaEngine] Skipping presentation clear because active content is "${currentCanvasState.contentSlot.type}" (not agenda video/image)`);
+        return;
+      }
+      currentCanvasState.contentSlot = { type: 'none', data: null };
+      broadcastCanvasState(currentCanvasState, contentPayload?.destination ? [contentPayload.destination] : null);
+      broadcastToAllWindows("set-content", null);
+    } else {
+      currentCanvasState.contentSlot = {
+        type: contentPayload.type,
+        data: contentPayload,
+      };
+      broadcastCanvasState(currentCanvasState, contentPayload?.destination ? [contentPayload.destination] : null);
+      broadcastToAllWindows("set-content", {
+        type: contentPayload.type,
+        data: contentPayload,
+        target: contentPayload?.destination ? [contentPayload.destination] : null,
+      });
+    }
+  },
+  dispatchAudio: (audioPayload) => {
+    broadcastToAllWindows("agenda-audio-action", audioPayload);
+    if (io) {
+      io.emit("agenda-audio-action", audioPayload);
+    }
+  },
+  syncTimer: (timerPayload) => {
+    broadcastToAllWindows("agenda-timer-sync", timerPayload);
+    // Agenda timer must NEVER appear on General Screen
+    safeWebContentsSend(generalWindow, "set-timer", { time: null, isEventMode: false, fromAgenda: true });
+    if (io) {
+      io.emit("overlay-timer", {
+        agenda: timerPayload.sessionTitle || timerPayload.agendaTitle,
+        countdown: timerPayload.remainingSec,
+        duration: timerPayload.durationSec,
+        isRunning: timerPayload.isRunning,
+        isPaused: timerPayload.isPaused,
+        fromAgenda: true,
+        target: ["speaker", "controller"], // Agenda timer strictly isolated from General Screen
+      });
+    }
+  },
+  broadcastState: (engineState) => {
+    broadcastToAllWindows("agenda-execution-state", engineState);
+    if (io) {
+      io.emit("agenda-execution-state", engineState);
+    }
+  },
+  recordJournal: (eventType, payload) => {
+    try {
+      const recoveryManager = require("./src/main/session/recoveryManager");
+      recoveryManager.recordEvent(eventType, payload);
+    } catch (_) {}
+  },
+});
+
 function toggleBlackout() {
   currentCanvasState.chrome = {
     ...currentCanvasState.chrome,
@@ -4380,8 +4762,12 @@ function toggleBlackout() {
 }
 
 function clearContent() {
+  latestOverlayContent = null;
   currentCanvasState.contentSlot = { type: "none", data: null };
   broadcastCanvasState(currentCanvasState);
+  safeWebContentsSend(generalWindow, "set-content", null);
+  safeWebContentsSend(speakerWindow, "set-content", null);
+  safeWebContentsSend(controllerWindow, "set-content", null);
   console.log("[Hotkeys] Content cleared");
 }
 
@@ -4390,6 +4776,9 @@ ipcMain.on("canvas-sync-state", (event, state) => {
 });
 
 ipcMain.on("canvas-set-background", (event, bg) => {
+  if (!bg?.fromAgenda && agendaExecutionEngine && agendaExecutionEngine.status === "running") {
+    agendaExecutionEngine.tagOperatorOverride("background");
+  }
   currentCanvasState.background = { ...currentCanvasState.background, ...bg };
   broadcastCanvasState(currentCanvasState);
 });
@@ -4910,11 +5299,25 @@ function createWindows() {
   // IPC Handlers
   ipcMain.on("activate_set_timer", (event, value) => {
     latestOverlayTimer = value;
-    if (io) io.emit("overlay-timer", value);
+    if (io) {
+      if (value?.fromAgenda) {
+        io.emit("overlay-timer", { ...value, target: ["speaker", "controller"] });
+      } else {
+        io.emit("overlay-timer", value);
+      }
+    }
     // Timer -> Speaker View (Always)
     safeWebContentsSend(speakerWindow, "set-timer", value);
-    // Timer -> General View (Always - view.js now checks 'mode' and 'isEventMode' to decide whether to show it)
-    safeWebContentsSend(generalWindow, "set-timer", value);
+    // Timer -> General View (Only for standalone manual timer in event mode, NEVER for agenda)
+    if (
+      value?.fromAgenda ||
+      (agendaExecutionEngine &&
+        (agendaExecutionEngine.status === "running" || agendaExecutionEngine.status === "paused"))
+    ) {
+      safeWebContentsSend(generalWindow, "set-timer", { time: null, isEventMode: false, fromAgenda: true });
+    } else {
+      safeWebContentsSend(generalWindow, "set-timer", value);
+    }
     safeWebContentsSend(controllerWindow, "set-timer", value);
     const t =
       typeof value === "object" && value != null
@@ -4968,6 +5371,9 @@ function createWindows() {
   }
 
   ipcMain.on("activate_set_content", (event, value) => {
+    if (!value?.fromAgenda && agendaExecutionEngine && agendaExecutionEngine.status === "running") {
+      agendaExecutionEngine.tagOperatorOverride("presentation");
+    }
     latestOverlayContent = value;
     if (io) io.emit("overlay-content", value);
 
@@ -5388,6 +5794,18 @@ function createWindows() {
     return latestOverlayStyle;
   });
 
+  ipcMain.handle("presentation-get-content", () => {
+    return latestOverlayContent;
+  });
+
+  ipcMain.handle("canvas-get-state", () => {
+    return currentCanvasState;
+  });
+
+  ipcMain.handle("timer-get-state", () => {
+    return latestOverlayTimer;
+  });
+
   // ── Scene IPC (FR-4.28–FR-4.31) ────────────────────────────────────────────
   ipcMain.handle("scene-list", () => scenesStore);
   ipcMain.handle("scene-save", (event, scene) => {
@@ -5450,6 +5868,247 @@ function createWindows() {
   });
   ipcMain.on("scene-read-along-manual-prev", () => {
     sceneAutoAdvance.manualPrev();
+  });
+
+  // ── Agenda IPC Handlers (Standalone Agenda Planner) ───────────────────────
+  ipcMain.handle("agenda-list", async () => {
+    return agendaTransferManager.listAgendas();
+  });
+
+  ipcMain.handle("agenda-get", async (_event, id) => {
+    return agendaTransferManager.getAgenda(id);
+  });
+
+  ipcMain.handle("agenda-save", async (_event, agenda) => {
+    const res = await agendaTransferManager.saveAgenda(agenda);
+    if (
+      agendaExecutionEngine &&
+      agendaExecutionEngine.agendaSnapshot &&
+      agendaExecutionEngine.agendaSnapshot.id === agenda?.id
+    ) {
+      agendaExecutionEngine.updateLiveSchedule(agenda);
+    }
+    return res;
+  });
+
+  ipcMain.handle("agenda-delete", async (_event, id) => {
+    return agendaTransferManager.deleteAgenda(id);
+  });
+
+  ipcMain.handle("agenda-duplicate", async (_event, id) => {
+    return agendaTransferManager.duplicateAgenda(id);
+  });
+
+  ipcMain.handle("agenda-import-file", async (event, { track = "background" } = {}) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const filters = [];
+    if (track === "visual" || track === "background") {
+      filters.push({ name: "Visual Media (Images & Videos)", extensions: ["jpg", "png", "jpeg", "webp", "gif", "mp4", "mov", "webm", "avi", "m4v", "mkv"] });
+      filters.push({ name: "Images", extensions: ["jpg", "png", "jpeg", "webp", "gif"] });
+      filters.push({ name: "Videos", extensions: ["mp4", "mov", "webm", "avi", "m4v", "mkv"] });
+    } else if (track === "video") {
+      filters.push({ name: "Videos", extensions: ["mp4", "mov", "webm", "avi", "m4v", "mkv"] });
+    } else if (track === "audio") {
+      filters.push({ name: "Audio", extensions: ["mp3", "wav", "m4a", "aac", "ogg", "flac"] });
+    } else {
+      filters.push({ name: "All Media", extensions: ["jpg", "png", "jpeg", "webp", "gif", "mp4", "mov", "webm", "mp3", "wav", "m4a", "ogg"] });
+    }
+
+    const { canceled, filePaths } = await dialog.showOpenDialog(win, {
+      properties: ["openFile"],
+      filters,
+    });
+
+    if (canceled || !filePaths || filePaths.length === 0) {
+      return { canceled: true };
+    }
+
+    const sourcePath = filePaths[0];
+    const stat = await fsp.stat(sourcePath);
+    const filename = path.basename(sourcePath);
+    const ext = path.extname(filename).toLowerCase();
+
+    // Compute SHA-256 for deduplication
+    const fileBuf = await fsp.readFile(sourcePath);
+    const hash = crypto.createHash("sha256").update(fileBuf).digest("hex");
+
+    // Copy to agenda_assets and media
+    const assetsDir = path.join(app.getPath("userData"), "agenda_assets");
+    await fsp.mkdir(assetsDir, { recursive: true });
+    const destPath = path.join(assetsDir, `${hash}${ext}`);
+    await fsp.writeFile(destPath, fileBuf);
+
+    // Also copy to media directory with original name
+    const mediaDestPath = path.join(mediaPath, filename);
+    if (!fs.existsSync(mediaDestPath)) {
+      await fsp.copyFile(destPath, mediaDestPath).catch(() => {});
+    }
+
+    // Probe duration / stream type
+    let probe = { duration: 0, hasVideo: false, hasAudio: false };
+    try {
+      const { probeMediaInfo } = require("./src/main/sessionAudio");
+      probe = probeMediaInfo(destPath);
+    } catch (_) {}
+
+    const isAudio = [".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac"].includes(ext);
+    const isVideo = [".mp4", ".mov", ".webm", ".avi", ".m4v", ".mkv"].includes(ext);
+    const assetType = isVideo ? "video" : isAudio ? "audio" : "image";
+    const durationSec = Math.round(probe.duration || (isVideo ? 60 : isAudio ? 180 : 0));
+
+    const asset = {
+      id: `asset_${Date.now()}_${crypto.randomBytes(3).toString("hex")}`,
+      originalName: filename,
+      name: filename,
+      size: stat.size,
+      hash,
+      type: assetType,
+      durationSec,
+      localFileUrl: pathToFileURL(destPath).href,
+      path: destPath,
+    };
+
+    return { ok: true, asset };
+  });
+
+  ipcMain.handle("agenda-probe-file", async (_event, fileUrlOrPath) => {
+    const nativePath = resolvePosterNativePath(fileUrlOrPath);
+    if (!nativePath || !fs.existsSync(nativePath)) {
+      return { duration: 0, hasVideo: false, hasAudio: false };
+    }
+    try {
+      const { probeMediaInfo } = require("./src/main/sessionAudio");
+      return probeMediaInfo(nativePath);
+    } catch (_) {
+      return { duration: 0, hasVideo: false, hasAudio: false };
+    }
+  });
+
+  ipcMain.handle("agenda-respond-offer", async (_event, { transferId, accepted }) => {
+    const res = await agendaTransferManager.respondToOffer(transferId, accepted);
+    if (io) {
+      io.emit("agenda-offer-responded", { transferId, accepted, ...res });
+    }
+    return res;
+  });
+
+  ipcMain.handle("agenda-load", async (_event, agendaOrId) => {
+    let doc = agendaOrId;
+    if (typeof agendaOrId === "string") {
+      doc = await agendaTransferManager.getAgenda(agendaOrId);
+    }
+    if (!doc) return { ok: false, error: "Agenda not found" };
+
+    const val = validateAgendaDocument(doc);
+    if (!val.valid) {
+      return { ok: false, errors: val.errors, warnings: val.warnings };
+    }
+
+    // Register collection in presentationsStore if not already present
+    const collectionTitle = `Agenda: ${doc.name}`;
+    let existingDeck = presentationsStore.find(
+      (d) => d.title === collectionTitle || d.id === `agenda_deck_${doc.id}`
+    );
+
+    const slides = (doc.assets || []).map((a, i) => ({
+      id: `slide_${a.id || i}`,
+      title: a.originalName || `Asset ${i + 1}`,
+      type: a.type === "video" ? "video" : "image",
+      fileUrl:
+        a.localFileUrl ||
+        (a.relativePath
+          ? pathToFileURL(path.join(agendaTransferManager.assetsDir, a.relativePath)).href
+          : null),
+    }));
+
+    if (!existingDeck) {
+      existingDeck = {
+        id: `agenda_deck_${doc.id}`,
+        title: collectionTitle,
+        filename: `${doc.name}.agenda`,
+        isAgendaCollection: true,
+        agendaId: doc.id,
+        slides,
+        pageCount: slides.length,
+        createdAt: Date.now(),
+      };
+      presentationsStore.push(existingDeck);
+    } else {
+      existingDeck.slides = slides;
+      existingDeck.pageCount = slides.length;
+    }
+    savePresentations();
+
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send("presentation-decks-updated", {
+          deck: existingDeck,
+          filename: existingDeck.filename,
+        });
+      }
+    }
+
+    // Load into execution engine without starting live play
+    agendaExecutionEngine.loadAgenda(doc);
+
+    // Broadcast loaded agenda to UI for Redux state update
+    const summary = calculateAgendaSummary(doc);
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) {
+        win.webContents.send("agenda-loaded", { agenda: doc, summary });
+      }
+    }
+
+    return {
+      ok: true,
+      agenda: doc,
+      summary,
+      readiness: {
+        valid: true,
+        sessionCount: doc.sessions.length,
+        mediaCount: (doc.assets || []).length,
+        totalDuration: summary.formattedTotalTime,
+        warnings: val.warnings,
+      },
+    };
+  });
+
+  ipcMain.handle("agenda-execution-control", async (_event, { command, payload }) => {
+    try {
+      if (payload?.agenda) {
+        if (!agendaExecutionEngine.agendaSnapshot || agendaExecutionEngine.agendaSnapshot.id !== payload.agenda.id) {
+          agendaExecutionEngine.loadAgenda(payload.agenda);
+        } else {
+          agendaExecutionEngine.updateLiveSchedule(payload.agenda);
+        }
+      }
+      if (command === "start") {
+        if (!agendaExecutionEngine.agendaSnapshot) {
+          const list = await agendaTransferManager.listAgendas();
+          if (list && list.length > 0) {
+            const doc = await agendaTransferManager.getAgenda(list[0].id);
+            if (doc) agendaExecutionEngine.loadAgenda(doc);
+          }
+        }
+        agendaExecutionEngine.start(payload?.sessionIndex);
+      }
+      else if (command === "pause") agendaExecutionEngine.pause();
+      else if (command === "resume") agendaExecutionEngine.resume();
+      else if (command === "stop") agendaExecutionEngine.stop();
+      else if (command === "next") agendaExecutionEngine.nextSession();
+      else if (command === "skip") agendaExecutionEngine.skipTo(payload?.seconds);
+      else if (command === "set-armed") agendaExecutionEngine.setAutomationArmed(payload?.armed);
+      else if (command === "update-live-schedule") agendaExecutionEngine.updateLiveSchedule(payload?.agenda);
+
+      return { ok: true, state: agendaExecutionEngine.getState() };
+    } catch (err) {
+      console.warn("[Main] agenda-execution-control error:", err.message);
+      return { ok: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle("agenda-get-execution-state", async () => {
+    return agendaExecutionEngine ? agendaExecutionEngine.getState() : { status: "idle" };
   });
 
   // Window Management
@@ -5833,6 +6492,14 @@ ipcMain.handle("recorder:stop", async () => {
 
 ipcMain.handle("recorder:status", () => {
   return programRecorder.getStatus();
+});
+
+ipcMain.handle("recorder:pause", () => {
+  return programRecorder.pause();
+});
+
+ipcMain.handle("recorder:resume", () => {
+  return programRecorder.resume();
 });
 
 ipcMain.handle("recorder:show-in-folder", async (_e, targetPath) => {

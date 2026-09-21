@@ -9,6 +9,7 @@ function App({ mode: propMode }) {
   const [isEventMode, setIsEventMode] = useState(false);
   const [theme, setTheme] = useState("default");
   const [sessionRec, setSessionRec] = useState({ recording: false, title: null });
+  const audioRef = useRef(null);
   const viewMode = propMode || (typeof window !== 'undefined'
     ? new URLSearchParams(window.location.search).get('mode')
     : null);
@@ -448,6 +449,36 @@ function App({ mode: propMode }) {
       });
     }
 
+    // Presentation Audio Action Listener (General View output plays agenda audio)
+    let unsubAudio = null;
+    if (mode === 'general' && window.electron?.Agenda?.onAudioAction) {
+      unsubAudio = window.electron.Agenda.onAudioAction((action) => {
+        if (!action) return;
+        console.log('[View Audio] Received agenda audio action:', action);
+        const el = audioRef.current;
+        if (!el) return;
+
+        if (action.command === 'play') {
+          if (action.url) {
+            el.src = action.url;
+            el.volume = typeof action.volume === 'number' ? action.volume : 1.0;
+            if (typeof action.sourceInSec === 'number' && action.sourceInSec > 0) {
+              try { el.currentTime = action.sourceInSec; } catch (_) {}
+            }
+            el.play().catch((err) => console.warn('[View Audio] Playback failed:', err));
+          }
+        } else if (action.command === 'pause') {
+          el.pause();
+        } else if (action.command === 'resume') {
+          el.play().catch((err) => console.warn('[View Audio] Resume failed:', err));
+        } else if (action.command === 'stop') {
+          el.pause();
+          try { el.currentTime = 0; } catch (_) {}
+          el.removeAttribute('src');
+        }
+      });
+    }
+
     // Timer Listener
     if (window.electron && window.electron.Timer) {
       window.electron.Timer.onSetTimer((value) => {
@@ -463,7 +494,7 @@ function App({ mode: propMode }) {
           newTheme = "default";
         }
 
-        if (mode === 'general' && !newEventMode) {
+        if (mode === 'general' && (value?.fromAgenda || !newEventMode)) {
           setCountDown(null);
           setIsEventMode(false);
           return;
@@ -574,6 +605,36 @@ function App({ mode: propMode }) {
           }
         }).catch(() => {});
       }
+
+      if (window.electron.Presentation.getContent) {
+        window.electron.Presentation.getContent().then((initialContent) => {
+          if (initialContent != null) {
+            if (initialContent.target && Array.isArray(initialContent.target)) {
+              if (!initialContent.target.includes(mode) && !initialContent.target.includes('all') && mode !== 'controller') {
+                return;
+              }
+            }
+            console.log(`[View] Hydrated initial presentation content for mode=${mode}:`, initialContent.type);
+            setPresentationContent(initialContent);
+          }
+        }).catch(() => {});
+      }
+
+      if (window.electron.Canvas && window.electron.Canvas.getState) {
+        window.electron.Canvas.getState().then((state) => {
+          if (state) {
+            console.log(`[View] Hydrated initial canvas state for mode=${mode}`);
+            setCanvasState(prev => ({
+              ...prev,
+              ...state,
+              background: { ...prev.background, ...(state.background || {}) },
+              contentSlot: state.contentSlot || prev.contentSlot,
+              pinnedLayers: state.pinnedLayers || prev.pinnedLayers,
+              chrome: { ...prev.chrome, ...(state.chrome || {}) }
+            }));
+          }
+        }).catch(() => {});
+      }
     }
 
     if (window.electron && window.electron.Canvas && window.electron.Canvas.onCanvasSync) {
@@ -604,6 +665,31 @@ function App({ mode: propMode }) {
           });
         }
 
+        socket.on('agenda-audio-action', (action) => {
+          if (mode !== 'general' || !action) return;
+          console.log('[View Web Audio] Received agenda audio action via socket:', action);
+          const el = audioRef.current;
+          if (!el) return;
+          if (action.command === 'play') {
+            if (action.url) {
+              el.src = action.url;
+              el.volume = typeof action.volume === 'number' ? action.volume : 1.0;
+              if (typeof action.sourceInSec === 'number' && action.sourceInSec > 0) {
+                try { el.currentTime = action.sourceInSec; } catch (_) {}
+              }
+              el.play().catch((err) => console.warn('[View Web Audio] Playback failed:', err));
+            }
+          } else if (action.command === 'pause') {
+            el.pause();
+          } else if (action.command === 'resume') {
+            el.play().catch((err) => console.warn('[View Web Audio] Resume failed:', err));
+          } else if (action.command === 'stop') {
+            el.pause();
+            try { el.currentTime = 0; } catch (_) {}
+            el.removeAttribute('src');
+          }
+        });
+
         socket.on('overlay-timer', (value) => {
           let newTime, newEventMode, newTheme;
           if (typeof value === 'object' && value !== null) {
@@ -616,7 +702,7 @@ function App({ mode: propMode }) {
             newTheme = 'default';
           }
 
-          if (mode === 'general' && !newEventMode) {
+          if (mode === 'general' && (value?.fromAgenda || (value?.target && !value.target.includes('general')) || !newEventMode)) {
             setCountDown(null);
             setIsEventMode(false);
             return;
@@ -734,11 +820,17 @@ function App({ mode: propMode }) {
       licenseTier: authStatus?.licenseTier || authStatus?.subscriptionTier || 'trial',
       background: {
         ...canvasState.background,
-        type: presentationStyle.backgroundVideo
-          ? 'video'
-          : (presentationStyle.backgroundImage ? 'image' : (canvasState.background?.type || 'color')),
-        url: presentationStyle.backgroundVideo || presentationStyle.backgroundImage || canvasState.background?.url || null,
-        color: presentationStyle.backgroundColor || canvasState.background?.color || '#000000',
+        type: canvasState.background?.fromAgenda
+          ? (canvasState.background.type || 'color')
+          : (presentationStyle.backgroundVideo
+              ? 'video'
+              : (presentationStyle.backgroundImage ? 'image' : (canvasState.background?.type || 'color'))),
+        url: canvasState.background?.fromAgenda
+          ? canvasState.background.url
+          : (presentationStyle.backgroundVideo || presentationStyle.backgroundImage || canvasState.background?.url || null),
+        color: canvasState.background?.fromAgenda
+          ? (canvasState.background.color || '#000000')
+          : (presentationStyle.backgroundColor || canvasState.background?.color || '#000000'),
       },
       serviceLabel: presentationStyle.bibleServiceLabel || '',
       bibleServiceLabel: presentationStyle.bibleServiceLabel || '',
@@ -845,10 +937,10 @@ function App({ mode: propMode }) {
   );
   const hasContentSlot = canvasState.contentSlot && canvasState.contentSlot.type !== 'none' && canvasState.contentSlot.data != null;
   const hasPinnedLayers = Array.isArray(canvasState.pinnedLayers) && canvasState.pinnedLayers.length > 0;
-  const hasLegacyContent = presentationContent && ['bible', 'custom', 'custom_layers', 'scene', 'presentation', 'slide_index'].includes(presentationContent.type) && presentationContent.data;
+  const hasLegacyContent = presentationContent && ['bible', 'custom', 'custom_layers', 'scene', 'presentation', 'slide_index', 'video', 'image'].includes(presentationContent.type) && presentationContent.data;
 
   const isPresenting = Boolean(hasContentSlot || hasBackgroundMedia || hasPinnedLayers || hasLegacyContent);
-  const showSplitTimer = isPresenting && countdown > 0;
+  const showSplitTimer = viewMode !== 'general' && isPresenting && countdown > 0;
   console.log(`[View ${viewMode}] RENDER: isPresenting=${isPresenting}, hasContentSlot=${hasContentSlot}, countdown=${countdown}, type=${canvasState.contentSlot?.type}`);
 
   return (
@@ -884,6 +976,8 @@ function App({ mode: propMode }) {
         </div>
       </section>
       {showSplitTimer && renderFooterTimer()}
+      {/* Dedicated Presentation Audio Element (Zero screen/canvas impact) */}
+      <audio ref={audioRef} preload="auto" playsInline style={{ display: 'none' }} />
     </div>
   );
 }

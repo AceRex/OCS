@@ -68,15 +68,19 @@ class ThemeClassifier:
         
         # Load weights if available
         weights_path = Path(config.classifier_weights)
-        if weights_path.exists():
+        self.has_weights = weights_path.exists()
+        if self.has_weights:
             logger.info("Loading classifier weights from %s", weights_path)
-            self.model.load_state_dict(torch.load(weights_path, map_location=self.device))
+            try:
+                self.model.load_state_dict(torch.load(weights_path, map_location=self.device))
+                self.model.to(self.device)
+                self.model.eval()
+            except Exception as e:
+                logger.warning("Failed to load classifier weights from %s: %s", weights_path, e)
+                self.has_weights = False
         else:
-            logger.warning("No classifier weights found at %s — using untrained model", weights_path)
+            logger.info("No classifier weights found at %s — marking classification unavailable (fallback to OCR keyword analysis)", weights_path)
             
-        self.model.to(self.device)
-        self.model.eval()
-        
         self.transform = transforms.Compose([
             transforms.Resize((config.classifier_input_size, config.classifier_input_size)),
             transforms.ToTensor(),
@@ -86,6 +90,14 @@ class ThemeClassifier:
     @torch.no_grad()
     def predict(self, img: Image.Image, top_k: int = 3) -> list[dict]:
         """Predict theme of the poster."""
+        if not self.has_weights:
+            # Do not present predictions from an untrained model as reliable analysis
+            return [{
+                "theme": "unclassified",
+                "confidence": 0.0,
+                "status": "unavailable"
+            }]
+
         input_tensor = self.transform(img).unsqueeze(0).to(self.device)
         outputs = self.model(input_tensor)
         probs = torch.nn.functional.softmax(outputs, dim=1)[0]
@@ -96,7 +108,8 @@ class ThemeClassifier:
         for prob, idx in zip(top_probs, top_idxs):
             results.append({
                 "theme": self.config.theme_labels[idx.item()],
-                "confidence": float(prob.item())
+                "confidence": float(prob.item()),
+                "status": "available"
             })
             
         return results

@@ -1034,6 +1034,52 @@ export default function DisplayCanvas({
         );
       }
 
+      case "video": {
+        const { url, sourceInSec, loop, muted, volume } = data || {};
+        if (!url) return null;
+        return (
+          <div className="w-full h-full relative z-10 bg-black overflow-hidden flex items-center justify-center">
+            <video
+              src={url}
+              key={url}
+              autoPlay
+              loop={loop !== false}
+              muted={mode === "speaker" || muted === true}
+              playsInline
+              ref={(el) => {
+                if (el) {
+                  if (typeof volume === "number") el.volume = volume;
+                  if (
+                    typeof sourceInSec === "number" &&
+                    Math.abs(el.currentTime - sourceInSec) > 0.5 &&
+                    !el.dataset.seeked
+                  ) {
+                    el.currentTime = sourceInSec;
+                    el.dataset.seeked = "true";
+                  }
+                }
+              }}
+              className={`w-full h-full ${data?.fit === 'cover' ? 'object-cover' : 'object-contain'}`}
+            />
+          </div>
+        );
+      }
+
+      case "image": {
+        const { url } = data || {};
+        if (!url) return null;
+        return (
+          <div className="w-full h-full relative z-10 bg-black overflow-hidden flex items-center justify-center">
+            <img
+              src={url}
+              key={url}
+              className={`w-full h-full ${data?.fit === 'cover' ? 'object-cover' : 'object-contain'} select-none pointer-events-none`}
+              alt="Scheduled Foreground Media"
+            />
+          </div>
+        );
+      }
+
       case "timer": {
         const { displayTime, label, isFinished } = data;
         return (

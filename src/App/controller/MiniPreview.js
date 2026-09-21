@@ -45,8 +45,9 @@ export default function MiniPreview({ mode }) {
     };
 
     useEffect(() => {
+        let unsubTimer = null;
         if (window.electron && window.electron.Timer) {
-            window.electron.Timer.onSetTimer((value) => {
+            unsubTimer = window.electron.Timer.onSetTimer((value) => {
                 let newTime, newEventMode, newTheme;
                 if (typeof value === "object" && value !== null) {
                     newTime = value.time;
@@ -58,7 +59,7 @@ export default function MiniPreview({ mode }) {
                     newTheme = "default";
                 }
 
-                if (mode === 'general' && !newEventMode) {
+                if (mode === 'general' && (value?.fromAgenda || !newEventMode)) {
                     setCountDown(null);
                     setIsEventMode(false);
                     return;
@@ -79,8 +80,114 @@ export default function MiniPreview({ mode }) {
             });
         }
 
+        if (window.electron && window.electron.Timer && window.electron.Timer.getState) {
+            window.electron.Timer.getState().then((value) => {
+                if (value == null) return;
+                let newTime, newEventMode, newTheme;
+                if (typeof value === "object" && value !== null) {
+                    newTime = value.time;
+                    newEventMode = value.isEventMode || false;
+                    newTheme = value.theme || "default";
+                } else {
+                    newTime = value;
+                    newEventMode = false;
+                    newTheme = "default";
+                }
+
+                if (mode === 'general' && (value?.fromAgenda || !newEventMode)) {
+                    setCountDown(null);
+                    setIsEventMode(false);
+                    return;
+                }
+
+                setIsEventMode(newEventMode);
+                setTheme(newTheme);
+                if (newTime !== undefined && newTime !== null) {
+                    setCountDown(newTime);
+                    setTimeUp(newTime === 0);
+                }
+            }).catch(() => {});
+        }
+
         let unsubContent = null;
         let unsubStyle = null;
+        let unsubCanvas = null;
+
+        if (window.electron && window.electron.Canvas) {
+            if (window.electron.Canvas.getState) {
+                window.electron.Canvas.getState().then((cState) => {
+                    if (!cState) return;
+                    if (cState.background) {
+                        const bg = cState.background;
+                        const isBgMedia = (bg.type === 'image' || bg.type === 'video') && Boolean(bg.url);
+                        if (isBgMedia || bg.fromAgenda) {
+                            const dest = bg.destination;
+                            if (!dest || dest === 'all' || dest === mode || mode === 'controller') {
+                                setPresentationStyle((prev) => ({
+                                    ...prev,
+                                    backgroundImage: bg.type === 'image' ? bg.url : null,
+                                    backgroundVideo: bg.type === 'video' ? bg.url : null,
+                                    backgroundColor: bg.color || prev.backgroundColor,
+                                }));
+                            }
+                        }
+                    }
+
+                    if (cState.contentSlot && cState.contentSlot.type !== 'none' && cState.contentSlot.data) {
+                        const dest = cState.contentSlot.data?.destination || cState.contentSlot.destination;
+                        if (!dest || dest === 'all' || dest === mode || mode === 'controller') {
+                            setPresentationContent((prev) => prev || {
+                                type: cState.contentSlot.type,
+                                data: cState.contentSlot.data,
+                            });
+                        }
+                    }
+                }).catch(() => {});
+            }
+
+            if (window.electron.Canvas.onCanvasSync) {
+                unsubCanvas = window.electron.Canvas.onCanvasSync((cState) => {
+                    if (!cState) return;
+
+                    // Only update background from canvas if it's explicitly from agenda or an active media background
+                    if (cState.background) {
+                        const bg = cState.background;
+                        const isBgMedia = (bg.type === 'image' || bg.type === 'video') && Boolean(bg.url);
+                        if (isBgMedia || bg.fromAgenda) {
+                            const dest = bg.destination;
+                            if (!dest || dest === 'all' || dest === mode || mode === 'controller') {
+                                setPresentationStyle((prev) => ({
+                                    ...prev,
+                                    backgroundImage: bg.type === 'image' ? bg.url : null,
+                                    backgroundVideo: bg.type === 'video' ? bg.url : null,
+                                    backgroundColor: bg.color || prev.backgroundColor,
+                                }));
+                            }
+                        } else if (bg.url === null && bg.type === 'color') {
+                            setPresentationStyle((prev) => ({
+                                ...prev,
+                                backgroundImage: null,
+                                backgroundVideo: null,
+                                backgroundColor: bg.color || prev.backgroundColor,
+                            }));
+                        }
+                    }
+
+                    // Update content slot from canvas sync
+                    if (cState.contentSlot && cState.contentSlot.type !== 'none' && cState.contentSlot.data) {
+                        const dest = cState.contentSlot.data?.destination || cState.contentSlot.destination;
+                        if (!dest || dest === 'all' || dest === mode || mode === 'controller') {
+                            setPresentationContent({
+                                type: cState.contentSlot.type,
+                                data: cState.contentSlot.data,
+                            });
+                        }
+                    } else if (cState.contentSlot && cState.contentSlot.type === 'none') {
+                        setPresentationContent(null);
+                    }
+                });
+            }
+        }
 
         if (window.electron && window.electron.Presentation) {
             unsubContent = window.electron.Presentation.onSetContent((value) => {
@@ -100,7 +207,7 @@ export default function MiniPreview({ mode }) {
             unsubStyle = window.electron.Presentation.onSetStyle((value) => {
                 if (!value) return;
                 if (value.target && Array.isArray(value.target)) {
-                    if (!value.target.includes(mode) && !value.target.includes('all')) return;
+                    if (!value.target.includes(mode) && !value.target.includes('all') && mode !== 'controller') return;
                 }
                 setPresentationStyle(prev => ({ ...prev, ...value }));
             });
@@ -111,15 +218,26 @@ export default function MiniPreview({ mode }) {
                     }
                 }).catch(() => {});
             }
+            if (window.electron.Presentation.getContent) {
+                window.electron.Presentation.getContent().then((initialContent) => {
+                    if (initialContent != null) {
+                        if (initialContent.target && Array.isArray(initialContent.target)) {
+                            if (!initialContent.target.includes(mode) && !initialContent.target.includes('all') && mode !== 'controller') {
+                                return;
+                            }
+                        }
+                        console.log(`[MiniPreview] Hydrated initial presentation content for mode=${mode}:`, initialContent.type);
+                        setPresentationContent(initialContent);
+                    }
+                }).catch(() => {});
+            }
         }
 
         return () => {
-            if (window.electron && window.electron.Timer) {
-                window.electron.Timer.removeSetTimerListener();
-            }
-            // Prefer per-listener disposer — removeAllListeners would kill sibling MiniPreviews
+            if (typeof unsubTimer === 'function') unsubTimer();
             if (typeof unsubContent === 'function') unsubContent();
             if (typeof unsubStyle === 'function') unsubStyle();
+            if (typeof unsubCanvas === 'function') unsubCanvas();
         };
     }, [mode]);
 
@@ -215,6 +333,62 @@ export default function MiniPreview({ mode }) {
                         })}
                     </div>
                 </div>
+            </div>
+        );
+    };
+
+    const renderCustomLayersContent = () => {
+        if (!presentationContent || !presentationContent.data) return null;
+        const { background: bg = {}, layers = [] } = presentationContent.data;
+        const bgUrl = bg.url || presentationStyle.backgroundImage || presentationStyle.backgroundVideo;
+        const isBgVid = bg.type === 'video' || (bgUrl && /\.(mp4|webm|mov)$/i.test(bgUrl));
+
+        const sortedLayers = [...layers].sort((a, b) => (a.zIndex || 0) - (b.zIndex || 0));
+
+        return (
+            <div className="w-full h-full relative overflow-hidden bg-black flex items-center justify-center pointer-events-none select-none">
+                {bgUrl && (
+                    <div className="absolute inset-0 z-0">
+                        {isBgVid ? (
+                            <video src={bgUrl} autoPlay loop muted playsInline className="w-full h-full object-cover" />
+                        ) : (
+                            <img src={bgUrl} className="w-full h-full object-cover" alt="bg" />
+                        )}
+                    </div>
+                )}
+                {sortedLayers.map((layer) => {
+                    const x = layer.x != null ? `${layer.x}%` : '50%';
+                    const y = layer.y != null ? `${layer.y}%` : '50%';
+                    return (
+                        <div
+                            key={layer.id || Math.random()}
+                            className="absolute pointer-events-none"
+                            style={{
+                                left: x,
+                                top: y,
+                                transform: 'translate(-50%, -50%)',
+                                width: (layer.type === 'image' || layer.type === 'video') ? `${layer.style?.width || 30}%` : 'auto',
+                                zIndex: layer.zIndex || 10,
+                            }}
+                        >
+                            {layer.type === 'text' ? (
+                                <p
+                                    className="whitespace-pre-wrap text-center px-1 font-bold text-white"
+                                    style={{
+                                        fontSize: `${Math.max(10, Math.round((layer.style?.fontSize || 5) * 2.2))}px`,
+                                        color: layer.style?.color || '#ffffff',
+                                    }}
+                                >
+                                    {layer.content}
+                                </p>
+                            ) : layer.type === 'video' ? (
+                                <video src={layer.content} autoPlay loop muted playsInline className="w-full h-auto rounded-[12px]" />
+                            ) : (
+                                <img src={layer.content} className="w-full h-auto rounded-[12px]" alt="layer" />
+                            )}
+                        </div>
+                    );
+                })}
             </div>
         );
     };
@@ -532,18 +706,70 @@ export default function MiniPreview({ mode }) {
         </div>
     );
 
-    const isPresenting = presentationContent && ['bible', 'custom', 'custom_layers', 'scene', 'presentation', 'slide_index'].includes(presentationContent.type) && presentationContent.data;
-    const showSplitTimer = isPresenting && countdown > 0;
+    const renderMediaContent = () => {
+        if (!presentationContent) return null;
+        const type = presentationContent.type;
+        const data = presentationContent.data || {};
+        const url = data.url || presentationContent.url;
+        if (!url) return null;
+
+        if (type === 'video') {
+            return (
+                <div className="w-full h-full relative overflow-hidden bg-black flex items-center justify-center">
+                    <video
+                        src={url}
+                        autoPlay
+                        loop={data.loop !== false}
+                        muted
+                        playsInline
+                        className={`w-full h-full ${data.fit === 'cover' ? 'object-cover' : 'object-contain'}`}
+                    />
+                </div>
+            );
+        }
+        if (type === 'image') {
+            return (
+                <div className="w-full h-full relative overflow-hidden bg-black flex items-center justify-center">
+                    <img
+                        src={url}
+                        className={`w-full h-full ${data.fit === 'cover' ? 'object-cover' : 'object-contain'}`}
+                        alt="Preview Media"
+                    />
+                </div>
+            );
+        }
+        return null;
+    };
+
+    const hasBackgroundMedia = Boolean(
+        presentationStyle.backgroundImage || presentationStyle.backgroundVideo
+    );
+    const hasForegroundContent = Boolean(
+        presentationContent &&
+        ['bible', 'custom', 'custom_layers', 'scene', 'presentation', 'slide_index', 'video', 'image'].includes(presentationContent.type) &&
+        (presentationContent.data || presentationContent.url)
+    );
+    const isPresenting = hasForegroundContent || hasBackgroundMedia;
+    // General Screen and its preview must display scheduled media without an agenda timer overlay.
+    const showSplitTimer = mode !== 'general' && isPresenting && countdown > 0;
 
     return (
         <div className="w-full h-full flex flex-col bg-black overflow-hidden relative">
             <div className="w-full flex-1 flex flex-col relative overflow-hidden">
                 {isPresenting ? (
-                    presentationContent.type === 'scene'
-                        ? renderSceneContent()
-                        : (presentationContent.type === 'presentation' || presentationContent.type === 'slide_index')
-                        ? renderPresentationContent()
-                        : renderBibleContent()
+                    hasForegroundContent ? (
+                        (presentationContent.type === 'video' || presentationContent.type === 'image')
+                            ? renderMediaContent()
+                            : presentationContent.type === 'custom_layers'
+                            ? renderCustomLayersContent()
+                            : presentationContent.type === 'scene'
+                            ? renderSceneContent()
+                            : (presentationContent.type === 'presentation' || presentationContent.type === 'slide_index')
+                            ? renderPresentationContent()
+                            : renderBibleContent()
+                    ) : (
+                        renderIdleScreen()
+                    )
                 ) : (
                     !showSplitTimer && (
                         countdown === null ? renderIdleScreen() : (

@@ -62,6 +62,7 @@ import {
   PiDesktop,
   PiBookOpen,
   PiArrowSquareOut,
+  PiFileText,
 } from "react-icons/pi";
 import ActionButton from "../components/feedback/ActionButton";
 import { calculateCropMetrics } from "./designStudioCrop";

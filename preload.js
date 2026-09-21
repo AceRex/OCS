@@ -45,13 +45,16 @@ contextBridge.exposeInMainWorld("electron", {
     return ipcRenderer.invoke("clipboard:write-text", String(text || ""));
   },
   Timer: {
+    getState: () => ipcRenderer.invoke("timer-get-state"),
     setTimer(value) {
       ipcRenderer.send("activate_set_timer", value);
     },
     onSetTimer(callback) {
-      ipcRenderer.on("set-timer", (event, response) => {
+      const listener = (event, response) => {
         callback(response);
-      });
+      };
+      ipcRenderer.on("set-timer", listener);
+      return () => ipcRenderer.removeListener("set-timer", listener);
     },
     removeSetTimerListener() {
       ipcRenderer.removeAllListeners("set-timer");
@@ -198,6 +201,7 @@ contextBridge.exposeInMainWorld("electron", {
       // Deprecated: prefer disposer from onSetContent. Kept for older call sites.
       ipcRenderer.removeAllListeners("set-content");
     },
+    getContent: () => ipcRenderer.invoke("presentation-get-content"),
     setStyle: (style) => ipcRenderer.send("activate_set_style", style),
     getStyle: () => ipcRenderer.invoke("presentation-get-style"),
     onSetStyle: (callback) => {
@@ -215,6 +219,7 @@ contextBridge.exposeInMainWorld("electron", {
     },
   },
   Canvas: {
+    getState: () => ipcRenderer.invoke("canvas-get-state"),
     syncState: (canvasState) => ipcRenderer.send("canvas-sync-state", canvasState),
     setBackground: (bg) => ipcRenderer.send("canvas-set-background", bg),
     setPinnedLayers: (layers) => ipcRenderer.send("canvas-set-pinned-layers", layers),
@@ -735,6 +740,8 @@ contextBridge.exposeInMainWorld("electron", {
   Recorder: {
     start: (options) => ipcRenderer.invoke('recorder:start', options),
     stop: () => ipcRenderer.invoke('recorder:stop'),
+    pause: () => ipcRenderer.invoke('recorder:pause'),
+    resume: () => ipcRenderer.invoke('recorder:resume'),
     getStatus: () => ipcRenderer.invoke('recorder:status'),
     showInFolder: (targetPath) => ipcRenderer.invoke('recorder:show-in-folder', targetPath),
     pushVideoFrame: (buffer) => ipcRenderer.send('recorder:push-video-frame', buffer),
@@ -761,4 +768,48 @@ contextBridge.exposeInMainWorld("electron", {
     getMultiStatus: () => ipcRenderer.invoke('broadcast:status-multi'),
     isAnyStreaming: () => ipcRenderer.invoke('broadcast:is-any-streaming'),
   },
+  Agenda: {
+    list: () => ipcRenderer.invoke('agenda-list'),
+    get: (id) => ipcRenderer.invoke('agenda-get', id),
+    save: (agenda) => ipcRenderer.invoke('agenda-save', agenda),
+    delete: (id) => ipcRenderer.invoke('agenda-delete', id),
+    duplicate: (id) => ipcRenderer.invoke('agenda-duplicate', id),
+    importFile: (track) => ipcRenderer.invoke('agenda-import-file', { track }),
+    probeFile: (fileUrlOrPath) => ipcRenderer.invoke('agenda-probe-file', fileUrlOrPath),
+    load: (idOrDoc) => ipcRenderer.invoke('agenda-load', idOrDoc),
+    respondOffer: (payload) => ipcRenderer.invoke('agenda-respond-offer', payload),
+    controlExecution: (payload) => ipcRenderer.invoke('agenda-execution-control', payload),
+    getExecutionState: () => ipcRenderer.invoke('agenda-get-execution-state'),
+    onOfferReceived: (callback) => {
+      const listener = (_e, offer) => callback(offer);
+      ipcRenderer.on('agenda-offer-received', listener);
+      return () => ipcRenderer.removeListener('agenda-offer-received', listener);
+    },
+    onOfferResponded: (callback) => {
+      const listener = (_e, data) => callback(data);
+      ipcRenderer.on('agenda-offer-responded', listener);
+      return () => ipcRenderer.removeListener('agenda-offer-responded', listener);
+    },
+    onTransferProgress: (callback) => {
+      const listener = (_e, prog) => callback(prog);
+      ipcRenderer.on('agenda-transfer-progress', listener);
+      return () => ipcRenderer.removeListener('agenda-transfer-progress', listener);
+    },
+    onExecutionState: (callback) => {
+      const listener = (_e, state) => callback(state);
+      ipcRenderer.on('agenda-execution-state', listener);
+      return () => ipcRenderer.removeListener('agenda-execution-state', listener);
+    },
+    onTimerSync: (callback) => {
+      const listener = (_e, sync) => callback(sync);
+      ipcRenderer.on('agenda-timer-sync', listener);
+      return () => ipcRenderer.removeListener('agenda-timer-sync', listener);
+    },
+    onAudioAction: (callback) => {
+      const listener = (_e, action) => callback(action);
+      ipcRenderer.on('agenda-audio-action', listener);
+      return () => ipcRenderer.removeListener('agenda-audio-action', listener);
+    },
+  },
 });
+

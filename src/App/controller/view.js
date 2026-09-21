@@ -12,6 +12,7 @@ import BroadcastEngine from "./BroadcastEngine";
 import SessionsController from "./SessionsController";
 import SessionSaveProgress from "./SessionSaveProgress";
 import TeleprompterController from "./TeleprompterController";
+import AgendaController from "./AgendaController";
 
 import Dashboard from "./Dashboard";
 import PreviewModal from "./PreviewModal";
@@ -226,12 +227,12 @@ function App() {
 
       <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
 
-      <main className="flex-1 h-full bg-[#100e18]/40 border border-white/10 rounded-2xl overflow-hidden relative z-10 flex flex-col shadow-2xl">
+      <main className="flex-1 h-full bg-[#100e18]/40 border border-white/10 rounded-[12px] overflow-hidden relative z-10 flex flex-col shadow-2xl">
         <div className="flex-1 overflow-hidden relative w-full h-full">
           <div
             className={`w-full h-full ${activeTab === "dashboard" ? "block" : "hidden"}`}
           >
-            <BroadcastEngine />
+            <BroadcastEngine onOpenPreview={setPreviewMode} />
           </div>
           <div
             className={`w-full h-full p-4 overflow-hidden ${activeTab !== "dashboard" ? "block" : "hidden"}`}
@@ -240,6 +241,11 @@ function App() {
               className={`w-full h-full ${activeTab === "timer" ? "block" : "hidden"}`}
             >
               <TimerController />
+            </div>
+            <div
+              className={`w-full h-full ${activeTab === "agenda" ? "block" : "hidden"}`}
+            >
+              <AgendaController />
             </div>
             <div
               className={`w-full h-full ${activeTab === "sessions" ? "block" : "hidden"}`}

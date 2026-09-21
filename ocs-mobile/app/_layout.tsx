@@ -139,6 +139,7 @@ export default function RootLayout() {
             <Stack.Screen name="index" />
             <Stack.Screen name="login" options={{ presentation: "card" }} />
             <Stack.Screen name="connect" />
+            <Stack.Screen name="agenda" />
             <Stack.Screen name="bible" />
             <Stack.Screen name="timer" />
             <Stack.Screen name="assets" />

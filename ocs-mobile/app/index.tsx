@@ -32,6 +32,7 @@ import {
   LockSimple,
   Sparkle,
   VideoCamera,
+  CalendarCheck,
 } from "phosphor-react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSocketStore } from "../store/socketStore";
@@ -94,6 +95,13 @@ export default function Dashboard() {
       icon: FileArrowUp,
       gradient: ["#F2994A", "#F2C94C"],
       description: "Send Assets",
+    },
+    {
+      id: "agenda",
+      label: "Agenda",
+      icon: CalendarCheck,
+      gradient: ["#8B5CF6", "#6D28D9"],
+      description: "Service Planner",
     },
     {
       id: "timer",

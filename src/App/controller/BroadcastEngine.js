@@ -16,6 +16,7 @@ import {
   PiQuotesFill,
   PiCalendarBlankFill,
   PiMonitorPlay,
+  PiArrowsOutSimple,
 } from "react-icons/pi";
 import {
   smartBibleMatch,
@@ -569,7 +570,7 @@ function isShortContextJump(text) {
   return parseContextJump(text) !== null;
 }
 
-export default function BroadcastEngine() {
+export default function BroadcastEngine({ onOpenPreview }) {
   const dispatch = useDispatch();
   const agenda = useSelector((state) => state.util.agenda) || [];
   const activeId = useSelector((state) => state.util.activeId);
@@ -3952,11 +3953,22 @@ export default function BroadcastEngine() {
                   General Display
                 </span>
               </div>
-              <span className="text-[9px] font-mono font-bold text-[#8B5CF6] bg-[#8B5CF6]/10 border border-[#8B5CF6]/20 px-2 py-0.5 rounded-md">
-                1080p60 · PGM
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] font-mono font-bold text-[#8B5CF6] bg-[#8B5CF6]/10 border border-[#8B5CF6]/20 px-2 py-0.5 rounded-[12px]">
+                  1080p60 · PGM
+                </span>
+                {onOpenPreview && (
+                  <button
+                    onClick={() => onOpenPreview("general")}
+                    className="p-1 hover:bg-white/10 rounded-[12px] text-white/50 hover:text-white transition-colors flex items-center justify-center"
+                    title="Expand General Preview"
+                  >
+                    <PiArrowsOutSimple size={12} />
+                  </button>
+                )}
+              </div>
             </div>
-            <div className="flex-1 bg-black border border-white/15 rounded-xl overflow-hidden relative shadow-2xl ring-1 ring-white/10">
+            <div className="flex-1 bg-black border border-white/15 rounded-[12px] overflow-hidden relative shadow-2xl ring-1 ring-white/10">
               <div className="absolute inset-0">
                 <MiniPreview mode="general" />
               </div>
@@ -3964,7 +3976,7 @@ export default function BroadcastEngine() {
           </div>
 
           {/* Speaker View (Confidence) */}
-          <div className="flex flex-col gap-1.5 h-full rounded-xl overflow-hidden">
+          <div className="flex flex-col gap-1.5 h-full rounded-[12px] overflow-hidden">
             <div className="flex items-center justify-between px-3 h-6">
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-[#00A8FF] shadow-[0_0_8px_rgba(0,168,255,0.8)]" />
@@ -3972,11 +3984,22 @@ export default function BroadcastEngine() {
                   Speaker View
                 </span>
               </div>
-              <span className="text-[9px] font-mono font-bold text-cyan-300 bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded-md">
-                1080p60 · STAGE
-              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] font-mono font-bold text-cyan-300 bg-cyan-500/10 border border-cyan-500/20 px-2 py-0.5 rounded-[12px]">
+                  1080p60 · STAGE
+                </span>
+                {onOpenPreview && (
+                  <button
+                    onClick={() => onOpenPreview("speaker")}
+                    className="p-1 hover:bg-white/10 rounded-[12px] text-white/50 hover:text-white transition-colors flex items-center justify-center"
+                    title="Expand Speaker Preview"
+                  >
+                    <PiArrowsOutSimple size={12} />
+                  </button>
+                )}
+              </div>
             </div>
-            <div className="flex-1 bg-black border border-white/15 rounded-xl overflow-hidden relative shadow-2xl ring-1 ring-white/10">
+            <div className="flex-1 bg-black border border-white/15 rounded-[12px] overflow-hidden relative shadow-2xl ring-1 ring-white/10">
               <div className="absolute inset-0">
                 <MiniPreview mode="speaker" />
               </div>

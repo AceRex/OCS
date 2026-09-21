@@ -100,6 +100,7 @@ class PosterAnalysis:
     lower_third_suggestion: Optional[RGB] = None
     text_color: Optional[RGB] = None
     mood: str = "neutral"
+    theme_classification_status: str = "available"
 
     def summary(self) -> dict:
         """Serialisable summary for suggestions.json output."""
@@ -115,6 +116,7 @@ class PosterAnalysis:
             "website": self.website,
             "theme": self.theme,
             "theme_confidence": float(self.theme_confidence),
+            "theme_classification_status": self.theme_classification_status,
             "mood": self.mood,
             "palette_hex": self.palette.hex_palette if self.palette else [],
             "primary_color": [int(c) for c in self.primary_color] if self.primary_color else None,
@@ -229,7 +231,10 @@ class PosterAnalyzer:
         elements = self._run_element_detection(work_img)
 
         # ── Assemble PosterAnalysis ────────────────────────────────────────
-        top_theme = theme_preds[0] if theme_preds else {"theme": "general", "confidence": 0.0}
+        top_theme = theme_preds[0] if theme_preds else {"theme": "unclassified", "confidence": 0.0, "status": "unavailable"}
+        theme_status = top_theme.get("status", "available")
+        theme_name = top_theme["theme"] if theme_status == "available" else "unclassified"
+        theme_conf = top_theme["confidence"] if theme_status == "available" else 0.0
 
         primary = palette.dominant[0] if palette.dominant else (30, 30, 60)
         secondary = palette.dominant[1] if len(palette.dominant) > 1 else primary
@@ -242,8 +247,9 @@ class PosterAnalyzer:
             image_height=h,
             ocr=ocr_result,
             palette=palette,
-            theme=top_theme["theme"],
-            theme_confidence=top_theme["confidence"],
+            theme=theme_name,
+            theme_confidence=theme_conf,
+            theme_classification_status=theme_status,
             theme_alternatives=theme_preds[1:],
             layout=layout,
             event_name=ocr_result.event_name,

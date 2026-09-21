@@ -22,6 +22,7 @@ import {
   PiWarning,
   PiCheckCircle,
   PiArticle,
+  PiCalendarCheck,
 } from "react-icons/pi";
 import { useAuth } from "../context/AuthContext";
 import WaveLogo from "../brand/WaveLogo";
@@ -68,7 +69,7 @@ function SidebarAccount({ isCollapsed, onExpand }) {
   if (loading) {
     return (
       <div
-        className={`flex items-center p-2 rounded-2xl bg-white/5 ${
+        className={`flex items-center p-2 rounded-xl bg-white/5 ${
           isCollapsed ? "justify-center" : "gap-3"
         }`}
       >
@@ -110,7 +111,7 @@ function SidebarAccount({ isCollapsed, onExpand }) {
         {waitingForBrowser ? (
           // Waiting for browser callback
           <div
-            className={`flex items-center p-2.5 rounded-2xl bg-[#8B5CF6]/10 border border-[#8B5CF6]/20 ${
+            className={`flex items-center p-2.5 rounded-xl bg-[#8B5CF6]/10 border border-[#8B5CF6]/20 ${
               isCollapsed ? "justify-center" : "gap-2.5"
             }`}
           >
@@ -145,7 +146,7 @@ function SidebarAccount({ isCollapsed, onExpand }) {
               }
             }}
             title={guestExpired ? "Log in to unlock all features" : "Log In via Browser to activate 60-day trial"}
-            className={`flex items-center w-full p-2.5 rounded-2xl transition-all duration-200 group
+            className={`flex items-center w-full p-2.5 rounded-xl transition-all duration-200 group
               ${isCollapsed ? "justify-center" : "gap-2.5"}
             `}
             style={{
@@ -203,7 +204,7 @@ function SidebarAccount({ isCollapsed, onExpand }) {
           }
         }}
         title={auth.orgName || auth.email || "Account"}
-        className={`flex items-center w-full p-2 rounded-2xl transition-all duration-200 hover:bg-white/8 ${
+        className={`flex items-center w-full p-2 rounded-xl transition-all duration-200 hover:bg-white/8 ${
           isCollapsed ? "justify-center" : "gap-3"
         }`}
       >
@@ -227,7 +228,7 @@ function SidebarAccount({ isCollapsed, onExpand }) {
                 <span className="text-xs font-bold text-white truncate">
                   {auth.orgName && auth.orgName !== "OCS Community Church" ? auth.orgName : (auth.name || (auth.email ? `${auth.email.split('@')[0]}'s Sanctuary` : "Sanctuary"))}
                 </span>
-                <span className="text-[9px] font-black uppercase px-1.5 py-0.2 rounded bg-[#8B5CF6]/20 text-[#8B5CF6] border border-[#8B5CF6]/30">
+                <span className="text-[9px] font-black uppercase px-1.5 py-0.2 rounded-xl bg-[#8B5CF6]/20 text-[#8B5CF6] border border-[#8B5CF6]/30">
                   {label}
                 </span>
               </div>
@@ -254,7 +255,7 @@ function SidebarAccount({ isCollapsed, onExpand }) {
       {/* Dropdown menu */}
       {showMenu && !isCollapsed && (
         <div
-          className="absolute bottom-full mb-2 left-0 right-0 rounded-2xl border border-white/10 p-2 shadow-2xl z-[100]"
+          className="absolute bottom-full mb-2 left-0 right-0 rounded-xl border border-white/10 p-2 shadow-2xl z-[100]"
           style={{ background: "#161028" }}
         >
 
@@ -303,6 +304,7 @@ export default function Sidebar({ activeTab, onTabChange }) {
   const tabs = [
     { id: "dashboard", label: "Broadcast", icon: PiHouse, isBlock: false },
     { id: "timer", label: "Timer Sync", icon: PiClock, isBlock: false },
+    { id: "agenda", label: "Agenda", icon: PiCalendarCheck, isBlock: false },
     { id: "sessions", label: "Sessions", icon: PiFolder, isBlock: false },
     { id: "bible", label: "Bible AI", icon: PiBook, isBlock: false },
     {
