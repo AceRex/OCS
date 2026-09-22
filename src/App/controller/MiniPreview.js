@@ -10,9 +10,10 @@ import {
 export default function MiniPreview({ mode }) {
     const [countdown, setCountDown] = useState(null);
     const [bgChange, setBgChange] = useState(false);
-    const [timeUp, setTimeUp] = useState(false);
+    const [isTimerRunning, setIsTimerRunning] = useState(false);
     const [isEventMode, setIsEventMode] = useState(false);
-    const [theme, setTheme] = useState("default");
+    const [timeUp, setTimeUp] = useState(false);
+    const [theme, setTheme] = useState('default');
     const [presentationContent, setPresentationContent] = useState(null);
     const [presentationStyle, setPresentationStyle] = useState({
         backgroundColor: '#0B0814',
@@ -62,11 +63,17 @@ export default function MiniPreview({ mode }) {
                 if (mode === 'general' && (value?.fromAgenda || !newEventMode)) {
                     setCountDown(null);
                     setIsEventMode(false);
+                    setIsTimerRunning(false);
                     return;
                 }
 
                 setIsEventMode(newEventMode);
                 setTheme(newTheme);
+                if (value?.isRunning !== undefined) {
+                    setIsTimerRunning(Boolean(value.isRunning));
+                } else {
+                    setIsTimerRunning(newTime > 0 && !value?.isPaused);
+                }
 
                 setCountDown(prev => {
                     if (newTime === 0 && prev === null) {
@@ -97,11 +104,17 @@ export default function MiniPreview({ mode }) {
                 if (mode === 'general' && (value?.fromAgenda || !newEventMode)) {
                     setCountDown(null);
                     setIsEventMode(false);
+                    setIsTimerRunning(false);
                     return;
                 }
 
                 setIsEventMode(newEventMode);
                 setTheme(newTheme);
+                if (value?.isRunning !== undefined) {
+                    setIsTimerRunning(Boolean(value.isRunning));
+                } else {
+                    setIsTimerRunning(newTime > 0 && !value?.isPaused);
+                }
                 if (newTime !== undefined && newTime !== null) {
                     setCountDown(newTime);
                     setTimeUp(newTime === 0);
@@ -751,7 +764,8 @@ export default function MiniPreview({ mode }) {
     );
     const isPresenting = hasForegroundContent || hasBackgroundMedia;
     // General Screen and its preview must display scheduled media without an agenda timer overlay.
-    const showSplitTimer = mode !== 'general' && isPresenting && countdown > 0;
+    // Speaker View split-timer renders ONLY when isRunning === true
+    const showSplitTimer = mode !== 'general' && isPresenting && countdown > 0 && isTimerRunning;
 
     return (
         <div className="w-full h-full flex flex-col bg-black overflow-hidden relative">

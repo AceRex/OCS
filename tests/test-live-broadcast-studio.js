@@ -91,22 +91,26 @@ test('Mobile live-switcher header displays "Live"', () => {
   assert(mobileSwitcherCode.includes('<Text className="text-base font-black text-white">Live</Text>'), 'Mobile live-switcher header must be Live');
 });
 
-// ─── 3. Stage Screen Removal ──────────────────────────────────────────────────
-console.log('\n[3. Stage Screen Removed from Mobile Companion]');
+// ─── 3. Stage Master Screen Restored in Mobile Companion ─────────────────────
+console.log('\n[3. Stage Master Screen Restored in Mobile Companion]');
 
 const mobileLayoutCode = fs.readFileSync(path.join(__dirname, '../ocs-mobile/app/_layout.tsx'), 'utf8');
 const mobileStageControlCode = fs.readFileSync(path.join(__dirname, '../ocs-mobile/app/stage-control.tsx'), 'utf8');
 
-test('Mobile _layout.tsx no longer registers stage-control screen', () => {
-  assert(!mobileLayoutCode.includes('name="stage-control"'), 'Stage control screen must be removed from stack layout');
+test('Mobile _layout.tsx registers stage-control and stagemaster screens', () => {
+  assert(mobileLayoutCode.includes('name="stage-control"'), 'Stage control screen must be registered in stack layout');
+  assert(mobileLayoutCode.includes('name="stagemaster"'), 'Stage master alias route must be registered in stack layout');
 });
 
-test('Mobile index.tsx cards array no longer has stage-control', () => {
-  assert(!mobileHomeCode.includes('stage-control'), 'Stage control must be removed from mobile home cards');
+test('Mobile index.tsx cards array includes Stage Master', () => {
+  assert(mobileHomeCode.includes('id: "stage-control"'), 'Stage control must be present in mobile home cards');
+  assert(mobileHomeCode.includes('label: "Stage Master"'), 'Stage Master card label must be present');
 });
 
-test('Mobile stage-control.tsx safely redirects to prevent route caching issues', () => {
-  assert(mobileStageControlCode.includes('<Redirect href="/" />'), 'stage-control.tsx should redirect to home safely');
+test('Mobile stage-control.tsx provides live Stage Master confidence monitor and controls', () => {
+  assert(mobileStageControlCode.includes('Stage Master'), 'stage-control.tsx must display Stage Master');
+  assert(mobileStageControlCode.includes('sendStageControl'), 'stage-control.tsx must support sendStageControl dispatch');
+  assert(mobileStageControlCode.includes('overlayContent'), 'stage-control.tsx must support live confidence overlay');
 });
 
 // ─── 4. Broadcast Studio Configuration & State Engine ────────────────────────

@@ -147,6 +147,8 @@ export default function RootLayout() {
             <Stack.Screen name="intercom" />
             <Stack.Screen name="live-switcher" />
             <Stack.Screen name="presentation" />
+            <Stack.Screen name="stage-control" />
+            <Stack.Screen name="stagemaster" />
             <Stack.Screen name="teleprompter" />
             <Stack.Screen name="modal" options={{ presentation: "modal", title: "Modal" }} />
           </Stack>

@@ -454,7 +454,10 @@ class WhisperEngine extends EventEmitter {
       }
 
       const utteredMs = now - this._speechStartedAt;
-      if (this._silenceMs >= SILENCE_END_MS || utteredMs >= MAX_UTTERANCE_MS) {
+      // For short utterances (< 1.5s, typical for voice commands like "Next", "Previous", "Black screen"),
+      // reduce silence threshold from 320ms to 180ms for instant command finalization.
+      const dynamicSilenceEnd = utteredMs < 1500 ? 180 : SILENCE_END_MS;
+      if (this._silenceMs >= dynamicSilenceEnd || utteredMs >= MAX_UTTERANCE_MS) {
         this._finalizeUtterance(utteredMs >= MAX_UTTERANCE_MS ? 'max_len' : 'silence');
         return;
       }

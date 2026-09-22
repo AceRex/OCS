@@ -1281,6 +1281,13 @@ export default function SwitcherProgramCanvas({
     isRecordingActiveRef.current = isRecordingActive;
   }, [isRecordingActive]);
 
+  const isSharingActiveRef = useRef(isSharingActive);
+  useEffect(() => {
+    isSharingActiveRef.current = isSharingActive;
+  }, [isSharingActive]);
+
+  const lastSentPreviewFrameTimeRef = useRef(0);
+
   const bConfig = broadcastConfig || {
     scale: 1.0,
     fitMode: "cover",
@@ -1806,12 +1813,19 @@ export default function SwitcherProgramCanvas({
       const ctx = canvas.getContext("2d");
 
       // 1. Shared JPEG dataUrl for local/remote display mirrors
-      const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
-      if (window.electron?.Switcher?.sendLiveOutputFrame) {
-        window.electron.Switcher.sendLiveOutputFrame({
-          data: dataUrl,
-          effect: latestEffectRef.current,
-        });
+      // Gate expensive toDataURL readback: only run when sharing/broadcast is active or requested,
+      // and throttle preview generation to 15 FPS (~66ms) with 0.65 quality to eliminate GPU stalls
+      // during ScreenCaptureKit / Google Meet screen sharing.
+      const shouldEmitPreview = isSharingActiveRef.current || isBroadcastActive;
+      if (shouldEmitPreview && (now - lastSentPreviewFrameTimeRef.current >= 66)) {
+        lastSentPreviewFrameTimeRef.current = now;
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.65);
+        if (window.electron?.Switcher?.sendLiveOutputFrame) {
+          window.electron.Switcher.sendLiveOutputFrame({
+            data: dataUrl,
+            effect: latestEffectRef.current,
+          });
+        }
       }
 
       // 2. High-performance raw RGBA extraction for Program Recorder & Broadcast Supervisor

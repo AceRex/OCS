@@ -166,6 +166,16 @@ function App() {
   }, [dispatch]);
 
   useEffect(() => {
+    const handleSwitchTab = (e) => {
+      if (e.detail && typeof e.detail === 'string') {
+        setActiveTab(e.detail);
+      }
+    };
+    window.addEventListener('switch-controller-tab', handleSwitchTab);
+    return () => window.removeEventListener('switch-controller-tab', handleSwitchTab);
+  }, []);
+
+  useEffect(() => {
     if (!window.electron?.Session) return undefined;
     const unsubProgress = window.electron.Session.onProgress?.((p) => {
       if (p == null) {

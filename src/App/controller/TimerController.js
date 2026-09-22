@@ -95,16 +95,19 @@ export default function TimerController() {
 
   // Reconcile with authoritative engine state on mount
   useEffect(() => {
-    window.electron?.Agenda?.getExecutionState?.().then((engState) => {
-      if (engState) {
-        const isEngRunning = engState.status === "running" || engState.status === "interval";
-        isAgendaDrivenRef.current = !!(engState.agendaId || isEngRunning);
-        dispatch(utilAction.setIsRunning(isEngRunning));
-        if (typeof engState.sessionRemainingSec === "number") {
-          setCountDown(engState.sessionRemainingSec);
+    window.electron?.Agenda?.getExecutionState?.()
+      .then((engState) => {
+        if (engState) {
+          const isEngRunning =
+            engState.status === "running" || engState.status === "interval";
+          isAgendaDrivenRef.current = !!(engState.agendaId || isEngRunning);
+          dispatch(utilAction.setIsRunning(isEngRunning));
+          if (typeof engState.sessionRemainingSec === "number") {
+            setCountDown(engState.sessionRemainingSec);
+          }
         }
-      }
-    }).catch(() => {});
+      })
+      .catch(() => {});
   }, [dispatch]);
 
   useEffect(() => {
@@ -339,13 +342,21 @@ export default function TimerController() {
       if (sync && typeof sync.remainingSec === "number") {
         setCountDown(sync.remainingSec);
       }
-      if (sync && typeof sync.durationSec === "number" && sync.durationSec > 0) {
+      if (
+        sync &&
+        typeof sync.durationSec === "number" &&
+        sync.durationSec > 0
+      ) {
         dispatch(utilAction.setTime(sync.durationSec));
       }
       if (sync && typeof sync.isPaused === "boolean") {
         dispatch(utilAction.setPaused(sync.isPaused));
       }
-      if (typeof sync?.sessionIndex === "number" && agenda && agenda[sync.sessionIndex]) {
+      if (
+        typeof sync?.sessionIndex === "number" &&
+        agenda &&
+        agenda[sync.sessionIndex]
+      ) {
         dispatch(utilAction.setActiveId(agenda[sync.sessionIndex]._id));
       }
     });
@@ -373,12 +384,16 @@ export default function TimerController() {
     }).catch(() => {});
 
     const activeConf = (customPlanConfig || plannerConfig)[item._id];
-    const shouldRecordAudio = canAccessSessions ? (activeConf?.recordAudio !== false) : false;
+    const shouldRecordAudio = canAccessSessions
+      ? activeConf?.recordAudio !== false
+      : false;
 
     // Trigger Start Media Cue (if specified)
     if (activeConf?.startMedia === "color" && activeConf?.startValue) {
       try {
-        window.electron?.Presentation?.setStyles?.({ backgroundColor: activeConf.startValue });
+        window.electron?.Presentation?.setStyles?.({
+          backgroundColor: activeConf.startValue,
+        });
       } catch (_) {}
     }
 
@@ -400,7 +415,7 @@ export default function TimerController() {
           type: "countdown",
           isRunning: true,
           activeId: item._id,
-          title: item.agenda || item.anchor || "Session"
+          title: item.agenda || item.anchor || "Session",
         });
       }
     } catch (_) {}
@@ -434,7 +449,7 @@ export default function TimerController() {
           remainingSec: Number(countdown) || 0,
           type: "countdown",
           isRunning: !next,
-          activeId
+          activeId,
         });
       }
     } catch (_) {}
@@ -469,7 +484,7 @@ export default function TimerController() {
           remainingSec: 0,
           type: "countdown",
           isRunning: false,
-          activeId: null
+          activeId: null,
         });
       }
     } catch (_) {}
@@ -546,7 +561,7 @@ export default function TimerController() {
   return (
     <section className="w-full h-full flex flex-row gap-4 relative">
       <div className="absolute top-2 right-2 z-50 flex items-center gap-2">
-        {canAccessSessions && (
+        {/* {canAccessSessions && (
           <button
             onClick={() => setIsPlannerOpen(true)}
             className="flex items-center gap-1.5 px-3 py-2 bg-violet-600 hover:bg-violet-500 rounded-xl text-white text-xs font-black uppercase tracking-wider shadow-lg shadow-[#8B5CF6]/40 transition-all cursor-pointer"
@@ -555,7 +570,7 @@ export default function TimerController() {
             <PiCalendarCheck size={16} />
             <span>Agenda Planner</span>
           </button>
-        )}
+        )} */}
 
         {canChangeView && (
           <button
@@ -593,8 +608,8 @@ export default function TimerController() {
             timeUp
               ? "bg-red text-light"
               : bgChange
-              ? "bg-red text-light"
-              : "bg-green text-primary"
+                ? "bg-red text-light"
+                : "bg-green text-primary"
           } p-8 rounded-lg w-full text-center relative`}
         >
           <p className="capitalize">current timer preview</p>
@@ -654,7 +669,7 @@ export default function TimerController() {
                     >
                       {!isEditing ? (
                         <div className="flex flex-row justify-between items-center w-full">
-                           <div className="flex flex-col gap-1 w-[60%]">
+                          <div className="flex flex-col gap-1 w-[60%]">
                             <p className="font-bold capitalize text-sm">
                               {agenda}
                             </p>
@@ -815,7 +830,10 @@ export default function TimerController() {
                 Audio Recording Skipped
               </h3>
               <p className="text-xs text-white/70 leading-relaxed">
-                Recording did not happen because your current subscription does not cover this feature. Subscribe to a Tier 2 plan (Standard, Large, or Premium) to unlock automated session audio recording and archiving.
+                Recording did not happen because your current subscription does
+                not cover this feature. Subscribe to a Tier 2 plan (Standard,
+                Large, or Premium) to unlock automated session audio recording
+                and archiving.
               </p>
             </div>
             <div className="w-full pt-2">

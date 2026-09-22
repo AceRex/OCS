@@ -685,6 +685,7 @@ export default function BroadcastEngine({ onOpenPreview }) {
   // Stable refs so the worker onmessage closure (set up once on mount)
   // always calls the LATEST version of these handlers
   const handleOCSCommandsRef = useRef(null);
+  const lastExecutedCommandUttIdRef = useRef(null);
   const handleTranscriptionRef = useRef(null);
   const setTranscriptLinesRef = useRef(setTranscriptLines);
   const setInterimTextRef = useRef(setInterimText);
@@ -1785,13 +1786,21 @@ export default function BroadcastEngine({ onOpenPreview }) {
   };
 
   // Wire to ref so the onmessage closure always calls the latest version
-  const handleOCSCommands = (text) => {
+  const handleOCSCommands = (text, uttId = null, role = "final") => {
+    if (!text || typeof text !== "string") return false;
+
+    // Utterance ID dedup guard: if already executed via fast-path for this utterance, ignore duplicate triggers
+    if (uttId && lastExecutedCommandUttIdRef.current === uttId) {
+      return true;
+    }
+
     const lower = text.toLowerCase().replace(/[.,!?]/g, "");
 
     // ── Translation Switch: "change translation to NIV", "can I have NIV", "show in AMP", etc.
     const transMatch = checkTranslationCommand(lower);
     if (transMatch) {
       changeTranslation(transMatch.dbVersion, transMatch.label);
+      if (uttId) lastExecutedCommandUttIdRef.current = uttId;
       return true;
     }
 
@@ -1804,6 +1813,7 @@ export default function BroadcastEngine({ onOpenPreview }) {
       const phrase = hlMatch[1].replace(/\b(and|the|a|an)\b/gi, " ").trim();
       if (phrase) {
         pushHighlight(phrase.split(/\s+/).filter(Boolean));
+        if (uttId) lastExecutedCommandUttIdRef.current = uttId;
         return true;
       }
     }
@@ -1814,6 +1824,7 @@ export default function BroadcastEngine({ onOpenPreview }) {
     );
     if (rangeEndMatch) {
       pushRangeHighlight(rangeEndMatch[1].trim(), null);
+      if (uttId) lastExecutedCommandUttIdRef.current = uttId;
       return true;
     }
 
@@ -1823,6 +1834,7 @@ export default function BroadcastEngine({ onOpenPreview }) {
     );
     if (rangeMatch) {
       pushRangeHighlight(rangeMatch[1].trim(), rangeMatch[2].trim());
+      if (uttId) lastExecutedCommandUttIdRef.current = uttId;
       return true;
     }
 
@@ -1831,6 +1843,7 @@ export default function BroadcastEngine({ onOpenPreview }) {
       /\b(clear|remove|unmark|reset)\s+(highlights?|marks?|all)\b/i.test(lower)
     ) {
       clearHighlights();
+      if (uttId) lastExecutedCommandUttIdRef.current = uttId;
       return true;
     }
 
@@ -1842,6 +1855,9 @@ export default function BroadcastEngine({ onOpenPreview }) {
         const last = lastCommandRef.current;
         if (last.action === cmd.action && now - last.time < 2000) return true;
         lastCommandRef.current = { action: cmd.action, time: now };
+        if (uttId) {
+          lastExecutedCommandUttIdRef.current = uttId;
+        }
         const stamp = new Date().toLocaleTimeString([], {
           hour: "2-digit",
           minute: "2-digit",
@@ -1854,7 +1870,7 @@ export default function BroadcastEngine({ onOpenPreview }) {
           ].slice(0, 5),
         );
         executeCommand(cmd.action, text);
-        console.log(`[OCS CMD] ${cmd.label}`);
+        console.log(`[OCS CMD] ${cmd.label} (role=${role}, uttId=${uttId || "direct"})`);
         return true;
       }
     }
@@ -2978,7 +2994,7 @@ export default function BroadcastEngine({ onOpenPreview }) {
       const runCommands = role !== "probe";
       const handled =
         runCommands && handleOCSCommandsRef.current
-          ? handleOCSCommandsRef.current(commandText)
+          ? handleOCSCommandsRef.current(commandText, utteranceId, "final")
           : false;
 
       if (!handled && handleTranscriptionRef.current) {
@@ -3107,6 +3123,19 @@ export default function BroadcastEngine({ onOpenPreview }) {
         if (newLines.length > 60) return newLines.slice(-60);
         return newLines;
       });
+
+      // Fast-path command execution for rolling probes & interim:
+      // If probe/interim text matches a deterministic control command in OCS_COMMANDS,
+      // dispatch immediately without waiting for silence cutoff + full re-transcription.
+      if (role === "probe" || triggerArmed || isSecondaryPtt) {
+        const isMatch = OCS_COMMANDS.some((cmd) => {
+          if (cmd.action === "next_verse" && /\bnext\s+to\b/i.test(commandText)) return false;
+          return cmd.patterns.some((p) => p.test(commandText));
+        });
+        if (isMatch && handleOCSCommandsRef.current) {
+          handleOCSCommandsRef.current(commandText, utteranceId, role);
+        }
+      }
 
       // Ambient scripture: fire as soon as ordered shape is COMPLETE and has an EXPLICIT marker on partials
       // (faster than FR-3.8 1.5s probe). Commands still wait for final.

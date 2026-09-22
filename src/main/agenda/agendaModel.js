@@ -31,12 +31,13 @@ function createEmptyAgenda(name = 'New Service Agenda') {
 }
 
 /**
- * Creates a blank, valid session with structured duration
+ * Creates a blank, valid session with structured duration and optional person/presenter
  */
-function createEmptySession(name = 'New Session', durationSec = 300) {
+function createEmptySession(name = 'New Session', durationSec = 300, person = '') {
   return {
     id: generateId('sess'),
     name,
+    person: typeof person === 'string' ? person : '',
     durationSec: Math.max(1, Number(durationSec) || 300),
     notes: '',
     transitionMode: 'manual', // 'auto' | 'manual'
@@ -50,15 +51,16 @@ function createEmptySession(name = 'New Session', durationSec = 300) {
 
 /**
  * Creates a timeline item (point action or duration-based clip)
- * Supports unified 'visual' track (images and videos) and separate 'audio' track.
+ * Supports unified 'media' track containing image, video, audio, and solid color cues.
  */
 function createTimelineItem(props = {}) {
   const {
     id,
-    track = 'visual', // 'visual' | 'audio' (supports legacy 'background' | 'video')
+    track = 'media', // 'media' (unified track, accepts legacy 'visual' | 'audio' | 'background' | 'video')
     actionType = 'range', // 'point' | 'range'
-    mediaType = 'image',  // 'image' | 'video' | 'color'
-    presentationMode = 'background', // 'background' | 'foreground'
+    mediaType,  // 'image' | 'video' | 'audio' | 'color'
+    presentationMode, // 'background' | 'foreground' | 'audio'
+    laneIndex,
     startSec = 0,
     durationSec = 60,
     sourceInSec = 0,
@@ -82,23 +84,26 @@ function createTimelineItem(props = {}) {
     ...rest
   } = props;
 
-  // Normalize legacy tracks to 'visual'
-  const resolvedTrack = (track === 'background' || track === 'video') ? 'visual' : track;
-  const inferredMediaType = props.mediaType || (track === 'video' || (name && /\.(mp4|mov|webm|mkv|avi)$/i.test(name)) ? 'video' : 'image');
-  const inferredPresMode = props.presentationMode || (track === 'video' ? 'foreground' : 'background');
+  const isAudioFile = (name && /\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(name)) || track === 'audio';
+  const isVideoFile = (name && /\.(mp4|mov|webm|mkv|avi)$/i.test(name)) || track === 'video';
+
+  const inferredMediaType = mediaType || (isAudioFile ? 'audio' : isVideoFile ? 'video' : 'image');
+  const inferredPresMode = presentationMode || (inferredMediaType === 'audio' ? 'audio' : inferredMediaType === 'video' ? 'foreground' : 'background');
+  const inferredLaneIndex = laneIndex !== undefined && laneIndex !== null ? Number(laneIndex) : (inferredMediaType === 'audio' ? 1 : 0);
 
   return {
     id: id || generateId('cue'),
-    track: resolvedTrack,
+    track: 'media',
     mediaType: inferredMediaType,
     presentationMode: inferredPresMode,
-    actionType: (resolvedTrack === 'visual' && inferredMediaType === 'color' && !assetId && !rest.url && !rest.localFileUrl) ? 'point' : actionType,
+    laneIndex: inferredLaneIndex,
+    actionType: (inferredMediaType === 'color' && !assetId && !rest.url && !rest.localFileUrl) ? 'point' : actionType,
     startSec: Math.max(0, Number(startSec) || 0),
     durationSec: Math.max(1, Number(durationSec) || 1),
     sourceInSec: Math.max(0, Number(sourceInSec) || 0),
     sourceOutSec: sourceOutSec !== null && sourceOutSec !== undefined ? Math.max(0, Number(sourceOutSec)) : null,
     assetId: assetId || '',
-    name: name || (resolvedTrack === 'visual' ? (inferredMediaType === 'video' ? 'Play Video' : 'Display Image') : 'Play Audio'),
+    name: name || (inferredMediaType === 'audio' ? 'Play Audio' : inferredMediaType === 'video' ? 'Play Video' : 'Display Image'),
     destination,
     endBehavior,
     color: color || '#000000',
@@ -390,7 +395,7 @@ function migrateLegacyAgenda(legacyList, defaultName = 'Migrated Service') {
 
   agenda.sessions = legacyList.map((item, idx) => {
     const durSec = Math.max(60, Number(item.time) || 300);
-    const session = createEmptySession(item.agenda || `Session ${idx + 1}`, durSec);
+    const session = createEmptySession(item.agenda || `Session ${idx + 1}`, durSec, item.anchor || '');
     if (item.anchor) {
       session.notes = `Anchor / Leader: ${item.anchor}`;
     }
@@ -402,11 +407,11 @@ function migrateLegacyAgenda(legacyList, defaultName = 'Migrated Service') {
 }
 
 /**
- * Migrates existing agenda documents with separate 'background' and 'video' tracks
- * into a single unified 'visual' track. Preserves all timings, assets, destinations,
- * and playback settings.
+ * Migrates existing agenda documents with separate 'background', 'video', 'audio', or 'visual' tracks
+ * into one single unified 'media' track. Preserves all timings, assets, destinations,
+ * playback settings, and session presenters.
  */
-function migrateToUnifiedVisualTrack(agenda) {
+function migrateToSingleUnifiedTrack(agenda) {
   if (!agenda || !Array.isArray(agenda.sessions)) return agenda;
 
   const migrated = JSON.parse(JSON.stringify(agenda));
@@ -414,26 +419,41 @@ function migrateToUnifiedVisualTrack(agenda) {
     if (sess.recordSession === undefined) {
       sess.recordSession = false;
     }
+    if (sess.person === undefined) {
+      sess.person = sess.speakerName || sess.anchor || '';
+    }
+
     if (Array.isArray(sess.timelineItems)) {
       sess.timelineItems = sess.timelineItems.map((item) => {
-        if (item.track === 'background' || item.track === 'video') {
-          const isVid = item.track === 'video' || item.assetType === 'video' || (item.name && /\.(mp4|mov|webm|mkv|avi)$/i.test(item.name));
-          return {
-            ...item,
-            track: 'visual',
-            mediaType: item.mediaType || (isVid ? 'video' : 'image'),
-            presentationMode: item.presentationMode || (item.track === 'video' ? 'foreground' : 'background'),
-          };
+        const isAudio = item.track === 'audio' || item.mediaType === 'audio' || (item.name && /\.(mp3|wav|m4a|aac|ogg|flac)$/i.test(item.name));
+        const isVideo = !isAudio && (item.track === 'video' || item.assetType === 'video' || (item.name && /\.(mp4|mov|webm|mkv|avi)$/i.test(item.name)));
+        const mediaType = isAudio ? 'audio' : isVideo ? 'video' : (item.mediaType || 'image');
+        const presentationMode = isAudio ? 'audio' : (item.presentationMode || (isVideo ? 'foreground' : 'background'));
+        let laneIndex = item.laneIndex !== undefined && item.laneIndex !== null ? Number(item.laneIndex) : (isAudio ? 1 : 0);
+        if (isAudio && (item.track === 'audio' || laneIndex === 0)) {
+          laneIndex = 1;
         }
-        return item;
+
+        return {
+          ...item,
+          track: 'media',
+          mediaType,
+          presentationMode,
+          laneIndex,
+        };
       });
+
+      // Sort timeline items chronologically
+      sess.timelineItems.sort((a, b) => a.startSec - b.startSec);
     }
   });
 
-  migrated.version = Math.max(migrated.version || 1, 2);
+  migrated.version = Math.max(migrated.version || 1, 3);
   migrated.updatedAt = Date.now();
   return migrated;
 }
+
+const migrateToUnifiedVisualTrack = migrateToSingleUnifiedTrack;
 
 module.exports = {
   createEmptyAgenda,
@@ -447,6 +467,7 @@ module.exports = {
   resolveTimelineConflict,
   validateAgendaDocument,
   migrateLegacyAgenda,
+  migrateToSingleUnifiedTrack,
   migrateToUnifiedVisualTrack,
   generateSequentialAgendaName,
 };

@@ -132,6 +132,13 @@ export default function Dashboard() {
       description: "Slides & Content",
     },
     {
+      id: "stage-control",
+      label: "Stage Master",
+      icon: Broadcast,
+      gradient: ["#8A2387", "#E94057", "#F27121"],
+      description: isStageManager ? "Admin Live Control" : "Admin Locked",
+    },
+    {
       id: "intercom",
       label: "Intercom",
       icon: Microphone,

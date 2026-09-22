@@ -8,7 +8,7 @@ const { EventEmitter } = require('events');
 const fs = require('fs');
 const path = require('path');
 const { fileURLToPath, pathToFileURL } = require('url');
-const { formatDuration, migrateToUnifiedVisualTrack } = require('./agendaModel');
+const { formatDuration, migrateToSingleUnifiedTrack, migrateToUnifiedVisualTrack } = require('./agendaModel');
 
 /**
  * Checks if a local media file exists on disk
@@ -118,6 +118,10 @@ class AgendaExecutionEngine extends EventEmitter {
     this.executedActionIds = new Set(); // Prevents duplicate action firings per run
     this.activeCues = new Map();        // cueId -> cue instance
     this.activeVisualCueId = null;      // Prevents late video completion callbacks from clearing successor images
+    this.runId = null;                  // Unique execution run identifier
+    this.activeLayerCues = new Map();   // key: `${dest}:${layer}` -> { cueId, runId, timestamp }
+    this.recordingStartupPromise = null; // Serializes recording startup
+    this.sessionStopRecordingPromise = null; // Serializes adjacent session recording finalization
     this.recordingState = { status: 'idle' }; // Session recording telemetry
 
     // Prior states for "restore" endBehavior and active destination ownership
@@ -154,8 +158,8 @@ class AgendaExecutionEngine extends EventEmitter {
       this.stop();
     }
 
-    // Auto-migrate legacy background/video tracks to unified visual track
-    const migrated = migrateToUnifiedVisualTrack(agenda);
+    // Auto-migrate legacy background/video/audio tracks to single unified media track
+    const migrated = migrateToSingleUnifiedTrack(agenda);
 
     // Deep clone to isolate running snapshot from any subsequent document edits
     this.agendaSnapshot = JSON.parse(JSON.stringify(migrated));
@@ -169,6 +173,7 @@ class AgendaExecutionEngine extends EventEmitter {
     this.executedActionIds.clear();
     this.activeCues.clear();
     this.activeVisualCueId = null;
+    this.activeLayerCues.clear();
     this.recordingState = { status: 'idle' };
     this.operatorOverridden = false;
     this.currentBackgroundState = null;
@@ -178,6 +183,7 @@ class AgendaExecutionEngine extends EventEmitter {
     this.syncTimer({
       agendaTitle: this.agendaSnapshot.name,
       sessionTitle: this.currentSession.name,
+      sessionPerson: this.currentSession.person || this.currentSession.speakerName || '',
       durationSec: this.sessionDurationSec,
       remainingSec: this.sessionDurationSec,
       sessionIndex: 0,
@@ -207,23 +213,29 @@ class AgendaExecutionEngine extends EventEmitter {
         this.sessionElapsedSec = 0;
         this.executedActionIds.clear();
         this.activeCues.clear();
+        this.activeLayerCues.clear();
       }
     }
 
     this.status = 'running';
+    this.runId = 'run_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
+    this.activeLayerCues.clear();
     this.lastTickTime = Date.now();
     this.ensureTicker();
 
     this.recordJournal('AGENDA_START', {
       agendaId: this.agendaSnapshot.id,
+      runId: this.runId,
       sessionIndex: this.sessionIndex,
       sessionName: this.currentSession.name,
+      sessionPerson: this.currentSession.person || this.currentSession.speakerName || '',
       durationSec: this.sessionDurationSec,
     });
 
     this.syncTimer({
       agendaTitle: this.agendaSnapshot.name,
       sessionTitle: this.currentSession.name,
+      sessionPerson: this.currentSession.person || this.currentSession.speakerName || '',
       durationSec: this.sessionDurationSec,
       remainingSec: Math.max(0, this.sessionDurationSec - this.sessionElapsedSec),
       sessionIndex: this.sessionIndex,
@@ -256,12 +268,13 @@ class AgendaExecutionEngine extends EventEmitter {
 
     if (this.recordingState?.status === 'recording' || this.recordingState?.status === 'starting') {
       this.recordingState.status = 'paused';
-      try { this.pauseRecording(); } catch (_) {}
+      try { this.pauseRecording({ owner: 'agenda' }); } catch (_) {}
     }
 
     this.syncTimer({
       agendaTitle: this.agendaSnapshot?.name,
       sessionTitle: this.currentSession?.name,
+      sessionPerson: this.currentSession?.person || this.currentSession?.speakerName || '',
       durationSec: this.sessionDurationSec,
       remainingSec: Math.max(0, this.sessionDurationSec - this.sessionElapsedSec),
       sessionIndex: this.sessionIndex,
@@ -287,12 +300,13 @@ class AgendaExecutionEngine extends EventEmitter {
 
     if (this.recordingState?.status === 'recording' || this.recordingState?.status === 'paused') {
       this.recordingState.status = 'recording';
-      try { this.resumeRecording(); } catch (_) {}
+      try { this.resumeRecording({ owner: 'agenda' }); } catch (_) {}
     }
 
     this.syncTimer({
       agendaTitle: this.agendaSnapshot?.name,
       sessionTitle: this.currentSession?.name,
+      sessionPerson: this.currentSession?.person || this.currentSession?.speakerName || '',
       durationSec: this.sessionDurationSec,
       remainingSec: Math.max(0, this.sessionDurationSec - this.sessionElapsedSec),
       sessionIndex: this.sessionIndex,
@@ -313,15 +327,16 @@ class AgendaExecutionEngine extends EventEmitter {
     console.log(`[AgendaDiagnostics] SESSION_STOP: Stopping session "${this.currentSession?.name}"`);
 
     this.dispatchAudio({ command: 'stop' });
-    this.dispatchPresentation({ type: 'clear' });
+    this.dispatchPresentation({ type: 'clear', fromAgenda: true, runId: this.runId });
 
     if (this.currentBackgroundState && !this.operatorOverridden) {
       const restored = this.preActionBackground || { type: 'color', color: '#000000', url: null };
-      this.dispatchBackground(restored);
+      this.dispatchBackground({ ...restored, fromAgenda: true, runId: this.runId });
     }
 
     this.activeCues.clear();
     this.activeVisualCueId = null;
+    this.activeLayerCues.clear();
     this.currentBackgroundState = null;
     this.currentPresentationState = null;
     this.currentAudioState = null;
@@ -375,6 +390,12 @@ class AgendaExecutionEngine extends EventEmitter {
   async handleStartSessionRecording(session) {
     if (!session || !session.recordSession) return;
     try {
+      // Serialize: ensure previous session's file finalization finishes before starting next session file
+      if (this.sessionStopRecordingPromise) {
+        try { await this.sessionStopRecordingPromise; } catch (_) {}
+        this.sessionStopRecordingPromise = null;
+      }
+
       this.recordingState = {
         status: 'starting',
         sessionId: session.id,
@@ -384,11 +405,15 @@ class AgendaExecutionEngine extends EventEmitter {
       };
       this.emitState();
 
-      const res = await this.startRecording({
+      const startup = this.startRecording({
         agendaName: this.agendaSnapshot?.name || 'Agenda',
         sessionName: session.name || 'Session',
         sessionId: session.id,
+        owner: 'agenda',
       });
+      this.recordingStartupPromise = startup;
+      const res = await startup;
+      this.recordingStartupPromise = null;
 
       if (res && res.ok) {
         const wasPaused = this.status === 'paused';
@@ -400,7 +425,7 @@ class AgendaExecutionEngine extends EventEmitter {
           error: null,
         };
         if (wasPaused) {
-          try { this.pauseRecording(); } catch (_) {}
+          try { this.pauseRecording({ owner: 'agenda' }); } catch (_) {}
         }
       } else if (res && res.reason === 'already_recording') {
         this.recordingState = {
@@ -408,7 +433,7 @@ class AgendaExecutionEngine extends EventEmitter {
           sessionId: session.id,
           sessionName: session.name,
           outputPath: res.outputPath || null,
-          note: 'Manual recording already active. Session is being captured in the current recording.',
+          note: 'Existing recording active — no separate session file',
           error: null,
         };
       } else {
@@ -422,6 +447,7 @@ class AgendaExecutionEngine extends EventEmitter {
       }
       this.emitState();
     } catch (err) {
+      this.recordingStartupPromise = null;
       console.error('[AgendaEngine] Error starting session recording:', err.message);
       this.recordingState = {
         status: 'failed',
@@ -441,9 +467,15 @@ class AgendaExecutionEngine extends EventEmitter {
     if (!this.recordingState || this.recordingState.status === 'idle') return;
 
     try {
-      if (this.recordingState.status === 'recording' || this.recordingState.status === 'paused') {
+      // If startup is still pending, await it first so we don't orphan the spawned process
+      if (this.recordingStartupPromise) {
+        try { await this.recordingStartupPromise; } catch (_) {}
+        this.recordingStartupPromise = null;
+      }
+
+      if (this.recordingState.status === 'recording' || this.recordingState.status === 'paused' || this.recordingState.status === 'starting') {
         const res = await this.stopRecording({ owner: 'agenda' });
-        if (res && res.ok) {
+        if (res && res.ok && res.reason !== 'manual_preserved') {
           this.recordingState = {
             status: 'completed',
             sessionId: this.recordingState.sessionId,
@@ -453,6 +485,8 @@ class AgendaExecutionEngine extends EventEmitter {
             durationSec: res.durationSec,
             error: null,
           };
+        } else if (res && res.reason === 'manual_preserved') {
+          this.recordingState = { status: 'idle', error: null };
         } else {
           this.recordingState = {
             status: 'idle',
@@ -598,129 +632,10 @@ class AgendaExecutionEngine extends EventEmitter {
     let resolvedUrl = null;
     let failureReason = null;
 
-    const isVisual = cue.track === 'visual' || cue.track === 'background' || cue.track === 'video' || cue.track === 'image';
+    const isAudio = cue.mediaType === 'audio' || cue.track === 'audio';
 
-    if (isVisual) {
-      this.activeVisualCueId = cue.id;
-
-      // Determine mediaType
-      let mediaType = cue.mediaType;
-      if (!mediaType) {
-        if (cue.assetType === 'video' || cue.track === 'video' || (cue.name && /\.(mp4|mov|webm|mkv|avi)$/i.test(cue.name))) {
-          mediaType = 'video';
-        } else if (!cue.assetId && !cue.url && !cue.localFileUrl && !cue.fileUrl && cue.color) {
-          mediaType = 'color';
-        } else {
-          mediaType = 'image';
-        }
-      }
-
-      // Determine presentationMode ('background' vs 'foreground')
-      let presentationMode = cue.presentationMode;
-      if (!presentationMode) {
-        if (cue.track === 'background') {
-          presentationMode = 'background';
-        } else if (cue.track === 'video' || cue.track === 'image') {
-          presentationMode = 'foreground';
-        } else {
-          presentationMode = mediaType === 'video' ? 'foreground' : 'background';
-        }
-      }
-
-      const isSolidColor = mediaType === 'color';
-      if (!isSolidColor) {
-        const res = resolveDesktopAssetUrl(cue, this.agendaSnapshot, {
-          assetsDir: this.options.assetsDir,
-          mediaDir: this.options.mediaDir,
-        });
-        if (res.ok) {
-          resolvedUrl = res.url;
-        } else {
-          failureReason = res.error;
-        }
-      }
-
-      if (failureReason) {
-        cue.executionStatus = 'failed';
-        cue.failureReason = failureReason;
-        console.warn(`[AgendaDiagnostics] CUE_FAILED:`, {
-          cueId: cue.id,
-          cueName: cue.name,
-          track: cue.track,
-          reason: failureReason,
-          sessionId: this.currentSession?.id,
-          scheduledTimeSec: cue.startSec,
-          actualDispatchTimeSec: this.sessionElapsedSec,
-        });
-        this.emit('cue_failed', { cue, reason: failureReason });
-        this.emitState();
-        return;
-      }
-
-      cue.executionStatus = 'active';
-      console.log(`[AgendaDiagnostics] CUE_DISPATCH:`, {
-        cueId: cue.id,
-        cueName: cue.name,
-        track: cue.track,
-        mediaType,
-        presentationMode,
-        sessionId: this.currentSession?.id,
-        sessionName: this.currentSession?.name,
-        scheduledTimeSec: cue.startSec,
-        actualDispatchTimeSec: this.sessionElapsedSec,
-        resolvedDestination: dest,
-        resolvedUrl,
-        status: 'dispatched',
-      });
-
-      if (presentationMode === 'background') {
-        // Crucial handover: If there was an active foreground presentation from agenda (e.g. video), clear it
-        // so the new background image/color is not occluded by the unmounted or lingering video canvas slot!
-        if (this.currentPresentationState) {
-          console.log(`[AgendaEngine] Visual background cue "${cue.name}" clearing previous foreground presentation layer.`);
-          this.currentPresentationState = null;
-          this.dispatchPresentation({ type: 'clear', destination: dest, fromAgenda: true });
-        }
-
-        this.preActionBackground = this.currentBackgroundState
-          ? { ...this.currentBackgroundState }
-          : { type: 'color', color: '#000000', url: null };
-
-        const bgPayload = {
-          type: mediaType === 'video' ? 'video' : (resolvedUrl ? 'image' : 'color'),
-          url: resolvedUrl,
-          color: cue.color || '#000000',
-          destination: dest,
-          cueId: cue.id,
-          placement: cue.placement || 'center',
-          fit: cue.fit || 'cover',
-          zoom: cue.zoom || 1,
-          panX: cue.panX || 0,
-          panY: cue.panY || 0,
-          fromAgenda: true,
-        };
-        this.currentBackgroundState = bgPayload;
-        this.dispatchBackground(bgPayload);
-      } else {
-        // Foreground overlay
-        const presPayload = {
-          type: mediaType === 'video' ? 'video' : 'image',
-          url: resolvedUrl,
-          sourceInSec: cue.sourceInSec || 0,
-          sourceOutSec: cue.sourceOutSec || null,
-          loop: cue.loop !== undefined ? cue.loop : (cue.footageExceededBehavior !== 'hold'),
-          footageExceededBehavior: cue.footageExceededBehavior || 'loop',
-          destination: dest,
-          cueId: cue.id,
-          muted: cue.muted === true,
-          volume: typeof cue.volume === 'number' ? cue.volume : 1.0,
-          fit: cue.fit || 'contain',
-          fromAgenda: true,
-        };
-        this.currentPresentationState = presPayload;
-        this.dispatchPresentation(presPayload);
-      }
-    } else if (cue.track === 'audio') {
+    if (isAudio) {
+      // Audio cues in unified track: execute ONLY through dispatchAudio, never touch visual layers
       const res = resolveDesktopAssetUrl(cue, this.agendaSnapshot, {
         assetsDir: this.options.assetsDir,
         mediaDir: this.options.mediaDir,
@@ -738,6 +653,7 @@ class AgendaExecutionEngine extends EventEmitter {
           cueId: cue.id,
           cueName: cue.name,
           track: cue.track,
+          mediaType: 'audio',
           reason: failureReason,
           sessionId: this.currentSession?.id,
           scheduledTimeSec: cue.startSec,
@@ -749,7 +665,8 @@ class AgendaExecutionEngine extends EventEmitter {
       }
 
       cue.executionStatus = 'active';
-      console.log(`[AgendaDiagnostics] CUE_DISPATCH:`, {
+      this.activeLayerCues.set(`${dest}:audio`, { cueId: cue.id, runId: this.runId });
+      console.log(`[AgendaDiagnostics] CUE_DISPATCH (AUDIO):`, {
         cueId: cue.id,
         cueName: cue.name,
         track: cue.track,
@@ -771,10 +688,143 @@ class AgendaExecutionEngine extends EventEmitter {
         volume: typeof cue.volume === 'number' ? cue.volume : 1.0,
         loop: cue.loop === true,
         cueId: cue.id,
+        runId: this.runId,
         destination: dest,
       };
       this.currentAudioState = audioPayload;
       this.dispatchAudio(audioPayload);
+      this.emit('cue_fired', { cue, timestamp: this.sessionElapsedSec });
+      this.emitState();
+      return;
+    }
+
+    // Visual cue (Video, Image, Color)
+    this.activeVisualCueId = cue.id;
+
+    // Determine mediaType
+    let mediaType = cue.mediaType;
+    if (!mediaType) {
+      if (cue.assetType === 'video' || cue.track === 'video' || (cue.name && /\.(mp4|mov|webm|mkv|avi)$/i.test(cue.name))) {
+        mediaType = 'video';
+      } else if (!cue.assetId && !cue.url && !cue.localFileUrl && !cue.fileUrl && cue.color) {
+        mediaType = 'color';
+      } else {
+        mediaType = 'image';
+      }
+    }
+
+    // Determine presentationMode ('background' vs 'foreground')
+    let presentationMode = cue.presentationMode;
+    if (!presentationMode) {
+      if (cue.track === 'background') {
+        presentationMode = 'background';
+      } else if (cue.track === 'video' || cue.track === 'image') {
+        presentationMode = 'foreground';
+      } else {
+        presentationMode = mediaType === 'video' ? 'foreground' : 'background';
+      }
+    }
+
+    const isSolidColor = mediaType === 'color';
+    if (!isSolidColor) {
+      const res = resolveDesktopAssetUrl(cue, this.agendaSnapshot, {
+        assetsDir: this.options.assetsDir,
+        mediaDir: this.options.mediaDir,
+      });
+      if (res.ok) {
+        resolvedUrl = res.url;
+      } else {
+        failureReason = res.error;
+      }
+    }
+
+    if (failureReason) {
+      cue.executionStatus = 'failed';
+      cue.failureReason = failureReason;
+      console.warn(`[AgendaDiagnostics] CUE_FAILED:`, {
+        cueId: cue.id,
+        cueName: cue.name,
+        track: cue.track,
+        reason: failureReason,
+        sessionId: this.currentSession?.id,
+        scheduledTimeSec: cue.startSec,
+        actualDispatchTimeSec: this.sessionElapsedSec,
+      });
+      this.emit('cue_failed', { cue, reason: failureReason });
+      this.emitState();
+      return;
+    }
+
+    cue.executionStatus = 'active';
+    const layerKey = `${dest}:${presentationMode}`;
+    this.activeLayerCues.set(layerKey, { cueId: cue.id, runId: this.runId });
+    if (dest !== 'all') {
+      this.activeLayerCues.set(`all:${presentationMode}`, { cueId: cue.id, runId: this.runId });
+    }
+
+    console.log(`[AgendaDiagnostics] CUE_DISPATCH:`, {
+      cueId: cue.id,
+      cueName: cue.name,
+      track: cue.track,
+      mediaType,
+      presentationMode,
+      sessionId: this.currentSession?.id,
+      sessionName: this.currentSession?.name,
+      scheduledTimeSec: cue.startSec,
+      actualDispatchTimeSec: this.sessionElapsedSec,
+      resolvedDestination: dest,
+      resolvedUrl,
+      status: 'dispatched',
+    });
+
+    if (presentationMode === 'background') {
+      // Crucial handover: If there was an active foreground presentation from this agenda run, clear it
+      // so the new background image/color is not occluded by the unmounted or lingering video canvas slot!
+      if (this.currentPresentationState && this.currentPresentationState.runId === this.runId) {
+        console.log(`[AgendaEngine] Visual background cue "${cue.name}" clearing previous foreground presentation layer.`);
+        this.currentPresentationState = null;
+        this.dispatchPresentation({ type: 'clear', destination: dest, fromAgenda: true, runId: this.runId, cueId: cue.id });
+      }
+
+      this.preActionBackground = this.currentBackgroundState
+        ? { ...this.currentBackgroundState }
+        : { type: 'color', color: '#000000', url: null };
+
+      const bgPayload = {
+        type: mediaType === 'video' ? 'video' : (resolvedUrl ? 'image' : 'color'),
+        url: resolvedUrl,
+        color: cue.color || '#000000',
+        destination: dest,
+        cueId: cue.id,
+        runId: this.runId,
+        placement: cue.placement || 'center',
+        fit: cue.fit || 'cover',
+        zoom: cue.zoom || 1,
+        panX: cue.panX || 0,
+        panY: cue.panY || 0,
+        fromAgenda: true,
+      };
+      this.currentBackgroundState = bgPayload;
+      this.dispatchBackground(bgPayload);
+    } else {
+      // Foreground overlay
+      const presPayload = {
+        type: mediaType === 'video' ? 'video' : 'image',
+        url: resolvedUrl,
+        sourceInSec: cue.sourceInSec || 0,
+        sourceOutSec: cue.sourceOutSec || null,
+        loop: cue.loop !== undefined ? cue.loop : (cue.footageExceededBehavior !== 'hold'),
+        footageExceededBehavior: cue.footageExceededBehavior || 'loop',
+        destination: dest,
+        cueId: cue.id,
+        runId: this.runId,
+        muted: cue.muted === true,
+        volume: typeof cue.volume === 'number' ? cue.volume : 1.0,
+        fit: cue.fit || 'contain',
+        fromAgenda: true,
+      };
+      this.currentPresentationState = presPayload;
+      this.dispatchPresentation(presPayload);
     }
 
     this.emit('cue_fired', { cue, timestamp: this.sessionElapsedSec });
@@ -788,6 +838,7 @@ class AgendaExecutionEngine extends EventEmitter {
     this.activeCues.delete(cue.id);
     cue.executionStatus = 'completed';
     const behavior = cue.endBehavior || this.currentSession?.mediaEndBehavior || this.agendaSnapshot?.defaultMediaEndBehavior || 'hold';
+    const dest = cue.destination || this.currentSession?.targetDestination || this.agendaSnapshot?.defaultDestination || 'all';
 
     console.log(`[AgendaDiagnostics] CUE_ENDED:`, {
       cueId: cue.id,
@@ -797,54 +848,67 @@ class AgendaExecutionEngine extends EventEmitter {
       atSec: this.sessionElapsedSec,
     });
 
-    const isVisual = cue.track === 'visual' || cue.track === 'background' || cue.track === 'video' || cue.track === 'image';
+    const isAudio = cue.mediaType === 'audio' || cue.track === 'audio';
 
-    if (isVisual) {
-      if (this.activeVisualCueId && this.activeVisualCueId !== cue.id) {
-        console.log(`[AgendaEngine] Visual cue "${cue.name}" ended, but visual track is currently owned by active cue "${this.activeVisualCueId}". Preserving successor cue without clearing.`);
-        this.emit('cue_ended', { cue, behavior });
-        this.emitState();
-        return;
-      }
-      this.activeVisualCueId = null;
-
-      let presentationMode = cue.presentationMode;
-      if (!presentationMode) {
-        if (cue.track === 'background') {
-          presentationMode = 'background';
-        } else if (cue.track === 'video' || cue.track === 'image') {
-          presentationMode = 'foreground';
-        } else {
-          presentationMode = (cue.assetType === 'video' || cue.track === 'video' || (cue.name && /\.(mp4|mov|webm|mkv|avi)$/i.test(cue.name))) ? 'foreground' : 'background';
-        }
-      }
-
-      if (presentationMode === 'foreground') {
-        if (behavior === 'restore' || behavior === 'continue' || behavior === 'clear') {
-          this.currentPresentationState = null;
-          this.dispatchPresentation({ type: 'clear', destination: cue.destination, fromAgenda: true });
-        }
-        // if 'hold', keep presentation as-is
+    if (isAudio) {
+      const activeAudio = this.activeLayerCues.get(`${dest}:audio`);
+      if (activeAudio && (activeAudio.cueId !== cue.id || activeAudio.runId !== this.runId)) {
+        console.log(`[AgendaEngine] Audio cue "${cue.name}" ended, but audio is currently owned by cue "${activeAudio.cueId}". Preserving successor.`);
       } else {
-        if (behavior === 'restore' && !this.operatorOverridden) {
-          const toRestore = this.preActionBackground || { type: 'color', color: '#000000', url: null };
-          this.currentBackgroundState = toRestore;
-          this.dispatchBackground(toRestore);
-          this.preActionBackground = null;
-        } else if (behavior === 'continue' || behavior === 'clear') {
-          const cleared = { type: 'color', color: '#000000', url: null, cueId: null, fromAgenda: true };
-          this.currentBackgroundState = cleared;
-          this.dispatchBackground(cleared);
-        }
-        // if 'hold', keep this.currentBackgroundState as-is
-      }
-    } else if (cue.track === 'audio') {
-      if (this.currentAudioState && this.currentAudioState.cueId !== cue.id) {
-        console.log(`[AgendaEngine] Audio cue "${cue.name}" ended, but audio is now owned by cue "${this.currentAudioState.cueId}".`);
-      } else {
+        this.activeLayerCues.delete(`${dest}:audio`);
         this.currentAudioState = null;
-        this.dispatchAudio({ command: 'stop', action: 'stop', cueId: cue.id });
+        this.dispatchAudio({ command: 'stop', action: 'stop', cueId: cue.id, runId: this.runId });
       }
+      this.emit('cue_ended', { cue, behavior });
+      this.emitState();
+      return;
+    }
+
+    // Visual cue
+    let presentationMode = cue.presentationMode;
+    if (!presentationMode) {
+      if (cue.track === 'background') {
+        presentationMode = 'background';
+      } else if (cue.track === 'video' || cue.track === 'image') {
+        presentationMode = 'foreground';
+      } else {
+        presentationMode = (cue.assetType === 'video' || cue.track === 'video' || (cue.name && /\.(mp4|mov|webm|mkv|avi)$/i.test(cue.name))) ? 'foreground' : 'background';
+      }
+    }
+
+    const layerKey = `${dest}:${presentationMode}`;
+    const activeLayer = this.activeLayerCues.get(layerKey);
+
+    if (activeLayer && (activeLayer.cueId !== cue.id || activeLayer.runId !== this.runId)) {
+      console.log(`[AgendaEngine] Visual cue "${cue.name}" ended, but layer ${layerKey} is now owned by cue "${activeLayer.cueId}". Preserving successor cue without clearing.`);
+      this.emit('cue_ended', { cue, behavior });
+      this.emitState();
+      return;
+    }
+
+    this.activeLayerCues.delete(layerKey);
+    if (this.activeVisualCueId === cue.id) {
+      this.activeVisualCueId = null;
+    }
+
+    if (presentationMode === 'foreground') {
+      if (behavior === 'restore' || behavior === 'continue' || behavior === 'clear') {
+        this.currentPresentationState = null;
+        this.dispatchPresentation({ type: 'clear', destination: cue.destination, fromAgenda: true, runId: this.runId, cueId: cue.id });
+      }
+      // if 'hold', keep presentation as-is
+    } else {
+      if (behavior === 'restore' && !this.operatorOverridden) {
+        const toRestore = this.preActionBackground || { type: 'color', color: '#000000', url: null };
+        this.currentBackgroundState = toRestore;
+        this.dispatchBackground({ ...toRestore, runId: this.runId, cueId: cue.id, fromAgenda: true });
+        this.preActionBackground = null;
+      } else if (behavior === 'continue' || behavior === 'clear') {
+        const cleared = { type: 'color', color: '#000000', url: null, cueId: null, fromAgenda: true, runId: this.runId };
+        this.currentBackgroundState = cleared;
+        this.dispatchBackground(cleared);
+      }
+      // if 'hold', keep this.currentBackgroundState as-is
     }
 
     this.emit('cue_ended', { cue, behavior });
@@ -863,8 +927,8 @@ class AgendaExecutionEngine extends EventEmitter {
     // Find the latest visual background cue up to current time
     const pastBgCues = cues
       .filter((c) => {
-        const isVisual = c.track === 'visual' || c.track === 'background' || c.track === 'video' || c.track === 'image';
-        if (!isVisual) return false;
+        const isAudio = c.mediaType === 'audio' || c.track === 'audio';
+        if (isAudio) return false;
         const mode = c.presentationMode || (c.track === 'background' ? 'background' : (c.track === 'video' || c.track === 'image' ? 'foreground' : (c.assetType === 'video' ? 'foreground' : 'background')));
         return mode === 'background' && c.startSec <= current;
       })
@@ -880,14 +944,16 @@ class AgendaExecutionEngine extends EventEmitter {
 
     // Active media range that spans current time
     for (const cue of cues) {
-      if (cue.track === 'visual' || cue.track === 'video' || cue.track === 'image' || cue.track === 'audio') {
+      const isMedia = cue.track === 'media' || cue.track === 'visual' || cue.track === 'video' || cue.track === 'image' || cue.track === 'audio';
+      if (isMedia) {
         const clipEnd = cue.startSec + (cue.durationSec || 60);
         if (cue.startSec <= current && current < clipEnd) {
           const offset = current - cue.startSec + (cue.sourceInSec || 0);
-          console.log(`[AgendaEngine] Late start media "${cue.name}" (${cue.track}) at offset ${offset}s`);
+          console.log(`[AgendaEngine] Late start media "${cue.name}" (${cue.track}/${cue.mediaType || 'visual'}) at offset ${offset}s`);
           const cueDest = cue.destination || dest;
 
-          if (cue.track === 'audio') {
+          const isAudio = cue.mediaType === 'audio' || cue.track === 'audio';
+          if (isAudio) {
             const res = resolveDesktopAssetUrl(cue, this.agendaSnapshot, {
               assetsDir: this.options.assetsDir,
               mediaDir: this.options.mediaDir,
@@ -895,9 +961,11 @@ class AgendaExecutionEngine extends EventEmitter {
             if (res.ok) {
               const audioPayload = {
                 command: 'play',
+                action: 'play',
                 url: res.url,
                 sourceInSec: offset,
                 cueId: cue.id,
+                runId: this.runId,
                 destination: cueDest,
               };
               this.currentAudioState = audioPayload;

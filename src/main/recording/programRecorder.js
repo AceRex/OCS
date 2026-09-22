@@ -324,7 +324,11 @@ class ProgramRecorder {
    * Pauses the active recording stream. Incoming video frames and audio chunks
    * are dropped without closing FFmpeg pipes, saving disk storage.
    */
-  pause() {
+  pause(options = {}) {
+    if (options.owner === 'agenda' && this.owner === 'manual') {
+      console.log('[ProgramRecorder] Agenda attempted to pause manual recording. Preserving manual recording.');
+      return { ok: true, ignored: true, reason: 'manual_preserved', isPaused: false };
+    }
     if (this.isRecording) {
       this.isPaused = true;
       console.log(`[ProgramRecorder] Recording paused (owner=${this.owner})`);
@@ -336,7 +340,11 @@ class ProgramRecorder {
   /**
    * Resumes the paused recording stream.
    */
-  resume() {
+  resume(options = {}) {
+    if (options.owner === 'agenda' && this.owner === 'manual') {
+      console.log('[ProgramRecorder] Agenda attempted to resume manual recording. Preserving manual recording state.');
+      return { ok: true, ignored: true, reason: 'manual_preserved', isPaused: false };
+    }
     if (this.isRecording) {
       this.isPaused = false;
       console.log(`[ProgramRecorder] Recording resumed (owner=${this.owner})`);

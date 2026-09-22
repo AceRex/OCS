@@ -27,6 +27,7 @@ import {
   PiFolderOpen,
   PiUploadSimple,
   PiMusicNotes,
+  PiPalette,
   PiArrowsClockwise,
   PiDotsThreeVertical,
   PiPencilSimple,
@@ -77,6 +78,10 @@ export default function AgendaController() {
   const [timelineZoom, setTimelineZoom] = useState(1);
   const [isInspectorOpen, setIsInspectorOpen] = useState(true);
   const [replaceConfirmOpen, setReplaceConfirmOpen] = useState(false);
+
+  // Responsive Load State Machine
+  const [isAgendaLoading, setIsAgendaLoading] = useState(false);
+  const [loadStatus, setLoadStatus] = useState(null); // { status: 'success'|'error', agendaName, sessionCount, firstSession, message }
 
   // Media Library Chooser Modal
   const [mediaChooserTrack, setMediaChooserTrack] = useState(null); // 'visual' | 'audio' | 'background' | 'video' | null
@@ -667,15 +672,36 @@ export default function AgendaController() {
       return;
     }
 
+    setIsAgendaLoading(true);
     try {
       const res = await electron.Agenda.load(doc);
       if (res.ok) {
         dispatch(utilAction.setLoadedAgenda(doc));
+        const firstSess = res.readiness?.firstSession || (doc.sessions && doc.sessions[0] ? {
+          name: doc.sessions[0].name || 'Session 1',
+          durationSec: doc.sessions[0].durationSec || 0,
+          person: doc.sessions[0].person || '',
+        } : null);
+        setLoadStatus({
+          status: 'success',
+          agendaName: doc.name,
+          sessionCount: doc.sessions?.length || 0,
+          firstSession: firstSess,
+        });
       } else {
-        alert(`Validation error: ${(res.errors || [res.error]).join(", ")}`);
+        const errMsg = (res.errors || [res.error]).join(", ");
+        setLoadStatus({
+          status: 'error',
+          message: errMsg,
+        });
       }
     } catch (err) {
-      alert(`Load failed: ${err.message}`);
+      setLoadStatus({
+        status: 'error',
+        message: err.message,
+      });
+    } finally {
+      setIsAgendaLoading(false);
     }
   };
 
@@ -864,15 +890,102 @@ export default function AgendaController() {
           {/* Load Agenda Button (Strict Zero Live Output Push) */}
           <button
             onClick={() => handleLoadAgenda(currentAgenda)}
-            disabled={!currentAgenda || currentAgenda.sessions?.length === 0}
+            disabled={!currentAgenda || currentAgenda.sessions?.length === 0 || isAgendaLoading}
             className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#7C3AED] to-[#6D28D9] hover:brightness-110 disabled:opacity-40 rounded-[12px] text-white text-xs font-bold uppercase tracking-wider shadow-lg shadow-[#7C3AED]/30 transition-all cursor-pointer"
             title="Load agenda into Timer and media decks without changing live audience output"
           >
-            <PiShieldCheck size={16} />
-            <span>Load Agenda</span>
+            {isAgendaLoading ? (
+              <>
+                <PiArrowsClockwise size={16} className="animate-spin" />
+                <span>Loading...</span>
+              </>
+            ) : (
+              <>
+                <PiShieldCheck size={16} />
+                <span>Load Agenda</span>
+              </>
+            )}
           </button>
         </div>
       </header>
+
+      {/* ── Responsive Loaded State Card ────────────────────────────────────── */}
+      {loadStatus?.status === 'success' && (
+        <div className="bg-emerald-950/60 border-b border-emerald-500/40 px-5 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs text-emerald-200 shrink-0">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-1.5 font-bold text-emerald-300">
+              <PiCheck size={16} className="text-emerald-400" />
+              <span>Loaded — Ready to start</span>
+            </div>
+            <span className="text-white/30">•</span>
+            <span>Agenda: <strong className="text-white">{loadStatus.agendaName}</strong> ({loadStatus.sessionCount} sessions)</span>
+            {loadStatus.firstSession && (
+              <>
+                <span className="text-white/30">•</span>
+                <span>First Session: <strong className="text-white">{loadStatus.firstSession.name}</strong> ({formatDuration(loadStatus.firstSession.durationSec)})</span>
+                {loadStatus.firstSession.person ? (
+                  <span className="px-2 py-0.5 bg-emerald-500/20 border border-emerald-400/30 rounded-[12px] text-emerald-200 font-semibold">
+                    👤 {loadStatus.firstSession.person}
+                  </span>
+                ) : null}
+              </>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                window.dispatchEvent(new CustomEvent('switch-controller-tab', { detail: 'timer' }));
+              }}
+              className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 rounded-[12px] text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow transition-all"
+              title="Open Timer tab on controller"
+            >
+              <PiClock size={14} />
+              <span>Open Timer</span>
+            </button>
+            <button
+              onClick={() => setLoadStatus(null)}
+              className="p-1 hover:bg-white/10 rounded-[12px] text-white/50 hover:text-white cursor-pointer"
+              title="Dismiss"
+            >
+              <PiX size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Load Error Actionable Alert ───────────────────────────────────────── */}
+      {loadStatus?.status === 'error' && (
+        <div className="bg-red-950/70 border-b border-red-500/40 px-5 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs text-red-200 shrink-0">
+          <div className="flex items-center gap-2">
+            <PiWarning size={16} className="text-red-400 shrink-0" />
+            <span>Load Failed: {loadStatus.message}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleLoadAgenda(currentAgenda)}
+              className="px-3 py-1 bg-red-600 hover:bg-red-500 rounded-[12px] text-white font-bold text-xs flex items-center gap-1.5 cursor-pointer transition-colors"
+            >
+              <PiArrowClockwise size={13} />
+              <span>Retry</span>
+            </button>
+            <button
+              onClick={() => setLoadStatus(null)}
+              className="p-1 hover:bg-white/10 rounded-[12px] text-white/50 hover:text-white cursor-pointer"
+            >
+              <PiX size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── Merged Manual Recording Notice ───────────────────────────────────── */}
+      {engineState?.recordingState?.status === 'merged_manual' && (
+        <div className="bg-amber-950/60 border-b border-amber-500/40 px-5 py-2 flex items-center gap-2 text-xs text-amber-200 shrink-0">
+          <div className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0" />
+          <span className="font-bold">Existing recording active — no separate session file.</span>
+          <span className="text-white/60">Manual recording continues undisturbed.</span>
+        </div>
+      )}
 
       {/* ── Unapplied Draft Edits Alert Banner ─────────────────────────────────── */}
       {hasUnappliedDraftChanges && (
@@ -1017,6 +1130,11 @@ export default function AgendaController() {
                       <span className="font-mono text-[#A788FA]">
                         {formatDuration(session.durationSec)}
                       </span>
+                      {session.person ? (
+                        <span className="text-purple-300 font-semibold truncate max-w-[90px]" title={session.person}>
+                          👤 {session.person}
+                        </span>
+                      ) : null}
                       <span>
                         {session.timelineItems?.length || 0} cues
                       </span>
@@ -1053,6 +1171,22 @@ export default function AgendaController() {
                   value={currentSession.durationSec}
                   onChange={(newSec) => handleUpdateSession(currentSession.id, { durationSec: newSec })}
                 />
+
+                {/* Person Taking This Session */}
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] uppercase font-bold text-white/50 tracking-wider">
+                    Person Taking Session
+                  </span>
+                  <div className="flex items-center bg-[#120D22]/80 border border-white/10 rounded-[12px] px-3 py-1.5 focus-within:border-[#7C3AED] transition-colors">
+                    <input
+                      type="text"
+                      placeholder="e.g. Pastor John, Speaker..."
+                      value={currentSession.person || ""}
+                      onChange={(e) => handleUpdateSession(currentSession.id, { person: e.target.value })}
+                      className="bg-transparent text-xs text-white placeholder:text-white/30 focus:outline-none w-44"
+                    />
+                  </div>
+                </div>
 
                 {/* Transition Behavior Segmented Toggle */}
                 <div className="flex flex-col gap-1">
@@ -1267,234 +1401,260 @@ export default function AgendaController() {
                   <span>{formatDuration(sessionDuration)}</span>
                 </div>
 
-                {/* Track 1: Unified Visual Track (Images & Videos) */}
-                <div className="bg-[#140F26]/70 border border-purple-500/30 rounded-[12px] p-2.5 min-h-[76px] relative shadow-inner">
-                  <div className="flex items-center justify-between mb-2">
+                {/* Unified Cue Track (Images, Videos, & Audio) */}
+                <div className="bg-[#140F26]/70 border border-purple-500/30 rounded-[12px] p-3 min-h-[140px] relative shadow-inner">
+                  <div className="flex items-center justify-between mb-2.5">
                     <div className="flex items-center gap-2 text-purple-300 text-[10px] font-bold uppercase tracking-wider">
-                      <div className="flex items-center gap-1">
-                        <PiImage size={13} className="text-purple-400" />
+                      <div className="flex items-center gap-1.5">
+                        <PiImage size={14} className="text-purple-400" />
                         <span className="text-white/30">•</span>
-                        <PiVideo size={13} className="text-blue-400" />
+                        <PiVideo size={14} className="text-blue-400" />
+                        <span className="text-white/30">•</span>
+                        <PiMusicNotes size={14} className="text-amber-400" />
+                        <span className="text-white/30">•</span>
+                        <PiPalette size={14} className="text-pink-400" />
                       </div>
-                      <span>Visual Track (Images & Videos)</span>
+                      <span>Unified Cue Track</span>
                     </div>
-                    <span className="text-[9px] text-white/40 font-mono">
-                      {(currentSession.timelineItems || []).filter((i) => i.track === "visual" || i.track === "background" || i.track === "video" || i.track === "image").length} clips
-                    </span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-[9px] text-white/40 font-mono">
+                        {(currentSession.timelineItems || []).length} cues ({(currentSession.timelineItems || []).filter((i) => i.track !== "audio" && i.mediaType !== "audio").length} visual, {(currentSession.timelineItems || []).filter((i) => i.track === "audio" || i.mediaType === "audio").length} audio)
+                      </span>
+                    </div>
                   </div>
-                  <div className="track-lane relative h-12 bg-black/40 rounded-[12px] overflow-hidden border border-white/5">
-                    {(currentSession.timelineItems || [])
-                      .filter((i) => i.track === "visual" || i.track === "background" || i.track === "video" || i.track === "image")
-                      .map((item) => {
-                        const isDragging = dragState?.cueId === item.id;
-                        const start = isDragging ? dragState.currentStartSec : item.startSec;
-                        const duration = isDragging ? dragState.currentDurationSec : (item.durationSec || 60);
 
-                        const leftPct = (start / sessionDuration) * 100;
-                        const widthPct = Math.max(1, (duration / sessionDuration) * 100);
-                        const isSelected = item.id === selectedItemId;
+                  {/* Stacked Sub-Lanes */}
+                  <div className="space-y-2">
+                    {/* Visual Sub-Lane (Foreground & Background) */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1 px-1">
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-purple-300/60">
+                          Visual Playout (Images & Videos)
+                        </span>
+                      </div>
+                      <div className="track-lane relative h-12 bg-black/40 rounded-[12px] overflow-hidden border border-white/5">
+                        {(currentSession.timelineItems || [])
+                          .filter((i) => i.track !== "audio" && i.mediaType !== "audio")
+                          .map((item) => {
+                            const isDragging = dragState?.cueId === item.id;
+                            const start = isDragging ? dragState.currentStartSec : item.startSec;
+                            const duration = isDragging ? dragState.currentDurationSec : (item.durationSec || 60);
 
-                        const isVideo = item.mediaType === "video" || item.track === "video" || (item.name && /\.(mp4|mov|webm|mkv|avi)$/i.test(item.name));
-                        const isForeground = item.presentationMode === "foreground" || (!item.presentationMode && item.track === "video");
+                            const leftPct = (start / sessionDuration) * 100;
+                            const widthPct = Math.max(1, (duration / sessionDuration) * 100);
+                            const isSelected = item.id === selectedItemId;
 
-                        return (
-                          <div
-                            key={item.id}
-                            onPointerDown={(e) => handlePointerDownCue(e, item, "move")}
-                            onContextMenu={(e) => openCueContextMenu(e, item)}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedItemId(item.id);
-                              setIsInspectorOpen(true);
-                            }}
-                            style={{
-                              left: `${Math.min(99, leftPct)}%`,
-                              width: `${Math.min(100 - leftPct, widthPct)}%`,
-                            }}
-                            className={`absolute top-1 bottom-1 rounded-[12px] border px-1 flex items-center justify-between cursor-grab active:cursor-grabbing transition-all select-none ${
-                              isSelected
-                                ? isVideo
-                                  ? "bg-blue-600 border-white shadow-lg shadow-blue-500/40 z-10"
-                                  : "bg-purple-600 border-white shadow-lg shadow-purple-500/40 z-10"
-                                : isVideo
-                                ? "bg-blue-900/70 border-blue-500/40 hover:border-blue-300"
-                                : "bg-purple-900/70 border-purple-500/40 hover:border-purple-300"
-                            }`}
-                          >
-                            {/* Left Resize Handle */}
-                            <div
-                              onPointerDown={(e) => handlePointerDownCue(e, item, "resize_left")}
-                              className="absolute left-0 top-0 bottom-0 w-3 hover:bg-white/40 cursor-ew-resize rounded-l-[12px] flex items-center justify-center z-20 group"
-                              title="Drag left edge to adjust start boundary"
-                            >
-                              <div className="w-[3px] h-3.5 bg-white/30 rounded-full group-hover:bg-white transition-colors" />
-                            </div>
+                            const isVideo = item.mediaType === "video" || item.track === "video" || (item.name && /\.(mp4|mov|webm|mkv|avi)$/i.test(item.name));
+                            const isForeground = item.presentationMode === "foreground" || (!item.presentationMode && item.track === "video");
 
-                            {/* Media Type Icon & Layer Badge */}
-                            <div className="flex items-center gap-1.5 ml-2 shrink-0">
-                              {isVideo ? (
-                                <PiVideo size={13} className="text-blue-300 shrink-0" />
-                              ) : (
-                                <PiImage size={13} className="text-purple-300 shrink-0" />
-                              )}
-                              <span className={`px-1 py-0.2 rounded text-[8px] font-mono uppercase font-bold tracking-wider ${
-                                isForeground ? "bg-blue-500/30 text-blue-200 border border-blue-400/30" : "bg-purple-500/30 text-purple-200 border border-purple-400/30"
-                              }`}>
-                                {isForeground ? "FG" : "BG"}
-                              </span>
-                            </div>
+                            return (
+                              <div
+                                key={item.id}
+                                onPointerDown={(e) => handlePointerDownCue(e, item, "move")}
+                                onContextMenu={(e) => openCueContextMenu(e, item)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedItemId(item.id);
+                                  setIsInspectorOpen(true);
+                                }}
+                                style={{
+                                  left: `${Math.min(99, leftPct)}%`,
+                                  width: `${Math.min(100 - leftPct, widthPct)}%`,
+                                }}
+                                className={`absolute top-1 bottom-1 rounded-[12px] border px-1 flex items-center justify-between cursor-grab active:cursor-grabbing transition-all select-none ${
+                                  isSelected
+                                    ? isVideo
+                                      ? "bg-blue-600 border-white shadow-lg shadow-blue-500/40 z-10"
+                                      : "bg-purple-600 border-white shadow-lg shadow-purple-500/40 z-10"
+                                    : isVideo
+                                    ? "bg-blue-900/70 border-blue-500/40 hover:border-blue-300"
+                                    : "bg-purple-900/70 border-purple-500/40 hover:border-purple-300"
+                                }`}
+                              >
+                                {/* Left Resize Handle */}
+                                <div
+                                  onPointerDown={(e) => handlePointerDownCue(e, item, "resize_left")}
+                                  className="absolute left-0 top-0 bottom-0 w-3 hover:bg-white/40 cursor-ew-resize rounded-l-[12px] flex items-center justify-center z-20 group"
+                                  title="Drag left edge to adjust start boundary"
+                                >
+                                  <div className="w-[3px] h-3.5 bg-white/30 rounded-full group-hover:bg-white transition-colors" />
+                                </div>
 
-                            {(() => {
-                              const cueRt = engineState?.cues?.find((c) => c.id === item.id);
-                              if (cueRt?.executionStatus === 'failed') {
-                                return (
-                                  <span
-                                    className="px-1.5 py-0.5 rounded bg-red-500/80 text-white text-[9px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm ml-1"
-                                    title={`Failed: ${cueRt.failureReason || 'Playback error'}`}
-                                  >
-                                    <PiWarning size={11} /> Failed
+                                {/* Media Type Icon & Layer Badge */}
+                                <div className="flex items-center gap-1.5 ml-2 shrink-0">
+                                  {isVideo ? (
+                                    <PiVideo size={13} className="text-blue-300 shrink-0" />
+                                  ) : (
+                                    <PiImage size={13} className="text-purple-300 shrink-0" />
+                                  )}
+                                  <span className={`px-1 py-0.2 rounded text-[8px] font-mono uppercase font-bold tracking-wider ${
+                                    isForeground ? "bg-blue-500/30 text-blue-200 border border-blue-400/30" : "bg-purple-500/30 text-purple-200 border border-purple-400/30"
+                                  }`}>
+                                    {isForeground ? "FG" : "BG"}
                                   </span>
-                                );
-                              }
-                              if (cueRt?.executionStatus === 'active') {
-                                return (
-                                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-1 shrink-0" title="Live Active on Output" />
-                                );
-                              }
-                              return null;
-                            })()}
+                                </div>
 
-                            <span className="text-[11px] font-bold text-white truncate pointer-events-none px-2 flex-1">
-                              {item.name}
-                            </span>
-                            <span className="text-[9px] font-mono text-white/70 pointer-events-none pr-1 shrink-0">
-                              {formatDuration(duration)}
-                            </span>
+                                {(() => {
+                                  const cueRt = engineState?.cues?.find((c) => c.id === item.id);
+                                  if (cueRt?.executionStatus === 'failed') {
+                                    return (
+                                      <span
+                                        className="px-1.5 py-0.5 rounded bg-red-500/80 text-white text-[9px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm ml-1"
+                                        title={`Failed: ${cueRt.failureReason || 'Playback error'}`}
+                                      >
+                                        <PiWarning size={11} /> Failed
+                                      </span>
+                                    );
+                                  }
+                                  if (cueRt?.executionStatus === 'active') {
+                                    return (
+                                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse ml-1 shrink-0" title="Live Active on Output" />
+                                    );
+                                  }
+                                  return null;
+                                })()}
 
-                            {/* Three-dot context menu button */}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openCueContextMenu(e, item);
-                              }}
-                              className="p-1 hover:bg-white/20 rounded-[12px] text-white/70 hover:text-white mr-2 z-20 cursor-pointer"
-                              title="Cue options"
-                            >
-                              <PiDotsThreeVertical size={13} />
-                            </button>
+                                <span className="text-[11px] font-bold text-white truncate pointer-events-none px-2 flex-1">
+                                  {item.name}
+                                </span>
+                                <span className="text-[9px] font-mono text-white/70 pointer-events-none pr-1 shrink-0">
+                                  {formatDuration(duration)}
+                                </span>
 
-                            {/* Right Resize Handle */}
-                            <div
-                              onPointerDown={(e) => handlePointerDownCue(e, item, "resize_right")}
-                              className="absolute right-0 top-0 bottom-0 w-3 hover:bg-white/40 cursor-ew-resize rounded-r-[12px] flex items-center justify-center z-20 group"
-                              title="Drag right edge to extend/shorten duration"
-                            >
-                              <div className="w-[3px] h-3.5 bg-white/30 rounded-full group-hover:bg-white transition-colors" />
-                            </div>
-                          </div>
-                        );
-                      })}
-                  </div>
-                </div>
+                                {/* Three-dot context menu button */}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openCueContextMenu(e, item);
+                                  }}
+                                  className="p-1 hover:bg-white/20 rounded-[12px] text-white/70 hover:text-white mr-2 z-20 cursor-pointer"
+                                  title="Cue options"
+                                >
+                                  <PiDotsThreeVertical size={13} />
+                                </button>
 
-                {/* Track 2: Audio Track */}
-                <div className="bg-[#241708]/60 border border-amber-500/20 rounded-[12px] p-2.5 min-h-[72px] relative">
-                  <div className="flex items-center gap-1.5 mb-2 text-amber-300 text-[10px] font-bold uppercase tracking-wider">
-                    <PiSpeakerHigh size={13} />
-                    <span>Audio & Voice Track</span>
-                  </div>
-                  <div className="track-lane relative h-11 bg-black/30 rounded-[12px] overflow-hidden">
-                    {(currentSession.timelineItems || [])
-                      .filter((i) => i.track === "audio")
-                      .map((item) => {
-                        const isDragging = dragState?.cueId === item.id;
-                        const start = isDragging ? dragState.currentStartSec : item.startSec;
-                        const duration = isDragging ? dragState.currentDurationSec : (item.durationSec || 60);
+                                {/* Right Resize Handle */}
+                                <div
+                                  onPointerDown={(e) => handlePointerDownCue(e, item, "resize_right")}
+                                  className="absolute right-0 top-0 bottom-0 w-3 hover:bg-white/40 cursor-ew-resize rounded-r-[12px] flex items-center justify-center z-20 group"
+                                  title="Drag right edge to extend/shorten duration"
+                                >
+                                  <div className="w-[3px] h-3.5 bg-white/30 rounded-full group-hover:bg-white transition-colors" />
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
 
-                        const leftPct = (start / sessionDuration) * 100;
-                        const widthPct = Math.max(1, (duration / sessionDuration) * 100);
-                        const isSelected = item.id === selectedItemId;
+                    {/* Audio Sub-Lane (Voice & Music) */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1 px-1">
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-amber-300/60">
+                          Audio Playout (Sound & Voice)
+                        </span>
+                      </div>
+                      <div className="track-lane relative h-11 bg-black/30 rounded-[12px] overflow-hidden border border-amber-500/20">
+                        {(currentSession.timelineItems || [])
+                          .filter((i) => i.track === "audio" || i.mediaType === "audio")
+                          .map((item) => {
+                            const isDragging = dragState?.cueId === item.id;
+                            const start = isDragging ? dragState.currentStartSec : item.startSec;
+                            const duration = isDragging ? dragState.currentDurationSec : (item.durationSec || 60);
 
-                        return (
-                          <div
-                            key={item.id}
-                            onPointerDown={(e) => handlePointerDownCue(e, item, "move")}
-                            onContextMenu={(e) => openCueContextMenu(e, item)}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setSelectedItemId(item.id);
-                              setIsInspectorOpen(true);
-                            }}
-                            style={{
-                              left: `${Math.min(99, leftPct)}%`,
-                              width: `${Math.min(100 - leftPct, widthPct)}%`,
-                            }}
-                            className={`absolute top-1 bottom-1 rounded-[12px] border px-1 flex items-center justify-between cursor-grab active:cursor-grabbing transition-all select-none ${
-                              isSelected
-                                ? "bg-amber-600 border-white shadow-lg shadow-amber-500/40 z-10"
-                                : "bg-amber-900/60 border-amber-500/40 hover:border-amber-300"
-                            }`}
-                          >
-                            {/* Left Resize Handle */}
-                            <div
-                              onPointerDown={(e) => handlePointerDownCue(e, item, "resize_left")}
-                              className="absolute left-0 top-0 bottom-0 w-3 hover:bg-white/40 cursor-ew-resize rounded-l-[12px] flex items-center justify-center z-20 group"
-                              title="Drag left edge to adjust start boundary"
-                            >
-                              <div className="w-[3px] h-3.5 bg-white/30 rounded-full group-hover:bg-white transition-colors" />
-                            </div>
+                            const leftPct = (start / sessionDuration) * 100;
+                            const widthPct = Math.max(1, (duration / sessionDuration) * 100);
+                            const isSelected = item.id === selectedItemId;
 
-                            {(() => {
-                              const cueRt = engineState?.cues?.find((c) => c.id === item.id);
-                              if (cueRt?.executionStatus === 'failed') {
-                                return (
-                                  <span
-                                    className="px-1.5 py-0.5 rounded bg-red-500/80 text-white text-[9px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm"
-                                    title={`Failed: ${cueRt.failureReason || 'Playback error'}`}
-                                  >
-                                    <PiWarning size={11} /> Failed
+                            return (
+                              <div
+                                key={item.id}
+                                onPointerDown={(e) => handlePointerDownCue(e, item, "move")}
+                                onContextMenu={(e) => openCueContextMenu(e, item)}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setSelectedItemId(item.id);
+                                  setIsInspectorOpen(true);
+                                }}
+                                style={{
+                                  left: `${Math.min(99, leftPct)}%`,
+                                  width: `${Math.min(100 - leftPct, widthPct)}%`,
+                                }}
+                                className={`absolute top-1 bottom-1 rounded-[12px] border px-1 flex items-center justify-between cursor-grab active:cursor-grabbing transition-all select-none ${
+                                  isSelected
+                                    ? "bg-amber-600 border-white shadow-lg shadow-amber-500/40 z-10"
+                                    : "bg-amber-900/60 border-amber-500/40 hover:border-amber-300"
+                                }`}
+                              >
+                                {/* Left Resize Handle */}
+                                <div
+                                  onPointerDown={(e) => handlePointerDownCue(e, item, "resize_left")}
+                                  className="absolute left-0 top-0 bottom-0 w-3 hover:bg-white/40 cursor-ew-resize rounded-l-[12px] flex items-center justify-center z-20 group"
+                                  title="Drag left edge to adjust start boundary"
+                                >
+                                  <div className="w-[3px] h-3.5 bg-white/30 rounded-full group-hover:bg-white transition-colors" />
+                                </div>
+
+                                <div className="flex items-center gap-1.5 ml-2 shrink-0">
+                                  <PiMusicNotes size={13} className="text-amber-300 shrink-0" />
+                                  <span className="px-1 py-0.2 rounded text-[8px] font-mono uppercase font-bold tracking-wider bg-amber-500/30 text-amber-200 border border-amber-400/30">
+                                    AUDIO
                                   </span>
-                                );
-                              }
-                              if (cueRt?.executionStatus === 'active') {
-                                return (
-                                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Live Active on Output" />
-                                );
-                              }
-                              return null;
-                            })()}
-                            <span className="text-[11px] font-bold text-white truncate pointer-events-none px-2 flex-1">
-                              {item.name}
-                            </span>
-                            <span className="text-[9px] font-mono text-amber-200 pointer-events-none pr-1">
-                              {formatDuration(duration)}
-                            </span>
+                                </div>
 
-                            {/* Three-dot context menu button */}
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                openCueContextMenu(e, item);
-                              }}
-                              className="p-1 hover:bg-white/20 rounded-[12px] text-white/70 hover:text-white mr-2.5 z-20 cursor-pointer"
-                              title="Cue options"
-                            >
-                              <PiDotsThreeVertical size={13} />
-                            </button>
+                                {(() => {
+                                  const cueRt = engineState?.cues?.find((c) => c.id === item.id);
+                                  if (cueRt?.executionStatus === 'failed') {
+                                    return (
+                                      <span
+                                        className="px-1.5 py-0.5 rounded bg-red-500/80 text-white text-[9px] font-black uppercase tracking-wider flex items-center gap-1 shadow-sm"
+                                        title={`Failed: ${cueRt.failureReason || 'Playback error'}`}
+                                      >
+                                        <PiWarning size={11} /> Failed
+                                      </span>
+                                    );
+                                  }
+                                  if (cueRt?.executionStatus === 'active') {
+                                    return (
+                                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" title="Live Active on Output" />
+                                    );
+                                  }
+                                  return null;
+                                })()}
+                                <span className="text-[11px] font-bold text-white truncate pointer-events-none px-2 flex-1">
+                                  {item.name}
+                                </span>
+                                <span className="text-[9px] font-mono text-amber-200 pointer-events-none pr-1">
+                                  {formatDuration(duration)}
+                                </span>
 
-                            {/* Right Resize Handle */}
-                            <div
-                              onPointerDown={(e) => handlePointerDownCue(e, item, "resize_right")}
-                              className="absolute right-0 top-0 bottom-0 w-3 hover:bg-white/40 cursor-ew-resize rounded-r-[12px] flex items-center justify-center z-20 group"
-                              title="Drag right edge to extend/shorten duration"
-                            >
-                              <div className="w-[3px] h-3.5 bg-white/30 rounded-full group-hover:bg-white transition-colors" />
-                            </div>
-                          </div>
-                        );
-                      })}
+                                {/* Three-dot context menu button */}
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    openCueContextMenu(e, item);
+                                  }}
+                                  className="p-1 hover:bg-white/20 rounded-[12px] text-white/70 hover:text-white mr-2.5 z-20 cursor-pointer"
+                                  title="Cue options"
+                                >
+                                  <PiDotsThreeVertical size={13} />
+                                </button>
+
+                                {/* Right Resize Handle */}
+                                <div
+                                  onPointerDown={(e) => handlePointerDownCue(e, item, "resize_right")}
+                                  className="absolute right-0 top-0 bottom-0 w-3 hover:bg-white/40 cursor-ew-resize rounded-r-[12px] flex items-center justify-center z-20 group"
+                                  title="Drag right edge to extend/shorten duration"
+                                >
+                                  <div className="w-[3px] h-3.5 bg-white/30 rounded-full group-hover:bg-white transition-colors" />
+                                </div>
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

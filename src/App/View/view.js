@@ -4,6 +4,7 @@ import logoIconGray from "@/assets/wave/wave_icon_gray.png";
 
 function App({ mode: propMode }) {
   const [countdown, setCountDown] = useState(null);
+  const [isTimerRunning, setIsTimerRunning] = useState(false);
   const [bgChange, setBgChange] = useState(false);
   const [timeUp, setTimeUp] = useState(false);
   const [isEventMode, setIsEventMode] = useState(false);
@@ -497,11 +498,17 @@ function App({ mode: propMode }) {
         if (mode === 'general' && (value?.fromAgenda || !newEventMode)) {
           setCountDown(null);
           setIsEventMode(false);
+          setIsTimerRunning(false);
           return;
         }
 
         setIsEventMode(newEventMode);
         setTheme(newTheme);
+        if (value?.isRunning !== undefined) {
+          setIsTimerRunning(Boolean(value.isRunning));
+        } else {
+          setIsTimerRunning(newTime > 0 && !value?.isPaused);
+        }
 
         setCountDown(prev => {
           if (newTime === 0 && prev === null) {
@@ -705,11 +712,17 @@ function App({ mode: propMode }) {
           if (mode === 'general' && (value?.fromAgenda || (value?.target && !value.target.includes('general')) || !newEventMode)) {
             setCountDown(null);
             setIsEventMode(false);
+            setIsTimerRunning(false);
             return;
           }
 
           setIsEventMode(newEventMode);
           setTheme(newTheme);
+          if (value?.isRunning !== undefined) {
+            setIsTimerRunning(Boolean(value.isRunning));
+          } else {
+            setIsTimerRunning(newTime > 0 && !value?.isPaused);
+          }
           setCountDown((prev) => {
             if (newTime === 0 && prev === null) {
               setTimeUp(false);
@@ -859,7 +872,7 @@ function App({ mode: propMode }) {
   );
 
   const renderDefault = () => (
-    <div className={`w-full rounded-2xl  flex items-center p-4 justify-center transition-colors duration-300 ${bgChange ? "bg-red animate-pulse" : "bg-green"}`}>
+    <div className={`w-full rounded-xl flex items-center p-4 justify-center transition-colors duration-300 ${bgChange ? "bg-red animate-pulse" : "bg-green"}`}>
       <p className={`text-[14vw] font-bold leading-none tracking-tight ${bgChange ? "text-light" : "text-primary"}`}>{formatTime(countdown)}</p>
     </div>
   );
@@ -925,7 +938,7 @@ function App({ mode: propMode }) {
   };
 
   const renderTimeUp = () => (
-    <div className="w-full rounded-2xl flex items-center justify-center bg-red animate-pulse">
+    <div className="w-full rounded-xl flex items-center justify-center bg-red animate-pulse">
       <h1 className="text-[12vw] font-black text-light uppercase tracking-tight leading-none">TIME UP</h1>
     </div>
   );
@@ -940,7 +953,8 @@ function App({ mode: propMode }) {
   const hasLegacyContent = presentationContent && ['bible', 'custom', 'custom_layers', 'scene', 'presentation', 'slide_index', 'video', 'image'].includes(presentationContent.type) && presentationContent.data;
 
   const isPresenting = Boolean(hasContentSlot || hasBackgroundMedia || hasPinnedLayers || hasLegacyContent);
-  const showSplitTimer = viewMode !== 'general' && isPresenting && countdown > 0;
+  // Speaker View split-timer renders ONLY when isRunning === true
+  const showSplitTimer = viewMode !== 'general' && isPresenting && countdown > 0 && isTimerRunning;
   console.log(`[View ${viewMode}] RENDER: isPresenting=${isPresenting}, hasContentSlot=${hasContentSlot}, countdown=${countdown}, type=${canvasState.contentSlot?.type}`);
 
   return (

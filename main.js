@@ -4649,20 +4649,49 @@ agendaExecutionEngine = new AgendaExecutionEngine({
       return { ok: false, error: err.message };
     }
   },
-  pauseRecording: async () => {
-    return programRecorder.pause();
+  pauseRecording: async (options) => {
+    return programRecorder.pause(options);
   },
-  resumeRecording: async () => {
-    return programRecorder.resume();
+  resumeRecording: async (options) => {
+    return programRecorder.resume(options);
   },
   getRecorderStatus: () => {
     return programRecorder.getStatus();
   },
   dispatchBackground: (bgPayload) => {
+    if (bgPayload?.fromAgenda) {
+      const activeOwner = currentCanvasState.background?.owner;
+      // Preserve manual background override
+      if (activeOwner && activeOwner.origin === 'manual') {
+        console.log('[AgendaEngine] Preserving manually set background, skipping agenda background clear/update');
+        return;
+      }
+      // Preserve background owned by different run or newer cue
+      if (activeOwner && activeOwner.origin === 'agenda') {
+        if (bgPayload.runId && activeOwner.runId && activeOwner.runId !== bgPayload.runId) {
+          console.log('[AgendaEngine] Skipping background update because owned by different run');
+          return;
+        }
+        if (bgPayload.cueId && activeOwner.cueId && activeOwner.cueId !== bgPayload.cueId && bgPayload.type === 'color' && !bgPayload.color) {
+          console.log('[AgendaEngine] Skipping background clear because owned by newer cue');
+          return;
+        }
+      }
+    }
+
+    const owner = {
+      origin: bgPayload?.fromAgenda ? 'agenda' : 'manual',
+      runId: bgPayload?.runId || null,
+      cueId: bgPayload?.cueId || null,
+      destination: bgPayload?.destination || 'all',
+      timestamp: Date.now(),
+    };
+
     currentCanvasState.background = {
       ...currentCanvasState.background,
       ...bgPayload,
-      fromAgenda: true,
+      owner,
+      fromAgenda: !!bgPayload?.fromAgenda,
     };
     const allowedTargets = bgPayload?.destination ? (bgPayload.destination === 'all' ? null : [bgPayload.destination]) : null;
     broadcastCanvasState(currentCanvasState, allowedTargets);
@@ -4692,18 +4721,44 @@ agendaExecutionEngine = new AgendaExecutionEngine({
   },
   dispatchPresentation: (contentPayload) => {
     if (!contentPayload || contentPayload.type === 'clear' || contentPayload.command === 'stop') {
-      // If cleared from Agenda, ensure we do NOT clear scripture or user manual content that isn't video/image!
-      if (contentPayload?.fromAgenda && currentCanvasState.contentSlot?.type && currentCanvasState.contentSlot.type !== 'video' && currentCanvasState.contentSlot.type !== 'image' && currentCanvasState.contentSlot.type !== 'none') {
-        console.log(`[AgendaEngine] Skipping presentation clear because active content is "${currentCanvasState.contentSlot.type}" (not agenda video/image)`);
-        return;
+      if (contentPayload?.fromAgenda) {
+        const activeOwner = currentCanvasState.contentSlot?.owner;
+        // If content was presented manually (scripture, lyrics, slides, manual video/image), NEVER clear!
+        if (activeOwner && activeOwner.origin === 'manual') {
+          console.log(`[AgendaEngine] Skipping presentation clear because active content was manually presented`);
+          return;
+        }
+        // If content is owned by another agenda run or newer cue, do not clear
+        if (activeOwner && activeOwner.origin === 'agenda') {
+          if (contentPayload.runId && activeOwner.runId && activeOwner.runId !== contentPayload.runId) {
+            console.log(`[AgendaEngine] Skipping presentation clear because content is owned by run ${activeOwner.runId}`);
+            return;
+          }
+          if (contentPayload.cueId && activeOwner.cueId && activeOwner.cueId !== contentPayload.cueId) {
+            console.log(`[AgendaEngine] Skipping presentation clear because content is owned by successor cue ${activeOwner.cueId}`);
+            return;
+          }
+        }
+        // Safeguard any non-video/image manual content like scripture, lyrics, slides
+        if (currentCanvasState.contentSlot?.type && currentCanvasState.contentSlot.type !== 'video' && currentCanvasState.contentSlot.type !== 'image' && currentCanvasState.contentSlot.type !== 'none') {
+          console.log(`[AgendaEngine] Skipping presentation clear because active content is "${currentCanvasState.contentSlot.type}" (not agenda video/image)`);
+          return;
+        }
       }
-      currentCanvasState.contentSlot = { type: 'none', data: null };
+      currentCanvasState.contentSlot = { type: 'none', data: null, owner: null };
       broadcastCanvasState(currentCanvasState, contentPayload?.destination ? [contentPayload.destination] : null);
       broadcastToAllWindows("set-content", null);
     } else {
       currentCanvasState.contentSlot = {
         type: contentPayload.type,
         data: contentPayload,
+        owner: {
+          origin: contentPayload.fromAgenda ? 'agenda' : 'manual',
+          runId: contentPayload.runId || null,
+          cueId: contentPayload.cueId || null,
+          destination: contentPayload.destination || 'all',
+          timestamp: Date.now(),
+        },
       };
       broadcastCanvasState(currentCanvasState, contentPayload?.destination ? [contentPayload.destination] : null);
       broadcastToAllWindows("set-content", {
@@ -4779,7 +4834,10 @@ ipcMain.on("canvas-set-background", (event, bg) => {
   if (!bg?.fromAgenda && agendaExecutionEngine && agendaExecutionEngine.status === "running") {
     agendaExecutionEngine.tagOperatorOverride("background");
   }
-  currentCanvasState.background = { ...currentCanvasState.background, ...bg };
+  const owner = bg?.fromAgenda
+    ? { origin: 'agenda', runId: bg.runId, cueId: bg.cueId, destination: bg.destination || 'all', timestamp: Date.now() }
+    : { origin: 'manual', timestamp: Date.now() };
+  currentCanvasState.background = { ...currentCanvasState.background, ...bg, owner };
   broadcastCanvasState(currentCanvasState);
 });
 
@@ -4983,9 +5041,10 @@ ipcMain.on("switcher:send-live-output-frame", (_event, frameData) => {
   if (switcherRouteSpeaker && speakerWindow) {
     safeWebContentsSend(speakerWindow, "switcher-live-output-frame", frameData); // speakerWindow.webContents.send("switcher-live-output-frame", frameData);
   }
-  // Deliver over Socket.IO to any remote displays or streaming clients
-  if (io) {
-    io.emit("switcher:live-frame", {
+  // Deliver over Socket.IO to any remote displays or streaming clients (volatile to prevent queue buildup)
+  if (io && (switcherRouteGeneral || switcherRouteSpeaker)) {
+    const vIo = io.volatile || io;
+    vIo.emit("switcher:live-frame", {
       data: frameString,
       timestamp: Date.now(),
       effect,
@@ -5683,11 +5742,14 @@ function createWindows() {
 
     // FR-4.14: Content Slot scoping — update only the contentSlot band, preserve Background and Pinned layers
     if (value == null) {
-      currentCanvasState.contentSlot = { type: "none", data: null };
+      currentCanvasState.contentSlot = { type: "none", data: null, owner: null };
     } else {
       currentCanvasState.contentSlot = {
         type: value.type || "none",
         data: value.data || value,
+        owner: value.fromAgenda
+          ? { origin: 'agenda', runId: value.runId, cueId: value.cueId, destination: value.destination || 'all', timestamp: Date.now() }
+          : { origin: 'manual', timestamp: Date.now() },
       };
       if (value.type === "bible" && value.data?.bibleHighlightColor) {
         currentCanvasState.bibleHighlightColor = value.data.bibleHighlightColor;
@@ -6059,6 +6121,7 @@ function createWindows() {
       }
     }
 
+    const firstSession = doc.sessions && doc.sessions[0];
     return {
       ok: true,
       agenda: doc,
@@ -6068,6 +6131,11 @@ function createWindows() {
         sessionCount: doc.sessions.length,
         mediaCount: (doc.assets || []).length,
         totalDuration: summary.formattedTotalTime,
+        firstSession: firstSession ? {
+          name: firstSession.name || 'Session 1',
+          durationSec: firstSession.durationSec || 0,
+          person: firstSession.person || '',
+        } : null,
         warnings: val.warnings,
       },
     };
@@ -6164,15 +6232,15 @@ function startDisplayMirrorEngine() {
               .then((img) => {
                 if (img && !img.isEmpty()) {
                   const thumb = img.resize({
-                    width: 1280,
-                    height: 720,
-                    quality: "better",
+                    width: 640,
+                    height: 360,
+                    quality: "good",
                   });
                   const payload = {
                     destination: "general",
                     data:
                       "data:image/jpeg;base64," +
-                      thumb.toJPEG(85).toString("base64"),
+                      thumb.toJPEG(70).toString("base64"),
                   };
                   broadcastToAllWindows("display-mirror-frame", payload); // win.webContents.send("display-mirror-frame", payload);
                 }
@@ -6188,7 +6256,7 @@ function startDisplayMirrorEngine() {
       }
     }
 
-    // Speaker View window raster capture (High Definition 1280x720 for crisp live output)
+    // Speaker View window raster capture (Optimized 640x360 for crisp multiview preview)
     if (speakerWindow && !speakerWindow.isDestroyed()) {
       const wc = speakerWindow.webContents;
       if (wc && !wc.isDestroyed() && !isCapturingSpeaker) {
@@ -6204,15 +6272,15 @@ function startDisplayMirrorEngine() {
               .then((img) => {
                 if (img && !img.isEmpty()) {
                   const thumb = img.resize({
-                    width: 1280,
-                    height: 720,
-                    quality: "better",
+                    width: 640,
+                    height: 360,
+                    quality: "good",
                   });
                   const payload = {
                     destination: "speaker",
                     data:
                       "data:image/jpeg;base64," +
-                      thumb.toJPEG(85).toString("base64"),
+                      thumb.toJPEG(70).toString("base64"),
                   };
                   broadcastToAllWindows("display-mirror-frame", payload); // win.webContents.send("display-mirror-frame", payload);
                 }
