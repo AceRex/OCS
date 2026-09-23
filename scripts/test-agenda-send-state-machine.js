@@ -145,9 +145,9 @@ async function runSendIntegrationTest() {
 
     const transferId = offerRes.transferId;
 
-    // Step 2: Waiting operator approval
+    // Step 2: Waiting operator approval — returns immediately without blocking on human review
     setMobileTransfer({
-      transferring: true,
+      transferring: false,
       waitingApproval: true,
       progress: 15,
       status: "Waiting for desktop approval…",
@@ -155,52 +155,48 @@ async function runSendIntegrationTest() {
       transferId,
     });
 
-    const responseData = await new Promise((resolve) => {
-      mobileSocket.once("agenda-offer-responded", (data) => {
-        if (data && data.transferId === transferId) {
-          resolve(data);
-        }
-      });
-    });
+    mobileSocket.once("agenda-offer-responded", async (data) => {
+      if (!data || data.transferId !== transferId) return;
 
-    if (!responseData?.accepted) {
+      if (!data.accepted) {
+        setMobileTransfer({
+          transferring: false,
+          waitingApproval: false,
+          progress: 0,
+          status: "Agenda declined",
+          error: null, // Operator decline is NOT a technical failure
+          transferId,
+        });
+        return;
+      }
+
+      // Operator accepted -> finalize
+      const finalRes = await new Promise((resolve) => {
+        mobileSocket.emit("mobile-agenda-finalize-transfer", { transferId }, resolve);
+      });
+
+      if (!finalRes?.ok) {
+        setMobileTransfer({
+          transferring: false,
+          waitingApproval: false,
+          progress: 0,
+          status: "Couldn't send Agenda",
+          error: finalRes?.error || "Desktop failed to commit agenda",
+        });
+        return;
+      }
+
       setMobileTransfer({
         transferring: false,
         waitingApproval: false,
-        progress: 0,
-        status: "Agenda declined",
-        error: null, // Operator decline is NOT a technical failure
+        progress: 100,
+        status: "Agenda accepted ✓",
+        error: null,
         transferId,
       });
-      return { ok: false, error: "Agenda was declined by the desktop operator." };
-    }
-
-    // Step 4: Finalize
-    const finalRes = await new Promise((resolve) => {
-      mobileSocket.emit("mobile-agenda-finalize-transfer", { transferId }, resolve);
     });
 
-    if (!finalRes?.ok) {
-      setMobileTransfer({
-        transferring: false,
-        waitingApproval: false,
-        progress: 0,
-        status: "Couldn't send Agenda",
-        error: finalRes?.error || "Desktop failed to commit agenda",
-      });
-      return { ok: false, error: finalRes?.error };
-    }
-
-    setMobileTransfer({
-      transferring: false,
-      waitingApproval: false,
-      progress: 100,
-      status: "Agenda accepted ✓",
-      error: null,
-      transferId,
-    });
-
-    return { ok: true };
+    return { ok: true, transferId };
   }
 
   // Desktop Server Socket Handlers
@@ -248,12 +244,17 @@ async function runSendIntegrationTest() {
   // ─────────────────────────────────────────────────────────────────────────────
   console.log("\n--- SCENARIO 2: Operator Declines Offer ---");
 
+  const result1 = await sendPromise1;
+  assert.strictEqual(result1.ok, true, "Transport ACK must succeed immediately");
+  assert.strictEqual(getSendState(), "waiting", "Mobile must be in 'waiting' state while pending operator review");
+
   const declineRes = await transferManager.respondToOffer(pendingOffer.transferId, false);
   assert.strictEqual(declineRes.accepted, false);
   mobileSocket.emit("agenda-offer-responded", { transferId: pendingOffer.transferId, accepted: false });
 
-  const result1 = await sendPromise1;
-  assert.strictEqual(result1.ok, false);
+  // Allow event loop cycle for mobileSocket handler
+  await new Promise((r) => setTimeout(r, 20));
+
   assert.strictEqual(getSendState(), "declined", "Mobile button state must be 'declined', NOT 'error'");
   assert.strictEqual(mobileTransferState.error, null, "Declined must NOT be stored as an error");
   assert.strictEqual(mobileTransferState.status, "Agenda declined");
@@ -267,9 +268,8 @@ async function runSendIntegrationTest() {
   console.log("\n--- SCENARIO 3: Resend after Decline & Operator Accepts ---");
 
   const sendPromise2 = mobileSendToDesktop(sampleAgenda);
-  while (!mobileTransferState.waitingApproval) {
-    await new Promise((r) => setTimeout(r, 20));
-  }
+  const result2 = await sendPromise2;
+  assert.strictEqual(result2.ok, true, "Resend transport ACK succeeded immediately");
 
   assert.strictEqual(getSendState(), "waiting", "Mobile state transitions back to 'waiting' on resend");
   assert.strictEqual(transferManager.pendingOffers.size, 1, "Desktop has new pending offer");
@@ -285,8 +285,9 @@ async function runSendIntegrationTest() {
     neededAssetHashes: [],
   });
 
-  const result2 = await sendPromise2;
-  assert.strictEqual(result2.ok, true, "Send succeeded");
+  // Allow event loop cycle for finalize
+  await new Promise((r) => setTimeout(r, 50));
+
   assert.strictEqual(getSendState(), "accepted", "Mobile state is 'accepted'");
   assert.strictEqual(mobileTransferState.status, "Agenda accepted ✓");
 

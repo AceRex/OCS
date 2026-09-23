@@ -11,6 +11,10 @@ class PcmDownsamplerProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
     this.targetSampleRate = (options && options.processorOptions && options.processorOptions.targetSampleRate) || 16000;
+    this.bufferSize = 512; // 32ms at 16kHz
+    this.accumulated = new Int16Array(this.bufferSize);
+    this.accumCount = 0;
+    this.lastSample = 0;
   }
 
   process(inputs, outputs, parameters) {
@@ -21,7 +25,6 @@ class PcmDownsamplerProcessor extends AudioWorkletProcessor {
     const inputRate = sampleRate;
     const ratio = inputRate / this.targetSampleRate;
     const outLen = Math.max(1, Math.floor(channelData.length / ratio));
-    const int16 = new Int16Array(outLen);
 
     let sum = 0;
     for (let i = 0; i < channelData.length; i++) {
@@ -29,17 +32,27 @@ class PcmDownsamplerProcessor extends AudioWorkletProcessor {
     }
     const rms = Math.sqrt(sum / channelData.length);
 
+    // Anti-aliased decimation with smoothing
     for (let i = 0; i < outLen; i++) {
       const start = Math.floor(i * ratio);
       const end = Math.min(channelData.length, Math.floor((i + 1) * ratio) || start + 1);
       let acc = 0;
       const count = Math.max(1, end - start);
       for (let j = start; j < end; j++) acc += channelData[j];
-      const s = Math.max(-1, Math.min(1, acc / count));
-      int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      const avg = acc / count;
+      // 1-pole lowpass filter smoothing
+      this.lastSample = this.lastSample * 0.25 + avg * 0.75;
+      const s = Math.max(-1, Math.min(1, this.lastSample));
+      const val = s < 0 ? Math.round(s * 0x8000) : Math.round(s * 0x7fff);
+
+      this.accumulated[this.accumCount++] = val;
+      if (this.accumCount >= this.bufferSize) {
+        const outBuf = this.accumulated.buffer.slice(0);
+        this.port.postMessage({ buffer: outBuf, rms }, [outBuf]);
+        this.accumCount = 0;
+      }
     }
 
-    this.port.postMessage({ buffer: int16.buffer, rms }, [int16.buffer]);
     return true;
   }
 }

@@ -29,6 +29,7 @@ const BOOK_ALIASES = [
   'collusion', 'collusions', 'collotions', 'collotion',
   'collations', 'collation', 'coalition', 'coalitions',
   'colosians', 'colosian',
+  'coloshas', 'colosha', 'caloshas', 'calosha',
   'college as', 'college is', 'justins as', 'justin as', 'justins',
   // Jeremiah ASR / spelling slips
   'jaymiah', 'jayemiah', 'jerimiah', 'jermiah', 'jeremyah', 'jeremy',

@@ -8,25 +8,28 @@ const { buildOcsGrammar } = require('./ocsGrammar');
 
 const CORE_BOOKS = [
   'Genesis', 'Exodus', 'Leviticus', 'Numbers', 'Deuteronomy',
-  'Joshua', 'Judges', 'Ruth', 'Samuel', 'Kings', 'Chronicles',
+  'Joshua', 'Judges', 'Ruth', 'First Samuel', 'Second Samuel',
+  'First Kings', 'Second Kings', 'First Chronicles', 'Second Chronicles',
   'Ezra', 'Nehemiah', 'Esther', 'Job', 'Psalms', 'Proverbs',
-  'Ecclesiastes', 'Isaiah', 'Jeremiah', 'Lamentations', 'Ezekiel', 'Daniel',
+  'Ecclesiastes', 'Song of Solomon', 'Isaiah', 'Jeremiah', 'Lamentations', 'Ezekiel', 'Daniel',
   'Hosea', 'Joel', 'Amos', 'Obadiah', 'Jonah', 'Micah', 'Nahum',
   'Habakkuk', 'Zephaniah', 'Haggai', 'Zechariah', 'Malachi',
   'Matthew', 'Mark', 'Luke', 'John', 'Acts', 'Romans',
-  'Corinthians', 'Galatians', 'Ephesians', 'Philippians', 'Colossians',
-  'Thessalonians', 'Timothy', 'Titus', 'Philemon', 'Hebrews',
-  'James', 'Peter', 'Jude', 'Revelation',
+  'First Corinthians', 'Second Corinthians', 'Galatians', 'Ephesians', 'Philippians', 'Colossians',
+  'First Thessalonians', 'Second Thessalonians', 'First Timothy', 'Second Timothy', 'Titus', 'Philemon', 'Hebrews',
+  'James', 'First Peter', 'Second Peter', 'First John', 'Second John', 'Third John', 'Jude', 'Revelation',
 ];
 
 const EXAMPLE_REFS = [
-  'John three sixteen',
-  'First Corinthians thirteen four',
-  'Colossians one fifteen',
-  'First Thessalonians five sixteen',
-  'Philippians two fifteen',
-  'Habakkuk two four',
-  'Proverbs twenty four verse six',
+  'Second Corinthians chapter five verse seventeen',
+  'Colossians chapter three verse twenty two',
+  'John chapter three sixteen',
+  'Romans chapter eight verse twenty eight',
+  'First Corinthians chapter thirteen verse four',
+  'Philippians chapter four verse thirteen',
+  'First Thessalonians chapter five verse sixteen',
+  'Habakkuk chapter two verse four',
+  'Proverbs chapter twenty four verse six',
 ];
 
 const COMMANDS = [
@@ -39,13 +42,13 @@ const COMMANDS = [
  * @returns {string}
  */
 function buildWhisperInitialPrompt(opts = {}) {
-  const maxChars = opts.maxChars || 800;
+  const maxChars = opts.maxChars || 1000;
   const parts = [
     'Bible scripture references and church AV commands.',
     `Books: ${CORE_BOOKS.join(', ')}.`,
     `Examples: ${EXAMPLE_REFS.join('; ')}.`,
     `Commands: ${COMMANDS.join(', ')}.`,
-    'Prefer book names Colossians Thessalonians Philippians Habakkuk over similar English words.',
+    'Prefer Bible book names Second Corinthians, Colossians, Thessalonians, Philippians, Habakkuk over similar English words like current tense or collisions.',
   ];
   let prompt = parts.join(' ');
   if (prompt.length > maxChars) {
@@ -58,7 +61,7 @@ function buildWhisperInitialPrompt(opts = {}) {
  * Lightweight bookish arming (shared with Vosk Pass B heuristics).
  */
 const TRIGGER_RE = /\b(ocs|oasis|ocean|osiris|obvious|media|meter|medium|median|oh see ess|oh see es)\b/i;
-const BOOK_TOKEN_RE = /\b(?:(?:the\s+)?book\s+of|genesis|exodus|leviticus|numbers|deuteronomy|joshua|judges|ruth|samuel|kings|chronicles|ezra|nehemiah|esther|job|psalms?|proverbs|ecclesiastes|isaiah|aisayan|aisaya|asayan|isayan|jeremiah|jaymiah|jayemiah|jerimiah|jeremy|lamentations|ezekiel|daniel|hosea|joel|amos|obadiah|jonah|micah|nahum|habakkuk|zephaniah|haggai|zechariah|malachi|matthew|mark|luke|john|acts|romans|corinthians|galatians|ephesians|philippians|philippines|colossians|colosians|collisions|collosions|collusion|collotions|coalition|thessalonians|timothy|titus|philemon|hebrews|james|peter|jude|revelation|revelations)\b/i;
+const BOOK_TOKEN_RE = /\b(?:(?:the\s+)?book\s+of|genesis|exodus|leviticus|numbers|deuteronomy|joshua|judges|ruth|samuel|kings|chronicles|ezra|nehemiah|esther|job|psalms?|proverbs|ecclesiastes|isaiah|aisayan|aisaya|asayan|isayan|jeremiah|jaymiah|jayemiah|jerimiah|jeremy|lamentations|ezekiel|daniel|hosea|joel|amos|obadiah|jonah|micah|nahum|habakkuk|zephaniah|haggai|zechariah|malachi|matthew|mark|luke|john|acts|romans|corinthians|galatians|ephesians|philippians|philippines|colossians|colosians|coloshas?|colosha's?|caloshas?|calosha's?|collisions|collosions|collusion|collotions|coalition|thessalonians|timothy|titus|philemon|hebrews|james|peter|jude|revelation|revelations)\b/i;
 const NUMBERISH_RE = /\b(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|verse|verses|chapter|vs)\b/i;
 
 function shouldArmRollingDecode(text) {

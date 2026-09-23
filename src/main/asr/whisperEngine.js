@@ -31,14 +31,14 @@ const {
 
 const SAMPLE_RATE = 16000;
 const DEFAULT_CONFIDENCE_THRESHOLD = 0.42; // recalibrated vs Vosk 0.48 for logprob mapping
-const PRE_ROLL_MS = 350;
+const PRE_ROLL_MS = 500;
 const OVERLAP_MS = 250;
-const SILENCE_END_MS = 320;
-const MAX_UTTERANCE_MS = 6000;
+const SILENCE_END_MS = 650;
+const MAX_UTTERANCE_MS = 9000;
 const ROLLING_WINDOW_MS = 1800;
 const ROLLING_HOP_MS = 250;
-const ENERGY_SPEECH = 0.012;
-const ENERGY_SILENCE = 0.006;
+const ENERGY_SPEECH = 0.005;
+const ENERGY_SILENCE = 0.0025;
 
 function resolveWhisperModel(rootDir) {
   const searchDirs = [
@@ -454,10 +454,8 @@ class WhisperEngine extends EventEmitter {
       }
 
       const utteredMs = now - this._speechStartedAt;
-      // For short utterances (< 1.5s, typical for voice commands like "Next", "Previous", "Black screen"),
-      // reduce silence threshold from 320ms to 180ms for instant command finalization.
-      const dynamicSilenceEnd = utteredMs < 1500 ? 180 : SILENCE_END_MS;
-      if (this._silenceMs >= dynamicSilenceEnd || utteredMs >= MAX_UTTERANCE_MS) {
+      // Allow natural speech pauses between book name and chapter/verse (650ms silence window)
+      if (this._silenceMs >= SILENCE_END_MS || utteredMs >= MAX_UTTERANCE_MS) {
         this._finalizeUtterance(utteredMs >= MAX_UTTERANCE_MS ? 'max_len' : 'silence');
         return;
       }
@@ -580,6 +578,13 @@ class WhisperEngine extends EventEmitter {
     if (!chunks.length) return;
     const fullBuf = Buffer.concat(chunks);
     if (fullBuf.length < SAMPLE_RATE * 2 * 0.25) return; // ignore <250ms blips
+
+    if (process.env.OCS_ASR_DEBUG_AUDIO === '1') {
+      this._debugUttIdx = ((this._debugUttIdx || 0) % 3) + 1;
+      const debugDir = path.join(this.rootDir, 'temp_output', 'asr_debug');
+      const debugWavPath = path.join(debugDir, `utt_00${this._debugUttIdx}.wav`);
+      writePcmWav(debugWavPath, fullBuf, SAMPLE_RATE);
+    }
 
     // Save overlap tail for next utterance
     const overlapBytes = Math.floor(0.25 * SAMPLE_RATE) * 2;
@@ -706,6 +711,36 @@ class WhisperEngine extends EventEmitter {
       language: detected || targetLang,
       filtered: false,
     };
+  }
+}
+
+function writePcmWav(filePath, pcmInt16Buf, sampleRate = 16000) {
+  try {
+    const numChannels = 1;
+    const byteRate = sampleRate * numChannels * 2;
+    const blockAlign = numChannels * 2;
+    const dataSize = pcmInt16Buf.length;
+    const header = Buffer.alloc(44);
+
+    header.write('RIFF', 0);
+    header.writeUInt32LE(36 + dataSize, 4);
+    header.write('WAVE', 8);
+    header.write('fmt ', 12);
+    header.writeUInt32LE(16, 16);
+    header.writeUInt16LE(1, 20);
+    header.writeUInt16LE(numChannels, 22);
+    header.writeUInt32LE(sampleRate, 24);
+    header.writeUInt32LE(byteRate, 28);
+    header.writeUInt16LE(blockAlign, 32);
+    header.writeUInt16LE(16, 34);
+    header.write('data', 36);
+    header.writeUInt32LE(dataSize, 40);
+
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(filePath, Buffer.concat([header, pcmInt16Buf]));
+  } catch (e) {
+    console.warn('[Whisper] Failed to write debug audio WAV:', e.message);
   }
 }
 

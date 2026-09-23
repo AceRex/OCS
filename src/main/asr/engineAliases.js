@@ -80,6 +80,8 @@ const WHISPER_BOOK_ALIASES = [
   { pattern: /\b(zacha?ria[h]?)\b/gi, replacement: 'Zechariah' },
   // Whisper: "Philippians" sometimes → "filippians" (Italian speaker patterns)
   { pattern: /\b(filippians?|filipp?i|filipe\s*ans?)\b/gi, replacement: 'Philippians' },
+  // Whisper: "Colossians" misheard as "Colosha's" / "Coloshas"
+  { pattern: /\b(coloshas?|colosha's?|coloshans?|caloshas?|calosha's?)\b/gi, replacement: 'Colossians' },
   // Whisper: "Ecclesiastes" mishears
   { pattern: /\b(ecclesia\s+sticks?|ecclesiasticks?|ecclesiastics?|eclesiastes|eklesiastes?|ecclesiasti)\b/gi, replacement: 'Ecclesiastes' },
   // Whisper hallucinations around "first / second" prefix books
@@ -110,7 +112,7 @@ const VOSK_BOOK_ALIASES = [
   { pattern: /\b(molokai|malakai|malakhi)\b/gi, replacement: 'Malachi' },
   { pattern: /\b(aisayan|aisaya|asayan|isayan)\b/gi, replacement: 'Isaiah' },
   { pattern: /\b(jaymiah|jeremia|jeremiya)\b/gi, replacement: 'Jeremiah' },
-  { pattern: /\b(colosians|collusions?|collations?)\b/gi, replacement: 'Colossians' },
+  { pattern: /\b(colosians|colosian|coloshas?|colosha's?|coloshans?|caloshas?|calosha's?|kaloshas?|kalosha's?|collusions?|collations?)\b/gi, replacement: 'Colossians' },
   { pattern: /\b(philippine?s?)\b/gi, replacement: 'Philippians' },
   { pattern: /\b(ecclesia\s+sticks?|ecclesiasticks?|ecclesiastics?|eclesiastes|eklesiastes?|ecclesiasti)\b/gi, replacement: 'Ecclesiastes' },
   { pattern: /\b(rumus|rumas|romus|rumos|roomas)\b/gi, replacement: 'Romans' },

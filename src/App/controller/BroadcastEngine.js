@@ -633,6 +633,17 @@ export default function BroadcastEngine({ onOpenPreview }) {
   // FR-3.26 / FR-3.68 — Active ASR engine name + calibration state for debug bar
   const [asrEngine, setAsrEngine] = useState(null); // 'whisper' | 'vosk' | null
   const [asrCalibrating, setAsrCalibrating] = useState(false); // FR-3.68 post-switch flag
+  const lastHeardBookRef = useRef({ bookIndex: null, bookName: "", time: 0 });
+  const [voiceDiag, setVoiceDiag] = useState({
+    show: false,
+    engine: "whisper",
+    model: "ggml-distil-small.en",
+    sampleRate: "48kHz → 16kHz",
+    raw: "",
+    normalized: "",
+    resolution: "",
+    latencyMs: 0,
+  });
 
   // Ollama / AI State
   const [aiStatus, setAiStatus] = useState({
@@ -2381,7 +2392,7 @@ export default function BroadcastEngine({ onOpenPreview }) {
         }
       : null;
 
-    const match = await smartBibleMatch(
+    let match = await smartBibleMatch(
       matchText,
       books,
       window.electron?.Bible,
@@ -2393,6 +2404,67 @@ export default function BroadcastEngine({ onOpenPreview }) {
         allowBookOnly,
       },
     );
+
+    // If no match was found on the raw phrase, check if we have a recent book spoken in the last 4.5s
+    // (Handles slow/natural speech pauses like "Second Corinthians ... chapter five verse seventeen")
+    if (!match && lastHeardBookRef.current.bookName && (Date.now() - lastHeardBookRef.current.time < 4500)) {
+      const stitchedText = `${lastHeardBookRef.current.bookName} ${matchText}`;
+      const stitchedMatch = await smartBibleMatch(
+        stitchedText,
+        books,
+        window.electron?.Bible,
+        context,
+        {
+          allowPass2,
+          allowPass3,
+          requireShape: false,
+          allowBookOnly: false,
+        },
+      );
+      if (stitchedMatch) {
+        console.log("[Voice] Resolved via stitched book context:", stitchedText, stitchedMatch);
+        match = stitchedMatch;
+        matchText = stitchedText;
+      }
+    }
+
+    if (match && match.bookIndex != null) {
+      lastHeardBookRef.current = {
+        bookIndex: match.bookIndex,
+        bookName: books[match.bookIndex]?.name || "",
+        time: Date.now(),
+      };
+      const resolvedRef = `${books[match.bookIndex]?.name || ""} ${match.chapter}:${match.startVerse}`;
+      setVoiceDiag((prev) => ({
+        ...prev,
+        raw: text,
+        normalized: matchText,
+        resolution: resolvedRef,
+      }));
+    } else {
+      // Check if this utterance was just a book name mentioned alone
+      const bookOnlyCheck = await smartBibleMatch(
+        matchText,
+        books,
+        window.electron?.Bible,
+        null,
+        { allowPass2: true, allowPass3: false, requireShape: false, allowBookOnly: true },
+      );
+      if (bookOnlyCheck && bookOnlyCheck.bookIndex != null) {
+        lastHeardBookRef.current = {
+          bookIndex: bookOnlyCheck.bookIndex,
+          bookName: books[bookOnlyCheck.bookIndex]?.name || "",
+          time: Date.now(),
+        };
+        console.log("[Voice] Standalone book noted for stitching:", lastHeardBookRef.current.bookName);
+      }
+      setVoiceDiag((prev) => ({
+        ...prev,
+        raw: text,
+        normalized: matchText,
+        resolution: prev.resolution || "None",
+      }));
+    }
 
     // FR-3.19 — content/fuzzy hit with no book-name token support: suggest, don't silent-display
     if (match?.needsConfirmation) {
@@ -2557,8 +2629,13 @@ export default function BroadcastEngine({ onOpenPreview }) {
       // Philippians / Colossians OOV neighbors + spelling slips
       [/\bphilippines\b/gi, "Philippians"],
       [
-        /\b(colosians|colosian|collosions|collosion|collusions?|collotions?|collations?|collisions|collision|coalitions?)\b/gi,
+        /\b(colosians|colosian|coloshas?|colosha's?|coloshans?|caloshas?|calosha's?|kaloshas?|kalosha's?|collosions|collosion|collusions?|collotions?|collations?|collisions|collision|coalitions?)\b/gi,
         "Colossians",
+      ],
+      // "today" after book name followed by number → "3 verse" (mishearing of "3 vs" / "three verse")
+      [
+        /\b(Colossians|Genesis|Exodus|Leviticus|Numbers|Deuteronomy|Joshua|Judges|Ruth|Samuel|Kings|Chronicles|Ezra|Nehemiah|Esther|Job|Psalms?|Proverbs|Ecclesiastes|Isaiah|Jeremiah|Lamentations|Ezekiel|Daniel|Hosea|Joel|Amos|Obadiah|Jonah|Micah|Nahum|Habakkuk|Zephaniah|Haggai|Zechariah|Malachi|Matthew|Mark|Luke|John|Acts|Romans|Corinthians|Galatians|Ephesians|Philippians|Thessalonians|Timothy|Titus|Philemon|Hebrews|James|Peter|Jude|Revelation)\s+(?:today|to\s+day)\s+(?:verse|verses|vs|v)?\s*(\d+)\b/gi,
+        "$1 3 verse $2",
       ],
       // Ecclesiastes ASR mishearings
       [
@@ -3276,20 +3353,27 @@ export default function BroadcastEngine({ onOpenPreview }) {
       const source = audioCtx.createMediaStreamSource(stream);
       sourceNodeRef.current = source;
 
-      // FR-3.2 — Vocal isolation filter graph: 120 Hz high-pass + 2.5 kHz presence peaking + 2.2× preamp
+      // FR-3.2 — Vocal isolation filter graph: 85 Hz high-pass + 2.5 kHz presence peaking (1dB) + Dynamics Compressor + 1.25x makeup gain
       const highpass = audioCtx.createBiquadFilter();
       highpass.type = "highpass";
-      highpass.frequency.value = 120;
+      highpass.frequency.value = 85;
       highpass.Q.value = 0.707;
 
       const vocalPeaking = audioCtx.createBiquadFilter();
       vocalPeaking.type = "peaking";
       vocalPeaking.frequency.value = 2500;
       vocalPeaking.Q.value = 1.0;
-      vocalPeaking.gain.value = 3.0; // Boost vocal formant presence over music/instruments
+      vocalPeaking.gain.value = 1.0; // Gentle vocal formant presence boost
 
-      const preamp = audioCtx.createGain();
-      preamp.gain.value = 2.2;
+      const compressor = audioCtx.createDynamicsCompressor();
+      compressor.threshold.value = -18; // dB
+      compressor.knee.value = 12; // dB
+      compressor.ratio.value = 4; // 4:1 compression prevents digital clipping on loud preaching
+      compressor.attack.value = 0.003; // 3ms fast attack protects against transient clipping
+      compressor.release.value = 0.15; // 150ms smooth release
+
+      const makeupGain = audioCtx.createGain();
+      makeupGain.gain.value = 1.25; // Gentle +2 dB makeup gain
 
       const sink = audioCtx.createMediaStreamDestination();
 
@@ -3324,8 +3408,9 @@ export default function BroadcastEngine({ onOpenPreview }) {
 
       source.connect(highpass);
       highpass.connect(vocalPeaking);
-      vocalPeaking.connect(preamp);
-      preamp.connect(processor);
+      vocalPeaking.connect(compressor);
+      compressor.connect(makeupGain);
+      makeupGain.connect(processor);
       processor.connect(sink);
 
       // If a session archive is already active, start MediaRecorder on this stream

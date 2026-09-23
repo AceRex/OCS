@@ -119,6 +119,11 @@ export const BOOK_ALIASES = {
     'philip pines': 'Philippians', 'phillipines': 'Philippians', 'phillipians': 'Philippians',
     'col': 'Colossians', 'colossians': 'Colossians', 'colossian': 'Colossians',
     'colosians': 'Colossians', 'colosian': 'Colossians',
+    'coloshas': 'Colossians', 'colosha': 'Colossians', "colosha's": 'Colossians',
+    'coloshans': 'Colossians', 'coloshan': 'Colossians',
+    'caloshas': 'Colossians', 'calosha': 'Colossians', "calosha's": 'Colossians',
+    'caloshans': 'Colossians', 'caloshan': 'Colossians',
+    'kaloshas': 'Colossians', 'kalosha': 'Colossians', "kalosha's": 'Colossians',
     'kolossians': 'Colossians', 'kolosians': 'Colossians',
     'colossyans': 'Colossians', 'colosseans': 'Colossians',
     'collisions': 'Colossians', 'collision': 'Colossians',
@@ -508,12 +513,20 @@ export function repairReferenceConnectors(text) {
         '$1 4 $2'
     );
 
+    // Book + "today" / "to day" + optional("verse"|"vs") + number → book + "3 verse " + number
+    // (Vosk/Whisper phonetic garble: "3 vs" / "three verse" misheard as "today")
+    // e.g. "colossians today 22" / "colosha's today 22" → "colossians 3 verse 22"
+    t = t.replace(
+        /\b(genesis|exodus|leviticus|numbers|deuteronomy|joshua|judges|ruth|samuel|kings|chronicles|ezra|nehemiah|esther|job|psalms?|proverbs|ecclesiastes|ecclesiastics|ecclesia\s+sticks?|isaiah|jeremiah|jaymiah|jayemiah|jerimiah|jeremy|lamentations|ezekiel|daniel|hosea|joel|amos|obadiah|jonah|micah|nahum|habakkuk|zephaniah|haggai|zechariah|malachi|matthew|mark|luke|john|acts|romans|corinthians|galatians|ephesians|philippians|philippines|philippine|philipians|phillipians|phillipines|colossians|colosians|coloshas?|colosha's?|coloshans?|caloshas?|calosha's?|kaloshas?|kalosha's?|collisions|collosions|collusion|collotions|coalition|thessalonians|timothy|titus|philemon|hebrews|james|peter|jude|revelation|mach|match|marsh|mock|marc|look|junk|sams|molokai)(?:'s)?\s+(?:today|to\s+day)\s+(?:verse|verses|vs|v)?\s*(\d+)\b/gi,
+        '$1 3 verse $2'
+    );
+
     // Book + "on" → book + "1" when a verse/chapter cue follows
     // (Vosk drops the /w/ in "one": "mark on verse one" / "mark on of …")
     // Emit digit directly — this runs after wordNumbersToDigits.
     // Require a following cue so prose like "mark on the screen" is untouched.
     t = t.replace(
-        /\b(genesis|exodus|leviticus|numbers|deuteronomy|joshua|judges|ruth|samuel|kings|chronicles|ezra|nehemiah|esther|job|psalms?|proverbs|ecclesiastes|ecclesiastics|ecclesia\s+sticks?|isaiah|jeremiah|jaymiah|jayemiah|jerimiah|jeremy|lamentations|ezekiel|daniel|hosea|joel|amos|obadiah|jonah|micah|nahum|habakkuk|zephaniah|haggai|zechariah|malachi|matthew|mark|luke|john|acts|romans|corinthians|galatians|ephesians|philippians|philippines|philippine|philipians|colossians|colosians|collisions|collosions|collusion|collotions|coalition|thessalonians|timothy|titus|philemon|hebrews|james|peter|jude|revelation|mach|match|marsh|mock|marc|look|junk|sams|molokai)\s+on\s+(verse|verses|vs|v|of|\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/gi,
+        /\b(genesis|exodus|leviticus|numbers|deuteronomy|joshua|judges|ruth|samuel|kings|chronicles|ezra|nehemiah|esther|job|psalms?|proverbs|ecclesiastes|ecclesiastics|ecclesia\s+sticks?|isaiah|jeremiah|jaymiah|jayemiah|jerimiah|jeremy|lamentations|ezekiel|daniel|hosea|joel|amos|obadiah|jonah|micah|nahum|habakkuk|zephaniah|haggai|zechariah|malachi|matthew|mark|luke|john|acts|romans|corinthians|galatians|ephesians|philippians|philippines|philippine|philipians|colossians|colosians|coloshas?|colosha's?|coloshans?|caloshas?|calosha's?|kaloshas?|kalosha's?|collisions|collosions|collusion|collotions|coalition|thessalonians|timothy|titus|philemon|hebrews|james|peter|jude|revelation|mach|match|marsh|mock|marc|look|junk|sams|molokai)\s+on\s+(verse|verses|vs|v|of|\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/gi,
         '$1 1 $2'
     );
 
