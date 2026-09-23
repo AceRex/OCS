@@ -3850,20 +3850,33 @@ io.on("connection", (socket) => {
 
   // ── Mobile Agenda Transfer & Controls ─────────────────────────────────────
   socket.on("mobile-agenda-offer", async (payload = {}, ack = () => {}) => {
-    if (!isPaired(socket.id)) {
+    const corrId = payload?.corrId || Math.random().toString(36).substring(2, 8);
+    console.log(`[AGENDA-SEND ${corrId}] DESKTOP offer received from socket: ${socket.id}`);
+
+    const authorized = isPaired(socket.id);
+    console.log(`[AGENDA-SEND ${corrId}] pairing authorization: ${authorized ? "PASS" : "FAIL"}`);
+    if (!authorized) {
+      console.warn(`[AGENDA-SEND ${corrId}] pairing authorization: FAIL - socket ${socket.id} not in paired registry`);
       return ack({ ok: false, error: "Pairing required before sending agenda" });
     }
+
     try {
       const devName = payload.deviceName || (typeof device !== 'undefined' ? device?.name : null) || "Mobile Companion";
       const devIp = (typeof device !== 'undefined' ? device?.ip : null) || socket.handshake?.address || "127.0.0.1";
+
+      console.log(`[AGENDA-SEND ${corrId}] validating payload: sessions=${(payload?.agenda?.sessions || []).length}, assets=${(payload?.agenda?.assets || []).length}`);
       const result = await agendaTransferManager.handleOffer({
         agenda: payload.agenda,
         deviceName: devName,
         deviceIp: devIp,
+        corrId,
       });
+
       if (!result.ok) {
+        console.warn(`[AGENDA-SEND ${corrId}] validation FAILED: ${result.error}`);
         return ack(result);
       }
+      console.log(`[AGENDA-SEND ${corrId}] validation passed, pending offer created: transferId=${result.transferId}`);
 
       const summary = calculateAgendaSummary(payload.agenda);
 
@@ -3871,25 +3884,27 @@ io.on("connection", (socket) => {
       broadcastToAllWindows("agenda-offer-received", {
         ...result,
         deviceId: socket.id,
-        deviceName: device.name || "Mobile Companion",
+        deviceName: devName,
         totalDuration: summary.formattedTotalTime || "00:00:00",
         sessionCount: (payload.agenda.sessions || []).length,
         sessionNames: (payload.agenda.sessions || []).map((s) => s.name || "Untitled Session"),
         mediaCount: (payload.agenda.assets || []).length,
         agenda: payload.agenda,
+        corrId,
       });
 
       if (Notification.isSupported()) {
         try {
           const notif = new Notification({
             title: "OCS — Incoming Agenda from Mobile",
-            body: `${device.name || "Mobile"} sent "${result.agendaName}" (${(payload.agenda.sessions || []).length} sessions, ${(payload.agenda.assets || []).length} assets, ${summary.formattedTotalTime}).`,
+            body: `${devName} sent "${result.agendaName}" (${(payload.agenda.sessions || []).length} sessions, ${(payload.agenda.assets || []).length} assets, ${summary.formattedTotalTime}).`,
             silent: false,
           });
           notif.show();
         } catch (_) {}
       }
 
+      console.log(`[AGENDA-SEND ${corrId}] acknowledgement returned (pendingApproval=true, transferId=${result.transferId})`);
       // DO NOT AUTO-ACCEPT. Return pending state to mobile.
       ack({
         ok: true,
@@ -3901,6 +3916,7 @@ io.on("connection", (socket) => {
         totalDuration: summary.formattedTotalTime,
       });
     } catch (err) {
+      console.error(`[AGENDA-SEND ${corrId}] DESKTOP offer handling exception:`, err);
       ack({ ok: false, error: err.message });
     }
   });

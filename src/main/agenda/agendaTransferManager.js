@@ -94,9 +94,12 @@ class AgendaTransferManager {
   /**
    * Evaluates an incoming agenda offer from mobile
    */
-  async handleOffer({ agenda, deviceName, deviceIp }) {
+  async handleOffer({ agenda, deviceName, deviceIp, corrId }) {
     const val = validateAgendaDocument(agenda);
     if (!val.valid) {
+      if (corrId) {
+        console.warn(`[AGENDA-SEND ${corrId}] validation FAILED:`, val.errors);
+      }
       return { ok: false, error: `Invalid agenda manifest: ${val.errors.join(', ')}` };
     }
 
