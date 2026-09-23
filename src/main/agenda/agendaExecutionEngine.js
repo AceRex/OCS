@@ -166,13 +166,13 @@ class AgendaExecutionEngine extends EventEmitter {
     if (!Array.isArray(this.agendaSnapshot.sessions)) {
       this.agendaSnapshot.sessions = [];
     }
-    this.sessionIndex = 0;
-    this.currentSession = this.agendaSnapshot.sessions[0] || null;
-    this.upcomingSession = this.agendaSnapshot.sessions[1] || null;
-    this.sessionDurationSec = this.currentSession ? (this.currentSession.durationSec || 0) : 0;
+    this.sessionIndex = -1;
+    this.currentSession = null;
+    this.upcomingSession = null;
+    this.sessionDurationSec = 0;
     this.sessionElapsedSec = 0;
     this.intervalRemainingSec = 0;
-    this.status = 'idle';
+    this.status = 'ready';
     this.executedActionIds.clear();
     this.activeCues.clear();
     this.activeVisualCueId = null;
@@ -182,32 +182,8 @@ class AgendaExecutionEngine extends EventEmitter {
     this.currentBackgroundState = null;
     this.preActionBackground = null;
 
-    // Synchronize to Timer controller without starting execution
-    if (this.currentSession) {
-      this.syncTimer({
-        agendaTitle: this.agendaSnapshot.name,
-        sessionTitle: this.currentSession.name || '',
-        sessionPerson: this.currentSession.person || this.currentSession.speakerName || '',
-        durationSec: this.sessionDurationSec,
-        remainingSec: this.sessionDurationSec,
-        sessionIndex: 0,
-        totalSessions: this.agendaSnapshot.sessions.length,
-        isRunning: false,
-        isPaused: false,
-      });
-    } else {
-      this.syncTimer({
-        agendaTitle: this.agendaSnapshot.name,
-        sessionTitle: '',
-        sessionPerson: '',
-        durationSec: 0,
-        remainingSec: 0,
-        sessionIndex: 0,
-        totalSessions: 0,
-        isRunning: false,
-        isPaused: false,
-      });
-    }
+    // Do NOT synchronize active timer on load (LOAD ≠ START).
+    // The agenda plan is loaded into READY state; timer remains idle until explicit start.
 
     this.emitState();
     return this.getState();
@@ -236,6 +212,15 @@ class AgendaExecutionEngine extends EventEmitter {
         this.activeCues.clear();
         this.activeLayerCues.clear();
       }
+    } else if (!this.currentSession) {
+      this.sessionIndex = 0;
+      this.currentSession = this.agendaSnapshot.sessions[0] || null;
+      this.upcomingSession = this.agendaSnapshot.sessions[1] || null;
+      this.sessionDurationSec = this.currentSession ? (this.currentSession.durationSec || 0) : 0;
+      this.sessionElapsedSec = 0;
+      this.executedActionIds.clear();
+      this.activeCues.clear();
+      this.activeLayerCues.clear();
     }
 
     if (!this.currentSession) {
@@ -372,13 +357,17 @@ class AgendaExecutionEngine extends EventEmitter {
 
     this.syncTimer({
       agendaTitle: this.agendaSnapshot?.name,
-      sessionTitle: this.currentSession?.name,
+      sessionTitle: '',
       durationSec: 0,
       remainingSec: 0,
-      sessionIndex: this.sessionIndex,
+      sessionIndex: null,
       isRunning: false,
       isPaused: false,
     });
+
+    this.currentSession = null;
+    this.sessionIndex = -1;
+    this.upcomingSession = null;
 
     this.emitState();
   }
@@ -1078,7 +1067,7 @@ class AgendaExecutionEngine extends EventEmitter {
       return this.getState();
     }
 
-    if (!this.agendaSnapshot || this.status === 'idle') {
+    if (!this.agendaSnapshot || this.status === 'idle' || this.status === 'ready') {
       this.loadAgenda(updatedAgenda);
       return this.getState();
     }
@@ -1122,7 +1111,7 @@ class AgendaExecutionEngine extends EventEmitter {
       status: this.status,
       agendaId: this.agendaSnapshot ? this.agendaSnapshot.id : null,
       agendaName: this.agendaSnapshot ? this.agendaSnapshot.name : '',
-      sessionIndex: this.sessionIndex,
+      sessionIndex: this.sessionIndex >= 0 ? this.sessionIndex : null,
       sessionName: this.currentSession ? this.currentSession.name : '',
       sessionDurationSec: this.sessionDurationSec,
       sessionElapsedSec: Math.round(this.sessionElapsedSec),

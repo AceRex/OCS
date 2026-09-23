@@ -100,10 +100,12 @@ export default function TimerController() {
         if (engState) {
           const isEngRunning =
             engState.status === "running" || engState.status === "interval";
-          isAgendaDrivenRef.current = !!(engState.agendaId || isEngRunning);
+          isAgendaDrivenRef.current = isEngRunning;
           dispatch(utilAction.setIsRunning(isEngRunning));
-          if (typeof engState.sessionRemainingSec === "number") {
+          if (isEngRunning && typeof engState.sessionRemainingSec === "number") {
             setCountDown(engState.sessionRemainingSec);
+          } else {
+            setCountDown(0);
           }
         }
       })
@@ -333,24 +335,32 @@ export default function TimerController() {
 
   useEffect(() => {
     const unsub = window.electron?.Agenda?.onTimerSync?.((sync) => {
-      if (sync) {
-        isAgendaDrivenRef.current = true;
+      const isRunning = sync?.isRunning === true;
+      const isPaused = sync?.isPaused === true;
+
+      if (!isRunning && !isPaused) {
+        // Stopped or Idle: Clear active state, leave timer idle
+        isAgendaDrivenRef.current = false;
+        dispatch(utilAction.setIsRunning(false));
+        dispatch(utilAction.setPaused(false));
+        dispatch(utilAction.setActiveId(null));
+        setCountDown(0);
+        return;
       }
-      if (typeof sync?.isRunning === "boolean") {
-        dispatch(utilAction.setIsRunning(sync.isRunning));
-      }
-      if (sync && typeof sync.remainingSec === "number") {
+
+      // Explicitly running or paused from agenda
+      isAgendaDrivenRef.current = true;
+      dispatch(utilAction.setIsRunning(isRunning));
+      dispatch(utilAction.setPaused(isPaused));
+
+      if (typeof sync.remainingSec === "number") {
         setCountDown(sync.remainingSec);
       }
       if (
-        sync &&
         typeof sync.durationSec === "number" &&
         sync.durationSec > 0
       ) {
         dispatch(utilAction.setTime(sync.durationSec));
-      }
-      if (sync && typeof sync.isPaused === "boolean") {
-        dispatch(utilAction.setPaused(sync.isPaused));
       }
       if (
         typeof sync?.sessionIndex === "number" &&
@@ -358,6 +368,8 @@ export default function TimerController() {
         agenda[sync.sessionIndex]
       ) {
         dispatch(utilAction.setActiveId(agenda[sync.sessionIndex]._id));
+      } else {
+        dispatch(utilAction.setActiveId(null));
       }
     });
     return () => {

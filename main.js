@@ -3854,10 +3854,12 @@ io.on("connection", (socket) => {
       return ack({ ok: false, error: "Pairing required before sending agenda" });
     }
     try {
+      const devName = payload.deviceName || (typeof device !== 'undefined' ? device?.name : null) || "Mobile Companion";
+      const devIp = (typeof device !== 'undefined' ? device?.ip : null) || socket.handshake?.address || "127.0.0.1";
       const result = await agendaTransferManager.handleOffer({
         agenda: payload.agenda,
-        deviceName: device.name,
-        deviceIp: device.ip,
+        deviceName: devName,
+        deviceIp: devIp,
       });
       if (!result.ok) {
         return ack(result);
@@ -4799,13 +4801,15 @@ agendaExecutionEngine = new AgendaExecutionEngine({
     // Agenda timer must NEVER appear on General Screen
     safeWebContentsSend(generalWindow, "set-timer", { time: null, isEventMode: false, fromAgenda: true });
     if (io) {
+      const isRunning = timerPayload.isRunning === true;
+      const isPaused = timerPayload.isPaused === true;
       io.emit("overlay-timer", {
-        agenda: timerPayload.sessionTitle || timerPayload.agendaTitle,
-        countdown: timerPayload.remainingSec,
-        duration: timerPayload.durationSec,
-        isRunning: timerPayload.isRunning,
-        isPaused: timerPayload.isPaused,
-        fromAgenda: true,
+        agenda: isRunning || isPaused ? (timerPayload.sessionTitle || timerPayload.agendaTitle || "") : "",
+        countdown: isRunning || isPaused ? (timerPayload.remainingSec || 0) : 0,
+        duration: isRunning || isPaused ? (timerPayload.durationSec || 0) : 0,
+        isRunning,
+        isPaused,
+        fromAgenda: isRunning || isPaused,
         target: ["speaker", "controller"], // Agenda timer strictly isolated from General Screen
       });
     }

@@ -1429,25 +1429,6 @@ export default function AgendaController() {
             ref={timelineContainerRef}
             className="flex-1 overflow-y-auto overflow-x-auto p-5 relative"
           >
-            {/* Live Dragging HUD */}
-            {dragState && (
-              <div className="sticky top-0 z-40 mb-3 flex items-center justify-center pointer-events-none">
-                <div className="px-4 py-1.5 rounded-[12px] bg-black/90 border border-[#7C3AED] shadow-2xl backdrop-blur-md flex items-center gap-3 text-xs font-mono">
-                  <span className="text-white/60">
-                    Start: <strong className="text-white">{formatDuration(dragState.currentStartSec)}</strong>
-                  </span>
-                  <span className="text-white/30">|</span>
-                  <span className="text-white/60">
-                    End: <strong className="text-white">{formatDuration(dragState.currentStartSec + dragState.currentDurationSec)}</strong>
-                  </span>
-                  <span className="text-white/30">|</span>
-                  <span className="text-[#A788FA]">
-                    Duration: <strong>{formatDuration(dragState.currentDurationSec)}</strong>
-                  </span>
-                </div>
-              </div>
-            )}
-
             {currentSession ? (
               <div
                 style={{ width: `${Math.max(100, 100 * timelineZoom)}%` }}

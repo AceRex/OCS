@@ -183,7 +183,7 @@ async function runAllTests() {
   // Check that accepting/loading did NOT start the timer or dispatch playout
   assert.strictEqual(timerStarted, false, "INVARIANT VIOLATION: Timer must NOT start on accept/load!");
   assert.strictEqual(playoutStarted, false, "INVARIANT VIOLATION: Playout must NOT start on accept/load!");
-  assert.strictEqual(engine.status, "idle", "Engine must be in idle (Ready) state upon load");
+  assert.strictEqual(engine.status, "ready", "Engine must be in Ready state upon load");
   console.log("✅ Operator accept and finalize successful; ACCEPT !== START invariant strictly maintained\n");
 
   // ── Test 5: Empty Agenda Resilience ─────────────────────────────────────────
@@ -212,7 +212,7 @@ async function runAllTests() {
 
   assert.strictEqual(emptyEngine.currentSession, null, "currentSession should be null for empty sessions");
   assert.strictEqual(emptyEngine.sessionDurationSec, 0, "sessionDurationSec should be 0 for empty sessions");
-  assert.strictEqual(emptyEngine.status, "idle", "Engine should remain idle");
+  assert.strictEqual(emptyEngine.status, "ready", "Engine should be in Ready state");
 
   // Starting on empty agenda must not crash
   assert.doesNotThrow(() => {

@@ -315,8 +315,8 @@ function validateAgendaDocument(agenda) {
   (agenda.sessions || []).forEach((sess, sIdx) => {
     if (!sess.id) errors.push(`Session at index ${sIdx} missing ID`);
     if (!sess.name) warnings.push(`Session at index ${sIdx} has no title`);
-    if (typeof sess.durationSec !== 'number' || sess.durationSec <= 0) {
-      errors.push(`Session "${sess.name || sIdx}" must have durationSec > 0`);
+    if (typeof sess.durationSec !== 'number' || sess.durationSec < 0) {
+      errors.push(`Session "${sess.name || sIdx}" must have durationSec >= 0`);
     }
 
     const conflicts = detectTimelineConflicts(sess);

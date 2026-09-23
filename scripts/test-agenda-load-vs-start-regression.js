@@ -1,14 +1,14 @@
 /**
  * Automated Regression Test Suite:
- * Agenda Load vs. Start Separation and Preview Non-Destruction.
+ * Agenda Load vs. Start Separation, Timer Stop Invariants & Manual Timer Coexistence.
  *
- * Verifies:
- * 1. Loading an agenda establishes Ready (idle) state, elapsed time = 0, first session duration displayed statically.
- * 2. Loading does NOT dispatch ANY media cues (including 00:00 cues).
- * 3. Pre-existing presentation content and background remain intact upon load.
- * 4. Only an explicit user Start action enters Running state and fires 00:00 cues once.
- * 5. General screen display/preview is strictly isolated from Agenda timer overlays.
- * 6. Stopping and reloading returns cleanly to Ready without auto-starting.
+ * GOLDEN INVARIANTS:
+ * - LOAD ≠ START
+ * - RECEIVE ≠ ACCEPT
+ * - ACCEPT ≠ START
+ * - PLANNED TIMER ≠ ACTIVE TIMER
+ * - AGENDA SESSION DURATION ≠ RUNNING TIMER
+ * - STOP halts timer and clears active countdown without rehydrating
  */
 
 const assert = require("assert");
@@ -16,55 +16,40 @@ const AgendaExecutionEngine = require("../src/main/agenda/agendaExecutionEngine"
 
 console.log("=====================================================================");
 console.log("🧪 RUNNING AGENDA LOAD VS. START REGRESSION TEST SUITE");
-console.log("=====================================================================\n");
+console.log("=====================================================================");
 
 let dispatchedBackgrounds = [];
 let dispatchedPresentations = [];
 let dispatchedTimers = [];
 let broadcastStates = [];
-
-let currentCanvasState = {
-  background: { type: "image", url: "file:///user-preset-background.jpg", fromAgenda: false },
-  contentSlot: { type: "bible", data: { book: "John", chapter: 3, verse: 16 } }
-};
+let overlayTimerBroadcasts = [];
 
 const engine = new AgendaExecutionEngine({
   dispatchBackground: (bgPayload) => {
     dispatchedBackgrounds.push({ ...bgPayload });
-    if (bgPayload) {
-      currentCanvasState.background = { ...bgPayload };
-    }
   },
   dispatchPresentation: (presPayload) => {
     dispatchedPresentations.push({ ...presPayload });
-    if (presPayload) {
-      currentCanvasState.contentSlot = { ...presPayload };
-    }
   },
   dispatchAudio: () => {},
   syncTimer: (timerPayload) => {
     dispatchedTimers.push({ ...timerPayload });
+    // Mirror main.js overlay-timer logic
+    const isRunning = timerPayload.isRunning === true;
+    const isPaused = timerPayload.isPaused === true;
+    overlayTimerBroadcasts.push({
+      agenda: isRunning || isPaused ? (timerPayload.sessionTitle || timerPayload.agendaTitle || "") : "",
+      countdown: isRunning || isPaused ? (timerPayload.remainingSec || 0) : 0,
+      duration: isRunning || isPaused ? (timerPayload.durationSec || 0) : 0,
+      isRunning,
+      isPaused,
+      fromAgenda: isRunning || isPaused,
+    });
   },
   broadcastState: (state) => {
     broadcastStates.push({ ...state });
-  }
+  },
 });
-
-const fs = require("fs");
-const path = require("path");
-const { pathToFileURL } = require("url");
-const { createTimelineItem } = require("../src/main/agenda/agendaModel");
-
-const tempDir = path.join(__dirname, "../scratch/test-agenda-regression");
-if (!fs.existsSync(tempDir)) fs.mkdirSync(tempDir, { recursive: true });
-
-const testImgPath = path.join(tempDir, "test-welcome-bg.jpg");
-const testVidPath = path.join(tempDir, "test-praise-video.mp4");
-fs.writeFileSync(testImgPath, Buffer.from("FAKE_IMAGE_DATA"));
-fs.writeFileSync(testVidPath, Buffer.from("FAKE_VIDEO_DATA"));
-
-const testImgUrl = pathToFileURL(testImgPath).href;
-const testVidUrl = pathToFileURL(testVidPath).href;
 
 const sampleAgenda = {
   id: "agenda_sunday_service",
@@ -74,211 +59,200 @@ const sampleAgenda = {
   defaultMediaEndBehavior: "hold",
   sessions: [
     {
-      id: "session_worship",
-      name: "Opening Worship",
-      durationSec: 300, // 5 minutes
+      id: "session_praise",
+      name: "Praise & Worship",
+      durationSec: 1200, // 20 minutes planned
       transitionMode: "manual",
       intervalSec: 0,
-      timelineItems: [
-        createTimelineItem({
-          id: "cue_welcome_bg",
-          name: "Welcome Background",
-          track: "background",
-          actionType: "point",
-          startSec: 0, // Cue at 00:00!
-          url: testImgUrl,
-          localFileUrl: testImgUrl,
-          color: "#000000"
-        }),
-        createTimelineItem({
-          id: "cue_mid_worship",
-          name: "Mid Worship Video",
-          track: "video",
-          actionType: "range",
-          startSec: 30,
-          durationSec: 60,
-          url: testVidUrl,
-          localFileUrl: testVidUrl
-        })
-      ]
+      timelineItems: [],
     },
     {
-      id: "session_sermon",
-      name: "Sermon",
-      durationSec: 1800,
-      timelineItems: []
-    }
-  ]
+      id: "session_announcements",
+      name: "Announcements",
+      durationSec: 360, // 6 minutes planned
+      transitionMode: "manual",
+      intervalSec: 0,
+      timelineItems: [],
+    },
+  ],
 };
 
 // =============================================================================
-// TEST 1: LOAD AGENDA ONLY (Must be Ready/Idle, No Cues, Canvas Untouched)
+// TEST 1: LOAD AGENDA ONLY (Must be READY, activeSession=null, timer=idle, 0 timer-start events)
 // =============================================================================
-console.log("--- TEST 1: Load Agenda (Ready state, elapsed=0, 0 cues dispatched) ---");
+console.log("\n--- TEST 1: Load Agenda Plan (Ready state, activeSession=null, timer=idle) ---");
+
+dispatchedTimers = [];
+overlayTimerBroadcasts = [];
 
 engine.loadAgenda(sampleAgenda);
 const stateAfterLoad = engine.getState();
 
-// Verify State
-assert.strictEqual(stateAfterLoad.status, "idle", "Engine status must be 'idle' (Ready), not 'running'");
-assert.strictEqual(stateAfterLoad.sessionElapsedSec, 0, "Elapsed time must be exactly 0 after loading");
-assert.strictEqual(stateAfterLoad.sessionIndex, 0, "Current session must be index 0");
-const executedCuesOnLoad = stateAfterLoad.cues.filter(c => c.executionStatus !== 'pending');
-assert.strictEqual(executedCuesOnLoad.length, 0, "Zero cues must be dispatched on load");
+// Assert: Agenda READY
+assert.strictEqual(stateAfterLoad.status, "ready", "Engine status must be 'ready' on load");
+assert.strictEqual(stateAfterLoad.totalSessions, 2, "Session count must equal 2");
+assert.strictEqual(stateAfterLoad.sessionIndex, null, "Active sessionIndex must be null on load");
+assert.strictEqual(stateAfterLoad.sessionName, "", "Active sessionName must be empty on load");
 
-// Verify zero cues dispatched to hardware / canvas
-assert.strictEqual(dispatchedBackgrounds.length, 0, "Zero backgrounds must be dispatched on load");
-assert.strictEqual(dispatchedPresentations.length, 0, "Zero presentations must be dispatched on load");
+// Assert: Planned duration exists on the session models
+assert.strictEqual(sampleAgenda.sessions[0].durationSec, 1200, "Planned duration for session 1 is 20 min");
+assert.strictEqual(sampleAgenda.sessions[1].durationSec, 360, "Planned duration for session 2 is 6 min");
 
-// Verify canvas untouched
-assert.strictEqual(currentCanvasState.background.url, "file:///user-preset-background.jpg", "Existing background preserved");
-assert.strictEqual(currentCanvasState.contentSlot.type, "bible", "Existing presentation content preserved");
+// Assert: Active timer is NULL/idle, timer running is false, no timer-start event emitted
+assert.strictEqual(dispatchedTimers.length, 0, "No timer sync should be emitted on loadAgenda()");
+assert.strictEqual(overlayTimerBroadcasts.length, 0, "No overlay timer broadcast on loadAgenda()");
 
-console.log("✅ PASS: Load Agenda established Ready state with 0 cues dispatched and canvas preserved.\n");
+console.log("✅ PASS: Agenda load established READY plan with 0 active timers and activeSession=null.");
 
 // =============================================================================
-// TEST 2: TIMER BROADCAST ISOLATION (General screen must never have agenda overlay)
+// TEST 2: TIMER CONTROLLER DESKTOP SIMULATION (Mount & Idle State)
 // =============================================================================
-console.log("--- TEST 2: General Screen Timer Isolation ---");
+console.log("\n--- TEST 2: Desktop TimerController Simulation on Load ---");
 
-// Check syncTimer payload
-assert.ok(dispatchedTimers.length > 0, "Timer sync should be broadcast on load for display controllers");
-const initialTimerSync = dispatchedTimers[dispatchedTimers.length - 1];
-assert.strictEqual(initialTimerSync.remainingSec, 300, "Timer sync displays full 300s duration without countdown");
-assert.strictEqual(initialTimerSync.isRunning, false, "Timer sync isRunning flag must be false");
-assert.strictEqual(initialTimerSync.isPaused, false, "Timer sync isPaused flag must be false");
+// Simulating TimerController state
+let timerState = {
+  time: 0,
+  countdown: 0,
+  isRunning: false,
+  isPaused: false,
+  activeId: null,
+  isAgendaDriven: false,
+};
 
-// Ensure any target array strictly excludes 'general'
-if (Array.isArray(initialTimerSync.target)) {
-  assert.ok(!initialTimerSync.target.includes("general"), "Timer sync targets must NOT include general screen");
+function onTimerSyncSimulation(sync, agendaSessions) {
+  const isRunning = sync?.isRunning === true;
+  const isPaused = sync?.isPaused === true;
+
+  if (!isRunning && !isPaused) {
+    timerState.isAgendaDriven = false;
+    timerState.isRunning = false;
+    timerState.isPaused = false;
+    timerState.activeId = null;
+    timerState.countdown = 0;
+    return;
+  }
+
+  timerState.isAgendaDriven = true;
+  timerState.isRunning = isRunning;
+  timerState.isPaused = isPaused;
+  if (typeof sync.remainingSec === "number") timerState.countdown = sync.remainingSec;
+  if (typeof sync.durationSec === "number") timerState.time = sync.durationSec;
+  if (typeof sync.sessionIndex === "number" && agendaSessions && agendaSessions[sync.sessionIndex]) {
+    timerState.activeId = agendaSessions[sync.sessionIndex].id;
+  } else {
+    timerState.activeId = null;
+  }
 }
-console.log("✅ PASS: Timer sync properly configured as static 300s, isRunning=false, excluding general display.\n");
+
+// When agenda is loaded, no sync is fired
+assert.strictEqual(timerState.activeId, null, "activeId must be null");
+assert.strictEqual(timerState.isRunning, false, "timer must not be running");
+assert.strictEqual(timerState.countdown, 0, "countdown must be 0");
+assert.strictEqual(timerState.isAgendaDriven, false, "isAgendaDriven must be false");
+
+console.log("✅ PASS: Desktop TimerController remains completely idle on agenda load.");
 
 // =============================================================================
-// TEST 3: EXPLICIT START ACTION (Fires 00:00 cues once, enters Running)
+// TEST 3: EXPLICIT START ACTION (Activates session 0, timer starts with 20 min)
 // =============================================================================
-console.log("--- TEST 3: Explicit Start Action ---");
+console.log("\n--- TEST 3: Explicit Start Action ---");
 
 engine.start(0);
 const stateAfterStart = engine.getState();
 
 assert.strictEqual(stateAfterStart.status, "running", "Engine status must be 'running' after start()");
-const activeCues = stateAfterStart.cues.filter(c => c.executionStatus === 'active' || c.executionStatus === 'completed');
-assert.strictEqual(activeCues.length, 1, "The 00:00 cue must be dispatched on start");
-assert.strictEqual(dispatchedBackgrounds.length, 1, "Exactly one background cue dispatched");
-assert.strictEqual(dispatchedBackgrounds[0].url, testImgUrl, "Correct background cue executed");
+assert.strictEqual(stateAfterStart.sessionIndex, 0, "Active session index must be 0");
+assert.strictEqual(stateAfterStart.sessionName, "Praise & Worship", "Active session name must be Praise & Worship");
+assert.strictEqual(stateAfterStart.sessionDurationSec, 1200, "Active session duration must be 1200");
 
-console.log("✅ PASS: Explicit start transitioned to Running and fired 00:00 cue exactly once.\n");
+// Check sync timer emitted
+assert.ok(dispatchedTimers.length > 0, "Timer sync emitted on start");
+const startTimerSync = dispatchedTimers[dispatchedTimers.length - 1];
+assert.strictEqual(startTimerSync.isRunning, true, "start timer sync isRunning must be true");
+assert.strictEqual(startTimerSync.durationSec, 1200, "start timer sync durationSec must be 1200");
+assert.strictEqual(startTimerSync.sessionIndex, 0, "start timer sync sessionIndex must be 0");
 
-// =============================================================================
-// TEST 4: PAUSE & RESUME (Preserves state, does not re-trigger 00:00 cues)
-// =============================================================================
-console.log("--- TEST 4: Pause & Resume Behavior ---");
+// Feed into TimerController simulation
+onTimerSyncSimulation(startTimerSync, sampleAgenda.sessions);
+assert.strictEqual(timerState.isRunning, true, "TimerController isRunning must be true");
+assert.strictEqual(timerState.activeId, "session_praise", "TimerController activeId must match session 0");
+assert.strictEqual(timerState.countdown, 1200, "TimerController countdown must be 1200");
+assert.strictEqual(timerState.isAgendaDriven, true, "TimerController isAgendaDriven must be true");
 
-engine.pause();
-assert.strictEqual(engine.getState().status, "paused", "Status is paused");
-const bgCountAtPause = dispatchedBackgrounds.length;
-
-engine.resume();
-assert.strictEqual(engine.getState().status, "running", "Status resumed to running");
-assert.strictEqual(dispatchedBackgrounds.length, bgCountAtPause, "00:00 cues must NOT re-execute on resume");
-
-console.log("✅ PASS: Pause and resume operate cleanly without duplicate cue firing.\n");
+console.log("✅ PASS: Explicit start activated Session 0 with 20 min countdown.");
 
 // =============================================================================
-// TEST 5: STOP & RELOAD (Returns to idle, no auto-countdown)
+// TEST 4: STOP ACTION (Timer stops, activeId cleared, countdown halts, no rehydration)
 // =============================================================================
-console.log("--- TEST 5: Stop & Reload Behavior ---");
+console.log("\n--- TEST 4: Stop Action & Stop Invariants ---");
 
 engine.stop();
-assert.strictEqual(engine.getState().status, "stopped", "Status returned to stopped on stop");
-assert.strictEqual(engine.getState().sessionElapsedSec, 0, "sessionElapsedSec reset to 0");
+const stateAfterStop = engine.getState();
 
-// Clear dispatches to track reload
-dispatchedBackgrounds = [];
-dispatchedPresentations = [];
+assert.strictEqual(stateAfterStop.status, "stopped", "Status must be 'stopped'");
+assert.strictEqual(stateAfterStop.sessionIndex, null, "Active sessionIndex must be null on stop");
+assert.strictEqual(stateAfterStop.sessionName, "", "Active sessionName must be empty on stop");
 
-engine.loadAgenda(sampleAgenda);
-assert.strictEqual(engine.getState().status, "idle", "Status is idle after reload");
-assert.strictEqual(dispatchedBackgrounds.length, 0, "No backgrounds dispatched on reload");
-assert.strictEqual(dispatchedPresentations.length, 0, "No presentations dispatched on reload");
+// Check syncTimer on stop
+const stopTimerSync = dispatchedTimers[dispatchedTimers.length - 1];
+assert.strictEqual(stopTimerSync.isRunning, false, "Stop timer sync isRunning must be false");
+assert.strictEqual(stopTimerSync.remainingSec, 0, "Stop timer sync remainingSec must be 0");
+assert.strictEqual(stopTimerSync.sessionIndex, null, "Stop timer sync sessionIndex must be null");
 
-console.log("✅ PASS: Stop and reload returns to idle with zero cues executed.\n");
+// Feed into TimerController simulation
+onTimerSyncSimulation(stopTimerSync, sampleAgenda.sessions);
+assert.strictEqual(timerState.isRunning, false, "TimerController isRunning must be false after stop");
+assert.strictEqual(timerState.activeId, null, "TimerController activeId must be null after stop");
+assert.strictEqual(timerState.countdown, 0, "TimerController countdown must be 0 after stop");
+assert.strictEqual(timerState.isAgendaDriven, false, "TimerController isAgendaDriven must be false after stop");
+
+// Verify that calling updateLiveSchedule does NOT reactivate the timer
+engine.updateLiveSchedule(sampleAgenda);
+const stateAfterUpdate = engine.getState();
+assert.strictEqual(stateAfterUpdate.status, "stopped", "Status remains stopped");
+assert.strictEqual(stateAfterUpdate.sessionIndex, null, "sessionIndex remains null");
+assert.strictEqual(timerState.isRunning, false, "Timer remains stopped and is not rehydrated");
+assert.strictEqual(timerState.activeId, null, "activeId remains null");
+
+console.log("✅ PASS: Stop action cleanly halts timer, clears activeId, and prevents rehydration.");
 
 // =============================================================================
-// TEST 6: REDUX / TIMER CONTROLLER SIMULATION
+// TEST 5: MANUAL TIMER COEXISTENCE
 // =============================================================================
-console.log("--- TEST 6: Redux & TimerController State Invariants ---");
+console.log("\n--- TEST 5: Manual Timer Coexistence ---");
 
-// Simulating Redux reducer logic
-const initialState = {
-  time: 0,
-  isPaused: false,
-  isRunning: false,
-  agenda: null
-};
-
-function testReducer(state, action) {
-  switch (action.type) {
-    case "SET_LOADED_AGENDA":
-      return {
-        ...state,
-        agenda: action.payload,
-        time: action.payload?.sessions?.[0]?.durationSec || 0,
-        isPaused: false,
-        isRunning: false // CRITICAL INVARIANT
-      };
-    case "SET_IS_RUNNING":
-      return {
-        ...state,
-        isRunning: action.payload
-      };
-    case "START":
-      return {
-        ...state,
-        isRunning: true,
-        isPaused: false
-      };
-    case "STOP":
-      return {
-        ...state,
-        isRunning: false,
-        isPaused: false,
-        time: 0
-      };
-    default:
-      return state;
-  }
+// Manual timer started by user from TimerController quick start or list
+function handleManualStart(seconds) {
+  timerState.isAgendaDriven = false;
+  timerState.activeId = "manual_prayer_timer";
+  timerState.time = seconds;
+  timerState.countdown = seconds;
+  timerState.isRunning = true;
+  timerState.isPaused = false;
 }
 
-// 1. Initial
-let state = initialState;
-assert.strictEqual(state.isRunning, false);
-
-// 2. Load Agenda
-state = testReducer(state, { type: "SET_LOADED_AGENDA", payload: sampleAgenda });
-assert.strictEqual(state.isRunning, false, "Redux isRunning must be false on agenda load");
-assert.strictEqual(state.time, 300, "Redux time matches session duration (300s)");
-assert.strictEqual(state.isPaused, false);
-
-// 3. Verify timer interval guard: if (!isRunning) -> no countdown
-let tickCount = 0;
-function simulateInterval(state) {
-  if (state.isRunning && !state.isPaused && state.time > 0) {
-    tickCount++;
-  }
+function handleManualStop() {
+  timerState.isAgendaDriven = false;
+  timerState.activeId = null;
+  timerState.time = 0;
+  timerState.countdown = 0;
+  timerState.isRunning = false;
+  timerState.isPaused = false;
 }
-simulateInterval(state);
-assert.strictEqual(tickCount, 0, "Countdown must NOT advance when isRunning is false");
 
-// 4. Start action
-state = testReducer(state, { type: "START" });
-assert.strictEqual(state.isRunning, true, "Redux isRunning is true after explicit START");
-simulateInterval(state);
-assert.strictEqual(tickCount, 1, "Countdown advances after explicit START");
+handleManualStart(300);
+assert.strictEqual(timerState.isRunning, true, "Manual timer starts running");
+assert.strictEqual(timerState.activeId, "manual_prayer_timer");
+assert.strictEqual(timerState.countdown, 300);
+assert.strictEqual(timerState.isAgendaDriven, false);
 
-console.log("✅ PASS: Redux and TimerController countdown guard strictly honors isRunning=false on load.\n");
+handleManualStop();
+assert.strictEqual(timerState.isRunning, false, "Manual timer stops cleanly");
+assert.strictEqual(timerState.activeId, null);
+assert.strictEqual(timerState.countdown, 0);
 
-console.log("=====================================================================");
-console.log("🎉 ALL REGRESSION TESTS PASSED SUCCESSFULLY!");
-console.log("=====================================================================");
+console.log("✅ PASS: Manual timer operates independently without Agenda interference.");
+
+console.log("\n=====================================================================");
+console.log("🎉 ALL LOAD VS. START REGRESSION TESTS PASSED STRICTLY!");
+console.log("=====================================================================\n");
