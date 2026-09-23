@@ -20,6 +20,7 @@ import UpdateModal from "../components/updater/UpdateModal";
 
 import MobileConnectController from "./MobileConnectController";
 import LiveSwitcherController from "./LiveSwitcherController";
+import IncomingAgendaModal from "./IncomingAgendaModal";
 
 /** Floating pill banner — "NEXT TIMER STARTS IN …" */
 function NextTimerBanner() {
@@ -234,6 +235,9 @@ function App() {
 
       {/* Global floating delay banner — persists across all tabs */}
       <NextTimerBanner />
+
+      {/* Global incoming mobile agenda approval modal */}
+      <IncomingAgendaModal />
 
       <Sidebar activeTab={activeTab} onTabChange={setActiveTab} />
 

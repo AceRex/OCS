@@ -150,8 +150,8 @@ class AgendaExecutionEngine extends EventEmitter {
    * Loads an agenda into the engine and creates an immutable execution snapshot
    */
   loadAgenda(agenda) {
-    if (!agenda || !Array.isArray(agenda.sessions) || agenda.sessions.length === 0) {
-      throw new Error('Cannot load agenda: missing or empty sessions');
+    if (!agenda || !Array.isArray(agenda.sessions)) {
+      throw new Error('Cannot load agenda: invalid agenda document');
     }
 
     if (this.status === 'running' || this.status === 'interval') {
@@ -163,10 +163,13 @@ class AgendaExecutionEngine extends EventEmitter {
 
     // Deep clone to isolate running snapshot from any subsequent document edits
     this.agendaSnapshot = JSON.parse(JSON.stringify(migrated));
+    if (!Array.isArray(this.agendaSnapshot.sessions)) {
+      this.agendaSnapshot.sessions = [];
+    }
     this.sessionIndex = 0;
-    this.currentSession = this.agendaSnapshot.sessions[0];
+    this.currentSession = this.agendaSnapshot.sessions[0] || null;
     this.upcomingSession = this.agendaSnapshot.sessions[1] || null;
-    this.sessionDurationSec = this.currentSession.durationSec || 300;
+    this.sessionDurationSec = this.currentSession ? (this.currentSession.durationSec || 0) : 0;
     this.sessionElapsedSec = 0;
     this.intervalRemainingSec = 0;
     this.status = 'idle';
@@ -180,17 +183,31 @@ class AgendaExecutionEngine extends EventEmitter {
     this.preActionBackground = null;
 
     // Synchronize to Timer controller without starting execution
-    this.syncTimer({
-      agendaTitle: this.agendaSnapshot.name,
-      sessionTitle: this.currentSession.name,
-      sessionPerson: this.currentSession.person || this.currentSession.speakerName || '',
-      durationSec: this.sessionDurationSec,
-      remainingSec: this.sessionDurationSec,
-      sessionIndex: 0,
-      totalSessions: this.agendaSnapshot.sessions.length,
-      isRunning: false,
-      isPaused: false,
-    });
+    if (this.currentSession) {
+      this.syncTimer({
+        agendaTitle: this.agendaSnapshot.name,
+        sessionTitle: this.currentSession.name || '',
+        sessionPerson: this.currentSession.person || this.currentSession.speakerName || '',
+        durationSec: this.sessionDurationSec,
+        remainingSec: this.sessionDurationSec,
+        sessionIndex: 0,
+        totalSessions: this.agendaSnapshot.sessions.length,
+        isRunning: false,
+        isPaused: false,
+      });
+    } else {
+      this.syncTimer({
+        agendaTitle: this.agendaSnapshot.name,
+        sessionTitle: '',
+        sessionPerson: '',
+        durationSec: 0,
+        remainingSec: 0,
+        sessionIndex: 0,
+        totalSessions: 0,
+        isRunning: false,
+        isPaused: false,
+      });
+    }
 
     this.emitState();
     return this.getState();
@@ -204,17 +221,25 @@ class AgendaExecutionEngine extends EventEmitter {
       throw new Error('No agenda loaded');
     }
 
+    if (!this.agendaSnapshot.sessions || this.agendaSnapshot.sessions.length === 0) {
+      return this.getState();
+    }
+
     if (targetSessionIndex !== null && typeof targetSessionIndex === 'number') {
       if (targetSessionIndex >= 0 && targetSessionIndex < this.agendaSnapshot.sessions.length) {
         this.sessionIndex = targetSessionIndex;
-        this.currentSession = this.agendaSnapshot.sessions[this.sessionIndex];
+        this.currentSession = this.agendaSnapshot.sessions[this.sessionIndex] || null;
         this.upcomingSession = this.agendaSnapshot.sessions[this.sessionIndex + 1] || null;
-        this.sessionDurationSec = this.currentSession.durationSec || 300;
+        this.sessionDurationSec = this.currentSession ? (this.currentSession.durationSec || 0) : 0;
         this.sessionElapsedSec = 0;
         this.executedActionIds.clear();
         this.activeCues.clear();
         this.activeLayerCues.clear();
       }
+    }
+
+    if (!this.currentSession) {
+      return this.getState();
     }
 
     this.status = 'running';
@@ -1049,9 +1074,13 @@ class AgendaExecutionEngine extends EventEmitter {
    * Applies an explicit update to the running schedule snapshot without restarting clock
    */
   updateLiveSchedule(updatedAgenda) {
+    if (!updatedAgenda) {
+      return this.getState();
+    }
+
     if (!this.agendaSnapshot || this.status === 'idle') {
       this.loadAgenda(updatedAgenda);
-      return;
+      return this.getState();
     }
 
     // Preserve current clock & active execution pointers
@@ -1059,9 +1088,12 @@ class AgendaExecutionEngine extends EventEmitter {
     const curElapsed = this.sessionElapsedSec;
 
     this.agendaSnapshot = JSON.parse(JSON.stringify(updatedAgenda));
-    this.currentSession = this.agendaSnapshot.sessions[curIndex] || this.agendaSnapshot.sessions[0];
+    if (!Array.isArray(this.agendaSnapshot.sessions)) {
+      this.agendaSnapshot.sessions = [];
+    }
+    this.currentSession = this.agendaSnapshot.sessions[curIndex] || this.agendaSnapshot.sessions[0] || null;
     this.upcomingSession = this.agendaSnapshot.sessions[curIndex + 1] || null;
-    this.sessionDurationSec = this.currentSession?.durationSec || 300;
+    this.sessionDurationSec = this.currentSession ? (this.currentSession.durationSec || 0) : 0;
     this.sessionElapsedSec = curElapsed;
 
     console.log(`[AgendaEngine] Live schedule updated cleanly for session "${this.currentSession?.name}"`);

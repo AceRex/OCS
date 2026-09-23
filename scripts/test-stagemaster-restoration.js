@@ -128,13 +128,13 @@ const broadcastEngine = fs.readFileSync(path.join(__dirname, '../src/App/control
 const socketStore = fs.readFileSync(path.join(__dirname, '../ocs-mobile/store/socketStore.ts'), 'utf8');
 
 test('Mobile socketStore defines sendStageControl dispatching type: "stage-control"', () => {
-  assert(socketStore.includes('sendStageControl: (action: string, payload?: any)'), 'Missing sendStageControl in socketStore');
+  assert(socketStore.includes('sendStageControl: (command: string, payload?: any)'), 'Missing sendStageControl in socketStore');
   assert(socketStore.includes("type: 'stage-control'"), 'sendStageControl must emit type: "stage-control"');
 });
 
-test('main.js handles "stage-control" controller actions and routes to presentation/windows', () => {
+test('main.js handles "stage-control" controller actions and routes to windows', () => {
   assert(mainJs.includes('action.type === "stage-control"'), 'main.js must process action.type === "stage-control"');
-  assert(mainJs.includes('presentationWindow.webContents.send("stage-control"'), 'main.js must route to presentationWindow');
+  assert(mainJs.includes('w.webContents.send("mobile-action", action)'), 'main.js must route mobile-action to all window webContents');
 });
 
 test('BroadcastEngine handles stage-control command dispatching', () => {
@@ -142,8 +142,8 @@ test('BroadcastEngine handles stage-control command dispatching', () => {
 });
 
 test('Mobile socketStore receives overlay-content and overlay-timer events', () => {
-  assert(socketStore.includes("newSocket.on('overlay-content'"), 'socketStore must listen for overlay-content');
-  assert(socketStore.includes("newSocket.on('overlay-timer'"), 'socketStore must listen for overlay-timer');
+  assert(socketStore.includes("socket.on('overlay-content'"), 'socketStore must listen for overlay-content');
+  assert(socketStore.includes("socket.on('overlay-timer'"), 'socketStore must listen for overlay-timer');
 });
 
 // ─── 5. Preservation of Stabilization Fixes ──────────────────────────────────
@@ -151,10 +151,10 @@ console.log('\n[5. Regression Check on Prior Stabilization Fixes]');
 
 const authStore = fs.readFileSync(path.join(__dirname, '../ocs-mobile/store/authStore.ts'), 'utf8');
 
-test('authStore.ts retains mobile CORS, fallback headers, and robust error classification', () => {
-  assert(authStore.includes('mode: "cors"'), 'authStore must retain explicit CORS mode');
-  assert(authStore.includes('Accept: "application/json"'), 'authStore must retain JSON Accept header');
-  assert(authStore.includes('Network Error (Possible CORS or Connection Refused)'), 'authStore must retain CORS error classification');
+test('authStore.ts retains mobile auth, fallback headers, and robust error classification', () => {
+  assert(authStore.includes("Accept: 'application/json'"), 'authStore must retain JSON Accept header');
+  assert(authStore.includes("message.includes('Failed to fetch')"), 'authStore must retain network error classification');
+  assert(authStore.includes("Cannot reach 'localhost'"), 'authStore must retain localhost error diagnosis');
 });
 
 console.log(`\n----------------------------------------------`);

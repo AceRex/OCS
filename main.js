@@ -3859,25 +3859,45 @@ io.on("connection", (socket) => {
         deviceName: device.name,
         deviceIp: device.ip,
       });
-      if (result.ok) {
-        broadcastToAllWindows("agenda-offer-received", {
-          ...result,
-          deviceId: socket.id,
-          deviceName: device.name,
-        });
-
-        if (Notification.isSupported()) {
-          try {
-            const notif = new Notification({
-              title: "wave.io — Incoming Agenda Offer",
-              body: `${device.name} wants to transfer "${result.agendaName}" (${result.sessionCount} sessions, ${result.mediaCount} assets).`,
-              silent: false,
-            });
-            notif.show();
-          } catch (_) {}
-        }
+      if (!result.ok) {
+        return ack(result);
       }
-      ack(result);
+
+      const summary = calculateAgendaSummary(payload.agenda);
+
+      // Notify desktop UI (non-blocking)
+      broadcastToAllWindows("agenda-offer-received", {
+        ...result,
+        deviceId: socket.id,
+        deviceName: device.name || "Mobile Companion",
+        totalDuration: summary.formattedTotalTime || "00:00:00",
+        sessionCount: (payload.agenda.sessions || []).length,
+        sessionNames: (payload.agenda.sessions || []).map((s) => s.name || "Untitled Session"),
+        mediaCount: (payload.agenda.assets || []).length,
+        agenda: payload.agenda,
+      });
+
+      if (Notification.isSupported()) {
+        try {
+          const notif = new Notification({
+            title: "OCS — Incoming Agenda from Mobile",
+            body: `${device.name || "Mobile"} sent "${result.agendaName}" (${(payload.agenda.sessions || []).length} sessions, ${(payload.agenda.assets || []).length} assets, ${summary.formattedTotalTime}).`,
+            silent: false,
+          });
+          notif.show();
+        } catch (_) {}
+      }
+
+      // DO NOT AUTO-ACCEPT. Return pending state to mobile.
+      ack({
+        ok: true,
+        pendingApproval: true,
+        transferId: result.transferId,
+        agendaName: result.agendaName,
+        sessionCount: result.sessionCount,
+        mediaCount: result.mediaCount,
+        totalDuration: summary.formattedTotalTime,
+      });
     } catch (err) {
       ack({ ok: false, error: err.message });
     }
@@ -6051,6 +6071,7 @@ function createWindows() {
     if (io) {
       io.emit("agenda-offer-responded", { transferId, accepted, ...res });
     }
+    broadcastToAllWindows("agenda-offer-responded", { transferId, accepted, ...res });
     return res;
   });
 

@@ -98,12 +98,36 @@ export default function AgendaController() {
   const [cueContextMenu, setCueContextMenu] = useState(null); // { x, y, cue }
   const [renamingCue, setRenamingCue] = useState(null); // { cueId, name }
   const [deletedCueUndo, setDeletedCueUndo] = useState(null); // { cue, sessionId, timeoutId }
+  const [deleteAgendaModal, setDeleteAgendaModal] = useState(null); // agenda to delete
+
+  const currentItemRef = useRef(null);
+  const handleDeleteCueWithUndoRef = useRef(null);
 
   useEffect(() => {
+    const isEditingField = (el) => {
+      if (!el) return false;
+      const tag = el.tagName?.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return true;
+      if (el.isContentEditable) return true;
+      if (typeof el.closest === "function" && el.closest('input, textarea, select, [contenteditable="true"]')) {
+        return true;
+      }
+      return false;
+    };
+
     const handleGlobalKeyDown = (e) => {
       if (e.key === "Escape") {
         setCueContextMenu(null);
         setRenamingCue(null);
+        setDeleteAgendaModal(null);
+      } else if (e.key === "Backspace" || e.key === "Delete") {
+        if (!isEditingField(document.activeElement)) {
+          const cueToDelete = currentItemRef.current;
+          if (cueToDelete && typeof handleDeleteCueWithUndoRef.current === "function") {
+            e.preventDefault();
+            handleDeleteCueWithUndoRef.current(cueToDelete);
+          }
+        }
       }
     };
     window.addEventListener("keydown", handleGlobalKeyDown);
@@ -178,6 +202,10 @@ export default function AgendaController() {
     if (!currentSession || !currentSession.timelineItems) return null;
     return currentSession.timelineItems.find((i) => i.id === selectedItemId) || null;
   }, [currentSession, selectedItemId]);
+
+  useEffect(() => {
+    currentItemRef.current = currentItem;
+  }, [currentItem]);
 
   // Undo / Redo Stack
   const pushUndo = useCallback((doc) => {
@@ -265,15 +293,27 @@ export default function AgendaController() {
     }
   };
 
-  const handleDeleteAgenda = async (id) => {
-    if (agendas.length <= 1) return;
-    if (window.confirm("Are you sure you want to delete this agenda?")) {
+  const handleDeleteAgenda = (agendaToDelete = currentAgenda) => {
+    if (!agendaToDelete) return;
+    setDeleteAgendaModal(agendaToDelete);
+  };
+
+  const confirmDeleteAgenda = async () => {
+    if (!deleteAgendaModal) return;
+    const id = deleteAgendaModal.id;
+    try {
       await electron?.Agenda?.delete?.(id);
-      setAgendas((prev) => prev.filter((a) => a.id !== id));
+      const remaining = agendas.filter((a) => a.id !== id);
+      setAgendas(remaining);
       if (selectedAgendaId === id) {
-        const remaining = agendas.filter((a) => a.id !== id);
         setSelectedAgendaId(remaining[0]?.id || null);
+        setSelectedSessionId(null);
+        setSelectedItemId(null);
       }
+    } catch (err) {
+      console.error("[AgendaController] Failed to delete agenda:", err);
+    } finally {
+      setDeleteAgendaModal(null);
     }
   };
 
@@ -504,8 +544,13 @@ export default function AgendaController() {
     mutateCurrentAgenda((agenda) => {
       const s = agenda.sessions.find((sess) => sess.id === currentSession?.id);
       if (s && s.timelineItems) {
-        s.timelineItems = s.timelineItems.filter((c) => c.id !== cueId);
-        if (selectedItemId === cueId) setSelectedItemId(null);
+        const cIdx = s.timelineItems.findIndex((c) => c.id === cueId);
+        const remaining = s.timelineItems.filter((c) => c.id !== cueId);
+        s.timelineItems = remaining;
+        if (selectedItemId === cueId) {
+          const nextCue = remaining[cIdx] || remaining[cIdx - 1] || null;
+          setSelectedItemId(nextCue ? nextCue.id : null);
+        }
       }
       return agenda;
     });
@@ -525,6 +570,10 @@ export default function AgendaController() {
       timeoutId,
     });
   };
+
+  useEffect(() => {
+    handleDeleteCueWithUndoRef.current = handleDeleteCueWithUndo;
+  });
 
   const handleUndoDeleteCue = () => {
     if (!deletedCueUndo) return;
@@ -792,6 +841,18 @@ export default function AgendaController() {
               <PiPlus size={13} />
               <span>New Agenda</span>
             </button>
+
+            {currentAgenda && (
+              <button
+                type="button"
+                onClick={() => handleDeleteAgenda(currentAgenda)}
+                className="flex items-center gap-1.5 px-3 py-1 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded-[12px] text-xs font-semibold text-red-300 transition-colors cursor-pointer"
+                title={`Delete "${currentAgenda.name}"`}
+              >
+                <PiTrash size={13} />
+                <span>Delete</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -1455,7 +1516,6 @@ export default function AgendaController() {
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setSelectedItemId(item.id);
-                                  setIsInspectorOpen(true);
                                 }}
                                 style={{
                                   left: `${Math.min(99, leftPct)}%`,
@@ -1575,7 +1635,6 @@ export default function AgendaController() {
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setSelectedItemId(item.id);
-                                  setIsInspectorOpen(true);
                                 }}
                                 style={{
                                   left: `${Math.min(99, leftPct)}%`,
@@ -1665,14 +1724,7 @@ export default function AgendaController() {
               </div>
             )}
 
-            {/* Drag Tooltip */}
-            {dragState && (
-              <div className="fixed top-20 left-1/2 -translate-x-1/2 bg-[#17112B] border border-[#7C3AED] rounded-[12px] px-4 py-2 text-xs font-mono text-white shadow-2xl z-50 flex items-center gap-4 pointer-events-none">
-                <span>Start: <strong>{formatDuration(dragState.currentStartSec)}</strong></span>
-                <span>End: <strong>{formatDuration(dragState.currentStartSec + dragState.currentDurationSec)}</strong></span>
-                <span>Duration: <strong>{formatDuration(dragState.currentDurationSec)}</strong></span>
-              </div>
-            )}
+
           </div>
 
           {/* Undo Delete Toast */}
@@ -2168,6 +2220,46 @@ export default function AgendaController() {
           >
             <PiX size={14} />
           </button>
+        </div>
+      )}
+
+      {/* ── Delete Agenda Confirmation Modal ─────────────────────────────────── */}
+      {deleteAgendaModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-md p-4 animate-in fade-in duration-150">
+          <div className="w-full max-w-md bg-[#160E2E] border border-white/10 rounded-[12px] p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-[12px] bg-red-500/20 border border-red-500/30 flex items-center justify-center text-red-400">
+                <PiTrash size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-white">Delete Agenda</h3>
+                <p className="text-xs text-white/50">This action cannot be undone.</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-white/70 leading-relaxed">
+              Are you sure you want to delete <strong className="text-white">&ldquo;{deleteAgendaModal.name || "Untitled Agenda"}&rdquo;</strong>? 
+              The agenda configuration and sessions will be permanently removed.
+              <span className="block mt-2 text-white/40 text-[11px]">Note: Your imported media files will remain safely in the Media Library.</span>
+            </p>
+
+            <div className="flex items-center justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setDeleteAgendaModal(null)}
+                className="px-4 py-2 rounded-[12px] bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-semibold text-white/80 transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteAgenda}
+                className="px-4 py-2 rounded-[12px] bg-red-600 hover:bg-red-500 text-xs font-bold text-white shadow-lg shadow-red-600/30 transition-colors cursor-pointer"
+              >
+                Delete Agenda
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
