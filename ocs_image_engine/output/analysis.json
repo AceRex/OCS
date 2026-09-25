@@ -1,0 +1,1878 @@
+{
+  "event_name": "EWEEK",
+  "theme_subtitle": "ated AN UNSTOPPABLE",
+  "event_date": null,
+  "event_location": "Church Auditorium",
+  "venue": "Church Auditorium",
+  "organizer": "at oh The Gospel Faith Mission",
+  "speakers": [],
+  "contact": null,
+  "website": null,
+  "scripture": {
+    "displayText": "Phil. 4:13",
+    "normalizedReference": "Philippians 4:13",
+    "book": "Philippians",
+    "chapter": 4,
+    "verse": "13"
+  },
+  "theme": "unclassified",
+  "theme_confidence": 0.0,
+  "theme_classification_status": "unavailable",
+  "mood": "vibrant",
+  "palette_hex": [
+    "#030834",
+    "#EEF0F0",
+    "#0A185B",
+    "#F0BC13",
+    "#B2C9E6",
+    "#2D180E"
+  ],
+  "primary_color": [
+    3,
+    8,
+    52
+  ],
+  "secondary_color": [
+    238,
+    240,
+    240
+  ],
+  "accent_color": [
+    240,
+    188,
+    19
+  ],
+  "secondary_accent": [
+    113,
+    85,
+    60
+  ],
+  "text_color": [
+    255,
+    255,
+    255
+  ],
+  "text_extracted": [
+    "at oh The Gospel Faith",
+    "Int\u2019l",
+    "GO",
+    "Mission",
+    "YOUTH",
+    "pe EWEEK Wi 2026",
+    "MAY Hi",
+    "Cares ent rucmMe THEME Ble",
+    "ated AN UNSTOPPABLE",
+    "Phil 4:13",
+    "Vy",
+    "BIBLE STUDY",
+    "Overcoming iThe",
+    "Topic Limitations Of Our ly",
+    "Generation",
+    "Time",
+    "Church",
+    "6PM",
+    "Auditorium",
+    "RAISING",
+    "GENERATION FOR GREATER THINGS"
+  ],
+  "dates": "",
+  "times": "6PM",
+  "dates_found": [],
+  "times_found": [
+    "6PM"
+  ],
+  "field_confidences": {
+    "organizer": 88.0,
+    "theme_subtitle": 90.0,
+    "venue": 88.0,
+    "scripture": 95.0,
+    "times": 88.0,
+    "event_name": 41.0
+  },
+  "uncertain_fields": [
+    "event_name",
+    "detected_text"
+  ],
+  "dominant_font_style": {
+    "style": "Modern Sans-Serif",
+    "category": "sans-serif",
+    "weight": "bold",
+    "matched_font": "Inter, sans-serif",
+    "match_status": "confirmed",
+    "status": "confirmed",
+    "rationale": "Uniform stroke geometry matching Inter / Roboto modern grotesque family"
+  },
+  "font_characteristics": {
+    "style": "Modern Sans-Serif",
+    "category": "sans-serif",
+    "weight": "bold",
+    "matched_font": "Inter, sans-serif",
+    "match_status": "confirmed",
+    "status": "confirmed",
+    "rationale": "Uniform stroke geometry matching Inter / Roboto modern grotesque family"
+  },
+  "palette_roles": {
+    "background": "#030834",
+    "heading": "#ffffff",
+    "body": "#E2E8F0",
+    "accent": "#f0bc13"
+  },
+  "layout_composition": "busy",
+  "safe_zones": [
+    "bottom"
+  ],
+  "recreated_text": [
+    {
+      "text": "EWEEK",
+      "color": [
+        49,
+        27,
+        56
+      ],
+      "font_size": 388.0,
+      "font_family": "Inter, sans-serif",
+      "position": {
+        "x": 6,
+        "y": 228,
+        "w": 645,
+        "h": 388
+      }
+    },
+    {
+      "text": "Ble",
+      "color": [
+        24,
+        14,
+        39
+      ],
+      "font_size": 165.0,
+      "font_family": "Inter, sans-serif",
+      "position": {
+        "x": 611,
+        "y": 576,
+        "w": 128,
+        "h": 165
+      }
+    },
+    {
+      "text": "AN",
+      "color": [
+        33,
+        37,
+        66
+      ],
+      "font_size": 163.0,
+      "font_family": "Inter, sans-serif",
+      "position": {
+        "x": 124,
+        "y": 585,
+        "w": 101,
+        "h": 163
+      }
+    },
+    {
+      "text": "Wi",
+      "color": [
+        31,
+        12,
+        43
+      ],
+      "font_size": 147.0,
+      "font_family": "Inter, sans-serif",
+      "position": {
+        "x": 172,
+        "y": 386,
+        "w": 125,
+        "h": 147
+      }
+    },
+    {
+      "text": "UNSTOR",
+      "color": [
+        238,
+        217,
+        128
+      ],
+      "font_size": 144.0,
+      "font_family": "Inter, sans-serif",
+      "position": {
+        "x": 245,
+        "y": 660,
+        "w": 278,
+        "h": 144
+      }
+    },
+    {
+      "text": "OUT",
+      "color": [
+        241,
+        199,
+        39
+      ],
+      "font_size": 140.0,
+      "font_family": "Inter, sans-serif",
+      "position": {
+        "x": 224,
+        "y": 242,
+        "w": 257,
+        "h": 140
+      }
+    },
+    {
+      "text": "2026",
+      "color": [
+        133,
+        38,
+        39
+      ],
+      "font_size": 113.0,
+      "font_family": "Inter, sans-serif",
+      "position": {
+        "x": 280,
+        "y": 458,
+        "w": 374,
+        "h": 113
+      }
+    },
+    {
+      "text": "Hi",
+      "color": [
+        54,
+        24,
+        4
+      ],
+      "font_size": 111.0,
+      "font_family": "Inter, sans-serif",
+      "position": {
+        "x": 730,
+        "y": 448,
+        "w": 106,
+        "h": 111
+      }
+    },
+    {
+      "text": "Mission",
+      "color": [
+        228,
+        232,
+        228
+      ],
+      "font_size": 101.0,
+      "font_family": "Inter, sans-serif",
+      "position": {
+        "x": 401,
+        "y": 112,
+        "w": 196,
+        "h": 101
+      }
+    },
+    {
+      "text": "MAY",
+      "color": [
+        47,
+        22,
+        4
+      ],
+      "font_size": 86.0,
+      "font_family": "Inter, sans-serif",
+      "position": {
+        "x": 729,
+        "y": 481,
+        "w": 124,
+        "h": 86
+      }
+    }
+  ],
+  "ocr_blocks": [
+    {
+      "text": "at",
+      "x": 13,
+      "y": 105,
+      "w": 39,
+      "h": 21,
+      "conf": 33.0
+    },
+    {
+      "text": "The",
+      "x": 341,
+      "y": 60,
+      "w": 93,
+      "h": 42,
+      "conf": 96.0
+    },
+    {
+      "text": "Gospel",
+      "x": 449,
+      "y": 60,
+      "w": 169,
+      "h": 51,
+      "conf": 96.0
+    },
+    {
+      "text": "wa",
+      "x": 11,
+      "y": 143,
+      "w": 39,
+      "h": 16,
+      "conf": 28.0
+    },
+    {
+      "text": "oh",
+      "x": 103,
+      "y": 34,
+      "w": 232,
+      "h": 171,
+      "conf": 30.0
+    },
+    {
+      "text": "ee",
+      "x": 464,
+      "y": 209,
+      "w": 54,
+      "h": 6,
+      "conf": 25.0
+    },
+    {
+      "text": "Mission",
+      "x": 401,
+      "y": 112,
+      "w": 196,
+      "h": 101,
+      "conf": 94.0
+    },
+    {
+      "text": "Int\u2019l",
+      "x": 615,
+      "y": 109,
+      "w": 93,
+      "h": 56,
+      "conf": 87.0
+    },
+    {
+      "text": "pe",
+      "x": 0,
+      "y": 400,
+      "w": 122,
+      "h": 33,
+      "conf": 42.0
+    },
+    {
+      "text": "Cares",
+      "x": 200,
+      "y": 581,
+      "w": 53,
+      "h": 10,
+      "conf": 42.0
+    },
+    {
+      "text": "We",
+      "x": 316,
+      "y": 492,
+      "w": 103,
+      "h": 65,
+      "conf": 75.0
+    },
+    {
+      "text": "Lhe",
+      "x": 4,
+      "y": 614,
+      "w": 81,
+      "h": 31,
+      "conf": 27.0
+    },
+    {
+      "text": "eee",
+      "x": 4,
+      "y": 592,
+      "w": 108,
+      "h": 28,
+      "conf": 24.0
+    },
+    {
+      "text": "ent",
+      "x": 210,
+      "y": 615,
+      "w": 41,
+      "h": 12,
+      "conf": 32.0
+    },
+    {
+      "text": "THEME",
+      "x": 347,
+      "y": 618,
+      "w": 130,
+      "h": 29,
+      "conf": 96.0
+    },
+    {
+      "text": "ated",
+      "x": 17,
+      "y": 694,
+      "w": 60,
+      "h": 17,
+      "conf": 25.0
+    },
+    {
+      "text": "UNSTOR",
+      "x": 245,
+      "y": 660,
+      "w": 278,
+      "h": 144,
+      "conf": 82.0
+    },
+    {
+      "text": "Ble",
+      "x": 611,
+      "y": 576,
+      "w": 128,
+      "h": 165,
+      "conf": 70.0
+    },
+    {
+      "text": "BIBLE",
+      "x": 246,
+      "y": 918,
+      "w": 88,
+      "h": 24,
+      "conf": 96.0
+    },
+    {
+      "text": "STUDY",
+      "x": 345,
+      "y": 918,
+      "w": 104,
+      "h": 24,
+      "conf": 95.0
+    },
+    {
+      "text": "Overcoming",
+      "x": 406,
+      "y": 963,
+      "w": 205,
+      "h": 44,
+      "conf": 96.0
+    },
+    {
+      "text": "iThe",
+      "x": 617,
+      "y": 963,
+      "w": 66,
+      "h": 31,
+      "conf": 92.0
+    },
+    {
+      "text": "Generation",
+      "x": 406,
+      "y": 1037,
+      "w": 193,
+      "h": 28,
+      "conf": 96.0
+    },
+    {
+      "text": "Limitations",
+      "x": 407,
+      "y": 1001,
+      "w": 194,
+      "h": 28,
+      "conf": 96.0
+    },
+    {
+      "text": "ly",
+      "x": 690,
+      "y": 1008,
+      "w": 36,
+      "h": 21,
+      "conf": 46.0
+    },
+    {
+      "text": "RAISING",
+      "x": 168,
+      "y": 1211,
+      "w": 88,
+      "h": 15,
+      "conf": 95.0
+    },
+    {
+      "text": "GENERATION",
+      "x": 291,
+      "y": 1211,
+      "w": 139,
+      "h": 15,
+      "conf": 86.0
+    },
+    {
+      "text": "FOR",
+      "x": 442,
+      "y": 1212,
+      "w": 41,
+      "h": 14,
+      "conf": 94.0
+    },
+    {
+      "text": "GREATER",
+      "x": 494,
+      "y": 1212,
+      "w": 97,
+      "h": 14,
+      "conf": 30.0
+    },
+    {
+      "text": "THINGS",
+      "x": 602,
+      "y": 1211,
+      "w": 81,
+      "h": 15,
+      "conf": 30.0
+    },
+    {
+      "text": "Faith",
+      "x": 640,
+      "y": 59,
+      "w": 122,
+      "h": 42,
+      "conf": 96.0
+    },
+    {
+      "text": "02",
+      "x": 330,
+      "y": 492,
+      "w": 89,
+      "h": 66,
+      "conf": 37.0
+    },
+    {
+      "text": "MAY",
+      "x": 729,
+      "y": 481,
+      "w": 124,
+      "h": 86,
+      "conf": 42.0
+    },
+    {
+      "text": "AN",
+      "x": 124,
+      "y": 585,
+      "w": 101,
+      "h": 163,
+      "conf": 86.0
+    },
+    {
+      "text": "UNSTOPPABLE",
+      "x": 245,
+      "y": 658,
+      "w": 492,
+      "h": 85,
+      "conf": 96.0
+    },
+    {
+      "text": "Phil",
+      "x": 346,
+      "y": 849,
+      "w": 77,
+      "h": 30,
+      "conf": 95.0
+    },
+    {
+      "text": "4:13",
+      "x": 434,
+      "y": 848,
+      "w": 72,
+      "h": 30,
+      "conf": 96.0
+    },
+    {
+      "text": "Vy",
+      "x": 147,
+      "y": 922,
+      "w": 22,
+      "h": 19,
+      "conf": 48.0
+    },
+    {
+      "text": "The",
+      "x": 620,
+      "y": 964,
+      "w": 62,
+      "h": 28,
+      "conf": 96.0
+    },
+    {
+      "text": "Topic",
+      "x": 241,
+      "y": 981,
+      "w": 119,
+      "h": 54,
+      "conf": 85.0
+    },
+    {
+      "text": "Of",
+      "x": 611,
+      "y": 1000,
+      "w": 42,
+      "h": 29,
+      "conf": 96.0
+    },
+    {
+      "text": "Our",
+      "x": 661,
+      "y": 1001,
+      "w": 64,
+      "h": 28,
+      "conf": 96.0
+    },
+    {
+      "text": "Time",
+      "x": 212,
+      "y": 1109,
+      "w": 63,
+      "h": 18,
+      "conf": 96.0
+    },
+    {
+      "text": "6PM",
+      "x": 212,
+      "y": 1136,
+      "w": 84,
+      "h": 31,
+      "conf": 96.0
+    },
+    {
+      "text": "Church",
+      "x": 480,
+      "y": 1108,
+      "w": 99,
+      "h": 65,
+      "conf": 93.0
+    },
+    {
+      "text": "Auditorium",
+      "x": 587,
+      "y": 1137,
+      "w": 157,
+      "h": 36,
+      "conf": 96.0
+    },
+    {
+      "text": "YOUTH",
+      "x": 69,
+      "y": 203,
+      "w": 418,
+      "h": 192,
+      "conf": 15.0
+    },
+    {
+      "text": "EWEEK",
+      "x": 6,
+      "y": 228,
+      "w": 645,
+      "h": 388,
+      "conf": 41.0
+    },
+    {
+      "text": "Hi",
+      "x": 730,
+      "y": 448,
+      "w": 106,
+      "h": 111,
+      "conf": 51.0
+    },
+    {
+      "text": "rucmMe",
+      "x": 246,
+      "y": 605,
+      "w": 324,
+      "h": 35,
+      "conf": 32.0
+    },
+    {
+      "text": "GO",
+      "x": 114,
+      "y": 159,
+      "w": 61,
+      "h": 30,
+      "conf": 96.0
+    },
+    {
+      "text": "OUT",
+      "x": 224,
+      "y": 242,
+      "w": 257,
+      "h": 140,
+      "conf": 61.0
+    },
+    {
+      "text": "Wi",
+      "x": 172,
+      "y": 386,
+      "w": 125,
+      "h": 147,
+      "conf": 86.0
+    },
+    {
+      "text": "2026",
+      "x": 280,
+      "y": 458,
+      "w": 374,
+      "h": 113,
+      "conf": 78.0
+    },
+    {
+      "text": "til",
+      "x": 730,
+      "y": 484,
+      "w": 122,
+      "h": 58,
+      "conf": 16.0
+    },
+    {
+      "text": "Me",
+      "x": 267,
+      "y": 603,
+      "w": 51,
+      "h": 61,
+      "conf": 39.0
+    },
+    {
+      "text": "THEME",
+      "x": 269,
+      "y": 605,
+      "w": 300,
+      "h": 53,
+      "conf": 29.0
+    }
+  ],
+  "faces": [],
+  "elements": [
+    {
+      "x": 0,
+      "y": 217,
+      "w": 853,
+      "h": 1063,
+      "type": "shape",
+      "shape": "rect"
+    },
+    {
+      "x": 132,
+      "y": 215,
+      "w": 174,
+      "h": 22,
+      "type": "shape",
+      "shape": "other"
+    },
+    {
+      "x": 631,
+      "y": 124,
+      "w": 28,
+      "h": 31,
+      "type": "shape",
+      "shape": "other"
+    },
+    {
+      "x": 566,
+      "y": 124,
+      "w": 30,
+      "h": 31,
+      "type": "shape",
+      "shape": "other"
+    },
+    {
+      "x": 531,
+      "y": 124,
+      "w": 32,
+      "h": 31,
+      "type": "shape",
+      "shape": "other"
+    },
+    {
+      "x": 401,
+      "y": 115,
+      "w": 43,
+      "h": 40,
+      "type": "shape",
+      "shape": "other"
+    },
+    {
+      "x": 186,
+      "y": 82,
+      "w": 66,
+      "h": 66,
+      "type": "shape",
+      "shape": "other"
+    },
+    {
+      "x": 668,
+      "y": 71,
+      "w": 27,
+      "h": 30,
+      "type": "shape",
+      "shape": "other"
+    },
+    {
+      "x": 580,
+      "y": 71,
+      "w": 28,
+      "h": 30,
+      "type": "shape",
+      "shape": "other"
+    },
+    {
+      "x": 547,
+      "y": 71,
+      "w": 31,
+      "h": 39,
+      "type": "shape",
+      "shape": "other"
+    },
+    {
+      "x": 488,
+      "y": 71,
+      "w": 31,
+      "h": 30,
+      "type": "shape",
+      "shape": "other"
+    },
+    {
+      "x": 405,
+      "y": 71,
+      "w": 29,
+      "h": 30,
+      "type": "shape",
+      "shape": "other"
+    },
+    {
+      "x": 640,
+      "y": 62,
+      "w": 27,
+      "h": 39,
+      "type": "shape",
+      "shape": "other"
+    },
+    {
+      "x": 449,
+      "y": 61,
+      "w": 36,
+      "h": 40,
+      "type": "shape",
+      "shape": "circle"
+    },
+    {
+      "x": 734,
+      "y": 60,
+      "w": 28,
+      "h": 41,
+      "type": "shape",
+      "shape": "other"
+    },
+    {
+      "x": 374,
+      "y": 60,
+      "w": 28,
+      "h": 41,
+      "type": "shape",
+      "shape": "other"
+    },
+    {
+      "x": 103,
+      "y": 33,
+      "w": 232,
+      "h": 172,
+      "type": "shape",
+      "shape": "other"
+    },
+    {
+      "x": 0,
+      "y": 31,
+      "w": 42,
+      "h": 63,
+      "type": "shape",
+      "shape": "rect"
+    },
+    {
+      "x": 52,
+      "y": 0,
+      "w": 218,
+      "h": 35,
+      "type": "shape",
+      "shape": "other"
+    }
+  ],
+  "image_width": 853,
+  "image_height": 1280,
+  "visual_regions": [
+    {
+      "id": "reg_logo_1",
+      "type": "logo",
+      "label": "Organization Logo",
+      "text": "pe YOUTH EWEEK OUT Wi",
+      "x": 11,
+      "y": 209,
+      "w": 548,
+      "h": 281,
+      "conf": 95.0,
+      "can_cutout": true,
+      "cutout_quality": "high",
+      "related_ocr_blocks": [
+        8,
+        46,
+        47,
+        51,
+        52
+      ],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_txt_3",
+      "type": "visual_group",
+      "label": "The Gospel Mission",
+      "text": "The Gospel Mission",
+      "x": 328,
+      "y": 48,
+      "w": 303,
+      "h": 177,
+      "conf": 95.0,
+      "can_cutout": true,
+      "cutout_quality": "high",
+      "related_ocr_blocks": [
+        1,
+        2,
+        6
+      ],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_txt_2",
+      "type": "visual_group",
+      "label": "Faith Int\u2019l",
+      "text": "Faith Int\u2019l",
+      "x": 607,
+      "y": 51,
+      "w": 163,
+      "h": 122,
+      "conf": 91.5,
+      "can_cutout": true,
+      "cutout_quality": "high",
+      "related_ocr_blocks": [
+        30,
+        7
+      ],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_art_32",
+      "type": "visual_group",
+      "label": "EWEEK OUT 2026 Cares Title Artwork",
+      "text": "EWEEK OUT 2026 Cares",
+      "x": 0,
+      "y": 180,
+      "w": 706,
+      "h": 446,
+      "conf": 96.0,
+      "can_cutout": true,
+      "cutout_quality": "high",
+      "related_ocr_blocks": [],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_txt_5",
+      "type": "visual_group",
+      "label": "Hi Ble",
+      "text": "Hi Ble",
+      "x": 600,
+      "y": 425,
+      "w": 247,
+      "h": 339,
+      "conf": 60.5,
+      "can_cutout": true,
+      "cutout_quality": "high",
+      "related_ocr_blocks": [
+        48,
+        17
+      ],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_txt_6",
+      "type": "visual_group",
+      "label": "2026 MAY AN UNSTOPPABLE",
+      "text": "2026 MAY AN UNSTOPPABLE",
+      "x": 88,
+      "y": 435,
+      "w": 765,
+      "h": 336,
+      "conf": 75.5,
+      "can_cutout": true,
+      "cutout_quality": "high",
+      "related_ocr_blocks": [
+        32,
+        33,
+        34,
+        53
+      ],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_txt_8",
+      "type": "visual_group",
+      "label": "02 Me THEME",
+      "text": "02 Me THEME",
+      "x": 257,
+      "y": 479,
+      "w": 230,
+      "h": 198,
+      "conf": 52.2,
+      "can_cutout": true,
+      "cutout_quality": "high",
+      "related_ocr_blocks": [
+        55,
+        14,
+        31
+      ],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_txt_7",
+      "type": "visual_group",
+      "label": "We",
+      "text": "We",
+      "x": 308,
+      "y": 486,
+      "w": 119,
+      "h": 77,
+      "conf": 75.0,
+      "can_cutout": true,
+      "cutout_quality": "high",
+      "related_ocr_blocks": [
+        10
+      ],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_txt_11",
+      "type": "visual_group",
+      "label": "THEME",
+      "text": "THEME",
+      "x": 254,
+      "y": 599,
+      "w": 330,
+      "h": 65,
+      "conf": 29.0,
+      "can_cutout": true,
+      "cutout_quality": "high",
+      "related_ocr_blocks": [
+        56
+      ],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_txt_12",
+      "type": "visual_group",
+      "label": "UNSTOR",
+      "text": "UNSTOR",
+      "x": 232,
+      "y": 649,
+      "w": 304,
+      "h": 166,
+      "conf": 82.0,
+      "can_cutout": true,
+      "cutout_quality": "high",
+      "related_ocr_blocks": [
+        16
+      ],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_txt_18",
+      "type": "visual_group",
+      "label": "Overcoming iThe",
+      "text": "Overcoming iThe",
+      "x": 393,
+      "y": 957,
+      "w": 303,
+      "h": 56,
+      "conf": 94.0,
+      "can_cutout": true,
+      "cutout_quality": "high",
+      "related_ocr_blocks": [
+        20,
+        21
+      ],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_txt_19",
+      "type": "visual_group",
+      "label": "The Of Our",
+      "text": "The Of Our",
+      "x": 603,
+      "y": 958,
+      "w": 130,
+      "h": 77,
+      "conf": 96.0,
+      "can_cutout": true,
+      "cutout_quality": "high",
+      "related_ocr_blocks": [
+        40,
+        41,
+        38
+      ],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_txt_20",
+      "type": "visual_group",
+      "label": "Topic Limitations Generation",
+      "text": "Topic Limitations Generation",
+      "x": 223,
+      "y": 975,
+      "w": 396,
+      "h": 96,
+      "conf": 93.2,
+      "can_cutout": true,
+      "cutout_quality": "high",
+      "related_ocr_blocks": [
+        23,
+        22,
+        39
+      ],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_txt_22",
+      "type": "visual_group",
+      "label": "Church Auditorium",
+      "text": "Church Auditorium",
+      "x": 467,
+      "y": 1102,
+      "w": 290,
+      "h": 77,
+      "conf": 94.5,
+      "can_cutout": true,
+      "cutout_quality": "high",
+      "related_ocr_blocks": [
+        44,
+        45
+      ],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_txt_23",
+      "type": "visual_group",
+      "label": "Time 6PM",
+      "text": "Time 6PM",
+      "x": 204,
+      "y": 1103,
+      "w": 100,
+      "h": 70,
+      "conf": 96.0,
+      "can_cutout": true,
+      "cutout_quality": "high",
+      "related_ocr_blocks": [
+        42,
+        43
+      ],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_subj_31",
+      "type": "subject",
+      "label": "Silhouette / Subject Group",
+      "text": "Silhouette Group",
+      "x": 331,
+      "y": 251,
+      "w": 522,
+      "h": 373,
+      "conf": 92.0,
+      "can_cutout": true,
+      "cutout_quality": "high",
+      "related_ocr_blocks": [],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_icon_27",
+      "type": "icon",
+      "label": "Document Icon",
+      "text": "Document Icon",
+      "x": 182,
+      "y": 905,
+      "w": 43,
+      "h": 50,
+      "conf": 92.0,
+      "can_cutout": true,
+      "cutout_quality": "high",
+      "related_ocr_blocks": [],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_icon_29",
+      "type": "icon",
+      "label": "Location Pin Icon",
+      "text": "Location Pin Icon",
+      "x": 451,
+      "y": 1039,
+      "w": 29,
+      "h": 30,
+      "conf": 92.0,
+      "can_cutout": true,
+      "cutout_quality": "high",
+      "related_ocr_blocks": [],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_icon_28",
+      "type": "icon",
+      "label": "Clock Icon",
+      "text": "Clock Icon",
+      "x": 165,
+      "y": 1113,
+      "w": 26,
+      "h": 38,
+      "conf": 92.0,
+      "can_cutout": true,
+      "cutout_quality": "high",
+      "related_ocr_blocks": [],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_icon_30",
+      "type": "icon",
+      "label": "Location Pin Icon",
+      "text": "Location Pin Icon",
+      "x": 559,
+      "y": 1136,
+      "w": 25,
+      "h": 33,
+      "conf": 92.0,
+      "can_cutout": true,
+      "cutout_quality": "high",
+      "related_ocr_blocks": [],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_sec_35",
+      "type": "section",
+      "label": "UNSTOR Ble AN Container",
+      "text": "UNSTOR Ble AN Container",
+      "x": 82,
+      "y": 654,
+      "w": 707,
+      "h": 209,
+      "conf": 90.0,
+      "can_cutout": true,
+      "cutout_quality": "safe_crop",
+      "related_ocr_blocks": [],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_sec_34",
+      "type": "section",
+      "label": "BIBLE STUDY Overcoming Container",
+      "text": "BIBLE STUDY Overcoming Container",
+      "x": 60,
+      "y": 895,
+      "w": 719,
+      "h": 174,
+      "conf": 90.0,
+      "can_cutout": true,
+      "cutout_quality": "safe_crop",
+      "related_ocr_blocks": [],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_sec_33",
+      "type": "section",
+      "label": "Generation Limitations ly Container",
+      "text": "Generation Limitations ly Container",
+      "x": 0,
+      "y": 997,
+      "w": 853,
+      "h": 198,
+      "conf": 90.0,
+      "can_cutout": true,
+      "cutout_quality": "safe_crop",
+      "related_ocr_blocks": [],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_shape_50",
+      "type": "graphic_shape",
+      "label": "Decorative Artwork (Blue)",
+      "text": "",
+      "x": 99,
+      "y": 36,
+      "w": 240,
+      "h": 206,
+      "conf": 88.0,
+      "can_cutout": true,
+      "cutout_quality": "high",
+      "related_ocr_blocks": [],
+      "parent_id": null,
+      "child_ids": [],
+      "shape_geometry": {
+        "shape": "brush_stroke",
+        "is_convertible": false,
+        "aspect": 1.17,
+        "fill_color": "#777c8d",
+        "stroke_color": "transparent",
+        "stroke_width": 0,
+        "border_radius": 12,
+        "opacity": 1.0,
+        "area_px": 26898
+      },
+      "is_convertible_shape": false
+    },
+    {
+      "id": "reg_shape_42",
+      "type": "graphic_shape",
+      "label": "Church Name Underline Divider",
+      "text": "",
+      "x": 412,
+      "y": 168,
+      "w": 282,
+      "h": 20,
+      "conf": 88.0,
+      "can_cutout": true,
+      "cutout_quality": "safe_crop",
+      "related_ocr_blocks": [],
+      "parent_id": null,
+      "child_ids": [],
+      "shape_geometry": {
+        "shape": "line",
+        "is_convertible": true,
+        "aspect": 14.1,
+        "fill_color": "#dbe7eb",
+        "stroke_color": "#dbe7eb",
+        "stroke_width": 6,
+        "border_radius": 12,
+        "opacity": 1.0,
+        "area_px": 1851
+      },
+      "is_convertible_shape": true
+    },
+    {
+      "id": "reg_shape_48",
+      "type": "graphic_shape",
+      "label": "Decorative Artwork (Blue)",
+      "text": "",
+      "x": 221,
+      "y": 351,
+      "w": 556,
+      "h": 241,
+      "conf": 88.0,
+      "can_cutout": true,
+      "cutout_quality": "high",
+      "related_ocr_blocks": [],
+      "parent_id": null,
+      "child_ids": [],
+      "shape_geometry": {
+        "shape": "brush_stroke",
+        "is_convertible": false,
+        "aspect": 2.31,
+        "fill_color": "#566e9d",
+        "stroke_color": "transparent",
+        "stroke_width": 0,
+        "border_radius": 12,
+        "opacity": 1.0,
+        "area_px": 52973
+      },
+      "is_convertible_shape": false
+    },
+    {
+      "id": "reg_shape_51",
+      "type": "graphic_shape",
+      "label": "Circular Badge",
+      "text": "",
+      "x": 67,
+      "y": 530,
+      "w": 168,
+      "h": 168,
+      "conf": 88.0,
+      "can_cutout": true,
+      "cutout_quality": "safe_crop",
+      "related_ocr_blocks": [],
+      "parent_id": null,
+      "child_ids": [],
+      "shape_geometry": {
+        "shape": "circle",
+        "is_convertible": true,
+        "aspect": 1.0,
+        "fill_color": "#4e2725",
+        "stroke_color": "#4e2725",
+        "stroke_width": 2,
+        "border_radius": 12,
+        "opacity": 1.0,
+        "area_px": 22167
+      },
+      "is_convertible_shape": true
+    },
+    {
+      "id": "reg_shape_52",
+      "type": "graphic_shape",
+      "label": "Circular Badge",
+      "text": "",
+      "x": 401,
+      "y": 540,
+      "w": 168,
+      "h": 168,
+      "conf": 88.0,
+      "can_cutout": true,
+      "cutout_quality": "safe_crop",
+      "related_ocr_blocks": [],
+      "parent_id": null,
+      "child_ids": [],
+      "shape_geometry": {
+        "shape": "circle",
+        "is_convertible": true,
+        "aspect": 1.0,
+        "fill_color": "#357da3",
+        "stroke_color": "#357da3",
+        "stroke_width": 2,
+        "border_radius": 12,
+        "opacity": 1.0,
+        "area_px": 22167
+      },
+      "is_convertible_shape": true
+    },
+    {
+      "id": "reg_shape_41",
+      "type": "graphic_shape",
+      "label": "Red Rounded Panel",
+      "text": "",
+      "x": 130,
+      "y": 615,
+      "w": 141,
+      "h": 55,
+      "conf": 88.0,
+      "can_cutout": true,
+      "cutout_quality": "safe_crop",
+      "related_ocr_blocks": [],
+      "parent_id": null,
+      "child_ids": [],
+      "shape_geometry": {
+        "shape": "pill",
+        "is_convertible": true,
+        "aspect": 2.56,
+        "fill_color": "#4c241b",
+        "stroke_color": "transparent",
+        "stroke_width": 0,
+        "border_radius": 12,
+        "opacity": 1.0,
+        "area_px": 2691
+      },
+      "is_convertible_shape": true
+    },
+    {
+      "id": "reg_shape_53",
+      "type": "graphic_shape",
+      "label": "Circular Badge",
+      "text": "",
+      "x": 518,
+      "y": 619,
+      "w": 168,
+      "h": 168,
+      "conf": 88.0,
+      "can_cutout": true,
+      "cutout_quality": "safe_crop",
+      "related_ocr_blocks": [],
+      "parent_id": null,
+      "child_ids": [],
+      "shape_geometry": {
+        "shape": "circle",
+        "is_convertible": true,
+        "aspect": 1.0,
+        "fill_color": "#31797c",
+        "stroke_color": "#31797c",
+        "stroke_width": 2,
+        "border_radius": 12,
+        "opacity": 1.0,
+        "area_px": 22167
+      },
+      "is_convertible_shape": true
+    },
+    {
+      "id": "reg_shape_49",
+      "type": "graphic_shape",
+      "label": "Decorative Artwork (Red)",
+      "text": "",
+      "x": 688,
+      "y": 663,
+      "w": 165,
+      "h": 327,
+      "conf": 88.0,
+      "can_cutout": true,
+      "cutout_quality": "high",
+      "related_ocr_blocks": [],
+      "parent_id": null,
+      "child_ids": [],
+      "shape_geometry": {
+        "shape": "brush_stroke",
+        "is_convertible": false,
+        "aspect": 0.5,
+        "fill_color": "#521601",
+        "stroke_color": "transparent",
+        "stroke_width": 0,
+        "border_radius": 12,
+        "opacity": 1.0,
+        "area_px": 29038
+      },
+      "is_convertible_shape": false
+    },
+    {
+      "id": "reg_shape_37",
+      "type": "graphic_shape",
+      "label": "Blue Rounded Panel",
+      "text": "",
+      "x": 381,
+      "y": 729,
+      "w": 378,
+      "h": 111,
+      "conf": 88.0,
+      "can_cutout": true,
+      "cutout_quality": "safe_crop",
+      "related_ocr_blocks": [],
+      "parent_id": null,
+      "child_ids": [],
+      "shape_geometry": {
+        "shape": "pill",
+        "is_convertible": true,
+        "aspect": 3.41,
+        "fill_color": "#1f7799",
+        "stroke_color": "transparent",
+        "stroke_width": 0,
+        "border_radius": 12,
+        "opacity": 1.0,
+        "area_px": 22009
+      },
+      "is_convertible_shape": true
+    },
+    {
+      "id": "reg_shape_38",
+      "type": "graphic_shape",
+      "label": "Blue Rounded Panel",
+      "text": "",
+      "x": 101,
+      "y": 747,
+      "w": 284,
+      "h": 110,
+      "conf": 88.0,
+      "can_cutout": true,
+      "cutout_quality": "safe_crop",
+      "related_ocr_blocks": [],
+      "parent_id": null,
+      "child_ids": [],
+      "shape_geometry": {
+        "shape": "pill",
+        "is_convertible": true,
+        "aspect": 2.58,
+        "fill_color": "#177996",
+        "stroke_color": "transparent",
+        "stroke_width": 0,
+        "border_radius": 12,
+        "opacity": 1.0,
+        "area_px": 17019
+      },
+      "is_convertible_shape": true
+    },
+    {
+      "id": "reg_shape_36",
+      "type": "graphic_shape",
+      "label": "Blue Rounded Panel",
+      "text": "",
+      "x": 74,
+      "y": 899,
+      "w": 445,
+      "h": 151,
+      "conf": 88.0,
+      "can_cutout": true,
+      "cutout_quality": "safe_crop",
+      "related_ocr_blocks": [],
+      "parent_id": null,
+      "child_ids": [],
+      "shape_geometry": {
+        "shape": "pill",
+        "is_convertible": true,
+        "aspect": 2.95,
+        "fill_color": "#343438",
+        "stroke_color": "transparent",
+        "stroke_width": 0,
+        "border_radius": 12,
+        "opacity": 1.0,
+        "area_px": 31266
+      },
+      "is_convertible_shape": true
+    },
+    {
+      "id": "reg_shape_40",
+      "type": "graphic_shape",
+      "label": "Blue Rounded Panel",
+      "text": "",
+      "x": 74,
+      "y": 1086,
+      "w": 707,
+      "h": 105,
+      "conf": 88.0,
+      "can_cutout": true,
+      "cutout_quality": "safe_crop",
+      "related_ocr_blocks": [],
+      "parent_id": null,
+      "child_ids": [],
+      "shape_geometry": {
+        "shape": "pill",
+        "is_convertible": true,
+        "aspect": 6.73,
+        "fill_color": "#351217",
+        "stroke_color": "transparent",
+        "stroke_width": 0,
+        "border_radius": 12,
+        "opacity": 1.0,
+        "area_px": 4700
+      },
+      "is_convertible_shape": true
+    },
+    {
+      "id": "reg_txt_4",
+      "type": "text_group",
+      "label": "GO",
+      "text": "GO",
+      "x": 106,
+      "y": 153,
+      "w": 77,
+      "h": 42,
+      "conf": 96.0,
+      "can_cutout": true,
+      "cutout_quality": "medium",
+      "related_ocr_blocks": [
+        50
+      ],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_txt_9",
+      "type": "text_group",
+      "label": "Cares",
+      "text": "Cares",
+      "x": 192,
+      "y": 575,
+      "w": 69,
+      "h": 22,
+      "conf": 42.0,
+      "can_cutout": true,
+      "cutout_quality": "medium",
+      "related_ocr_blocks": [
+        9
+      ],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_txt_10",
+      "type": "text_group",
+      "label": "rucmMe",
+      "text": "rucmMe",
+      "x": 230,
+      "y": 599,
+      "w": 356,
+      "h": 47,
+      "conf": 32.0,
+      "can_cutout": true,
+      "cutout_quality": "medium",
+      "related_ocr_blocks": [
+        49
+      ],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_txt_13",
+      "type": "text_group",
+      "label": "ated",
+      "text": "ated",
+      "x": 9,
+      "y": 688,
+      "w": 76,
+      "h": 29,
+      "conf": 25.0,
+      "can_cutout": true,
+      "cutout_quality": "medium",
+      "related_ocr_blocks": [
+        15
+      ],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_txt_14",
+      "type": "text_group",
+      "label": "4:13",
+      "text": "4:13",
+      "x": 426,
+      "y": 842,
+      "w": 88,
+      "h": 42,
+      "conf": 96.0,
+      "can_cutout": true,
+      "cutout_quality": "medium",
+      "related_ocr_blocks": [
+        36
+      ],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_txt_15",
+      "type": "text_group",
+      "label": "Phil",
+      "text": "Phil",
+      "x": 338,
+      "y": 843,
+      "w": 93,
+      "h": 42,
+      "conf": 95.0,
+      "can_cutout": true,
+      "cutout_quality": "medium",
+      "related_ocr_blocks": [
+        35
+      ],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_txt_16",
+      "type": "text_group",
+      "label": "BIBLE STUDY",
+      "text": "BIBLE STUDY",
+      "x": 236,
+      "y": 912,
+      "w": 223,
+      "h": 36,
+      "conf": 95.5,
+      "can_cutout": true,
+      "cutout_quality": "medium",
+      "related_ocr_blocks": [
+        18,
+        19
+      ],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_txt_17",
+      "type": "text_group",
+      "label": "Vy",
+      "text": "Vy",
+      "x": 139,
+      "y": 916,
+      "w": 38,
+      "h": 31,
+      "conf": 48.0,
+      "can_cutout": true,
+      "cutout_quality": "medium",
+      "related_ocr_blocks": [
+        37
+      ],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_txt_21",
+      "type": "text_group",
+      "label": "ly",
+      "text": "ly",
+      "x": 682,
+      "y": 1002,
+      "w": 52,
+      "h": 33,
+      "conf": 46.0,
+      "can_cutout": true,
+      "cutout_quality": "medium",
+      "related_ocr_blocks": [
+        24
+      ],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_txt_24",
+      "type": "text_group",
+      "label": "RAISING",
+      "text": "RAISING",
+      "x": 160,
+      "y": 1205,
+      "w": 104,
+      "h": 27,
+      "conf": 95.0,
+      "can_cutout": true,
+      "cutout_quality": "medium",
+      "related_ocr_blocks": [
+        25
+      ],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_txt_25",
+      "type": "text_group",
+      "label": "GENERATION FOR GREATER",
+      "text": "GENERATION FOR GREATER",
+      "x": 276,
+      "y": 1205,
+      "w": 330,
+      "h": 27,
+      "conf": 70.0,
+      "can_cutout": true,
+      "cutout_quality": "medium",
+      "related_ocr_blocks": [
+        26,
+        27,
+        28
+      ],
+      "parent_id": null,
+      "child_ids": []
+    },
+    {
+      "id": "reg_txt_26",
+      "type": "text_group",
+      "label": "THINGS",
+      "text": "THINGS",
+      "x": 594,
+      "y": 1205,
+      "w": 97,
+      "h": 27,
+      "conf": 30.0,
+      "can_cutout": true,
+      "cutout_quality": "medium",
+      "related_ocr_blocks": [
+        29
+      ],
+      "parent_id": null,
+      "child_ids": []
+    }
+  ],
+  "speaker_paths": [],
+  "text_mask_path": "ocs_image_engine/output/text_mask.png",
+  "source_path": "/Users/rex/.gemini/antigravity-ide/brain/8438484d-143f-41e8-80d6-2fdbb9e82042/.tempmediaStorage/media_1790280484200.jpg",
+  "processing_time_sec": 4.64
+}

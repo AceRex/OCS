@@ -24,6 +24,7 @@ import {
   PiTextAlignRight,
   PiTextB,
   PiArrowCounterClockwise,
+  PiArrowsCounterClockwise,
   PiArrowClockwise,
   PiCaretDown,
   PiCaretRight,
@@ -63,6 +64,8 @@ import {
   PiBookOpen,
   PiArrowSquareOut,
   PiFileText,
+  PiEraser,
+  PiPaintBrush,
 } from "react-icons/pi";
 import ActionButton from "../components/feedback/ActionButton";
 import { calculateCropMetrics } from "./designStudioCrop";
@@ -71,6 +74,17 @@ import {
   ROLE_DEFINITIONS,
   validateRoleTemplate,
 } from "./designStudioRoles";
+import {
+  analyzeImageSource,
+  cropRegionToDataUrl,
+  smartCutoutRegionToDataUrl,
+  extractSubjectWithCutout,
+  copyImageToClipboard,
+  mergeSelectedRegions,
+  createCustomMarqueeRegion,
+  findSmallestChildRegion,
+} from "./design/DesignAssetAnalyzer";
+import ImageEditPanel from "./design/ImageEditPanel";
 
 const MAX_UNDO_STACK = 30;
 
@@ -3338,6 +3352,9 @@ export default function LiveDesignStudioModal({
   const [labReviewData, setLabReviewData] = useState(null);
   const [isLabReviewOpen, setIsLabReviewOpen] = useState(false);
   const [labShowOcrBoxes, setLabShowOcrBoxes] = useState(false);
+  const [labShowVisualRegions, setLabShowVisualRegions] = useState(true);
+  const [labSelectedRegionId, setLabSelectedRegionId] = useState(null);
+  const [labHoveredRegionId, setLabHoveredRegionId] = useState(null);
   const [labOutputOptions, setLabOutputOptions] = useState({
     editable_layout: true,
     landscape_design: true,
@@ -3439,6 +3456,50 @@ export default function LiveDesignStudioModal({
   const [cornersLinked, setCornersLinked] = useState(true);
   const maskFileInputRef = useRef(null);
   const maskTargetLayerIdRef = useRef(null);
+
+  // Flyer & Poster Intelligent Inspection state (V2)
+  const [inspectingLayerId, setInspectingLayerId] = useState(null);
+  const [inspectionData, setInspectionData] = useState(null);
+  const [isAnalyzingImage, setIsAnalyzingImage] = useState(false);
+  const [inspectionTab, setInspectionTab] = useState("objects"); // "objects" | "text" | "subjects" | "crop" | "bg"
+  const [selectedInspectBlockId, setSelectedInspectBlockId] = useState(null);
+  const [selectedInspectSubjectId, setSelectedInspectSubjectId] = useState(null);
+  const [selectedInspectRegionId, setSelectedInspectRegionId] = useState(null);
+  const [selectedInspectRegionIds, setSelectedInspectRegionIds] = useState([]);
+  const [hoveredInspectRegionId, setHoveredInspectRegionId] = useState(null);
+  const [regionContextMenu, setRegionContextMenu] = useState(null);
+  const [showDetectedRegions, setShowDetectedRegions] = useState(false);
+  const [activeTextPickerField, setActiveTextPickerField] = useState(null);
+  const [marqueeSelection, setMarqueeSelection] = useState(null);
+  const regionContextMenuRef = useRef(null);
+
+  // Non-Destructive Pixel-Level Image Editing State (Part B)
+  const [imageEditingLayerId, setImageEditingLayerId] = useState(null);
+  const [imageEditStrokes, setImageEditStrokes] = useState({});
+  const [imageEditRect, setImageEditRect] = useState(null);
+
+  useEffect(() => {
+    if (!imageEditingLayerId) {
+      setImageEditRect(null);
+      return;
+    }
+    const updateRect = () => {
+      const el = document.querySelector(`[data-studio-layer-id="${imageEditingLayerId}"]`);
+      if (el) {
+        const r = el.getBoundingClientRect();
+        setImageEditRect({ left: r.left, top: r.top, width: r.width, height: r.height });
+      }
+    };
+    updateRect();
+    const animId = requestAnimationFrame(updateRect);
+    window.addEventListener("resize", updateRect);
+    window.addEventListener("scroll", updateRect, true);
+    return () => {
+      cancelAnimationFrame(animId);
+      window.removeEventListener("resize", updateRect);
+      window.removeEventListener("scroll", updateRect, true);
+    };
+  }, [imageEditingLayerId, zoom, panOffset]);
 
   // Canvas interaction refs & animation frame throttling
   const canvasRef = useRef(null);
@@ -4464,6 +4525,41 @@ export default function LiveDesignStudioModal({
     e.target.value = "";
   };
 
+  const handleApplyImageEdit = useCallback((dataUrl, strokes) => {
+    if (!imageEditingLayerId) return;
+    const target = currentDesign.layers.find((l) => l.id === imageEditingLayerId);
+    if (!target) {
+      setImageEditingLayerId(null);
+      return;
+    }
+    const origUrl = target.originalUrl || target.content || target.url || (target.filePath ? `file://${target.filePath}` : null);
+    updateLayer(imageEditingLayerId, {
+      content: dataUrl,
+      editedUrl: dataUrl,
+      originalUrl: origUrl,
+      editStrokes: strokes,
+    });
+    setImageEditStrokes((prev) => ({ ...prev, [imageEditingLayerId]: strokes }));
+    setImageEditingLayerId(null);
+    showFeedback("Image brush edits applied non-destructively", true);
+  }, [imageEditingLayerId, currentDesign.layers, updateLayer, showFeedback]);
+
+  const handleRevertImageEdit = useCallback((layerId) => {
+    const target = currentDesign.layers.find((l) => l.id === layerId);
+    if (!target || !target.originalUrl) return;
+    updateLayer(layerId, {
+      content: target.originalUrl,
+      editedUrl: null,
+      editStrokes: [],
+    });
+    setImageEditStrokes((prev) => {
+      const next = { ...prev };
+      delete next[layerId];
+      return next;
+    });
+    showFeedback("Image reverted to original asset", true);
+  }, [currentDesign.layers, updateLayer, showFeedback]);
+
   const handleFileDrop = (e) => {
     e.preventDefault();
     e.stopPropagation();
@@ -4594,6 +4690,312 @@ export default function LiveDesignStudioModal({
     showFeedback("Restored original image", true);
   };
 
+  // ─── Intelligent Flyer / Poster Inspection Handlers (V2) ───────────────────
+  const handleStartInspectImage = async (layer) => {
+    if (!layer) return;
+    if (layer.inspectionData || layer.analysisData) {
+      const data = layer.inspectionData || layer.analysisData;
+      setInspectionData(data);
+      setInspectingLayerId(layer.id);
+      setInspectionTab("objects");
+      return;
+    }
+
+    const imgSrc = layer.content || layer.url || (layer.filePath ? `file://${layer.filePath}` : null);
+    if (!imgSrc) {
+      showFeedback("No image source available to inspect", false);
+      return;
+    }
+
+    setIsAnalyzingImage(true);
+    showFeedback("Analyzing flyer with local OCR & Vision decomposition engine...", true);
+
+    try {
+      const res = await analyzeImageSource(imgSrc);
+      setInspectionData(res);
+      setInspectingLayerId(layer.id);
+      setInspectionTab("objects");
+      setCurrentDesign((prev) => ({
+        ...prev,
+        layers: prev.layers.map((l) => (l.id === layer.id ? { ...l, inspectionData: res, analysisData: res } : l)),
+      }));
+      const objCount = res.visualRegions?.length || 0;
+      const blockCount = res.textBlocks?.length || 0;
+      showFeedback(`Decomposition complete: ${objCount} visual objects, ${blockCount} text blocks found.`, true);
+    } catch (err) {
+      console.error("[Design Lab] Inspection failed:", err);
+      showFeedback(`Inspection failed: ${err.message}`, false);
+    } finally {
+      setIsAnalyzingImage(false);
+    }
+  };
+
+  const handleCloseInspection = () => {
+    setInspectingLayerId(null);
+    setInspectionData(null);
+    setSelectedInspectBlockId(null);
+    setSelectedInspectSubjectId(null);
+    setSelectedInspectRegionId(null);
+    setSelectedInspectRegionIds([]);
+    setRegionContextMenu(null);
+    setMarqueeSelection(null);
+  };
+
+  // Auto-bind / sync inspection when an analyzed image layer is selected
+  useEffect(() => {
+    if (!selectedLayerId) {
+      if (inspectingLayerId) handleCloseInspection();
+      return;
+    }
+    const layer = currentDesign.layers.find((l) => l.id === selectedLayerId);
+    if (!layer) return;
+    if (layer.type === "image" && (layer.inspectionData || layer.analysisData)) {
+      const data = layer.inspectionData || layer.analysisData;
+      setInspectionData(data);
+      setInspectingLayerId(layer.id);
+      setInspectionTab("objects");
+    } else if (inspectingLayerId && inspectingLayerId !== layer.id) {
+      handleCloseInspection();
+    }
+  }, [selectedLayerId, currentDesign.layers]);
+
+  const handleCopyText = (text) => {
+    if (!text) return;
+    navigator.clipboard?.writeText(text);
+    showFeedback(`Copied to clipboard: "${text}"`, true);
+  };
+
+  const handleCopyAllText = () => {
+    if (!inspectionData?.textBlocks?.length) return;
+    const allText = inspectionData.textBlocks.map((b) => b.text).join("\n");
+    navigator.clipboard?.writeText(allText);
+    showFeedback(`Copied ${inspectionData.textBlocks.length} text lines to clipboard`, true);
+  };
+
+  const handleCreateTextLayerFromBlock = (layer, block) => {
+    if (!block) return;
+    pushUndoSnapshot();
+
+    const layerW = layer?.width || 50;
+    const layerH = layer?.height || (layer?.type === "image" ? ((layerW * (16 / 9)) / (layer?.aspectRatio || 1.777778)) : 50);
+    const layerLeft = (layer?.x ?? 50) - layerW / 2;
+    const layerTop = (layer?.y ?? 50) - layerH / 2;
+
+    const blockNormW = block.normW ?? 30;
+    const blockNormH = block.normH ?? 6;
+    const blockNormX = block.normX ?? 35;
+    const blockNormY = block.normY ?? 40;
+
+    const blockArtboardW = Math.max(8, (blockNormW / 100) * layerW);
+    const blockArtboardH = Math.max(4, (blockNormH / 100) * layerH);
+    const blockArtboardX = layerLeft + (blockNormX / 100) * layerW + blockArtboardW / 2;
+    const blockArtboardY = layerTop + (blockNormY / 100) * layerH + blockArtboardH / 2;
+
+    const newLayer = {
+      id: `layer_txt_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      type: "text",
+      name: `Extracted: ${String(block.text || "Text").slice(0, 16)}`,
+      text: block.text || "Text",
+      fontFamily: inspectionData?.dominantFont?.matched_font || labReviewData?.font_family || "Inter, sans-serif",
+      fontSize: Math.max(12, Math.min(64, Math.round(blockArtboardH * 3.5))),
+      fontWeight: (block.conf || 90) > 85 ? "bold" : "600",
+      color: inspectionData?.rawAnalysis?.palette_roles?.heading || labReviewData?.palette_roles?.heading || "#FFFFFF",
+      textAlign: "left",
+      textTransform: "none",
+      x: Math.round(blockArtboardX * 10) / 10,
+      y: Math.round(blockArtboardY * 10) / 10,
+      width: Math.round(blockArtboardW * 10) / 10,
+      rotation: layer?.rotation || 0,
+      opacity: 1,
+      visible: true,
+      zIndex: (currentDesign.layers.length + 1) * 10,
+    };
+
+    setCurrentDesign((prev) => ({ ...prev, layers: [...prev.layers, newLayer] }));
+    setSelectedLayerId(newLayer.id);
+    showFeedback(`Created text layer for "${block.text}"`, true);
+  };
+
+  const handleExtractVisualRegionAsImage = async (layer, region, withCutout = false, andCopy = false) => {
+    if (!region) return;
+    const imgSrc = layer?.content || layer?.url || (layer?.filePath ? `file://${layer.filePath}` : null) || labPoster;
+    if (!imgSrc) {
+      showFeedback("No image source available to extract", false);
+      return;
+    }
+
+    const opLabel = withCutout ? "Extracting Transparent PNG Cutout..." : "Extracting source-resolution region...";
+    showFeedback(opLabel, true);
+
+    try {
+      let extractedDataUrl;
+      if (withCutout) {
+        if (region.type === "subject") {
+          extractedDataUrl = await extractSubjectWithCutout(imgSrc, region, (p) => setBgRemovalProgress(p));
+        } else {
+          extractedDataUrl = await smartCutoutRegionToDataUrl(imgSrc, region, false);
+        }
+      } else {
+        extractedDataUrl = await cropRegionToDataUrl(imgSrc, region, false);
+      }
+
+      pushUndoSnapshot();
+
+      const layerW = layer?.width || 50;
+      const layerH = layer?.height || (layer?.type === "image" ? ((layerW * (16 / 9)) / (layer?.aspectRatio || 1.777778)) : 50);
+      const layerLeft = (layer?.x ?? 50) - layerW / 2;
+      const layerTop = (layer?.y ?? 50) - layerH / 2;
+
+      const regArtboardW = Math.max(6, (region.normW / 100) * layerW);
+      const regArtboardH = Math.max(4, (region.normH / 100) * layerH);
+      const regArtboardX = layerLeft + (region.normX / 100) * layerW + regArtboardW / 2;
+      const regArtboardY = layerTop + (region.normY / 100) * layerH + regArtboardH / 2;
+
+      const prefix = withCutout ? "Cutout: " : "Visual: ";
+      const layerName = `${prefix}${region.label || region.text || "Extracted Asset"}`;
+
+      const newLayer = {
+        id: `layer_img_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+        type: "image",
+        name: layerName.length > 28 ? layerName.slice(0, 26) + "..." : layerName,
+        content: extractedDataUrl,
+        url: extractedDataUrl,
+        x: Math.round(regArtboardX * 10) / 10,
+        y: Math.round(regArtboardY * 10) / 10,
+        width: Math.round(regArtboardW * 10) / 10,
+        height: Math.round(regArtboardH * 10) / 10,
+        aspectRatio: (region.w || 1) / (region.h || 1),
+        rotation: 0,
+        opacity: 1,
+        visible: true,
+        hasBgRemoved: withCutout,
+        zIndex: (currentDesign.layers.length + 1) * 10,
+      };
+
+      setCurrentDesign((prev) => ({ ...prev, layers: [...prev.layers, newLayer] }));
+      setSelectedLayerId(newLayer.id);
+
+      if (andCopy) {
+        await copyImageToClipboard(extractedDataUrl);
+        showFeedback(`Extracted & copied "${region.label}" to clipboard`, true);
+      } else {
+        showFeedback(`Extracted "${region.label}" as new Design Lab layer`, true);
+      }
+    } catch (err) {
+      console.error("[Design Lab] Failed to extract region:", err);
+      showFeedback(`Extraction failed: ${err.message}`, false);
+    }
+  };
+
+  const handleCopyRegionImage = async (layer, region, withCutout = false) => {
+    if (!region) return;
+    const imgSrc = layer?.content || layer?.url || (layer?.filePath ? `file://${layer.filePath}` : null) || labPoster;
+    if (!imgSrc) return;
+
+    showFeedback("Rendering image for clipboard...", true);
+    try {
+      let dataUrl;
+      if (withCutout) {
+        if (region.type === "subject") {
+          dataUrl = await extractSubjectWithCutout(imgSrc, region);
+        } else {
+          dataUrl = await smartCutoutRegionToDataUrl(imgSrc, region, false);
+        }
+      } else {
+        dataUrl = await cropRegionToDataUrl(imgSrc, region, false);
+      }
+      const success = await copyImageToClipboard(dataUrl);
+      if (success) {
+        showFeedback(`Copied "${region.label}" PNG to clipboard!`, true);
+      } else {
+        showFeedback("Failed to copy image to clipboard", false);
+      }
+    } catch (err) {
+      console.error("[Design Lab] Copy image failed:", err);
+      showFeedback(`Copy failed: ${err.message}`, false);
+    }
+  };
+
+  const handleConvertRegionToShape = (layer, region) => {
+    if (!region) return;
+    pushUndoSnapshot();
+
+    const layerW = layer?.width || 50;
+    const layerH = layer?.height || (layer?.type === "image" ? ((layerW * (16 / 9)) / (layer?.aspectRatio || 1.777778)) : 50);
+    const layerLeft = (layer?.x ?? 50) - layerW / 2;
+    const layerTop = (layer?.y ?? 50) - layerH / 2;
+
+    const normW = region.normW != null ? (region.normW > 1 ? region.normW / 100 : region.normW) : 0.2;
+    const normH = region.normH != null ? (region.normH > 1 ? region.normH / 100 : region.normH) : 0.1;
+    const normX = region.normX != null ? (region.normX > 1 ? region.normX / 100 : region.normX) : 0;
+    const normY = region.normY != null ? (region.normY > 1 ? region.normY / 100 : region.normY) : 0;
+
+    const regArtboardW = Math.max(10, normW * layerW);
+    const regArtboardH = Math.max(4, normH * layerH);
+    const regArtboardX = layerLeft + normX * layerW + regArtboardW / 2;
+    const regArtboardY = layerTop + normY * layerH + regArtboardH / 2;
+
+    const geo = region.shape_geometry || {};
+    const shapeKind = geo.shape === "circle" ? "circle" : "rectangle";
+    const fillColor = geo.fill_color || "#f9b208";
+    const strokeColor = geo.stroke_color || "transparent";
+    const strokeWidth = geo.stroke_width || 0;
+
+    const newShapeLayer = {
+      id: `shape_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+      type: "shape",
+      name: `Shape: ${region.label || "Vector Shape"}`,
+      shape: shapeKind,
+      x: Math.round(regArtboardX * 10) / 10,
+      y: Math.round(regArtboardY * 10) / 10,
+      width: Math.round(regArtboardW * 10) / 10,
+      height: Math.round(regArtboardH * 10) / 10,
+      fill: fillColor,
+      stroke: strokeColor,
+      strokeWidth: strokeWidth,
+      borderRadius: 12, // Strict Universal 12px border radius mandate!
+      opacity: geo.opacity ?? 1,
+      rotation: layer?.rotation || 0,
+      zIndex: (currentDesign.layers.length + 1) * 10,
+    };
+
+    setCurrentDesign((prev) => ({
+      ...prev,
+      layers: [...prev.layers, newShapeLayer],
+    }));
+    setSelectedLayerId(newShapeLayer.id);
+    showFeedback(`Converted to editable ${shapeKind} shape`, true);
+  };
+
+  const handleMergeSelectedRegions = () => {
+    if (!inspectionData?.visualRegions || selectedInspectRegionIds.length < 2) {
+      showFeedback("Select 2 or more regions with Shift+Click to merge", false);
+      return;
+    }
+    const toMerge = inspectionData.visualRegions.filter((r) => selectedInspectRegionIds.includes(r.id));
+    const merged = mergeSelectedRegions(toMerge, inspectionData.imageWidth, inspectionData.imageHeight);
+    if (merged) {
+      setInspectionData((prev) => ({
+        ...prev,
+        visualRegions: [merged, ...(prev.visualRegions || [])],
+      }));
+      setSelectedInspectRegionId(merged.id);
+      setSelectedInspectRegionIds([merged.id]);
+      showFeedback(`Merged ${toMerge.length} regions into "${merged.label}"`, true);
+    }
+  };
+
+  const handleSplitRegion = (region) => {
+    if (!region || !region.childIds?.length) return;
+    setSelectedInspectRegionIds(region.childIds);
+    setSelectedInspectRegionId(region.childIds[0]);
+    showFeedback(`Split "${region.label}" into ${region.childIds.length} sub-regions`, true);
+  };
+
+  const handleCreateImageLayerFromSubject = async (layer, subject, withCutout = false) => {
+    return handleExtractVisualRegionAsImage(layer, subject, withCutout, false);
+  };
+
   // ─── Add to Live Controls Rack ─────────────────────────────────────────────
   const handleAddToLiveControls = async (targetLayers = null) => {
     try {
@@ -4692,14 +5094,18 @@ export default function LiveDesignStudioModal({
   const initReviewDataFromAnalysis = (analysis) => {
     const pRoles = analysis?.palette_roles || {};
     const pColors = Array.isArray(analysis?.palette_hex) ? analysis.palette_hex : [];
+    const scriptureVal = analysis?.scripture?.normalizedReference ||
+      analysis?.scripture?.displayText ||
+      (typeof analysis?.scripture === "string" ? analysis.scripture : "");
     return {
       event_name: analysis?.event_name || "",
       theme_subtitle: analysis?.theme_subtitle || "",
-      dates: analysis?.dates || "",
-      times: analysis?.times || "",
+      scripture: scriptureVal,
+      dates: Array.isArray(analysis?.dates) ? analysis.dates.join(", ") : (analysis?.dates || ""),
+      times: Array.isArray(analysis?.times) ? analysis.times.join(", ") : (analysis?.times || ""),
       venue: analysis?.venue || "",
-      organizers: analysis?.organizers || "",
-      speakers: analysis?.speakers || "",
+      organizers: analysis?.organizers || analysis?.organizer || "",
+      speakers: Array.isArray(analysis?.speakers) ? analysis.speakers.join(", ") : (analysis?.speakers || ""),
       contact: analysis?.contact || "",
       website: analysis?.website || "",
       palette_roles: {
@@ -4710,6 +5116,9 @@ export default function LiveDesignStudioModal({
       },
       font_family: analysis?.dominant_font_style?.matched_font || "Inter",
       font_category: analysis?.dominant_font_style?.category || "sans-serif",
+      ocr_blocks: analysis?.ocr_blocks || analysis?.text_blocks || [],
+      protected_regions: analysis?.faces || [],
+      visual_regions: analysis?.visual_regions || [],
     };
   };
 
@@ -4723,8 +5132,30 @@ export default function LiveDesignStudioModal({
         console.error("Design Lab Error:", result.error, result.details);
         showFeedback(`AI Analysis failed: ${result.error}`, false);
       } else {
-        setLabAnalysis(result);
-        setLabReviewData(initReviewDataFromAnalysis(result));
+        const imgW = result.image_width || 1000;
+        const imgH = result.image_height || 1000;
+        const normalizedVisualRegions = (result.visual_regions || []).map((r, idx) => ({
+          ...r,
+          id: r.id || `reg_${idx}_${Date.now()}`,
+          label: r.label || r.text || `Region ${idx + 1}`,
+          type: r.type || "visual_group",
+          x: Number(r.x) || 0,
+          y: Number(r.y) || 0,
+          w: Number(r.w) || 0,
+          h: Number(r.h) || 0,
+          normX: ((Number(r.x) || 0) / imgW) * 100,
+          normY: ((Number(r.y) || 0) / imgH) * 100,
+          normW: ((Number(r.w) || 0) / imgW) * 100,
+          normH: ((Number(r.h) || 0) / imgH) * 100,
+          canCutout: r.can_cutout !== false,
+          cutoutQuality: r.cutout_quality || "high",
+        }));
+        const enhancedResult = {
+          ...result,
+          visual_regions: normalizedVisualRegions,
+        };
+        setLabAnalysis(enhancedResult);
+        setLabReviewData(initReviewDataFromAnalysis(enhancedResult));
         setIsLabReviewOpen(true);
         setLabPreviewMode("original");
         showFeedback("Event flyer analyzed successfully! Review detected details.", true);
@@ -4755,6 +5186,9 @@ export default function LiveDesignStudioModal({
         imagePath: labPoster,
         reviewedData: {
           ...labReviewData,
+          ocr_blocks: labReviewData.ocr_blocks || labAnalysis?.ocr_blocks || labAnalysis?.text_blocks || [],
+          protected_regions: labReviewData.protected_regions || labAnalysis?.faces || [],
+          visual_regions: labReviewData.visual_regions || labAnalysis?.visual_regions || [],
           output_options: labOutputOptions,
         },
       };
@@ -4798,6 +5232,8 @@ export default function LiveDesignStudioModal({
       id: `layer_lab_${timePrefix}_${idx}_${Math.random().toString(36).substr(2, 4)}`,
       zIndex: currentMaxZ + 1 + idx,
       borderRadius: 12, // Strict universal 12px border radius mandate
+      inspectionData: l.type === 'image' ? (labAnalysis || labReviewData) : undefined,
+      analysisData: l.type === 'image' ? (labAnalysis || labReviewData) : undefined,
     }));
 
     setCurrentDesign((prev) => ({
@@ -4828,6 +5264,8 @@ export default function LiveDesignStudioModal({
       visible: true,
       aspectRatio: 1.777778,
       borderRadius: 12, // Strict universal 12px border radius mandate
+      inspectionData: labAnalysis || labReviewData || null,
+      analysisData: labAnalysis || labReviewData || null,
     };
     setCurrentDesign((prev) => ({
       ...prev,
@@ -5498,21 +5936,23 @@ export default function LiveDesignStudioModal({
         layers: prev.layers.map((l) => {
           if (l.id !== drag.layerId) return l;
           const patch = { width: newW, x: newX };
-          if (l.type === "shape" || l.type === "text") {
-            if (drag.aspectLocked && isCorner && l.type === "shape") {
-              patch.height = newH;
-              patch.y = newY;
-            } else if (handle.includes("n") || handle.includes("s") || handle === "mt" || handle === "mb") {
-              patch.height = newH;
-              patch.y = newY;
-            } else if (isCorner && !drag.aspectLocked) {
-              patch.height = newH;
-              patch.y = newY;
-            }
+          // Apply height/y for ALL layer types (image, shape, text, etc.) whenever
+          // the active handle or aspect-lock math produces a vertical change.
+          const shouldUpdateH =
+            (drag.aspectLocked && isCorner) ||
+            handle.includes("n") ||
+            handle.includes("s") ||
+            handle === "mt" ||
+            handle === "mb" ||
+            (isCorner && !drag.aspectLocked);
+          if (shouldUpdateH) {
+            patch.height = newH;
+            patch.y = newY;
           }
           return { ...l, ...patch };
         }),
       }));
+
     } else if (drag.mode === "rotate") {
       const rect = canvasRef.current?.getBoundingClientRect();
       if (!rect) return;
@@ -6133,6 +6573,7 @@ export default function LiveDesignStudioModal({
       if (templateSettingsRef.current && !templateSettingsRef.current.contains(e.target)) setTemplateSettingsOpen(false);
       if (liveControlsMenuRef.current && !liveControlsMenuRef.current.contains(e.target)) setLiveControlsMenuOpen(false);
       if (contextMenuRef.current && !contextMenuRef.current.contains(e.target)) setContextMenu(null);
+      if (regionContextMenuRef.current && !regionContextMenuRef.current.contains(e.target)) setRegionContextMenu(null);
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -7786,13 +8227,275 @@ export default function LiveDesignStudioModal({
                                     panY: layer.frameCrop?.panY || 0,
                                   });
                                   return (
-                                    <img
-                                      src={layer.content || layer.url || layer.filePath}
-                                      alt={layer.name || "Layer"}
-                                      className="pointer-events-none select-none"
-                                      draggable={false}
-                                      style={cropMetrics.css}
-                                    />
+                                    <>
+                                      <img
+                                        src={layer.content || layer.url || layer.filePath}
+                                        alt={layer.name || "Layer"}
+                                        className="pointer-events-none select-none"
+                                        draggable={false}
+                                        style={cropMetrics.css}
+                                      />
+
+                                      {/* Intelligent Inspection Canvas Overlay */}
+                                      {inspectingLayerId === layer.id && inspectionData && !imageEditingLayerId && (
+                                        <div
+                                          className="absolute inset-0 pointer-events-auto z-30 select-none cursor-crosshair"
+                                          onMouseDown={(e) => {
+                                            e.stopPropagation();
+                                            if (e.button === 0 && e.target === e.currentTarget && e.shiftKey) {
+                                              const rect = e.currentTarget.getBoundingClientRect();
+                                              const startX = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+                                              const startY = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
+                                              setMarqueeSelection({ startX, startY, currentX: startX, currentY: startY, isDragging: true });
+                                            }
+                                          }}
+                                          onMouseMove={(e) => {
+                                            if (marqueeSelection?.isDragging) {
+                                              const rect = e.currentTarget.getBoundingClientRect();
+                                              const currentX = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+                                              const currentY = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
+                                              setMarqueeSelection((prev) => prev ? { ...prev, currentX, currentY } : null);
+                                            } else if (inspectionTab === "objects") {
+                                              const rect = e.currentTarget.getBoundingClientRect();
+                                              const px = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+                                              const py = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
+                                              const smallest = findSmallestChildRegion(inspectionData.visualRegions || [], px, py);
+                                              if (smallest?.id !== hoveredInspectRegionId) {
+                                                setHoveredInspectRegionId(smallest?.id || null);
+                                              }
+                                            }
+                                          }}
+                                          onMouseLeave={() => {
+                                            setHoveredInspectRegionId(null);
+                                          }}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (marqueeSelection?.isDragging) return;
+                                            const rect = e.currentTarget.getBoundingClientRect();
+                                            const px = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+                                            const py = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
+                                            const smallest = findSmallestChildRegion(inspectionData.visualRegions || [], px, py);
+                                            if (smallest) {
+                                              if (e.shiftKey) {
+                                                setSelectedInspectRegionIds((prev) =>
+                                                  prev.includes(smallest.id) ? prev.filter((id) => id !== smallest.id) : [...prev, smallest.id]
+                                                );
+                                                setSelectedInspectRegionId(smallest.id);
+                                              } else {
+                                                setSelectedInspectRegionId(smallest.id);
+                                                setSelectedInspectRegionIds([smallest.id]);
+                                              }
+                                            } else {
+                                              setSelectedInspectRegionId(null);
+                                              setSelectedInspectRegionIds([]);
+                                            }
+                                          }}
+                                          onContextMenu={(e) => {
+                                            e.preventDefault();
+                                            e.stopPropagation();
+                                            const rect = e.currentTarget.getBoundingClientRect();
+                                            const px = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+                                            const py = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
+                                            const smallest = findSmallestChildRegion(inspectionData.visualRegions || [], px, py);
+                                            if (smallest) {
+                                              setSelectedInspectRegionId(smallest.id);
+                                              setSelectedInspectRegionIds([smallest.id]);
+                                              setRegionContextMenu({
+                                                x: e.clientX,
+                                                y: e.clientY,
+                                                region: smallest,
+                                                layer,
+                                              });
+                                            }
+                                          }}
+                                          onMouseUp={(e) => {
+                                            if (marqueeSelection?.isDragging) {
+                                              const minX = Math.min(marqueeSelection.startX, marqueeSelection.currentX);
+                                              const minY = Math.min(marqueeSelection.startY, marqueeSelection.currentY);
+                                              const width = Math.abs(marqueeSelection.currentX - marqueeSelection.startX);
+                                              const height = Math.abs(marqueeSelection.currentY - marqueeSelection.startY);
+                                              setMarqueeSelection(null);
+                                              if (width > 2 && height > 2) {
+                                                const customRegion = createCustomMarqueeRegion(minX, minY, width, height, layer.aspectRatio || (16 / 9));
+                                                setInspectionData((prev) => prev ? {
+                                                  ...prev,
+                                                  visualRegions: [...(prev.visualRegions || []), customRegion],
+                                                } : prev);
+                                                setSelectedInspectRegionId(customRegion.id);
+                                                setSelectedInspectRegionIds([customRegion.id]);
+                                                setRegionContextMenu({
+                                                  x: e.clientX,
+                                                  y: e.clientY,
+                                                  region: customRegion,
+                                                  layer,
+                                                });
+                                              }
+                                            }
+                                          }}
+                                        >
+                                          {/* Manual Marquee Selection Box */}
+                                          {marqueeSelection?.isDragging && (
+                                            <div
+                                              className="absolute border-2 border-dashed border-[#00A8FF] bg-[#00A8FF]/20 rounded-[12px] pointer-events-none z-50 transition-none"
+                                              style={{
+                                                left: `${Math.min(marqueeSelection.startX, marqueeSelection.currentX)}%`,
+                                                top: `${Math.min(marqueeSelection.startY, marqueeSelection.currentY)}%`,
+                                                width: `${Math.abs(marqueeSelection.currentX - marqueeSelection.startX)}%`,
+                                                height: `${Math.abs(marqueeSelection.currentY - marqueeSelection.startY)}%`,
+                                              }}
+                                            />
+                                          )}
+
+                                          {/* TAB: VISUAL OBJECTS (V2) - Subtle Object Interaction */}
+                                          {inspectionTab === "objects" && (() => {
+                                            const regions = inspectionData.visualRegions || [];
+                                            const selectedRegion = regions.find((r) => r.id === selectedInspectRegionId);
+                                            const hoveredRegion = regions.find((r) => r.id === hoveredInspectRegionId && r.id !== selectedInspectRegionId);
+
+                                            const regionsToRender = showDetectedRegions
+                                              ? regions
+                                              : [hoveredRegion, selectedRegion].filter(Boolean);
+
+                                            const typeStyles = {
+                                              logo: {
+                                                idle: "border-amber-400/25 bg-amber-400/5",
+                                                hover: "border-amber-300 border-dashed bg-amber-400/15 shadow-md",
+                                                active: "border-amber-400 bg-amber-400/25 ring-2 ring-amber-300 shadow-lg shadow-amber-950/60",
+                                                badge: "bg-black/90 border-amber-500/50 text-amber-300",
+                                              },
+                                              visual_group: {
+                                                idle: "border-sky-400/25 bg-sky-400/5",
+                                                hover: "border-sky-300 border-dashed bg-sky-400/15 shadow-md",
+                                                active: "border-sky-400 bg-sky-400/25 ring-2 ring-sky-300 shadow-lg shadow-sky-950/60",
+                                                badge: "bg-black/90 border-sky-500/50 text-sky-300",
+                                              },
+                                              icon: {
+                                                idle: "border-emerald-400/25 bg-emerald-400/5",
+                                                hover: "border-emerald-300 border-dashed bg-emerald-400/15 shadow-md",
+                                                active: "border-emerald-400 bg-emerald-400/25 ring-2 ring-emerald-300 shadow-lg shadow-emerald-950/60",
+                                                badge: "bg-black/90 border-emerald-500/50 text-emerald-300",
+                                              },
+                                              subject: {
+                                                idle: "border-purple-400/25 bg-purple-400/5",
+                                                hover: "border-purple-300 border-dashed bg-purple-400/15 shadow-md",
+                                                active: "border-purple-400 bg-purple-400/25 ring-2 ring-purple-300 shadow-lg shadow-purple-950/60",
+                                                badge: "bg-black/90 border-purple-500/50 text-purple-300",
+                                              },
+                                              section: {
+                                                idle: "border-violet-400/20 bg-violet-400/5",
+                                                hover: "border-violet-300 border-dashed bg-violet-400/15 shadow-md",
+                                                active: "border-violet-400 bg-violet-400/20 ring-2 ring-violet-300 shadow-lg shadow-violet-950/60",
+                                                badge: "bg-black/90 border-violet-500/50 text-violet-300",
+                                              },
+                                              text_group: {
+                                                idle: "border-indigo-400/25 bg-indigo-400/5",
+                                                hover: "border-indigo-300 border-dashed bg-indigo-400/15 shadow-md",
+                                                active: "border-indigo-400 bg-indigo-400/25 ring-2 ring-indigo-300 shadow-lg shadow-indigo-950/60",
+                                                badge: "bg-black/90 border-indigo-500/50 text-indigo-300",
+                                              },
+                                            };
+
+                                            return regionsToRender.map((region) => {
+                                              const isSelected = selectedInspectRegionId === region.id || (selectedInspectRegionIds && selectedInspectRegionIds.includes(region.id));
+                                              const isHovered = hoveredInspectRegionId === region.id;
+                                              const currentStyle = typeStyles[region.type] || typeStyles.visual_group;
+                                              const styleClass = isSelected
+                                                ? currentStyle.active
+                                                : isHovered
+                                                ? currentStyle.hover
+                                                : currentStyle.idle;
+
+                                              return (
+                                                <div
+                                                  key={region.id}
+                                                  className={`absolute rounded-[12px] border-2 transition-all pointer-events-none group/vregion ${styleClass}`}
+                                                  style={{
+                                                    left: `${region.normX}%`,
+                                                    top: `${region.normY}%`,
+                                                    width: `${region.normW}%`,
+                                                    height: `${region.normH}%`,
+                                                  }}
+                                                >
+                                                  <div
+                                                    className={`absolute bottom-full left-0 mb-1 px-1.5 py-0.5 rounded-[12px] border text-[9px] font-mono whitespace-nowrap pointer-events-none z-40 transition-opacity ${
+                                                      isSelected || isHovered ? "opacity-100" : "opacity-0"
+                                                    } ${currentStyle.badge}`}
+                                                    style={{ transform: `scale(${1 / (zoom || 1)})`, transformOrigin: "bottom left" }}
+                                                  >
+                                                    <span className="font-bold uppercase tracking-wider mr-1">[{region.type}]</span>
+                                                    <span>{region.label || "Region"}</span>
+                                                  </div>
+                                                </div>
+                                              );
+                                            });
+                                          })()}
+
+                                          {inspectionTab === "text" && (inspectionData.textBlocks || []).map((block) => {
+                                            const isBlockSelected = selectedInspectBlockId === block.id;
+                                            return (
+                                              <div
+                                                key={block.id}
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setSelectedInspectBlockId(block.id);
+                                                }}
+                                                className={`absolute rounded-[12px] border-2 transition-all cursor-pointer group/block ${
+                                                  isBlockSelected
+                                                    ? "border-emerald-400 bg-emerald-500/30 shadow-lg shadow-emerald-950/60 ring-2 ring-emerald-300"
+                                                    : "border-emerald-400/70 bg-emerald-500/15 hover:border-emerald-300 hover:bg-emerald-500/25"
+                                                }`}
+                                                style={{
+                                                  left: `${block.normX}%`,
+                                                  top: `${block.normY}%`,
+                                                  width: `${block.normW}%`,
+                                                  height: `${block.normH}%`,
+                                                }}
+                                                title={`${block.text} (${Math.round(block.conf)}% conf)`}
+                                              >
+                                                <div
+                                                  className="absolute bottom-full left-0 mb-1 px-1.5 py-0.5 rounded-[12px] bg-black/85 border border-emerald-500/40 text-[9px] font-mono text-emerald-300 whitespace-nowrap opacity-0 group-hover/block:opacity-100 transition-opacity pointer-events-none z-40"
+                                                  style={{ transform: `scale(${1 / (zoom || 1)})`, transformOrigin: "bottom left" }}
+                                                >
+                                                  {block.text} ({Math.round(block.conf)}%)
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+
+                                          {inspectionTab === "subjects" && (inspectionData.subjects || []).map((subj) => {
+                                            const isSubjSelected = selectedInspectSubjectId === subj.id;
+                                            return (
+                                              <div
+                                                key={subj.id}
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setSelectedInspectSubjectId(subj.id);
+                                                }}
+                                                className={`absolute rounded-[12px] border-2 transition-all cursor-pointer group/subj ${
+                                                  isSubjSelected
+                                                    ? "border-purple-400 bg-purple-500/35 shadow-lg shadow-purple-950/60 ring-2 ring-purple-300"
+                                                    : "border-purple-400/70 bg-purple-500/20 hover:border-purple-300 hover:bg-purple-500/30"
+                                                }`}
+                                                style={{
+                                                  left: `${subj.normX}%`,
+                                                  top: `${subj.normY}%`,
+                                                  width: `${subj.normW}%`,
+                                                  height: `${subj.normH}%`,
+                                                }}
+                                                title={subj.label}
+                                              >
+                                                <div
+                                                  className="absolute top-0 left-0 -translate-y-full mb-1 px-1.5 py-0.5 rounded-[12px] bg-black/85 border border-purple-500/40 text-[9px] font-semibold text-purple-200 whitespace-nowrap pointer-events-none z-40"
+                                                  style={{ transform: `scale(${1 / (zoom || 1)})`, transformOrigin: "bottom left" }}
+                                                >
+                                                  {subj.label}
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      )}
+                                    </>
                                   );
                                 })()}
                               </div>
@@ -9761,16 +10464,38 @@ export default function LiveDesignStudioModal({
 
                   {selectedLayer.type === "image" && (
                     <div className="p-3 bg-[#151221] rounded-[12px] border border-white/10 space-y-3">
-                      <div className="flex items-center justify-between">
+                      <div className="flex items-center justify-between flex-wrap gap-1.5">
                         <span className="text-[10px] font-bold uppercase tracking-wider text-white/50 block">Container & Image</span>
-                        <button
-                          type="button"
-                          onClick={() => handleImportImage(selectedLayer.id)}
-                          className="px-2 py-0.5 rounded-[12px] bg-[#8B5CF6]/30 hover:bg-[#8B5CF6]/50 text-[#8B5CF6]/70 text-[10px] font-bold border border-[#8B5CF6]/40 flex items-center gap-1 transition-all"
-                        >
-                          <PiArrowsClockwise size={11} />
-                          <span>Replace Image Asset</span>
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          {selectedLayer.originalUrl && selectedLayer.originalUrl !== selectedLayer.content && (
+                            <button
+                              type="button"
+                              onClick={() => handleRevertImageEdit(selectedLayer.id)}
+                              className="px-2 py-0.5 rounded-[12px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[10px] font-bold border border-amber-500/40 flex items-center gap-1 transition-all"
+                              title="Revert back to unedited original image"
+                            >
+                              <PiArrowsCounterClockwise size={11} />
+                              <span>Revert Original</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => setImageEditingLayerId(selectedLayer.id)}
+                            className="px-2 py-0.5 rounded-[12px] bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 text-[10px] font-bold border border-purple-500/40 flex items-center gap-1 transition-all"
+                            title="Erase background, cut out elements, or restore pixels non-destructively"
+                          >
+                            <PiEraser size={11} />
+                            <span>Edit Image Brush</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleImportImage(selectedLayer.id)}
+                            className="px-2 py-0.5 rounded-[12px] bg-[#8B5CF6]/30 hover:bg-[#8B5CF6]/50 text-[#8B5CF6]/70 text-[10px] font-bold border border-[#8B5CF6]/40 flex items-center gap-1 transition-all"
+                          >
+                            <PiArrowsClockwise size={11} />
+                            <span>Replace</span>
+                          </button>
+                        </div>
                       </div>
 
                       {/* Container Frame Shape Picker */}
@@ -9937,6 +10662,441 @@ export default function LiveDesignStudioModal({
                         </div>
                       </div>
 
+                      {/* Flyer & Poster Intelligent Inspection Card */}
+                      <div className="bg-[#1a162b] border border-[#8B5CF6]/30 p-2.5 rounded-[12px] space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-[#8B5CF6] flex items-center gap-1.5">
+                            <PiMagnifyingGlassPlus size={13} />
+                            Flyer Inspection
+                          </span>
+                          <span className="text-[9px] text-white/40 font-mono">Offline OCR</span>
+                        </div>
+
+                        {inspectingLayerId === selectedLayer.id && inspectionData ? (
+                          <div className="space-y-2.5">
+                            {/* Visual Region Selection Header Controls */}
+                            <div className="flex items-center justify-between pb-1">
+                              <span className="text-[10px] text-white/50">Smart Visual Decomposition</span>
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setShowDetectedRegions(!showDetectedRegions)}
+                                  className={`px-2 py-0.5 rounded-[12px] text-[9px] border font-semibold transition-all ${
+                                    showDetectedRegions
+                                      ? "bg-[#8B5CF6]/30 text-purple-200 border-[#8B5CF6]/50"
+                                      : "bg-white/5 text-white/40 border-white/10"
+                                  }`}
+                                  title="Toggle visual region highlights on the canvas"
+                                >
+                                  {showDetectedRegions ? "Overlay ON" : "Overlay OFF"}
+                                </button>
+                                {selectedInspectRegionIds && selectedInspectRegionIds.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={handleMergeSelectedRegions}
+                                    className="px-2 py-0.5 rounded-[12px] bg-[#8B5CF6] hover:bg-[#7C3AED] text-white text-[9px] font-bold shadow transition-all"
+                                    title="Merge multi-selected regions into a single composite region"
+                                  >
+                                    Merge ({selectedInspectRegionIds.length})
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Progressive Disclosure Tabs: [Objects] [Text] [Subjects] [Crop] [Bg Cut] */}
+                            <div className="grid grid-cols-5 gap-1 p-0.5 bg-black/40 rounded-[12px] border border-white/5 text-[9px] font-bold">
+                              <button
+                                type="button"
+                                onClick={() => setInspectionTab("objects")}
+                                className={`py-1 rounded-[12px] transition-all text-center ${
+                                  inspectionTab === "objects"
+                                    ? "bg-[#8B5CF6] text-white shadow-sm"
+                                    : "text-white/60 hover:text-white"
+                                }`}
+                              >
+                                Objects ({inspectionData.visualRegions?.length || 0})
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setInspectionTab("text")}
+                                className={`py-1 rounded-[12px] transition-all text-center ${
+                                  inspectionTab === "text"
+                                    ? "bg-[#8B5CF6] text-white shadow-sm"
+                                    : "text-white/60 hover:text-white"
+                                }`}
+                              >
+                                Text ({inspectionData.textBlocks?.length || 0})
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setInspectionTab("subjects")}
+                                className={`py-1 rounded-[12px] transition-all text-center ${
+                                  inspectionTab === "subjects"
+                                    ? "bg-[#8B5CF6] text-white shadow-sm"
+                                    : "text-white/60 hover:text-white"
+                                }`}
+                              >
+                                Subjects ({inspectionData.subjects?.length || 0})
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setInspectionTab("crop")}
+                                className={`py-1 rounded-[12px] transition-all text-center ${
+                                  inspectionTab === "crop"
+                                    ? "bg-[#8B5CF6] text-white shadow-sm"
+                                    : "text-white/60 hover:text-white"
+                                }`}
+                              >
+                                Crop
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setInspectionTab("bg")}
+                                className={`py-1 rounded-[12px] transition-all text-center ${
+                                  inspectionTab === "bg"
+                                    ? "bg-[#8B5CF6] text-white shadow-sm"
+                                    : "text-white/60 hover:text-white"
+                                }`}
+                              >
+                                Bg Cut
+                              </button>
+                            </div>
+
+                            {/* TAB 0: VISUAL OBJECTS (V2) */}
+                            {inspectionTab === "objects" && (
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between text-[10px]">
+                                  <span className="text-white/50">Detected Visual Objects</span>
+                                  <span className="text-white/40 text-[9px] font-mono">
+                                    {(inspectionData.visualRegions || []).length} items
+                                  </span>
+                                </div>
+                                <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                                  {(inspectionData.visualRegions || []).map((region) => {
+                                    const isSelected = selectedInspectRegionId === region.id || (selectedInspectRegionIds && selectedInspectRegionIds.includes(region.id));
+                                    
+                                    const badgeColors = {
+                                      logo: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+                                      visual_group: "bg-sky-500/20 text-sky-300 border-sky-500/30",
+                                      icon: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
+                                      subject: "bg-purple-500/20 text-purple-300 border-purple-500/30",
+                                      section: "bg-violet-500/20 text-violet-300 border-violet-500/30",
+                                      text_group: "bg-indigo-500/20 text-indigo-300 border-indigo-500/30",
+                                    };
+
+                                    return (
+                                      <div
+                                        key={region.id}
+                                        onClick={(e) => {
+                                          if (e.shiftKey) {
+                                            setSelectedInspectRegionIds((prev) =>
+                                              prev.includes(region.id) ? prev.filter((id) => id !== region.id) : [...prev, region.id]
+                                            );
+                                            setSelectedInspectRegionId(region.id);
+                                          } else {
+                                            setSelectedInspectRegionId(region.id);
+                                            setSelectedInspectRegionIds([region.id]);
+                                          }
+                                        }}
+                                        className={`p-2 rounded-[12px] border text-xs transition-all flex flex-col gap-1.5 cursor-pointer ${
+                                          isSelected
+                                            ? "bg-[#8B5CF6]/20 border-[#8B5CF6]/60 text-white shadow-sm"
+                                            : "bg-black/30 border-white/5 text-white/80 hover:border-white/20"
+                                        }`}
+                                      >
+                                        <div className="flex items-start justify-between gap-2">
+                                          <div className="flex flex-col min-w-0">
+                                            <span className="font-semibold text-xs truncate leading-tight text-white">
+                                              {region.label || region.type}
+                                            </span>
+                                            {region.text && (
+                                              <span className="text-[10px] text-white/50 truncate italic mt-0.5">
+                                                "{region.text}"
+                                              </span>
+                                            )}
+                                          </div>
+                                          <span className={`text-[8px] font-mono shrink-0 px-1.5 py-0.5 rounded-[12px] border uppercase font-bold ${
+                                            badgeColors[region.type] || "bg-white/10 text-white/70 border-white/10"
+                                          }`}>
+                                            {region.type}
+                                          </span>
+                                        </div>
+
+                                        <div className="flex items-center gap-1.5 pt-1 border-t border-white/5">
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleExtractVisualRegionAsImage(selectedLayer, region, true, false);
+                                            }}
+                                            className="px-2 py-0.5 rounded-[12px] bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-[10px] font-bold text-white transition-all shadow-sm"
+                                            title="Extract as high-quality transparent PNG layer"
+                                          >
+                                            Extract PNG
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleExtractVisualRegionAsImage(selectedLayer, region, false, false);
+                                            }}
+                                            className="px-2 py-0.5 rounded-[12px] bg-white/10 hover:bg-white/20 text-[10px] font-bold text-white transition-all"
+                                            title="Extract safe rectangular cropped layer"
+                                          >
+                                            Safe Box
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleCopyRegionImage(selectedLayer, region, true);
+                                            }}
+                                            className="px-2 py-0.5 rounded-[12px] bg-white/5 hover:bg-white/15 text-[10px] font-medium text-white/70 hover:text-white transition-all"
+                                            title="Copy visual to clipboard"
+                                          >
+                                            Copy
+                                          </button>
+                                          {region.text && (
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleCreateTextLayerFromBlock(selectedLayer, {
+                                                  text: region.text,
+                                                  normX: region.normX,
+                                                  normY: region.normY,
+                                                  normW: region.normW,
+                                                  normH: region.normH,
+                                                  conf: region.confidence || 90,
+                                                });
+                                              }}
+                                              className="px-2 py-0.5 rounded-[12px] bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-[10px] font-bold text-emerald-300 transition-all ml-auto"
+                                              title="Create editable text layer"
+                                            >
+                                              Text Layer
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                  {(!inspectionData.visualRegions || inspectionData.visualRegions.length === 0) && (
+                                    <div className="p-3 text-center text-xs text-white/40">
+                                      No visual regions detected. You can drag a marquee on the flyer to select a custom region.
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* TAB 1: TEXT */}
+                            {inspectionTab === "text" && (
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between text-[10px]">
+                                  <span className="text-white/50">Extracted Text</span>
+                                  <button
+                                    type="button"
+                                    onClick={handleCopyAllText}
+                                    className="text-violet-400 hover:text-violet-300 font-bold transition-colors"
+                                  >
+                                    Copy All
+                                  </button>
+                                </div>
+                                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                                  {(inspectionData.textBlocks || []).map((block) => {
+                                    const isSelected = selectedInspectBlockId === block.id;
+                                    return (
+                                      <div
+                                        key={block.id}
+                                        onClick={() => setSelectedInspectBlockId(block.id)}
+                                        className={`p-2 rounded-[12px] border text-xs transition-all flex flex-col gap-1.5 cursor-pointer ${
+                                          isSelected
+                                            ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-100"
+                                            : "bg-black/30 border-white/5 text-white/80 hover:border-white/20"
+                                        }`}
+                                      >
+                                        <div className="flex items-start justify-between gap-2">
+                                          <span className="font-medium text-xs break-words leading-tight">{block.text}</span>
+                                          <span className="text-[9px] font-mono shrink-0 px-1 py-0.5 rounded-[12px] bg-black/40 text-emerald-300">
+                                            {Math.round(block.conf)}%
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 pt-1 border-t border-white/5">
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleCopyText(block.text);
+                                            }}
+                                            className="px-2 py-0.5 rounded-[12px] bg-white/10 hover:bg-white/20 text-[10px] font-bold text-white transition-all"
+                                          >
+                                            Copy
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleCreateTextLayerFromBlock(selectedLayer, block);
+                                            }}
+                                            className="px-2 py-0.5 rounded-[12px] bg-[#8B5CF6]/30 hover:bg-[#8B5CF6]/50 border border-[#8B5CF6]/40 text-[10px] font-bold text-violet-200 transition-all"
+                                          >
+                                            Create Text Layer
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                  {(!inspectionData.textBlocks || inspectionData.textBlocks.length === 0) && (
+                                    <div className="p-3 text-center text-xs text-white/40">
+                                      No distinct text blocks detected.
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* TAB 2: SUBJECTS */}
+                            {inspectionTab === "subjects" && (
+                              <div className="space-y-2">
+                                <span className="text-[10px] text-white/50">Detected Faces & Graphic Elements</span>
+                                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                                  {(inspectionData.subjects || []).map((subj) => {
+                                    const isSelected = selectedInspectSubjectId === subj.id;
+                                    return (
+                                      <div
+                                        key={subj.id}
+                                        onClick={() => setSelectedInspectSubjectId(subj.id)}
+                                        className={`p-2 rounded-[12px] border text-xs transition-all flex flex-col gap-1.5 cursor-pointer ${
+                                          isSelected
+                                            ? "bg-purple-500/20 border-purple-500/50 text-purple-100"
+                                            : "bg-black/30 border-white/5 text-white/80 hover:border-white/20"
+                                        }`}
+                                      >
+                                        <div className="flex items-center justify-between">
+                                          <span className="font-semibold text-xs">{subj.label}</span>
+                                          <span className="text-[9px] font-mono px-1 py-0.5 rounded-[12px] bg-black/40 text-purple-300 capitalize">
+                                            {subj.type}
+                                          </span>
+                                        </div>
+                                        <div className="flex items-center gap-1.5 pt-1 border-t border-white/5">
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleCreateImageLayerFromSubject(selectedLayer, subj, false);
+                                            }}
+                                            className="px-2 py-0.5 rounded-[12px] bg-white/10 hover:bg-white/20 text-[10px] font-bold text-white transition-all"
+                                          >
+                                            Crop Layer
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              handleCreateImageLayerFromSubject(selectedLayer, subj, true);
+                                            }}
+                                            className="px-2 py-0.5 rounded-[12px] bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-[10px] font-bold text-white transition-all"
+                                          >
+                                            Extract Cutout
+                                          </button>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                  {(!inspectionData.subjects || inspectionData.subjects.length === 0) && (
+                                    <div className="p-3 text-center text-xs text-white/40">
+                                      No faces or isolated graphics detected.
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* TAB 3: CROP */}
+                            {inspectionTab === "crop" && (
+                              <div className="space-y-2">
+                                <span className="text-[10px] text-white/50">Quick Region Crop</span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleStartEditingCrop(selectedLayer, "image")}
+                                  className="w-full py-1.5 rounded-[12px] bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-all flex items-center justify-center gap-1.5"
+                                >
+                                  <PiCrop size={14} />
+                                  <span>Adjust Crop Frame</span>
+                                </button>
+                              </div>
+                            )}
+
+                            {/* TAB 4: REMOVE BACKGROUND */}
+                            {inspectionTab === "bg" && (
+                              <div className="space-y-2">
+                                {bgRemovalProcessing ? (
+                                  <div className="space-y-1.5">
+                                    <div className="flex items-center justify-between text-[10px] text-[#8B5CF6]/70">
+                                      <span>Segmenting background...</span>
+                                      <span className="font-mono">{bgRemovalProgress}%</span>
+                                    </div>
+                                    <div className="h-1.5 bg-black/60 rounded-full overflow-hidden">
+                                      <div
+                                        className="h-full bg-[#8B5CF6] transition-all duration-150"
+                                        style={{ width: `${bgRemovalProgress}%` }}
+                                      />
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={handleCancelBgRemoval}
+                                      className="w-full py-1 text-[10px] font-bold text-red-300 bg-red-500/20 hover:bg-red-500/30 rounded-[12px] transition-all"
+                                    >
+                                      Cancel Removal
+                                    </button>
+                                  </div>
+                                ) : selectedLayer.hasBgRemoved ? (
+                                  <div className="space-y-1.5">
+                                    <div className="flex items-center gap-1.5 text-[11px] text-emerald-400 font-bold">
+                                      <span>✓ Background Cut Active</span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRestoreOriginalImage(selectedLayer)}
+                                      className="w-full py-1.5 rounded-[12px] bg-white/10 hover:bg-white/20 text-white font-bold text-xs transition-all"
+                                    >
+                                      Restore Original Image
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveBackground(selectedLayer)}
+                                    className="w-full py-2 rounded-[12px] bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold text-xs shadow-md flex items-center justify-center gap-1.5 transition-all"
+                                  >
+                                    <PiSparkle size={14} />
+                                    <span>Remove Background</span>
+                                  </button>
+                                )}
+                              </div>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={handleCloseInspection}
+                              className="w-full py-1 rounded-[12px] bg-white/5 hover:bg-white/10 text-white/50 hover:text-white text-[10px] font-semibold transition-all"
+                            >
+                              Exit Inspection
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={isAnalyzingImage}
+                            onClick={() => handleStartInspectImage(selectedLayer)}
+                            className="w-full py-2 rounded-[12px] bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 disabled:opacity-50 text-white font-bold text-xs shadow-md flex items-center justify-center gap-1.5 transition-all"
+                          >
+                            <PiMagnifyingGlassPlus size={14} />
+                            <span>{isAnalyzingImage ? "Analyzing flyer..." : "Inspect Image"}</span>
+                          </button>
+                        )}
+                      </div>
+
                       {/* Local Background Removal Action Card */}
                       <div className="bg-[#8B5CF6]/10 border border-[#8B5CF6]/20 p-2.5 rounded-[12px] space-y-2">
                         <div className="flex items-center justify-between">
@@ -9961,7 +11121,7 @@ export default function LiveDesignStudioModal({
                             <button
                               type="button"
                               onClick={handleCancelBgRemoval}
-                              className="w-full py-1 text-[10px] font-bold text-red-300 bg-red-500/20 hover:bg-red-500/30 rounded-[8px] transition-all"
+                              className="w-full py-1 text-[10px] font-bold text-red-300 bg-red-500/20 hover:bg-red-500/30 rounded-[12px] transition-all"
                             >
                               Cancel Removal
                             </button>
@@ -10676,6 +11836,42 @@ export default function LiveDesignStudioModal({
                   </>
                 )}
 
+                {/* Direct Image Layer Operations */}
+                {targetLayer.type === "image" && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setImageEditingLayerId(targetLayer.id);
+                        setContextMenu(null);
+                      }}
+                      className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-purple-600/30 text-purple-200 text-left flex items-center justify-between transition-colors font-medium"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <PiEraser size={13} className="text-purple-400" />
+                        <span>Edit Image Brush (Erase/Restore)</span>
+                      </span>
+                      <span className="text-[10px] text-purple-300 font-mono">Brush</span>
+                    </button>
+                    {targetLayer.originalUrl && targetLayer.originalUrl !== targetLayer.content && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          handleRevertImageEdit(targetLayer.id);
+                          setContextMenu(null);
+                        }}
+                        className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-amber-500/20 text-amber-300 text-left flex items-center justify-between transition-colors font-medium"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <PiArrowsCounterClockwise size={13} className="text-amber-400" />
+                          <span>Revert to Original Image</span>
+                        </span>
+                      </button>
+                    )}
+                    <div className="my-1 border-t border-white/10" />
+                  </>
+                )}
+
                 {isShape && !hasMask && (
                   <>
                     <button
@@ -10819,6 +12015,175 @@ export default function LiveDesignStudioModal({
         </div>
       )}
 
+      {/* ── Visual Region Context Menu Popover ───────────────────────────────── */}
+      {regionContextMenu && regionContextMenu.region && (
+        <div
+          ref={regionContextMenuRef}
+          style={{
+            position: "fixed",
+            left: `${Math.min(regionContextMenu.x, window.innerWidth - 270)}px`,
+            top: `${Math.min(regionContextMenu.y, window.innerHeight - 340)}px`,
+            zIndex: 10001,
+          }}
+          className="w-64 bg-[#13111e] border border-[#8B5CF6]/40 rounded-[12px] shadow-2xl p-2 space-y-1 text-xs select-none backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100 text-white"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div className="px-2 py-1.5 border-b border-white/10 flex items-center justify-between">
+            <div className="flex flex-col min-w-0 pr-1">
+              <span className="text-[9px] uppercase tracking-wider font-bold text-purple-300">
+                {regionContextMenu.region.type || "Region"}
+              </span>
+              <span className="font-semibold text-xs text-white truncate">
+                {regionContextMenu.region.label || "Detected Region"}
+              </span>
+            </div>
+            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-[12px] bg-white/10 text-white/60 shrink-0">
+              {Math.round(regionContextMenu.region.confidence || 90)}%
+            </span>
+          </div>
+
+          {/* Action 1: Extract as PNG (Transparent Cutout) */}
+          <button
+            type="button"
+            onClick={() => {
+              const reg = regionContextMenu.region;
+              const lay = regionContextMenu.layer;
+              setRegionContextMenu(null);
+              handleExtractVisualRegionAsImage(lay, reg, true, false);
+            }}
+            className="w-full px-2.5 py-1.5 rounded-[12px] bg-gradient-to-r from-purple-600/30 to-indigo-600/30 hover:from-purple-600/50 hover:to-indigo-600/50 border border-purple-500/30 text-white text-left flex items-center justify-between transition-colors group"
+          >
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-purple-200">Extract as PNG</span>
+            </div>
+            <span className="text-[9px] text-purple-300 font-mono">Cutout</span>
+          </button>
+
+          {/* Action: Convert to Shape (for simple geometric elements) */}
+          {(regionContextMenu.region.is_convertible_shape || regionContextMenu.region.shape_geometry?.is_convertible) && (
+            <button
+              type="button"
+              onClick={() => {
+                const reg = regionContextMenu.region;
+                const lay = regionContextMenu.layer;
+                setRegionContextMenu(null);
+                handleConvertRegionToShape(lay, reg);
+              }}
+              className="w-full px-2.5 py-1.5 rounded-[12px] bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-emerald-200 text-left flex items-center justify-between transition-colors font-semibold"
+            >
+              <span>Convert to Shape</span>
+              <span className="text-[9px] text-emerald-300 font-mono">Vector Shape</span>
+            </button>
+          )}
+
+          {/* Action 2: Extract Region (Safe Box) */}
+          <button
+            type="button"
+            onClick={() => {
+              const reg = regionContextMenu.region;
+              const lay = regionContextMenu.layer;
+              setRegionContextMenu(null);
+              handleExtractVisualRegionAsImage(lay, reg, false, false);
+            }}
+            className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-white/10 text-white text-left flex items-center justify-between transition-colors"
+          >
+            <span>Extract Region</span>
+            <span className="text-[9px] text-white/40 font-mono">Safe Box</span>
+          </button>
+
+          {/* Action 3: Copy Visual to Clipboard */}
+          <button
+            type="button"
+            onClick={() => {
+              const reg = regionContextMenu.region;
+              const lay = regionContextMenu.layer;
+              setRegionContextMenu(null);
+              handleCopyRegionImage(lay, reg, true);
+            }}
+            className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-white/10 text-white text-left flex items-center justify-between transition-colors"
+          >
+            <span>Copy Visual</span>
+            <span className="text-[9px] text-white/40 font-mono">PNG Clipboard</span>
+          </button>
+
+          {/* Text Actions if text available */}
+          {regionContextMenu.region.text && (
+            <>
+              <div className="my-1 border-t border-white/10" />
+              <button
+                type="button"
+                onClick={() => {
+                  const reg = regionContextMenu.region;
+                  const lay = regionContextMenu.layer;
+                  setRegionContextMenu(null);
+                  handleCreateTextLayerFromBlock(lay, {
+                    text: reg.text,
+                    normX: reg.normX,
+                    normY: reg.normY,
+                    normW: reg.normW,
+                    normH: reg.normH,
+                    conf: reg.confidence || 90,
+                  });
+                }}
+                className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-emerald-500/20 text-emerald-300 text-left flex items-center justify-between transition-colors"
+              >
+                <span>Create Text Layer</span>
+                <span className="text-[9px] text-emerald-400 font-mono">Editable</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const txt = regionContextMenu.region.text;
+                  setRegionContextMenu(null);
+                  handleCopyText(txt);
+                }}
+                className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-white/10 text-white text-left flex items-center justify-between transition-colors"
+              >
+                <span>Copy Text</span>
+                <span className="text-[9px] text-white/40 font-mono">Clipboard</span>
+              </button>
+            </>
+          )}
+
+          {/* Multi-select or Hierarchical Group Controls */}
+          {selectedInspectRegionIds && selectedInspectRegionIds.length > 1 && (
+            <>
+              <div className="my-1 border-t border-white/10" />
+              <button
+                type="button"
+                onClick={() => {
+                  setRegionContextMenu(null);
+                  handleMergeSelectedRegions();
+                }}
+                className="w-full px-2.5 py-1.5 rounded-[12px] bg-[#8B5CF6]/30 hover:bg-[#8B5CF6]/50 text-purple-200 text-left flex items-center justify-between transition-colors"
+              >
+                <span className="font-bold">Merge Selected Regions</span>
+                <span className="text-[9px] text-purple-300">{selectedInspectRegionIds.length} items</span>
+              </button>
+            </>
+          )}
+
+          {regionContextMenu.region.childrenIds && regionContextMenu.region.childrenIds.length > 0 && (
+            <>
+              <div className="my-1 border-t border-white/10" />
+              <button
+                type="button"
+                onClick={() => {
+                  const reg = regionContextMenu.region;
+                  setRegionContextMenu(null);
+                  handleSplitRegion(reg);
+                }}
+                className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-amber-500/20 text-amber-300 text-left flex items-center justify-between transition-colors"
+              >
+                <span>Ungroup / Split</span>
+                <span className="text-[9px] text-amber-400 font-mono">Break down</span>
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
       {/* ── Side-by-Side AI Design Lab Review & Reconstructed Asset Studio Overlay ── */}
       {isLabReviewOpen && labPoster && (
         <div className="absolute inset-0 z-50 bg-[#0b0914]/95 backdrop-blur-xl flex flex-col p-4 select-none overflow-hidden animate-fadeIn">
@@ -10952,48 +12317,180 @@ export default function LiveDesignStudioModal({
                     activeUrl = labGeneratedAssets.text_mask_url || `file://${labGeneratedAssets.text_mask}`;
                   }
 
+                  const imgW = labAnalysis?.image_width || 1000;
+                  const imgH = labAnalysis?.image_height || 1000;
+
                   return (
-                    <div className="relative w-full h-full flex items-center justify-center">
+                    <div
+                      className="relative flex items-center justify-center max-w-full max-h-full"
+                      style={{ aspectRatio: `${imgW} / ${imgH}` }}
+                    >
                       <img
                         src={activeUrl}
                         alt="Preview"
-                        className="max-w-full max-h-full object-contain rounded-[12px] border border-white/10 shadow-2xl"
+                        className="w-full h-full object-contain rounded-[12px] border border-white/10 shadow-2xl"
                       />
+
+                      {/* Interactive Visual Regions Overlay (V2) */}
+                      {labPreviewMode === "original" && labShowVisualRegions && Array.isArray(labAnalysis?.visual_regions) && (
+                        <div className="absolute inset-0 pointer-events-auto select-none z-30">
+                          {labAnalysis.visual_regions.map((region) => {
+                            const isSelected = labSelectedRegionId === region.id;
+                            const isHovered = labHoveredRegionId === region.id;
+                            const typeStyles = {
+                              logo: {
+                                idle: "border-amber-400/40 bg-amber-400/10 hover:border-amber-300 hover:bg-amber-400/25",
+                                active: "border-amber-400 bg-amber-400/35 ring-2 ring-amber-300 shadow-lg shadow-amber-950/60",
+                                badge: "bg-black/90 border-amber-500/50 text-amber-300",
+                              },
+                              visual_group: {
+                                idle: "border-sky-400/40 bg-sky-400/10 hover:border-sky-300 hover:bg-sky-400/25",
+                                active: "border-sky-400 bg-sky-400/35 ring-2 ring-sky-300 shadow-lg shadow-sky-950/60",
+                                badge: "bg-black/90 border-sky-500/50 text-sky-300",
+                              },
+                              icon: {
+                                idle: "border-emerald-400/40 bg-emerald-400/10 hover:border-emerald-300 hover:bg-emerald-400/25",
+                                active: "border-emerald-400 bg-emerald-400/35 ring-2 ring-emerald-300 shadow-lg shadow-emerald-950/60",
+                                badge: "bg-black/90 border-emerald-500/50 text-emerald-300",
+                              },
+                              subject: {
+                                idle: "border-purple-400/40 bg-purple-400/10 hover:border-purple-300 hover:bg-purple-400/25",
+                                active: "border-purple-400 bg-purple-400/35 ring-2 ring-purple-300 shadow-lg shadow-purple-950/60",
+                                badge: "bg-black/90 border-purple-500/50 text-purple-300",
+                              },
+                              section: {
+                                idle: "border-violet-400/30 bg-violet-400/5 hover:border-violet-300 hover:bg-violet-400/15",
+                                active: "border-violet-400 bg-violet-400/25 ring-2 ring-violet-300 shadow-lg shadow-violet-950/60",
+                                badge: "bg-black/90 border-violet-500/50 text-violet-300",
+                              },
+                              text_group: {
+                                idle: "border-indigo-400/35 bg-indigo-400/10 hover:border-indigo-300 hover:bg-indigo-400/20",
+                                active: "border-indigo-400 bg-indigo-400/30 ring-2 ring-indigo-300 shadow-lg shadow-indigo-950/60",
+                                badge: "bg-black/90 border-indigo-500/50 text-indigo-300",
+                              },
+                            };
+                            const currentStyle = typeStyles[region.type] || typeStyles.visual_group;
+
+                            return (
+                              <div
+                                key={region.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setLabSelectedRegionId(region.id);
+                                }}
+                                onContextMenu={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setLabSelectedRegionId(region.id);
+                                  setRegionContextMenu({
+                                    x: e.clientX,
+                                    y: e.clientY,
+                                    region,
+                                    layer: null,
+                                  });
+                                }}
+                                onMouseEnter={() => setLabHoveredRegionId(region.id)}
+                                onMouseLeave={() => setLabHoveredRegionId(null)}
+                                className={`absolute rounded-[12px] border-2 transition-all cursor-pointer group/vregion ${
+                                  isSelected ? currentStyle.active : currentStyle.idle
+                                }`}
+                                style={{
+                                  left: `${region.normX}%`,
+                                  top: `${region.normY}%`,
+                                  width: `${region.normW}%`,
+                                  height: `${region.normH}%`,
+                                }}
+                                title={`${region.label || region.type} — Right-click to Extract`}
+                              >
+                                <div
+                                  className={`absolute bottom-full left-0 mb-1 px-1.5 py-0.5 rounded-[12px] border text-[9px] font-mono whitespace-nowrap pointer-events-none z-40 transition-opacity ${
+                                    isSelected || isHovered ? "opacity-100" : "opacity-0"
+                                  } ${currentStyle.badge}`}
+                                >
+                                  <span className="font-bold uppercase tracking-wider mr-1">[{region.type}]</span>
+                                  <span>{region.label || "Region"}</span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
 
                       {/* Optional OCR Bounding Boxes Overlay */}
                       {labPreviewMode === "original" && labShowOcrBoxes && Array.isArray(labAnalysis?.text_blocks) && (
-                        <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                          <div className="relative w-full h-full max-w-full max-h-full">
-                            {labAnalysis.text_blocks.map((block, bIdx) => {
-                              const imgW = labAnalysis.image_width || 1000;
-                              const imgH = labAnalysis.image_height || 1000;
-                              const [bx, by, bw, bh] = block.bbox || [0, 0, 0, 0];
-                              const leftPct = (bx / imgW) * 100;
-                              const topPct = (by / imgH) * 100;
-                              const widthPct = (bw / imgW) * 100;
-                              const heightPct = (bh / imgH) * 100;
-                              const isUncertain = (block.confidence || 0) < 60;
+                        <div className="absolute inset-0 pointer-events-none z-20">
+                          {labAnalysis.text_blocks.map((block, bIdx) => {
+                            const [bx, by, bw, bh] = block.bbox || [0, 0, 0, 0];
+                            const leftPct = (bx / imgW) * 100;
+                            const topPct = (by / imgH) * 100;
+                            const widthPct = (bw / imgW) * 100;
+                            const heightPct = (bh / imgH) * 100;
+                            const isUncertain = (block.confidence || 0) < 60;
 
-                              return (
-                                <div
-                                  key={bIdx}
-                                  className={`absolute border text-[8px] font-bold px-0.5 truncate ${
-                                    isUncertain
-                                      ? "border-amber-400 bg-amber-400/20 text-amber-200"
-                                      : "border-[#00A8FF] bg-[#00A8FF]/20 text-[#00A8FF]"
-                                  }`}
-                                  style={{
-                                    left: `${leftPct}%`,
-                                    top: `${topPct}%`,
-                                    width: `${widthPct}%`,
-                                    height: `${heightPct}%`,
-                                  }}
-                                  title={`${block.text} (${block.confidence || 0}%)`}
-                                >
-                                  {block.text}
-                                </div>
-                              );
-                            })}
+                            return (
+                              <div
+                                key={bIdx}
+                                className={`absolute border text-[8px] font-bold px-0.5 truncate rounded-[12px] ${
+                                  isUncertain
+                                    ? "border-amber-400 bg-amber-400/20 text-amber-200"
+                                    : "border-[#00A8FF] bg-[#00A8FF]/20 text-[#00A8FF]"
+                                }`}
+                                style={{
+                                  left: `${leftPct}%`,
+                                  top: `${topPct}%`,
+                                  width: `${widthPct}%`,
+                                  height: `${heightPct}%`,
+                                }}
+                                title={`${block.text} (${block.confidence || 0}%)`}
+                              >
+                                {block.text}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+
+                      {/* Interactive Bible Zone Semantic Elements Overlay */}
+                      {labPreviewMode === "bible" && (
+                        <div className="absolute inset-0 pointer-events-auto flex items-center justify-center p-6 z-30">
+                          <div className="w-full max-w-xl p-5 rounded-[12px] bg-black/75 border border-white/20 backdrop-blur-md shadow-2xl flex flex-col gap-3 text-left">
+                            <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                              <div className="flex items-center gap-2">
+                                <span className="px-2 py-0.5 rounded-[12px] bg-amber-500/20 border border-amber-500/40 text-amber-300 font-bold text-[10px] tracking-wider uppercase">
+                                  📖 Scripture Reading Pane
+                                </span>
+                                <span className="text-[10px] font-bold text-white/90">
+                                  {labReviewData?.scripture || labAnalysis?.scripture?.normalizedReference || labAnalysis?.scripture?.displayText || "Scripture Reference"}
+                                </span>
+                              </div>
+                              <span className="px-1.5 py-0.5 rounded-[12px] bg-white/10 text-white/60 text-[9px] font-mono">
+                                Scripture Zone
+                              </span>
+                            </div>
+
+                            <p className="text-sm font-serif italic text-white/95 leading-relaxed">
+                              {labReviewData?.scripture_text || labReviewData?.scripture || "Scripture passage reading layout"}
+                            </p>
+
+                            <div className="flex items-center justify-between pt-1 border-t border-white/10">
+                              <span className="text-[9px] text-white/40">
+                                Quiet contrast zone optimized for sanctuary projectors & broadcast screens
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (labGeneratedAssets?.bible_friendly_background) {
+                                    handleAddLabBackgroundToDraft(
+                                      labGeneratedAssets.bible_friendly_background_url || `file://${labGeneratedAssets.bible_friendly_background}`,
+                                      "Bible Presentation Slide"
+                                    );
+                                  }
+                                }}
+                                className="px-2.5 py-1 rounded-[12px] bg-amber-500 hover:bg-amber-600 text-black font-bold text-[10px] flex items-center gap-1 shadow"
+                              >
+                                <PiPlus size={11} /> + Add Bible Slide to Draft
+                              </button>
+                            </div>
                           </div>
                         </div>
                       )}
@@ -11004,18 +12501,32 @@ export default function LiveDesignStudioModal({
 
               {/* Bottom Viewer Controls */}
               <div className="flex items-center justify-between text-[10px] text-white/50 px-1 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setLabShowOcrBoxes((s) => !s)}
-                  className={`px-2.5 py-1 rounded-[12px] border transition-colors flex items-center gap-1.5 ${
-                    labShowOcrBoxes
-                      ? "bg-[#00A8FF]/20 border-[#00A8FF]/40 text-white font-bold"
-                      : "bg-white/5 border-white/10 text-white/60 hover:text-white"
-                  }`}
-                >
-                  <PiEye size={12} />
-                  <span>OCR Bounding Boxes: {labShowOcrBoxes ? "ON" : "OFF"}</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setLabShowVisualRegions((s) => !s)}
+                    className={`px-2.5 py-1 rounded-[12px] border transition-colors flex items-center gap-1.5 ${
+                      labShowVisualRegions
+                        ? "bg-purple-600/30 border-purple-500/50 text-purple-200 font-bold"
+                        : "bg-white/5 border-white/10 text-white/60 hover:text-white"
+                    }`}
+                  >
+                    <PiSparkle size={12} />
+                    <span>Interactive Objects: {labShowVisualRegions ? "ON" : "OFF"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLabShowOcrBoxes((s) => !s)}
+                    className={`px-2.5 py-1 rounded-[12px] border transition-colors flex items-center gap-1.5 ${
+                      labShowOcrBoxes
+                        ? "bg-[#00A8FF]/20 border-[#00A8FF]/40 text-white font-bold"
+                        : "bg-white/5 border-white/10 text-white/60 hover:text-white"
+                    }`}
+                  >
+                    <PiEye size={12} />
+                    <span>OCR Words: {labShowOcrBoxes ? "ON" : "OFF"}</span>
+                  </button>
+                </div>
                 <div className="flex items-center gap-2">
                   <span className="font-mono">
                     {labAnalysis?.image_width || 0} × {labAnalysis?.image_height || 0}
@@ -11038,167 +12549,188 @@ export default function LiveDesignStudioModal({
                   <span className="text-[10px] text-white/40">Edit any field to correct OCR mistakes</span>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2.5 text-left">
-                  {/* Event Title */}
-                  <div className="col-span-2 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-bold text-white/70">Event Name / Headline</label>
-                      {labAnalysis?.field_confidences?.event_name !== undefined && labAnalysis.field_confidences.event_name < 60 && (
-                        <span className="text-[9px] text-amber-300 font-bold flex items-center gap-1">
-                          <PiWarning size={11} /> Low Confidence ({labAnalysis.field_confidences.event_name}%)
-                        </span>
-                      )}
+                {(() => {
+                  const ocrSnippets = (labAnalysis?.text_blocks || labAnalysis?.ocr_blocks || []).map((b) => b.text?.trim()).filter(Boolean);
+                  const renderFieldWithPicker = (fieldKey, label, icon, placeholder, colSpan = "col-span-1") => {
+                    const val = labReviewData?.[fieldKey] || "";
+                    const isPickerOpen = activeTextPickerField === fieldKey;
+                    const conf = labAnalysis?.field_confidences?.[fieldKey];
+                    return (
+                      <div className={`${colSpan} space-y-1 relative`}>
+                        <div className="flex items-center justify-between">
+                          <label className="text-[10px] font-bold text-white/70 flex items-center gap-1">
+                            {icon} {label}
+                          </label>
+                          <div className="flex items-center gap-1">
+                            {conf !== undefined && conf < 60 && (
+                              <span className="text-[8px] text-amber-300 font-bold flex items-center gap-0.5">
+                                <PiWarning size={10} /> {conf}%
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setActiveTextPickerField(isPickerOpen ? null : fieldKey)}
+                              className={`px-1.5 py-0.5 rounded-[12px] text-[8px] font-medium border transition-colors ${
+                                isPickerOpen
+                                  ? "bg-[#00A8FF]/20 border-[#00A8FF] text-[#00A8FF]"
+                                  : "bg-white/5 border-white/10 text-white/50 hover:text-white hover:bg-white/10"
+                              }`}
+                              title="Pick from detected text"
+                            >
+                              Pick
+                            </button>
+                            {val && (
+                              <button
+                                type="button"
+                                onClick={() => setLabReviewData((prev) => ({ ...prev, [fieldKey]: "" }))}
+                                className="px-1 py-0.5 rounded-[12px] text-[8px] font-medium bg-white/5 hover:bg-red-500/20 text-white/40 hover:text-red-300 transition-colors"
+                                title="Clear field"
+                              >
+                                ✕
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                        <div className="relative">
+                          <input
+                            type="text"
+                            value={val}
+                            onChange={(e) => setLabReviewData((prev) => ({ ...prev, [fieldKey]: e.target.value }))}
+                            placeholder={placeholder}
+                            className="w-full px-2.5 py-1.5 rounded-[12px] bg-white/5 border border-white/10 text-white text-xs focus:border-[#00A8FF] focus:outline-none"
+                          />
+                        </div>
+
+                        {/* Detected Text Popover Picker */}
+                        {isPickerOpen && (
+                          <div className="absolute top-full left-0 right-0 mt-1 z-50 bg-[#161622] border border-white/20 rounded-[12px] shadow-2xl p-1.5 max-h-40 overflow-y-auto space-y-1">
+                            <div className="text-[8px] font-bold text-white/50 uppercase px-1 pb-1 border-b border-white/10 flex justify-between items-center">
+                              <span>Select Detected Text Snippet</span>
+                              <button
+                                type="button"
+                                onClick={() => setActiveTextPickerField(null)}
+                                className="hover:text-white"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                            {ocrSnippets.length > 0 ? (
+                              ocrSnippets.map((text, sIdx) => (
+                                <button
+                                  key={sIdx}
+                                  type="button"
+                                  onClick={() => {
+                                    setLabReviewData((prev) => ({ ...prev, [fieldKey]: text }));
+                                    setActiveTextPickerField(null);
+                                  }}
+                                  className="w-full text-left px-2 py-1 rounded-[12px] text-[10px] text-white/80 hover:text-white hover:bg-[#00A8FF]/20 truncate block"
+                                >
+                                  {text}
+                                </button>
+                              ))
+                            ) : (
+                              <span className="text-[9px] text-white/40 px-2 py-1 block">No detected text blocks found</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  };
+
+                  return (
+                    <div className="grid grid-cols-2 gap-2.5 text-left">
+                      {renderFieldWithPicker("event_name", "Event Name / Headline", <PiFileText size={11} />, "e.g. ANNUAL PRAISE NIGHT", "col-span-2")}
+                      {renderFieldWithPicker("theme_subtitle", "Theme / Subtitle", <PiFileText size={11} />, "e.g. A Night of Supernatural Worship", "col-span-2")}
+                      {renderFieldWithPicker("scripture", "Scripture Reference", <PiBookOpen size={11} />, "e.g. Philippians 4:13", "col-span-2")}
+                      {renderFieldWithPicker("dates", "Date(s)", <PiCalendar size={11} />, "e.g. Sunday, Oct 24, 2026", "col-span-1")}
+                      {renderFieldWithPicker("times", "Time(s)", <PiClock size={11} />, "e.g. 6:00 PM GMT", "col-span-1")}
+                      {renderFieldWithPicker("venue", "Venue / Location", <PiMapPin size={11} />, "e.g. Main Auditorium, 12 Grace Avenue", "col-span-2")}
+                      {renderFieldWithPicker("organizers", "Organizer(s)", <PiUser size={11} />, "e.g. Grace Fellowship", "col-span-1")}
+                      {renderFieldWithPicker("speakers", "Minister(s) / Speaker(s)", <PiUser size={11} />, "e.g. Pastor John Doe", "col-span-1")}
+                      {renderFieldWithPicker("contact", "Contact Info", <PiPhone size={11} />, "e.g. +1 (555) 019-2834", "col-span-1")}
+                      {renderFieldWithPicker("website", "Website", <PiGlobe size={11} />, "e.g. www.gracefellowship.org", "col-span-1")}
                     </div>
-                    <input
-                      type="text"
-                      value={labReviewData?.event_name || ""}
-                      onChange={(e) => setLabReviewData((prev) => ({ ...prev, event_name: e.target.value }))}
-                      placeholder="e.g. ANNUAL PRAISE NIGHT"
-                      className="w-full px-2.5 py-1.5 rounded-[12px] bg-white/5 border border-white/10 text-white text-xs font-semibold focus:border-[#00A8FF] focus:outline-none"
-                    />
+                  );
+                })()}
+              </div>
+
+              {/* Section 1B: Detected Visual Objects & Decomposition (V2) */}
+              {Array.isArray(labAnalysis?.visual_regions) && labAnalysis.visual_regions.length > 0 && (
+                <div className="p-3 bg-black/40 rounded-[12px] border border-purple-500/30 space-y-2.5">
+                  <div className="flex items-center justify-between border-b border-white/5 pb-2">
+                    <span className="text-[11px] font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                      <PiSparkle size={13} className="text-purple-400" /> Detected Visual Objects ({labAnalysis.visual_regions.length})
+                    </span>
+                    <span className="text-[10px] text-white/40">Select to inspect, crop, or extract</span>
                   </div>
 
-                  {/* Subtitle / Theme */}
-                  <div className="col-span-2 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-bold text-white/70">Theme / Subtitle</label>
-                      {labAnalysis?.field_confidences?.theme_subtitle !== undefined && labAnalysis.field_confidences.theme_subtitle < 60 && (
-                        <span className="text-[9px] text-amber-300 font-bold flex items-center gap-1">
-                          <PiWarning size={11} /> Low Confidence ({labAnalysis.field_confidences.theme_subtitle}%)
-                        </span>
-                      )}
-                    </div>
-                    <input
-                      type="text"
-                      value={labReviewData?.theme_subtitle || ""}
-                      onChange={(e) => setLabReviewData((prev) => ({ ...prev, theme_subtitle: e.target.value }))}
-                      placeholder="e.g. A Night of Supernatural Worship"
-                      className="w-full px-2.5 py-1.5 rounded-[12px] bg-white/5 border border-white/10 text-white text-xs focus:border-[#00A8FF] focus:outline-none"
-                    />
-                  </div>
+                  <div className="max-h-56 overflow-y-auto space-y-1.5 pr-1">
+                    {labAnalysis.visual_regions.map((region) => {
+                      const isSelected = labSelectedRegionId === region.id;
+                      const badgeColors = {
+                        logo: "bg-amber-400/20 text-amber-300 border-amber-400/30",
+                        visual_group: "bg-sky-400/20 text-sky-300 border-sky-400/30",
+                        subject: "bg-purple-400/20 text-purple-300 border-purple-400/30",
+                        section: "bg-violet-400/20 text-violet-300 border-violet-400/30",
+                        icon: "bg-emerald-400/20 text-emerald-300 border-emerald-400/30",
+                        text_group: "bg-indigo-400/20 text-indigo-300 border-indigo-400/30",
+                      };
+                      const badgeColor = badgeColors[region.type] || badgeColors.visual_group;
 
-                  {/* Dates */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-bold text-white/70 flex items-center gap-1">
-                        <PiCalendar size={11} /> Date(s)
-                      </label>
-                      {labAnalysis?.field_confidences?.dates !== undefined && labAnalysis.field_confidences.dates < 60 && (
-                        <span className="text-[8px] text-amber-300 font-bold flex items-center gap-0.5">
-                          <PiWarning size={10} /> {labAnalysis.field_confidences.dates}%
-                        </span>
-                      )}
-                    </div>
-                    <input
-                      type="text"
-                      value={labReviewData?.dates || ""}
-                      onChange={(e) => setLabReviewData((prev) => ({ ...prev, dates: e.target.value }))}
-                      placeholder="e.g. Sunday, Oct 24, 2026"
-                      className="w-full px-2.5 py-1.5 rounded-[12px] bg-white/5 border border-white/10 text-white text-xs focus:border-[#00A8FF] focus:outline-none"
-                    />
-                  </div>
+                      return (
+                        <div
+                          key={region.id}
+                          onClick={() => {
+                            setLabSelectedRegionId(region.id);
+                            if (labPreviewMode !== "original") setLabPreviewMode("original");
+                          }}
+                          className={`p-2 rounded-[12px] border transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                            isSelected
+                              ? "bg-purple-900/30 border-purple-400 ring-1 ring-purple-400"
+                              : "bg-white/[0.02] border-white/5 hover:border-white/15"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className={`px-1.5 py-0.5 rounded-[12px] border text-[8px] font-mono uppercase font-bold shrink-0 ${badgeColor}`}>
+                              {region.type}
+                            </span>
+                            <span className="text-xs text-white/90 font-medium truncate" title={region.label}>
+                              {region.label}
+                            </span>
+                          </div>
 
-                  {/* Times */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-bold text-white/70 flex items-center gap-1">
-                        <PiClock size={11} /> Time(s)
-                      </label>
-                      {labAnalysis?.field_confidences?.times !== undefined && labAnalysis.field_confidences.times < 60 && (
-                        <span className="text-[8px] text-amber-300 font-bold flex items-center gap-0.5">
-                          <PiWarning size={10} /> {labAnalysis.field_confidences.times}%
-                        </span>
-                      )}
-                    </div>
-                    <input
-                      type="text"
-                      value={labReviewData?.times || ""}
-                      onChange={(e) => setLabReviewData((prev) => ({ ...prev, times: e.target.value }))}
-                      placeholder="e.g. 6:00 PM GMT"
-                      className="w-full px-2.5 py-1.5 rounded-[12px] bg-white/5 border border-white/10 text-white text-xs focus:border-[#00A8FF] focus:outline-none"
-                    />
-                  </div>
-
-                  {/* Venue */}
-                  <div className="col-span-2 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-bold text-white/70 flex items-center gap-1">
-                        <PiMapPin size={11} /> Venue / Location
-                      </label>
-                      {labAnalysis?.field_confidences?.venue !== undefined && labAnalysis.field_confidences.venue < 60 && (
-                        <span className="text-[8px] text-amber-300 font-bold flex items-center gap-0.5">
-                          <PiWarning size={10} /> {labAnalysis.field_confidences.venue}%
-                        </span>
-                      )}
-                    </div>
-                    <input
-                      type="text"
-                      value={labReviewData?.venue || ""}
-                      onChange={(e) => setLabReviewData((prev) => ({ ...prev, venue: e.target.value }))}
-                      placeholder="e.g. Main Auditorium, 12 Grace Avenue"
-                      className="w-full px-2.5 py-1.5 rounded-[12px] bg-white/5 border border-white/10 text-white text-xs focus:border-[#00A8FF] focus:outline-none"
-                    />
-                  </div>
-
-                  {/* Organizers & Speakers */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-bold text-white/70 flex items-center gap-1">
-                        <PiUser size={11} /> Organizer(s)
-                      </label>
-                    </div>
-                    <input
-                      type="text"
-                      value={labReviewData?.organizers || ""}
-                      onChange={(e) => setLabReviewData((prev) => ({ ...prev, organizers: e.target.value }))}
-                      placeholder="e.g. Grace Fellowship"
-                      className="w-full px-2.5 py-1.5 rounded-[12px] bg-white/5 border border-white/10 text-white text-xs focus:border-[#00A8FF] focus:outline-none"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-bold text-white/70 flex items-center gap-1">
-                        <PiUser size={11} /> Minister(s) / Speaker(s)
-                      </label>
-                    </div>
-                    <input
-                      type="text"
-                      value={labReviewData?.speakers || ""}
-                      onChange={(e) => setLabReviewData((prev) => ({ ...prev, speakers: e.target.value }))}
-                      placeholder="e.g. Pastor John Doe"
-                      className="w-full px-2.5 py-1.5 rounded-[12px] bg-white/5 border border-white/10 text-white text-xs focus:border-[#00A8FF] focus:outline-none"
-                    />
-                  </div>
-
-                  {/* Contact & Website */}
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-white/70 flex items-center gap-1">
-                      <PiPhone size={11} /> Contact Info
-                    </label>
-                    <input
-                      type="text"
-                      value={labReviewData?.contact || ""}
-                      onChange={(e) => setLabReviewData((prev) => ({ ...prev, contact: e.target.value }))}
-                      placeholder="e.g. +1 (555) 019-2834"
-                      className="w-full px-2.5 py-1.5 rounded-[12px] bg-white/5 border border-white/10 text-white text-xs focus:border-[#00A8FF] focus:outline-none"
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold text-white/70 flex items-center gap-1">
-                      <PiGlobe size={11} /> Website
-                    </label>
-                    <input
-                      type="text"
-                      value={labReviewData?.website || ""}
-                      onChange={(e) => setLabReviewData((prev) => ({ ...prev, website: e.target.value }))}
-                      placeholder="e.g. www.gracefellowship.org"
-                      className="w-full px-2.5 py-1.5 rounded-[12px] bg-white/5 border border-white/10 text-white text-xs focus:border-[#00A8FF] focus:outline-none"
-                    />
+                          <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                            <button
+                              type="button"
+                              onClick={() => handleExtractVisualRegionAsImage(null, region, true, false)}
+                              className="px-2 py-1 rounded-[12px] bg-purple-600/30 hover:bg-purple-600/50 text-purple-200 text-[9px] font-bold border border-purple-500/30 transition-colors"
+                              title="Extract transparent PNG cutout and add to draft canvas"
+                            >
+                              PNG Cutout
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleExtractVisualRegionAsImage(null, region, false, false)}
+                              className="px-2 py-1 rounded-[12px] bg-white/5 hover:bg-white/10 text-white/70 text-[9px] border border-white/10 transition-colors"
+                              title="Extract safe rectangular box crop to draft canvas"
+                            >
+                              Safe Box
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleCopyRegionImage(null, region, true)}
+                              className="px-1.5 py-1 rounded-[12px] bg-white/5 hover:bg-white/10 text-white/70 text-[9px] border border-white/10 transition-colors"
+                              title="Copy PNG cutout to system clipboard"
+                            >
+                              Copy
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
-              </div>
+              )}
 
               {/* Section 2: Color Palette Roles */}
               <div className="p-3 bg-black/40 rounded-[12px] border border-white/10 space-y-2.5">
@@ -11553,6 +13085,21 @@ export default function LiveDesignStudioModal({
           </div>
         </div>
       )}
+
+      {/* Non-Destructive Image Editing Panel Overlay (Part B) */}
+      {imageEditingLayerId && imageEditRect && (() => {
+        const editLayer = currentDesign.layers.find((l) => l.id === imageEditingLayerId);
+        if (!editLayer) return null;
+        return (
+          <ImageEditPanel
+            layer={editLayer}
+            canvasLayerRect={imageEditRect}
+            initialStrokes={editLayer.editStrokes || imageEditStrokes[imageEditingLayerId] || []}
+            onApply={handleApplyImageEdit}
+            onCancel={() => setImageEditingLayerId(null)}
+          />
+        );
+      })()}
     </div>
   );
 

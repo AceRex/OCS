@@ -73,15 +73,19 @@ const WHISPER_BOOK_ALIASES = [
   // but misses: Obadiah, Nahum, Habakkuk
   { pattern: /\b(obadiyah|obadiha|obadie)\b/gi, replacement: 'Obadiah' },
   { pattern: /\b(naham|naum|na'um)\b/gi, replacement: 'Nahum' },
-  { pattern: /\b(hab[ae]kok|habak[uo]k|ha'bak)\b/gi, replacement: 'Habakkuk' },
+  { pattern: /\b(hab[ae]kok|habak[uo]k|ha'bak|habakakk|haberkek|habakakak|habakakaktu|habercook)\b/gi, replacement: 'Habakkuk' },
   { pattern: /\b(zef[ae]niah|zef\s*ania|sophonias)\b/gi, replacement: 'Zephaniah' },
   { pattern: /\b(ag[ae]us|agg?eus)\b/gi, replacement: 'Haggai' },
   // Whisper: "Zechariah" sometimes → "zachariah"
   { pattern: /\b(zacha?ria[h]?)\b/gi, replacement: 'Zechariah' },
   // Whisper: "Philippians" sometimes → "filippians" (Italian speaker patterns)
   { pattern: /\b(filippians?|filipp?i|filipe\s*ans?)\b/gi, replacement: 'Philippians' },
-  // Whisper: "Colossians" misheard as "Colosha's" / "Coloshas"
-  { pattern: /\b(coloshas?|colosha's?|coloshans?|caloshas?|calosha's?)\b/gi, replacement: 'Colossians' },
+  // Whisper: "Colossians" misheard as "colossus" / "Colosha's" / "Coloshas" / "Coloshen's"
+  { pattern: /\b(colossus(?:es)?|colossusis|colossus\s+options?|colosseus|colossis|coloshes|coloshas?|colosha's?|coloshans?|coloshens?|coloshen's?|caloshas?|calosha's?|caloshens?|caloshen's?)\b/gi, replacement: 'Colossians' },
+  // Whisper: "Corinthians" misheard as "current tense"
+  { pattern: /\b(?:second|2nd)\s+current\s+(?:tense|tent)\b/gi, replacement: '2 Corinthians' },
+  { pattern: /\b(?:first|1st)\s+current\s+(?:tense|tent)\b/gi, replacement: '1 Corinthians' },
+  { pattern: /\bcurrent\s+(?:tense|tent)\b/gi, replacement: 'Corinthians' },
   // Whisper: "Ecclesiastes" mishears
   { pattern: /\b(ecclesia\s+sticks?|ecclesiasticks?|ecclesiastics?|eclesiastes|eklesiastes?|ecclesiasti)\b/gi, replacement: 'Ecclesiastes' },
   // Whisper hallucinations around "first / second" prefix books
@@ -111,8 +115,10 @@ const VOSK_BOOK_ALIASES = [
   { pattern: /\bbook\s+of\s+junk\b/gi, replacement: 'book of John' },
   { pattern: /\b(molokai|malakai|malakhi)\b/gi, replacement: 'Malachi' },
   { pattern: /\b(aisayan|aisaya|asayan|isayan)\b/gi, replacement: 'Isaiah' },
-  { pattern: /\b(jaymiah|jeremia|jeremiya)\b/gi, replacement: 'Jeremiah' },
-  { pattern: /\b(colosians|colosian|coloshas?|colosha's?|coloshans?|caloshas?|calosha's?|kaloshas?|kalosha's?|collusions?|collations?)\b/gi, replacement: 'Colossians' },
+  { pattern: /\b(colossus(?:es)?|colosseus|colossis|coloshes|colosians|colosian|coloshas?|colosha's?|coloshans?|coloshens?|coloshen's?|caloshas?|calosha's?|caloshens?|caloshen's?|kaloshas?|kalosha's?|collusions?|collations?)\b/gi, replacement: 'Colossians' },
+  { pattern: /\b(?:second|2nd)\s+current\s+(?:tense|tent)\b/gi, replacement: '2 Corinthians' },
+  { pattern: /\b(?:first|1st)\s+current\s+(?:tense|tent)\b/gi, replacement: '1 Corinthians' },
+  { pattern: /\bcurrent\s+(?:tense|tent)\b/gi, replacement: 'Corinthians' },
   { pattern: /\b(philippine?s?)\b/gi, replacement: 'Philippians' },
   { pattern: /\b(ecclesia\s+sticks?|ecclesiasticks?|ecclesiastics?|eclesiastes|eklesiastes?|ecclesiasti)\b/gi, replacement: 'Ecclesiastes' },
   { pattern: /\b(rumus|rumas|romus|rumos|roomas)\b/gi, replacement: 'Romans' },

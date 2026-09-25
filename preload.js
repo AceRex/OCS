@@ -11,6 +11,16 @@ contextBridge.exposeInMainWorld("electron", {
       } catch (_) {}
       return ipcRenderer.invoke("clipboard:write-text", String(text || ""));
     },
+    writeImage: async (dataUrl) => {
+      try {
+        const { nativeImage } = require("electron");
+        if (dataUrl) {
+          clipboard.writeImage(nativeImage.createFromDataURL(dataUrl));
+          return true;
+        }
+      } catch (_) {}
+      return ipcRenderer.invoke("clipboard:write-image", dataUrl);
+    },
     readText: async () => {
       try {
         return clipboard.readText();
@@ -27,6 +37,16 @@ contextBridge.exposeInMainWorld("electron", {
         }
       } catch (_) {}
       return ipcRenderer.invoke("clipboard:write-text", String(text || ""));
+    },
+    writeImage: async (dataUrl) => {
+      try {
+        const { nativeImage } = require("electron");
+        if (dataUrl) {
+          clipboard.writeImage(nativeImage.createFromDataURL(dataUrl));
+          return true;
+        }
+      } catch (_) {}
+      return ipcRenderer.invoke("clipboard:write-image", dataUrl);
     },
     readText: async () => {
       try {

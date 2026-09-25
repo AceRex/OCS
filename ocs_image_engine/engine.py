@@ -20,6 +20,7 @@ from pathlib import Path
 
 import torch
 from torch.utils.data import DataLoader
+import numpy as np
 
 from utils.config import Config
 from utils.image_utils import load_image, save_image
@@ -108,10 +109,30 @@ class OCSImageEngine:
         img = load_image(poster_path)
         ocr_blocks = reviewed_data.get("ocr_blocks", [])
         protected = reviewed_data.get("protected_regions", [])
+        if not ocr_blocks:
+            logger.info("No ocr_blocks provided in reviewed_data; analyzing poster to obtain text mask bounding boxes...")
+            try:
+                fallback_summary = self.analyze_poster(poster_path)
+                ocr_blocks = fallback_summary.get("ocr_blocks", [])
+                if not protected:
+                    protected = fallback_summary.get("faces", [])
+            except Exception as e:
+                logger.warning("Could not run fallback analysis for ocr_blocks: %s", e)
 
         # 1. Build text mask & inpaint text regions
-        logger.info("Building text mask and inpainting clean background...")
+        logger.info("Building text mask and inpainting clean background with %d blocks...", len(ocr_blocks))
         mask = build_text_mask(img, ocr_blocks, protected_regions=protected)
+
+        mask_nonzero = int(np.count_nonzero(mask))
+        mask_coverage = float(mask_nonzero) / float(mask.size)
+        mask_coverage_pct = round(mask_coverage * 100.0, 2)
+        logger.info("Text mask coverage: %.2f%% (%d non-zero pixels)", mask_coverage_pct, mask_nonzero)
+
+        if mask_coverage <= 0.0001:
+            raise ValueError(
+                f"Inpainting mask coverage is {mask_coverage_pct}% ({mask_nonzero} pixels). "
+                "No text regions were masked. Cannot generate clean inpaint without valid text blocks."
+            )
 
         mask_path = self.config.output_dir / "text_mask.png"
         from PIL import Image as PILImage
@@ -163,6 +184,7 @@ class OCSImageEngine:
 
         result = {
             "success": True,
+            "mask_coverage_pct": mask_coverage_pct,
             "poster_path": str(poster_path),
             "clean_background": str(clean_orig_path),
             "clean_bg_original": str(clean_orig_path),

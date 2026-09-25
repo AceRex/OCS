@@ -195,6 +195,13 @@ class AgendaTransferManager {
       return { ok: false, error: 'Transfer session inactive or not found' };
     }
 
+    // Defence-in-depth: reject any hash that is not a pure hex string.
+    // This blocks path traversal attacks via a crafted hash (e.g. "../../../etc/passwd").
+    if (!hash || !/^[a-f0-9]{8,128}$/.test(String(hash))) {
+      return { ok: false, error: 'Invalid asset hash: must be a hex string (8–128 chars)' };
+    }
+    hash = String(hash);
+
     const buffer = Buffer.isBuffer(data)
       ? data
       : Buffer.from(typeof data === 'string' && data.includes('base64,') ? data.split('base64,')[1] : data, 'base64');
@@ -237,6 +244,12 @@ class AgendaTransferManager {
     if (!transfer) {
       return { ok: false, error: 'Transfer session inactive' };
     }
+
+    // Defence-in-depth: reject any hash that is not a pure hex string.
+    if (!hash || !/^[a-f0-9]{8,128}$/.test(String(hash))) {
+      return { ok: false, error: 'Invalid asset hash: must be a hex string (8–128 chars)' };
+    }
+    hash = String(hash);
 
     const stagedPart = path.join(transfer.stagingPath, `${hash}.part`);
     if (!fs.existsSync(stagedPart)) {

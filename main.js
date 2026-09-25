@@ -1236,6 +1236,24 @@ let currentDesignProcess = null;
 
 function resolvePosterNativePath(imagePath) {
   if (!imagePath || typeof imagePath !== "string") return null;
+
+  if (imagePath.startsWith("data:")) {
+    try {
+      const match = imagePath.match(/^data:image\/([a-zA-Z0-9+]+);base64,(.+)$/);
+      if (match) {
+        const ext = match[1].includes("jpeg") ? "jpg" : (match[1].includes("png") ? "png" : "jpg");
+        const buffer = Buffer.from(match[2], "base64");
+        const tmpDir = path.join(app.getPath("userData"), "generated_assets");
+        if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+        const tmpPath = path.join(tmpDir, `inspect_${Date.now()}.${ext}`);
+        fs.writeFileSync(tmpPath, buffer);
+        return tmpPath;
+      }
+    } catch (e) {
+      console.error("[Design] Failed to write data URL to temporary file:", e);
+    }
+  }
+
   let nativePath = imagePath;
   if (nativePath.startsWith("file://")) {
     try {
@@ -2097,7 +2115,21 @@ serverApp.get("/api/ndi/sources", async (_req, res) => {
 });
 
 // ── Agenda Transfer & Synchronization Endpoints ──────────────────────────────
-serverApp.post("/api/agenda/offer", express.json({ limit: "10mb" }), async (req, res) => {
+// All endpoints require a valid pairing credential in the X-Pairing-Token header.
+// This is the same token issued during QR/code pairing (validateCredential covers
+// both the opaque token and the 6-digit code).  Matches the isPaired() gate on
+// every socket handler in the system.
+function requirePairingToken(req, res, next) {
+  const cred = req.headers['x-pairing-token'] || req.headers['x-pairing-code'] || '';
+  if (!validateCredential(pairing, cred)) {
+    const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+    console.warn(`[AgendaHTTP] Rejected unauthenticated request from ${ip} to ${req.path}`);
+    return res.status(401).json({ ok: false, error: 'Pairing credential required' });
+  }
+  next();
+}
+
+serverApp.post("/api/agenda/offer", requirePairingToken, express.json({ limit: "10mb" }), async (req, res) => {
   try {
     const { agenda, deviceName } = req.body || {};
     const result = await agendaTransferManager.handleOffer({
@@ -2114,12 +2146,19 @@ serverApp.post("/api/agenda/offer", express.json({ limit: "10mb" }), async (req,
   }
 });
 
-serverApp.post("/api/agenda/upload-chunk", express.raw({ type: "*/*", limit: "50mb" }), async (req, res) => {
+serverApp.post("/api/agenda/upload-chunk", requirePairingToken, express.raw({ type: "*/*", limit: "50mb" }), async (req, res) => {
   try {
     const transferId = req.headers["x-transfer-id"];
-    const hash = req.headers["x-asset-hash"];
+    const rawHash = req.headers["x-asset-hash"];
     const chunkIndex = parseInt(req.headers["x-chunk-index"] || "0", 10);
     const totalChunks = parseInt(req.headers["x-total-chunks"] || "1", 10);
+
+    // Sanitize hash: must be hex-only to prevent path traversal via the header.
+    // SHA-256 is 64 chars; allow 8–128 for flexibility with other hash lengths.
+    if (!rawHash || !/^[a-f0-9]{8,128}$/.test(String(rawHash))) {
+      return res.status(400).json({ ok: false, error: "Invalid or missing x-asset-hash header" });
+    }
+    const hash = String(rawHash);
 
     const result = await agendaTransferManager.writeChunk({
       transferId,
@@ -2134,7 +2173,7 @@ serverApp.post("/api/agenda/upload-chunk", express.raw({ type: "*/*", limit: "50
   }
 });
 
-serverApp.post("/api/agenda/finalize-asset", express.json(), async (req, res) => {
+serverApp.post("/api/agenda/finalize-asset", requirePairingToken, express.json(), async (req, res) => {
   try {
     const { transferId, hash, originalName } = req.body || {};
     const result = await agendaTransferManager.finalizeAsset({ transferId, hash, originalName });
@@ -2144,7 +2183,7 @@ serverApp.post("/api/agenda/finalize-asset", express.json(), async (req, res) =>
   }
 });
 
-serverApp.post("/api/agenda/finalize-transfer", express.json(), async (req, res) => {
+serverApp.post("/api/agenda/finalize-transfer", requirePairingToken, express.json(), async (req, res) => {
   try {
     const { transferId } = req.body || {};
     const result = await agendaTransferManager.finalizeTransfer(transferId);
@@ -2154,7 +2193,7 @@ serverApp.post("/api/agenda/finalize-transfer", express.json(), async (req, res)
   }
 });
 
-serverApp.post("/api/agenda/abort-transfer", express.json(), async (req, res) => {
+serverApp.post("/api/agenda/abort-transfer", requirePairingToken, express.json(), async (req, res) => {
   try {
     const { transferId } = req.body || {};
     const result = await agendaTransferManager.abortTransfer(transferId);
@@ -2163,6 +2202,7 @@ serverApp.post("/api/agenda/abort-transfer", express.json(), async (req, res) =>
     res.status(500).json({ ok: false, error: err.message });
   }
 });
+
 
 let pendingAssetTransfers = new Map();
 let latestOverlayContent = null;
@@ -7209,6 +7249,20 @@ ipcMain.handle("clipboard:write-text", (_event, text) => {
     return true;
   } catch (err) {
     console.error("Clipboard write IPC error:", err);
+    return false;
+  }
+});
+ipcMain.handle("clipboard:write-image", (_event, dataUrl) => {
+  try {
+    const { clipboard, nativeImage } = require("electron");
+    if (dataUrl) {
+      const img = nativeImage.createFromDataURL(dataUrl);
+      clipboard.writeImage(img);
+      return true;
+    }
+    return false;
+  } catch (err) {
+    console.error("Clipboard write-image IPC error:", err);
     return false;
   }
 });

@@ -143,8 +143,8 @@ def generate_editable_portrait_layout(
     # 5. Date & Time Badge Container (strictly 12px border radius)
     dates = reviewed.get("dates") or []
     times = reviewed.get("times") or []
-    date_str = ", ".join(dates) if dates else "SUNDAY SERVICE"
-    time_str = ", ".join(times) if times else "9:00 AM"
+    date_str = ", ".join(dates) if isinstance(dates, list) else (str(dates) if dates else "SUNDAY SERVICE")
+    time_str = ", ".join(times) if isinstance(times, list) else (str(times) if times else "9:00 AM")
     datetime_label = f"{date_str} • {time_str}"
 
     layers.append({
@@ -385,8 +385,8 @@ def generate_screen_sized_landscape_design(
     dates = reviewed.get("dates") or []
     times = reviewed.get("times") or []
     venue = reviewed.get("venue") or ""
-    date_str = ", ".join(dates) if dates else "Upcoming Service"
-    time_str = ", ".join(times) if times else "Doors Open Early"
+    date_str = ", ".join(dates) if isinstance(dates, list) else (str(dates) if dates else "Upcoming Service")
+    time_str = ", ".join(times) if isinstance(times, list) else (str(times) if times else "Doors Open Early")
 
     layers.append({
         "id": _make_id("ls_info_card"),

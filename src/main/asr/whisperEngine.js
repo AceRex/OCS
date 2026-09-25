@@ -218,12 +218,18 @@ function clamp01(x) {
 }
 
 class WhisperEngine extends EventEmitter {
-  constructor(rootDir, options = {}) {
+  constructor(rootDirOrOptions, maybeOptions = {}) {
     super();
-    this.rootDir = rootDir || process.cwd();
+    let rootDir = rootDirOrOptions;
+    let options = maybeOptions;
+    if (rootDirOrOptions && typeof rootDirOrOptions === "object") {
+      options = rootDirOrOptions;
+      rootDir = options.rootDir || process.cwd();
+    }
+    this.rootDir = (typeof rootDir === "string" ? rootDir : null) || process.cwd();
     this.appDir = this.rootDir;
-    this.options = options;
-    this.status = 'uninitialized';
+    this.options = options || {};
+    this.status = "uninitialized";
     this.error = null;
     this.modelInfo = null;
     this.confidenceThreshold = options.confidenceThreshold ?? DEFAULT_CONFIDENCE_THRESHOLD;

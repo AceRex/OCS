@@ -20,13 +20,16 @@ const CORE_BOOKS = [
 ];
 
 const EXAMPLE_REFS = [
+  'Colossians 3 22',
+  'Colossians three twenty two',
+  'John 3 16',
   'John three sixteen',
-  'First Corinthians thirteen four',
-  'Colossians one fifteen',
-  'First Thessalonians five sixteen',
-  'Philippians two fifteen',
-  'Habakkuk two four',
-  'Proverbs twenty four verse six',
+  'Romans 8 28',
+  'Psalm 23 1',
+  'Second Corinthians 5 17',
+  'First Thessalonians 5 17',
+  'Habakkuk 2 4',
+  'Revelation 21 4',
 ];
 
 const COMMANDS = [
@@ -45,7 +48,7 @@ function buildWhisperInitialPrompt(opts = {}) {
     `Books: ${CORE_BOOKS.join(', ')}.`,
     `Examples: ${EXAMPLE_REFS.join('; ')}.`,
     `Commands: ${COMMANDS.join(', ')}.`,
-    'Prefer book names Colossians Thessalonians Philippians Habakkuk over similar English words.',
+    'Prefer book names Colossians Thessalonians Philippians Habakkuk over similar English words like colossus or collisions.',
   ];
   let prompt = parts.join(' ');
   if (prompt.length > maxChars) {

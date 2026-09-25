@@ -6,30 +6,22 @@
 
 const { buildOcsGrammar } = require('./ocsGrammar');
 
-const CORE_BOOKS = [
-  'Genesis', 'Exodus', 'Leviticus', 'Numbers', 'Deuteronomy',
-  'Joshua', 'Judges', 'Ruth', 'First Samuel', 'Second Samuel',
-  'First Kings', 'Second Kings', 'First Chronicles', 'Second Chronicles',
-  'Ezra', 'Nehemiah', 'Esther', 'Job', 'Psalms', 'Proverbs',
-  'Ecclesiastes', 'Song of Solomon', 'Isaiah', 'Jeremiah', 'Lamentations', 'Ezekiel', 'Daniel',
-  'Hosea', 'Joel', 'Amos', 'Obadiah', 'Jonah', 'Micah', 'Nahum',
-  'Habakkuk', 'Zephaniah', 'Haggai', 'Zechariah', 'Malachi',
-  'Matthew', 'Mark', 'Luke', 'John', 'Acts', 'Romans',
-  'First Corinthians', 'Second Corinthians', 'Galatians', 'Ephesians', 'Philippians', 'Colossians',
-  'First Thessalonians', 'Second Thessalonians', 'First Timothy', 'Second Timothy', 'Titus', 'Philemon', 'Hebrews',
-  'James', 'First Peter', 'Second Peter', 'First John', 'Second John', 'Third John', 'Jude', 'Revelation',
+const FOCUSED_BOOKS = [
+  'Colossians', 'Corinthians', 'Thessalonians', 'Philippians',
+  'Galatians', 'Ephesians', 'Habakkuk', 'Zephaniah', 'Haggai',
+  'Zechariah', 'Malachi', 'Deuteronomy', 'Ecclesiastes', 'Isaiah',
+  'Jeremiah', 'Lamentations', 'Ezekiel', 'Philemon', 'Revelation',
 ];
+const CORE_BOOKS = FOCUSED_BOOKS;
 
 const EXAMPLE_REFS = [
-  'Second Corinthians chapter five verse seventeen',
-  'Colossians chapter three verse twenty two',
-  'John chapter three sixteen',
-  'Romans chapter eight verse twenty eight',
-  'First Corinthians chapter thirteen verse four',
-  'Philippians chapter four verse thirteen',
-  'First Thessalonians chapter five verse sixteen',
-  'Habakkuk chapter two verse four',
-  'Proverbs chapter twenty four verse six',
+  'Colossians 3 22',
+  'John 3 16',
+  'Romans 8 28',
+  'Psalm 23 1',
+  '2 Corinthians 5 17',
+  '1 Thessalonians 5 17',
+  'chapter', 'verse', 'verses',
 ];
 
 const COMMANDS = [
@@ -42,13 +34,11 @@ const COMMANDS = [
  * @returns {string}
  */
 function buildWhisperInitialPrompt(opts = {}) {
-  const maxChars = opts.maxChars || 1000;
+  const maxChars = opts.maxChars || 400;
   const parts = [
-    'Bible scripture references and church AV commands.',
-    `Books: ${CORE_BOOKS.join(', ')}.`,
-    `Examples: ${EXAMPLE_REFS.join('; ')}.`,
-    `Commands: ${COMMANDS.join(', ')}.`,
-    'Prefer Bible book names Second Corinthians, Colossians, Thessalonians, Philippians, Habakkuk over similar English words like current tense or collisions.',
+    `Scripture: ${EXAMPLE_REFS.join(', ')}.`,
+    `Books: ${FOCUSED_BOOKS.join(', ')}.`,
+    'AV: next verse, previous verse, clear screen.',
   ];
   let prompt = parts.join(' ');
   if (prompt.length > maxChars) {

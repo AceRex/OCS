@@ -28,6 +28,7 @@ from vision.ocr import OCRExtractor, OCRResult
 from vision.color import ColorExtractor, ColorPalette
 from vision.classifier import ThemeClassifier
 from vision.face_detector import FaceDetector, FaceRegion
+from vision.decomposer import FlyerDecomposer, VisualRegion
 
 logger = logging.getLogger("ocs.analyzer")
 
@@ -85,6 +86,9 @@ class PosterAnalysis:
     # Graphical Elements
     elements: list[ImageRegion] = field(default_factory=list)
 
+    # Visual regions for Smart Flyer Decomposition V2
+    visual_regions: list[VisualRegion] = field(default_factory=list)
+
     # Derived metadata
     event_name: Optional[str] = None
     theme_subtitle: Optional[str] = None
@@ -114,6 +118,7 @@ class PosterAnalysis:
             "speakers": self.speakers,
             "contact": self.contact,
             "website": self.website,
+            "scripture": self.ocr.scripture if self.ocr else None,
             "theme": self.theme,
             "theme_confidence": float(self.theme_confidence),
             "theme_classification_status": self.theme_classification_status,
@@ -180,7 +185,10 @@ class PosterAnalysis:
                     "type": e.region_type,
                     "shape": e.shape_type
                 } for e in self.elements
-            ]
+            ],
+            "image_width": int(self.image_width),
+            "image_height": int(self.image_height),
+            "visual_regions": [r.to_dict() for r in self.visual_regions]
         }
 
 
@@ -197,6 +205,7 @@ class PosterAnalyzer:
         self.color = ColorExtractor(config)
         self.classifier = ThemeClassifier(config)
         self.face_detector = FaceDetector()
+        self.decomposer = FlyerDecomposer(config)
 
     # ──────────────────────────────────────────────────────────────────────
     #  Public API
@@ -229,6 +238,7 @@ class PosterAnalyzer:
         layout = self._run_layout(work_img, ocr_result)
         faces = self._run_face_detection(work_img)
         elements = self._run_element_detection(work_img)
+        visual_regions = self._run_decomposition(work_img, ocr_result, faces)
 
         # ── Assemble PosterAnalysis ────────────────────────────────────────
         top_theme = theme_preds[0] if theme_preds else {"theme": "unclassified", "confidence": 0.0, "status": "unavailable"}
@@ -267,7 +277,8 @@ class PosterAnalyzer:
             text_color=palette.text_color,
             mood=palette.mood,
             faces=faces,
-            elements=elements
+            elements=elements,
+            visual_regions=visual_regions
         )
 
         logger.info(
@@ -365,6 +376,28 @@ class PosterAnalyzer:
             return elements
         except Exception as exc:
             logger.warning("Element detection failed: %s", exc)
+            return []
+
+    def _run_decomposition(
+        self, img: Image.Image, ocr: OCRResult, faces: list[FaceRegion]
+    ) -> list[VisualRegion]:
+        """
+        Runs Smart Flyer Decomposition V2 to identify reusable visual objects.
+        """
+        try:
+            raw_blocks = [
+                {
+                    "text": b.text,
+                    "x": int(b.x),
+                    "y": int(b.y),
+                    "w": int(b.w),
+                    "h": int(b.h),
+                    "conf": float(b.conf)
+                } for b in (ocr.blocks if ocr else [])
+            ]
+            return self.decomposer.decompose(img, raw_blocks, faces)
+        except Exception as exc:
+            logger.warning("Flyer visual decomposition failed: %s", exc)
             return []
 
     def _run_layout(self, img: Image.Image, ocr: OCRResult) -> LayoutAnalysis:

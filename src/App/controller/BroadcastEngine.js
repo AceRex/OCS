@@ -54,7 +54,6 @@ const OCS_COMMANDS = [
       /\bnext\s+verse\b/i,
       /\bgo\s+(?:to\s+)?(?:the\s+)?next\s+verse\b/i,
       /\bnext\s+please\b/i,
-      /\b(?:go\s+(?:to\s+)?(?:the\s+)?)?next\b/i,
     ],
     label: "Next",
     action: "next_verse",
@@ -65,9 +64,6 @@ const OCS_COMMANDS = [
       /\bprev\s+verse\b/i,
       /\bgo\s+back\b/i,
       /\bprevious\s+please\b/i,
-      /\bprevious\b/i,
-      /\bprev\b/i,
-      /\b(?:go\s+)?back\b/i,
     ],
     label: "Previous",
     action: "prev_verse",
@@ -76,9 +72,6 @@ const OCS_COMMANDS = [
     patterns: [
       /\bblack\s+screen\b/i,
       /\bblank\s+screen\b/i,
-      /\bblanche\s+screen\b/i,
-      /\bblunk\s+screen\b/i,
-      /\bclick\s+screen\b/i,
       /\bclear\s+screen\b/i,
       /\bscreen\s+off\b/i,
     ],
@@ -187,7 +180,6 @@ const OCS_COMMANDS = [
     patterns: [
       /\breturn\s+(?:to\s+)?(?:the\s+)?presentation\b/i,
       /\breturn\s+(?:to\s+)?(?:the\s+)?slides?\b/i,
-      /\breturn\b/i,
       /\bback\s+to\s+presentation\b/i,
       /\bback\s+to\s+slides?\b/i,
       /\bresume\s+presentation\b/i,
@@ -2398,8 +2390,9 @@ export default function BroadcastEngine({ onOpenPreview }) {
       window.electron?.Bible,
       context,
       {
-        allowPass2,
-        allowPass3,
+        isLive: true,
+        allowPass2: false,
+        allowPass3: false,
         requireShape: !fromPassB && !triggerArmed,
         allowBookOnly,
       },
@@ -2415,8 +2408,9 @@ export default function BroadcastEngine({ onOpenPreview }) {
         window.electron?.Bible,
         context,
         {
-          allowPass2,
-          allowPass3,
+          isLive: true,
+          allowPass2: false,
+          allowPass3: false,
           requireShape: false,
           allowBookOnly: false,
         },
@@ -2434,7 +2428,10 @@ export default function BroadcastEngine({ onOpenPreview }) {
         bookName: books[match.bookIndex]?.name || "",
         time: Date.now(),
       };
-      const resolvedRef = `${books[match.bookIndex]?.name || ""} ${match.chapter}:${match.startVerse}`;
+      const bookName = books[match.bookIndex]?.name || "";
+      const rangeSuffix = match.endVerse && match.endVerse > match.startVerse ? `-${match.endVerse}` : "";
+      const resolvedRef = `${bookName} ${match.chapter}:${match.startVerse}${rangeSuffix}`;
+      console.log(`[BIBLE-VOICE]\nraw:\n"${text}"\n\nnormalized:\n"${matchText}"\n\nbook candidate:\n${bookName}\n\nchapter candidate:\n${match.chapter}\n\nverse candidate:\n${match.startVerse}\n\nresolved:\n${resolvedRef}\n\nvalid:\ntrue\n\nconfidence:\n${confidence != null ? Number(confidence).toFixed(2) : "unknown"}\n\naction:\ncandidate accepted`);
       setVoiceDiag((prev) => ({
         ...prev,
         raw: text,
@@ -2448,7 +2445,7 @@ export default function BroadcastEngine({ onOpenPreview }) {
         books,
         window.electron?.Bible,
         null,
-        { allowPass2: true, allowPass3: false, requireShape: false, allowBookOnly: true },
+        { isLive: true, allowPass2: false, allowPass3: false, requireShape: false, allowBookOnly: true },
       );
       if (bookOnlyCheck && bookOnlyCheck.bookIndex != null) {
         lastHeardBookRef.current = {
@@ -2458,6 +2455,7 @@ export default function BroadcastEngine({ onOpenPreview }) {
         };
         console.log("[Voice] Standalone book noted for stitching:", lastHeardBookRef.current.bookName);
       }
+      console.log(`[BIBLE-VOICE]\nraw:\n"${text}"\n\nnormalized:\n"${matchText}"\n\nbook candidate:\nnone\n\nchapter candidate:\nnone\n\nverse candidate:\nnone\n\nresolved:\nnone\n\nvalid:\nfalse\n\nconfidence:\n${confidence != null ? Number(confidence).toFixed(2) : "unknown"}\n\naction:\ncandidate rejected`);
       setVoiceDiag((prev) => ({
         ...prev,
         raw: text,
@@ -2589,114 +2587,10 @@ export default function BroadcastEngine({ onOpenPreview }) {
       .replace(/\s+/g, " ")
       .trim();
 
-    // ─ 1. Common Vosk mishearing corrections for church vocabulary ─
+    // Sacred names casing cleanup
     const CORRECTIONS = [
-      // Sacred names mis-heard by small model
-      [/\b(jeez|gees|jees|geez us|jeez us|jesus's)\b/gi, "Jesus"],
-      [
-        /\b(holyspirit|holy sprit|holy's spirit|wholly spirit|holy's prit)\b/gi,
-        "Holy Spirit",
-      ],
-      [/\b(holly spirit|hollyspirit)\b/gi, "Holy Spirit"],
-      [/\b(christ's|chris t|kryst|krist)\b/gi, "Christ"],
-      [
-        /\b(hallelujah|halleluiah|halleluja|allelujah|alleluia|halleluyah)\b/gi,
-        "Hallelujah",
-      ],
-      [/\b(amen|a men|a man's)\b/gi, "Amen"],
-      [/\b(saviour|savior|savoir)\b/gi, "Saviour"],
-      // Common Bible book mishearings (supplement smartBibleMatch)
-      [/\b(revelation s|revelations)\b/gi, "Revelation"],
-      [/\b(psalm s|sams)\b/gi, "Psalms"],
-      // "Mark" → mach/match/mock (only when a chapter number follows)
-      [
-        /\b(mach|match|marsh|merk|mock)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\b/gi,
-        "Mark $2",
-      ],
-      // "book of junk" → John
-      [/\bbook\s+of\s+junk\b/gi, "book of John"],
-      // "Matthew" spelling slips
-      [/\b(mattew|matthu|mathu|matyu)\b/gi, "Matthew"],
-      // "Malachi" → molokai (common Vosk garble)
-      [/\b(molokai|malakai|malakhi|molochi|molakai)\b/gi, "Malachi"],
-      // "Isaiah" ASR mishearings
-      [/\b(aisayan|aisaya|asayan|isayan)\b/gi, "Isaiah"],
-      // "Jeremiah" spelling / ASR slips
-      [
-        /\b(jaymiah|jayemiah|jerimiah|jermiah|jeremyah|jeremia|jeremiya)\b/gi,
-        "Jeremiah",
-      ],
-      // Philippians / Colossians OOV neighbors + spelling slips
-      [/\bphilippines\b/gi, "Philippians"],
-      [
-        /\b(colosians|colosian|coloshas?|colosha's?|coloshans?|caloshas?|calosha's?|kaloshas?|kalosha's?|collosions|collosion|collusions?|collotions?|collations?|collisions|collision|coalitions?)\b/gi,
-        "Colossians",
-      ],
-      // "today" after book name followed by number → "3 verse" (mishearing of "3 vs" / "three verse")
-      [
-        /\b(Colossians|Genesis|Exodus|Leviticus|Numbers|Deuteronomy|Joshua|Judges|Ruth|Samuel|Kings|Chronicles|Ezra|Nehemiah|Esther|Job|Psalms?|Proverbs|Ecclesiastes|Isaiah|Jeremiah|Lamentations|Ezekiel|Daniel|Hosea|Joel|Amos|Obadiah|Jonah|Micah|Nahum|Habakkuk|Zephaniah|Haggai|Zechariah|Malachi|Matthew|Mark|Luke|John|Acts|Romans|Corinthians|Galatians|Ephesians|Philippians|Thessalonians|Timothy|Titus|Philemon|Hebrews|James|Peter|Jude|Revelation)\s+(?:today|to\s+day)\s+(?:verse|verses|vs|v)?\s*(\d+)\b/gi,
-        "$1 3 verse $2",
-      ],
-      // Ecclesiastes ASR mishearings
-      [
-        /\b(ecclesia\s+sticks?|ecclesiasticks?|ecclesiastics?|eclesiastes|eklesiastes?|ecclesiasti)\b/gi,
-        "Ecclesiastes",
-      ],
-      // Romans mishearings (e.g. Vosk "rumus", "rumas")
-      [/\b(rumus|rumas|romus|rumos|roomas)\b/gi, "Romans"],
-      // 1 Kings mishearings (e.g. Vosk "foske", "foski", "foskins", "foskis", "faskins", "faskings")
-      [
-        /\b(foske|foski|foskey|fuski|foskins?|foskis|foskes|fuskins?|faskins?|faskings?|faskens?)\b/gi,
-        "1 Kings",
-      ],
-      // "18" / "eighteen" mishearings (e.g. Vosk "it's a team", "empty" / "ite" after book)
-      [
-        /\b(?:it's\s+a\s+team|its\s+a\s+team|is\s+a\s+team|eight\s+team)\b/gi,
-        "18",
-      ],
-      [/\b(1\s+Kings|First\s+Kings)\s+(?:empty|ite|aite|aight)\b/gi, "$1 18"],
-      // "verse" / "four" mishearings: "six first war" / "one of us one" / "one vast one"
-      [
-        /\b(\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\s+(of\s+us|us|vast|was|worse|voice|virs|vers|vas|first)\s+(war|fore|floor|ford|tree|free|tee|won|wan|fife|vive|sex|sicks|ate|hate|nigh|mine|\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)\b/gi,
-        (_, a, _conn, c) => {
-          const digitMap = {
-            war: "four",
-            fore: "four",
-            floor: "four",
-            ford: "four",
-            tree: "three",
-            free: "three",
-            tee: "three",
-            won: "one",
-            wan: "one",
-            fife: "five",
-            vive: "five",
-            sex: "six",
-            sicks: "six",
-            ate: "eight",
-            hate: "eight",
-            nigh: "nine",
-            mine: "nine",
-          };
-          const verseNum = digitMap[String(c).toLowerCase()] || c;
-          return `${a} verse ${verseNum}`;
-        },
-      ],
-      // Voice-command phrasing Vosk often mangles
-      [/\b(next vers|nex verse|neck verse)\b/gi, "next verse"],
-      [/\b(previous vers|prev vers)\b/gi, "previous verse"],
-      [/\b(go bag)\b/gi, "go back"],
-      [
-        /\b(black scream|blank scream|blanche screen|blunk screen|click screen|clear screen|screen of)\b/gi,
-        "black screen",
-      ],
-      [/\b(scream on|shown screen)\b/gi, "screen on"],
-      [/\b(said timer|set time are)\b/gi, "set timer"],
-      [/\b(stopped timer|stop time are)\b/gi, "stop timer"],
-      [/\b(high light|hi light)\b/gi, "highlight"],
-      // Common service words
-      [/\b(tith e|ti the)\b/gi, "tithe"],
-      [/\b(the lord's prayer)\b/gi, "the Lord's Prayer"],
+      [/\b(hallelujah|halleluiah|halleluja|allelujah|alleluia|halleluyah)\b/gi, "Hallelujah"],
+      [/\b(amen)\b/gi, "Amen"],
     ];
     let t = text;
     CORRECTIONS.forEach(([pattern, replacement]) => {
@@ -2968,7 +2862,8 @@ export default function BroadcastEngine({ onOpenPreview }) {
       // (Previously required confidence >= CONF_TIER_A_SHAPE, which made this path
       // unreachable — Vosk only marks ignored when confidence < that same floor.)
       const maybeShape = matchReferenceShape(
-        normalizeTranscript(res.text || ""),
+        res.text || "",
+        { isLive: true },
       );
       const allowShaped =
         (pass === "A" || pass === "W") &&
@@ -3009,7 +2904,7 @@ export default function BroadcastEngine({ onOpenPreview }) {
       );
     }
 
-    const rawText = normalizeTranscript(res.text.trim());
+    const rawText = res.text.trim();
     if (!rawText) return;
 
     const elapsed = sessionStartRef.current
@@ -3461,6 +3356,10 @@ export default function BroadcastEngine({ onOpenPreview }) {
       clearTimeout(utteranceRef.current.timer);
       utteranceRef.current.timer = null;
     }
+    if (ambientShapeRef.current?.timer) {
+      clearTimeout(ambientShapeRef.current.timer);
+      ambientShapeRef.current.timer = null;
+    }
     await stopAudioCapture();
   };
 
@@ -3766,6 +3665,19 @@ export default function BroadcastEngine({ onOpenPreview }) {
                       REC
                     </span>
                   )}
+                  <button
+                    onClick={() =>
+                      setVoiceDiag((prev) => ({ ...prev, show: !prev.show }))
+                    }
+                    className={`text-[9px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-[12px] border transition-all ${
+                      voiceDiag.show
+                        ? "bg-purple-500/20 text-purple-300 border-purple-500/40 shadow-[0_0_10px_rgba(168,85,247,0.3)]"
+                        : "bg-white/5 text-white/30 border-white/10 hover:text-white/60"
+                    }`}
+                    title="Toggle Speech Recognition & Audio Pipeline Diagnostics"
+                  >
+                    DIAG
+                  </button>
                 </div>
 
                 {/* {isTranscribing && langFilterDebug?.language && (
@@ -3834,6 +3746,43 @@ export default function BroadcastEngine({ onOpenPreview }) {
               </button>
             </div>
           </div>
+
+          {/* Voice Diagnostic HUD */}
+          {voiceDiag.show && (
+            <div className="bg-black/50 border-b border-white/5 p-2.5 text-[10px] font-mono space-y-1.5 animate-in slide-in-from-top-1 duration-200">
+              <div className="flex items-center justify-between text-white/40">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                  ENGINE:{" "}
+                  <span className="text-white/80 font-bold uppercase">
+                    {asrEngine || "whisper (metal)"}
+                  </span>
+                </span>
+                <span>
+                  AUDIO:{" "}
+                  <span className="text-white/80">{voiceDiag.sampleRate}</span>
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[9px] pt-1 border-t border-white/5">
+                <div>
+                  <span className="text-white/30 block">RAW TRANSCRIPT:</span>
+                  <span className="text-cyan-300/90 truncate block">
+                    {voiceDiag.raw || "—"}
+                  </span>
+                </div>
+                <div>
+                  <span className="text-white/30 block">
+                    NORMALIZED / RESOLUTION:
+                  </span>
+                  <span className="text-emerald-300/90 truncate block">
+                    {voiceDiag.resolution
+                      ? `✓ ${voiceDiag.resolution}`
+                      : voiceDiag.normalized || "—"}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Transcript rows — timestamp + text */}
           <div className="flex-1 overflow-y-auto no-scrollbar px-2 py-1">

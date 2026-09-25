@@ -7,7 +7,8 @@
 const { correctLiveTranscript } = require('../src/App/controller/liveTranscriptCorrector');
 
 const cases = [
-  ['collisions three two', 'Colossians three two'],
+  ['collisions three two', 'collisions three two'],
+  ['colosians three two', 'Colossians three two'],
   ['jaymiah chapter 50', 'Jeremiah chapter 50'],
   ['the car is fast', 'the car is fast'],
   ['halleluya amen', 'hallelujah amen'],

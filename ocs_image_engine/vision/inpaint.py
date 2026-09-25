@@ -127,8 +127,8 @@ def create_screen_sized_background(
 ) -> Image.Image:
     """
     Adapt a portrait or custom-ratio clean background to 16:9 (1920x1080) landscape.
-    Preserves artwork proportions without stretching; fills pillarbox margins with
-    an ambient blurred-extension of the flyer's edges and theme palette.
+    Creates a full-bleed widescreen background by scaling to cover and applying intelligent
+    aesthetic cropping, ensuring no blurred pillarbox side fills.
     """
     ow, oh = clean_bg.size
     aspect = ow / oh
@@ -138,40 +138,17 @@ def create_screen_sized_background(
     if abs(aspect - target_aspect) < 0.05:
         return clean_bg.resize((target_width, target_height), Image.LANCZOS)
 
-    # Create 1920x1080 canvas
-    canvas = Image.new("RGB", (target_width, target_height), primary_color)
+    # Full-bleed cover scaling to eliminate ugly portrait pillarboxes & blurred side fills
+    scale_cover = max(target_width / ow, target_height / oh)
+    cw = int(ow * scale_cover)
+    ch = int(oh * scale_cover)
+    cover_art = clean_bg.resize((cw, ch), Image.LANCZOS)
 
-    # 1. Background ambient fill: scaled & heavily blurred copy of the flyer
-    bg_ambient = clean_bg.resize((target_width, target_height), Image.BILINEAR)
-    bg_ambient = bg_ambient.filter(ImageFilter.GaussianBlur(radius=45))
-    # Slightly darken ambient background so center remains prominent
-    enhancer = ImageEnhance.Brightness(bg_ambient)
-    bg_ambient = enhancer.enhance(0.7)
-    canvas.paste(bg_ambient, (0, 0))
+    # Top-center biased crop (preserves header graphics and atmospheric gradients)
+    cx = (cw - target_width) // 2
+    cy = max(0, min(ch - target_height, int((ch - target_height) * 0.30)))
 
-    # 2. Scale artwork to fit vertically inside 1080 height
-    scale = target_height / oh
-    new_w = int(ow * scale)
-    new_h = target_height
-    scaled_art = clean_bg.resize((new_w, new_h), Image.LANCZOS)
-
-    # Subtle drop shadow on the center artwork edges
-    art_x = (target_width - new_w) // 2
-    canvas.paste(scaled_art, (art_x, 0))
-
-    # Soft gradient blend along the left and right seams
-    seam_w = min(60, new_w // 8)
-    if seam_w > 5 and art_x > 0:
-        draw = ImageDraw.Draw(canvas, "RGBA")
-        # Left seam fade
-        for i in range(seam_w):
-            alpha = int(255 * (1.0 - (i / seam_w)) * 0.5)
-            draw.line([(art_x + i, 0), (art_x + i, target_height)], fill=(primary_color[0], primary_color[1], primary_color[2], alpha))
-        # Right seam fade
-        for i in range(seam_w):
-            alpha = int(255 * (1.0 - (i / seam_w)) * 0.5)
-            draw.line([(art_x + new_w - i, 0), (art_x + new_w - i, target_height)], fill=(primary_color[0], primary_color[1], primary_color[2], alpha))
-
+    canvas = cover_art.crop((cx, cy, cx + target_width, cy + target_height))
     return canvas
 
 

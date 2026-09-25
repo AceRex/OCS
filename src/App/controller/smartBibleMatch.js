@@ -13,155 +13,180 @@
  * Returns null if no match found.
  */
 
+import { BIBLE_CHAPTER_VERSE_LIMITS } from './bibleChapterVerseLimits.js';
+
 // ─────────────────────────────────────────────────────────────────────────────
-// Book alias table — includes full names, abbreviations, and mispronunciations
+// Canonical Book Aliases — ONLY official names and standard abbreviations
+// used for LIVE detection. Acoustic mishearings are strictly excluded.
 // ─────────────────────────────────────────────────────────────────────────────
-export const BOOK_ALIASES = {
+export const CANONICAL_BOOK_ALIASES = {
     // Pentateuch
-    'gen': 'Genesis', 'genesis': 'Genesis', 'genisis': 'Genesis',
-    'ex': 'Exodus', 'exo': 'Exodus', 'exod': 'Exodus', 'exodus': 'Exodus', 'exoda': 'Exodus', 'exodo': 'Exodus',
-    'lev': 'Leviticus', 'leviticus': 'Leviticus', 'levanticus': 'Leviticus', 'levanticos': 'Leviticus', 'leveticus': 'Leviticus', 'lebiticus': 'Leviticus', 'levitico': 'Leviticus', 'leviticos': 'Leviticus',
+    'gen': 'Genesis', 'genesis': 'Genesis',
+    'ex': 'Exodus', 'exo': 'Exodus', 'exod': 'Exodus', 'exodus': 'Exodus',
+    'lev': 'Leviticus', 'leviticus': 'Leviticus',
     'num': 'Numbers', 'numbers': 'Numbers',
-    'deut': 'Deuteronomy', 'deuteronomy': 'Deuteronomy', 'deutronomy': 'Deuteronomy', 'deu': 'Deuteronomy',
-    'the terronomy': 'Deuteronomy', 'the teronomy': 'Deuteronomy', 'theteronomy': 'Deuteronomy', 'theteronomi': 'Deuteronomy',
-    'detreronomy': 'Deuteronomy', 'deterronomy': 'Deuteronomy', 'deteronomy': 'Deuteronomy', 'terronomy': 'Deuteronomy', 'teronomy': 'Deuteronomy', 'deuteronome': 'Deuteronomy',
+    'deut': 'Deuteronomy', 'deuteronomy': 'Deuteronomy', 'deu': 'Deuteronomy',
 
     // Historical
     'josh': 'Joshua', 'joshua': 'Joshua',
     'judg': 'Judges', 'judges': 'Judges', 'judge': 'Judges', 'jdg': 'Judges',
     'ruth': 'Ruth',
-    '1sam': '1 Samuel', '1samuel': '1 Samuel', 'first samuel': '1 Samuel', '1 sam': '1 Samuel', '1st samuel': '1 Samuel', '1st sam': '1 Samuel',
-    'first summer': '1 Samuel', '1st summer': '1 Samuel', '1 summer': '1 Samuel', 'summer': '1 Samuel', 'samuel': '1 Samuel',
-    '2sam': '2 Samuel', '2samuel': '2 Samuel', 'second samuel': '2 Samuel', '2 sam': '2 Samuel', '2nd samuel': '2 Samuel', '2nd sam': '2 Samuel',
-    'second summer': '2 Samuel', '2nd summer': '2 Samuel', '2 summer': '2 Samuel',
-    '1ki': '1 Kings', '1kings': '1 Kings', 'first kings': '1 Kings', '1 kings': '1 Kings', 'first king': '1 Kings', '1 king': '1 Kings', '1st kings': '1 Kings', '1st king': '1 Kings',
-    'foske': '1 Kings', 'foski': '1 Kings', 'foskey': '1 Kings', 'fuski': '1 Kings', 'force king': '1 Kings', 'force kings': '1 Kings', 'first key': '1 Kings', 'first keys': '1 Kings',
-    'foskins': '1 Kings', "foskin's": '1 Kings', 'foskin': '1 Kings', 'foskis': '1 Kings', "foski's": '1 Kings', 'foskes': '1 Kings', "foske's": '1 Kings',
-    'fuskins': '1 Kings', "fuskin's": '1 Kings', 'fuskin': '1 Kings', "fuski's": '1 Kings',
-    'faskins': '1 Kings', "faskin's": '1 Kings', 'faskin': '1 Kings', 'faskings': '1 Kings', 'fasking': '1 Kings', 'faskens': '1 Kings', 'fasken': '1 Kings', 'fask': '1 Kings', 'fast kings': '1 Kings', 'fast king': '1 Kings',
-    '2ki': '2 Kings', '2kings': '2 Kings', 'second kings': '2 Kings', '2 kings': '2 Kings', 'second king': '2 Kings', '2 king': '2 Kings', '2nd kings': '2 Kings', '2nd king': '2 Kings',
+    '1sam': '1 Samuel', '1samuel': '1 Samuel', 'first samuel': '1 Samuel', '1 sam': '1 Samuel', '1st samuel': '1 Samuel', '1st sam': '1 Samuel', 'one samuel': '1 Samuel',
+    '2sam': '2 Samuel', '2samuel': '2 Samuel', 'second samuel': '2 Samuel', '2 sam': '2 Samuel', '2nd samuel': '2 Samuel', '2nd sam': '2 Samuel', 'two samuel': '2 Samuel',
+    '1ki': '1 Kings', '1kings': '1 Kings', 'first kings': '1 Kings', '1 kings': '1 Kings', 'first king': '1 Kings', '1 king': '1 Kings', '1st kings': '1 Kings', '1st king': '1 Kings', 'one kings': '1 Kings',
+    '2ki': '2 Kings', '2kings': '2 Kings', 'second kings': '2 Kings', '2 kings': '2 Kings', 'second king': '2 Kings', '2 king': '2 Kings', '2nd kings': '2 Kings', '2nd king': '2 Kings', 'two kings': '2 Kings',
     'kings': '1 Kings', 'king': '1 Kings',
-    '1chr': '1 Chronicles', '1chronicles': '1 Chronicles', 'first chronicles': '1 Chronicles', 'first chronicle': '1 Chronicles', '1 chronicle': '1 Chronicles', '1st chronicles': '1 Chronicles', '1st chronicle': '1 Chronicles',
-    '2chr': '2 Chronicles', '2chronicles': '2 Chronicles', 'second chronicles': '2 Chronicles', 'second chronicle': '2 Chronicles', '2 chronicle': '2 Chronicles', '2nd chronicles': '2 Chronicles', '2nd chronicle': '2 Chronicles',
+    '1chr': '1 Chronicles', '1chronicles': '1 Chronicles', 'first chronicles': '1 Chronicles', 'first chronicle': '1 Chronicles', '1 chronicle': '1 Chronicles', '1st chronicles': '1 Chronicles', '1st chronicle': '1 Chronicles', 'one chronicles': '1 Chronicles',
+    '2chr': '2 Chronicles', '2chronicles': '2 Chronicles', 'second chronicles': '2 Chronicles', 'second chronicle': '2 Chronicles', '2 chronicle': '2 Chronicles', '2nd chronicles': '2 Chronicles', '2nd chronicle': '2 Chronicles', 'two chronicles': '2 Chronicles',
     'chronicles': '1 Chronicles', 'chron': '1 Chronicles', 'chronicle': '1 Chronicles',
     'ezra': 'Ezra',
-    'neh': 'Nehemiah', 'nehemiah': 'Nehemiah', 'nehemao': 'Nehemiah', 'neimei': 'Nehemiah', 'nei maya': 'Nehemiah', 'niy maya': 'Nehemiah', 'neimaya': 'Nehemiah', 'niymaya': 'Nehemiah', 'nehemaya': 'Nehemiah', 'nehamaya': 'Nehemiah', 'nehemiya': 'Nehemiah', 'nehemi': 'Nehemiah',
+    'neh': 'Nehemiah', 'nehemiah': 'Nehemiah',
     'esth': 'Esther', 'esther': 'Esther',
 
     // Wisdom
     'job': 'Job',
-    'ps': 'Psalms', 'psa': 'Psalms', 'psalm': 'Psalms', 'psalms': 'Psalms', 'sams': 'Psalms',
-    'sam': 'Psalms', 'some': 'Psalms', 'soms': 'Psalms', 'som': 'Psalms', 'salm': 'Psalms', 'salms': 'Psalms', 'psam': 'Psalms', 'psams': 'Psalms',
+    'ps': 'Psalms', 'psa': 'Psalms', 'psalm': 'Psalms', 'psalms': 'Psalms',
     'prov': 'Proverbs', 'proverbs': 'Proverbs', 'proverb': 'Proverbs',
-    'eccl': 'Ecclesiastes', 'ecclesiastes': 'Ecclesiastes', 'ecclesiastics': 'Ecclesiastes',
-    'ecclesiasticks': 'Ecclesiastes', 'ecclesia sticks': 'Ecclesiastes', 'ecclesia stick': 'Ecclesiastes',
-    'ecclesiastic': 'Ecclesiastes', 'eclesiastes': 'Ecclesiastes', 'eklesiastes': 'Ecclesiastes',
-    'ecclesiast': 'Ecclesiastes', 'ecclesiaste': 'Ecclesiastes', 'ecclesiasti': 'Ecclesiastes',
+    'eccl': 'Ecclesiastes', 'ecclesiastes': 'Ecclesiastes',
     'song': 'Song of Solomon', 'songs': 'Song of Solomon',
     'song of songs': 'Song of Solomon', 'songs of songs': 'Song of Solomon',
     'song of solomon': 'Song of Solomon', 'songs of solomon': 'Song of Solomon',
-    'songs of suluman': 'Song of Solomon', 'song of suluman': 'Song of Solomon',
-    'songs of salomon': 'Song of Solomon', 'song of salomon': 'Song of Solomon',
-    'suluman': 'Song of Solomon', 'solomon': 'Song of Solomon',
     'sos': 'Song of Solomon',
 
     // Major Prophets
-    'isa': 'Isaiah', 'isaiah': 'Isaiah', 'aisayan': 'Isaiah', 'aisaya': 'Isaiah', 'asayan': 'Isaiah', 'isayan': 'Isaiah',
+    'isa': 'Isaiah', 'isaiah': 'Isaiah',
     'jer': 'Jeremiah', 'jeremiah': 'Jeremiah',
-    'jaymiah': 'Jeremiah', 'jayemiah': 'Jeremiah',
-    'jerimiah': 'Jeremiah', 'jermiah': 'Jeremiah', 'jeremyah': 'Jeremiah',
-    'jeremia': 'Jeremiah', 'jeremiya': 'Jeremiah', 'jeremaya': 'Jeremiah',
-    'jeremy': 'Jeremiah',
-    'lam': 'Lamentations', 'lamentations': 'Lamentations', 'lamentation': 'Lamentations', 'lament': 'Lamentations',
+    'lam': 'Lamentations', 'lamentations': 'Lamentations', 'lamentation': 'Lamentations',
     'ezek': 'Ezekiel', 'ezekiel': 'Ezekiel',
     'dan': 'Daniel', 'daniel': 'Daniel',
 
     // Minor Prophets
-    'hos': 'Hosea', 'hosea': 'Hosea', 'osia': 'Hosea', 'ousia': 'Hosea', 'ocea': 'Hosea', 'oshea': 'Hosea', 'hoshea': 'Hosea', 'osea': 'Hosea',
-    'joel': 'Joel', 'joyall': 'Joel', 'joyl': 'Joel', 'joyel': 'Joel', 'joe': 'Joel',
-    'amos': 'Amos', 'almost': 'Amos', 'amoss': 'Amos', 'amoz': 'Amos',
-    'obad': 'Obadiah', 'obadiah': 'Obadiah', 'obadia': 'Obadiah', 'obadi': 'Obadiah', 'obede': 'Obadiah', 'obediah': 'Obadiah',
+    'hos': 'Hosea', 'hosea': 'Hosea',
+    'joel': 'Joel',
+    'amos': 'Amos',
+    'obad': 'Obadiah', 'obadiah': 'Obadiah',
     'jonah': 'Jonah',
-    'mic': 'Micah', 'micah': 'Micah', 'my car': 'Micah', 'my ca': 'Micah', 'mica': 'Micah',
-    'nah': 'Nahum', 'nahum': 'Nahum', 'nahul': 'Nahum', 'nahoon': 'Nahum', 'nahun': 'Nahum', 'nahoom': 'Nahum',
-    'hab': 'Habakkuk', 'habakkuk': 'Habakkuk', 'amakuk': 'Habakkuk', 'abakuk': 'Habakkuk', 'abakukk': 'Habakkuk',
-    'have a cook': 'Habakkuk', 'haveacook': 'Habakkuk', 'habba cook': 'Habakkuk',
-    'habit cook': 'Habakkuk', 'have a cup': 'Habakkuk',
+    'mic': 'Micah', 'micah': 'Micah',
+    'nah': 'Nahum', 'nahum': 'Nahum',
+    'hab': 'Habakkuk', 'habakkuk': 'Habakkuk',
     'zeph': 'Zephaniah', 'zephaniah': 'Zephaniah',
-    'stephanie': 'Zephaniah', 'zephania': 'Zephaniah', 'sefania': 'Zephaniah',
     'hag': 'Haggai', 'haggai': 'Haggai',
-    'zech': 'Zechariah', 'zechariah': 'Zechariah', 'zakaraya': 'Zechariah', 'zachariah': 'Zechariah', 'zakariah': 'Zechariah', 'zackariah': 'Zechariah', 'zekariah': 'Zechariah', 'zacharia': 'Zechariah', 'zakariya': 'Zechariah',
+    'zech': 'Zechariah', 'zechariah': 'Zechariah',
     'mal': 'Malachi', 'malachi': 'Malachi',
-    'molokai': 'Malachi', 'malakai': 'Malachi', 'malakhi': 'Malachi', 'molochi': 'Malachi', 'molakai': 'Malachi',
 
     // NT Gospels & Acts
-    'matt': 'Matthew', 'matthew': 'Matthew', 'mathew': 'Matthew', 'mat': 'Matthew',
-    'mattew': 'Matthew', 'matthu': 'Matthew', 'mathu': 'Matthew', 'matyu': 'Matthew',
-    'mark': 'Mark', 'mrk': 'Mark', 'marc': 'Mark', 'mac': 'Mark', 'march': 'Mark',
-    'mach': 'Mark', 'match': 'Mark', 'marsh': 'Mark', 'mak': 'Mark', 'marg': 'Mark', 'merk': 'Mark',
-    'mock': 'Mark', 'mocked': 'Mark', 'marks': 'Mark',
-    'luke': 'Luke', 'luk': 'Luke', 'luc': 'Luke', 'look': 'Luke',
-    'john': 'John', 'jn': 'John', 'joh': 'John',
-    'junk': 'John',
-    'acts': 'Acts', 'act': 'Acts', 'axe': 'Acts',
+    'matt': 'Matthew', 'matthew': 'Matthew', 'mathew': 'Matthew',
+    'mark': 'Mark', 'mrk': 'Mark',
+    'luke': 'Luke', 'luk': 'Luke',
+    'john': 'John', 'jn': 'John',
+    'acts': 'Acts', 'act': 'Acts',
 
     // Epistles
-    'rom': 'Romans', 'romans': 'Romans', 'roman': 'Romans', 'rumus': 'Romans', 'rumas': 'Romans', 'romus': 'Romans', 'rumos': 'Romans', 'roomers': 'Romans', 'roomas': 'Romans', 'rhombus': 'Romans',
-    '1cor': '1 Corinthians', '1corinthians': '1 Corinthians', 'first corinthians': '1 Corinthians', '1 corinthians': '1 Corinthians', 'first corinthian': '1 Corinthians', '1 corinthian': '1 Corinthians', '1st corinthians': '1 Corinthians', '1st corinthian': '1 Corinthians',
-    '2cor': '2 Corinthians', '2corinthians': '2 Corinthians', 'second corinthians': '2 Corinthians', '2 corinthians': '2 Corinthians', 'second corinthian': '2 Corinthians', '2 corinthian': '2 Corinthians', '2nd corinthians': '2 Corinthians', '2nd corinthian': '2 Corinthians',
+    'rom': 'Romans', 'romans': 'Romans', 'roman': 'Romans',
+    '1cor': '1 Corinthians', '1corinthians': '1 Corinthians', 'first corinthians': '1 Corinthians', '1 corinthians': '1 Corinthians', 'one corinthians': '1 Corinthians', 'one corinthian': '1 Corinthians', 'first corinthian': '1 Corinthians', '1 corinthian': '1 Corinthians', '1st corinthians': '1 Corinthians', '1st corinthian': '1 Corinthians',
+    '2cor': '2 Corinthians', '2corinthians': '2 Corinthians', 'second corinthians': '2 Corinthians', '2 corinthians': '2 Corinthians', 'two corinthians': '2 Corinthians', 'two corinthian': '2 Corinthians', 'second corinthian': '2 Corinthians', '2 corinthian': '2 Corinthians', '2nd corinthians': '2 Corinthians', '2nd corinthian': '2 Corinthians',
     'cor': '1 Corinthians', 'corinthian': '1 Corinthians', 'corinthians': '1 Corinthians',
-    'gal': 'Galatians', 'galatians': 'Galatians', 'galleets': 'Galatians', 'galitians': 'Galatians', 'calitians': 'Galatians', 'caledians': 'Galatians', 'galatia': 'Galatians',
-    'eph': 'Ephesians', 'ephesians': 'Ephesians', 'ephesian': 'Ephesians', 'eficiency': 'Ephesians', 'efficiency': 'Ephesians', 'efitians': 'Ephesians', 'efesiens': 'Ephesians',
+    'gal': 'Galatians', 'galatians': 'Galatians',
+    'eph': 'Ephesians', 'ephesians': 'Ephesians', 'ephesian': 'Ephesians',
     'phil': 'Philippians', 'philippians': 'Philippians', 'philippian': 'Philippians',
-    'philippines': 'Philippians', 'philippine': 'Philippians',
-    'philipians': 'Philippians', 'philipian': 'Philippians',
-    'filippines': 'Philippians', 'filipines': 'Philippians',
-    'philip pines': 'Philippians', 'phillipines': 'Philippians', 'phillipians': 'Philippians',
     'col': 'Colossians', 'colossians': 'Colossians', 'colossian': 'Colossians',
-    'colosians': 'Colossians', 'colosian': 'Colossians',
-    'coloshas': 'Colossians', 'colosha': 'Colossians', "colosha's": 'Colossians',
-    'coloshans': 'Colossians', 'coloshan': 'Colossians',
-    'caloshas': 'Colossians', 'calosha': 'Colossians', "calosha's": 'Colossians',
-    'caloshans': 'Colossians', 'caloshan': 'Colossians',
-    'kaloshas': 'Colossians', 'kalosha': 'Colossians', "kalosha's": 'Colossians',
-    'kolossians': 'Colossians', 'kolosians': 'Colossians',
-    'colossyans': 'Colossians', 'colosseans': 'Colossians',
-    'collisions': 'Colossians', 'collision': 'Colossians',
-    'collosions': 'Colossians', 'collosion': 'Colossians',
-    'collusion': 'Colossians', 'collusions': 'Colossians',
-    'collotions': 'Colossians', 'collotion': 'Colossians',
-    'collations': 'Colossians', 'collation': 'Colossians',
-    'coalition': 'Colossians', 'coalitions': 'Colossians',
-    'college as': 'Colossians', 'college is': 'Colossians', 'college ass': 'Colossians',
-    "justin's as": 'Colossians', 'justins as': 'Colossians', 'justin as': 'Colossians',
-    'justins': 'Colossians', "justin's": 'Colossians',
-    '1thess': '1 Thessalonians', '1thessalonians': '1 Thessalonians', 'first thessalonians': '1 Thessalonians', '1 thessalonians': '1 Thessalonians', '1st thessalonians': '1 Thessalonians',
-    '2thess': '2 Thessalonians', '2thessalonians': '2 Thessalonians', 'second thessalonians': '2 Thessalonians', '2 thessalonians': '2 Thessalonians', '2nd thessalonians': '2 Thessalonians',
+    '1thess': '1 Thessalonians', '1thessalonians': '1 Thessalonians', 'first thessalonians': '1 Thessalonians', '1 thessalonians': '1 Thessalonians', 'one thessalonians': '1 Thessalonians', 'one thessalonian': '1 Thessalonians', '1st thessalonians': '1 Thessalonians',
+    '2thess': '2 Thessalonians', '2thessalonians': '2 Thessalonians', 'second thessalonians': '2 Thessalonians', '2 thessalonians': '2 Thessalonians', 'two thessalonians': '2 Thessalonians', 'two thessalonian': '2 Thessalonians', '2nd thessalonians': '2 Thessalonians',
     'thess': '1 Thessalonians', 'thessalonian': '1 Thessalonians', 'thessalonians': '1 Thessalonians',
-    '1tim': '1 Timothy', '1timothy': '1 Timothy', 'first timothy': '1 Timothy', '1 timothy': '1 Timothy', '1st timothy': '1 Timothy',
-    'festimucci': '1 Timothy', 'festimuti': '1 Timothy', 'fest timothy': '1 Timothy', 'festimoti': '1 Timothy', 'festimoty': '1 Timothy', 'festimucy': '1 Timothy', 'festimuchi': '1 Timothy', 'festimoche': '1 Timothy',
-    'first simultitu': '1 Timothy', '1st simultitu': '1 Timothy', '1 simultitu': '1 Timothy', 'simultitu': '1 Timothy',
-    'first simultity': '1 Timothy', '1st simultity': '1 Timothy', '1 simultity': '1 Timothy', 'simultity': '1 Timothy',
-    '2tim': '2 Timothy', '2timothy': '2 Timothy', 'second timothy': '2 Timothy', '2 timothy': '2 Timothy', '2nd timothy': '2 Timothy',
-    'second simultitu': '2 Timothy', '2nd simultitu': '2 Timothy', '2 simultitu': '2 Timothy',
-    'second simultity': '2 Timothy', '2nd simultity': '2 Timothy', '2 simultity': '2 Timothy',
+    '1tim': '1 Timothy', '1timothy': '1 Timothy', 'first timothy': '1 Timothy', '1 timothy': '1 Timothy', 'one timothy': '1 Timothy', '1st timothy': '1 Timothy',
+    '2tim': '2 Timothy', '2timothy': '2 Timothy', 'second timothy': '2 Timothy', '2 timothy': '2 Timothy', 'two timothy': '2 Timothy', '2nd timothy': '2 Timothy',
     'tim': '1 Timothy', 'timothy': '1 Timothy',
     'tit': 'Titus', 'titus': 'Titus',
-    'philem': 'Philemon', 'philemon': 'Philemon', 'filemon': 'Philemon', 'philimone': 'Philemon', 'philom': 'Philemon', 'philimano': 'Philemon', 'philine won': 'Philemon', 'philinewon': 'Philemon',
-    'heb': 'Hebrews', 'hebrews': 'Hebrews', 'ebers': 'Hebrews', 'he brushed': 'Hebrews', 'hebrushed': 'Hebrews', 'hebrew': 'Hebrews',
+    'philem': 'Philemon', 'philemon': 'Philemon',
+    'heb': 'Hebrews', 'hebrews': 'Hebrews', 'hebrew': 'Hebrews',
     'jam': 'James', 'james': 'James', 'jas': 'James',
-    '1pet': '1 Peter', '1peter': '1 Peter', 'first peter': '1 Peter', '1 peter': '1 Peter', '1st peter': '1 Peter',
-    '2pet': '2 Peter', '2peter': '2 Peter', 'second peter': '2 Peter', '2 peter': '2 Peter', '2nd peter': '2 Peter',
+    '1pet': '1 Peter', '1peter': '1 Peter', 'first peter': '1 Peter', '1 peter': '1 Peter', 'one peter': '1 Peter', '1st peter': '1 Peter',
+    '2pet': '2 Peter', '2peter': '2 Peter', 'second peter': '2 Peter', '2 peter': '2 Peter', 'two peter': '2 Peter', '2nd peter': '2 Peter',
     'pet': '1 Peter', 'peter': '1 Peter',
-    '1john': '1 John', 'first john': '1 John', '1 john': '1 John', '1st john': '1 John',
-    '2john': '2 John', 'second john': '2 John', '2 john': '2 John', '2nd john': '2 John',
-    '3john': '3 John', 'third john': '3 John', '3 john': '3 John', '3rd john': '3 John',
+    '1john': '1 John', 'first john': '1 John', '1 john': '1 John', 'one john': '1 John', '1st john': '1 John',
+    '2john': '2 John', 'second john': '2 John', '2 john': '2 John', 'two john': '2 John', '2nd john': '2 John',
+    '3john': '3 John', 'third john': '3 John', '3 john': '3 John', 'three john': '3 John', '3rd john': '3 John',
     'jude': 'Jude',
-    'rev': 'Revelation', 'revelation': 'Revelation', 'revelations': 'Revelation', 'revolutions': 'Revelation', 'revolution': 'Revelation', 'revalation': 'Revelation', 'revalations': 'Revelation',
-    'apoc': 'Revelation',
+    'rev': 'Revelation', 'revelation': 'Revelation', 'revelations': 'Revelation',
 };
 
-const BOOK_ALIAS_ENTRIES = Object.entries(BOOK_ALIASES).sort((a, b) => b[0].length - a[0].length);
+// ─────────────────────────────────────────────────────────────────────────────
+// Acoustic / Fuzzy Aliases — reserved exclusively for POST-SESSION correction.
+// NEVER used for live triggers.
+// ─────────────────────────────────────────────────────────────────────────────
+export const ACOUSTIC_POST_SESSION_ALIASES = {
+    // Pentateuch acoustic
+    'genisis': 'Genesis',
+    'exoda': 'Exodus', 'exodo': 'Exodus',
+    'levanticus': 'Leviticus', 'levanticos': 'Leviticus', 'leveticus': 'Leviticus', 'lebiticus': 'Leviticus', 'levitico': 'Leviticus', 'leviticos': 'Leviticus',
+    'deutronomy': 'Deuteronomy', 'the terronomy': 'Deuteronomy', 'the teronomy': 'Deuteronomy', 'theteronomy': 'Deuteronomy', 'theteronomi': 'Deuteronomy',
+    'detreronomy': 'Deuteronomy', 'deterronomy': 'Deuteronomy', 'deteronomy': 'Deuteronomy', 'terronomy': 'Deuteronomy', 'teronomy': 'Deuteronomy', 'deuteronome': 'Deuteronomy',
+
+    // Historical acoustic
+    'first summer': '1 Samuel', '1st summer': '1 Samuel', '1 summer': '1 Samuel', 'summer': '1 Samuel', 'samuel': '1 Samuel',
+    'second summer': '2 Samuel', '2nd summer': '2 Samuel', '2 summer': '2 Samuel',
+    'foske': '1 Kings', 'foski': '1 Kings', 'foskey': '1 Kings', 'fuski': '1 Kings', 'force king': '1 Kings', 'force kings': '1 Kings', 'first key': '1 Kings', 'first keys': '1 Kings',
+    'foskins': '1 Kings', "foskin's": '1 Kings', 'foskin': '1 Kings', 'foskis': '1 Kings', "foski's": '1 Kings', 'foskes': '1 Kings', "foske's": '1 Kings',
+    'fuskins': '1 Kings', "fuskin's": '1 Kings', 'fuskin': '1 Kings', "fuski's": '1 Kings',
+    'faskins': '1 Kings', "faskin's": '1 Kings', 'faskin': '1 Kings', 'faskings': '1 Kings', 'fasking': '1 Kings', 'faskens': '1 Kings', 'fasken': '1 Kings', 'fask': '1 Kings', 'fast kings': '1 Kings', 'fast king': '1 Kings',
+    'nehemao': 'Nehemiah', 'neimei': 'Nehemiah', 'nei maya': 'Nehemiah', 'niy maya': 'Nehemiah', 'neimaya': 'Nehemiah', 'niymaya': 'Nehemiah', 'nehemaya': 'Nehemiah', 'nehamaya': 'Nehemiah', 'nehemiya': 'Nehemiah', 'nehemi': 'Nehemiah',
+
+    // Wisdom acoustic
+    'sams': 'Psalms', 'sam': 'Psalms', 'some': 'Psalms', 'soms': 'Psalms', 'som': 'Psalms', 'salm': 'Psalms', 'salms': 'Psalms', 'psam': 'Psalms', 'psams': 'Psalms',
+    'ecclesiastics': 'Ecclesiastes', 'ecclesiasticks': 'Ecclesiastes', 'ecclesia sticks': 'Ecclesiastes', 'ecclesia stick': 'Ecclesiastes',
+    'ecclesiastic': 'Ecclesiastes', 'eclesiastes': 'Ecclesiastes', 'eklesiastes': 'Ecclesiastes', 'ecclesiast': 'Ecclesiastes', 'ecclesiaste': 'Ecclesiastes', 'ecclesiasti': 'Ecclesiastes',
+    'songs of suluman': 'Song of Solomon', 'song of suluman': 'Song of Solomon', 'songs of salomon': 'Song of Solomon', 'song of salomon': 'Song of Solomon', 'suluman': 'Song of Solomon', 'solomon': 'Song of Solomon',
+
+    // Major Prophets acoustic
+    'aisayan': 'Isaiah', 'aisaya': 'Isaiah', 'asayan': 'Isaiah', 'isayan': 'Isaiah',
+    'jaymiah': 'Jeremiah', 'jayemiah': 'Jeremiah', 'jerimiah': 'Jeremiah', 'jermiah': 'Jeremiah', 'jeremyah': 'Jeremiah', 'jeremia': 'Jeremiah', 'jeremiya': 'Jeremiah', 'jeremaya': 'Jeremiah', 'jeremy': 'Jeremiah',
+    'lament': 'Lamentations',
+
+    // Minor Prophets acoustic
+    'osia': 'Hosea', 'ousia': 'Hosea', 'ocea': 'Hosea', 'oshea': 'Hosea', 'hoshea': 'Hosea', 'osea': 'Hosea',
+    'joyall': 'Joel', 'joyl': 'Joel', 'joyel': 'Joel', 'joe': 'Joel',
+    'almost': 'Amos', 'amoss': 'Amos', 'amoz': 'Amos',
+    'obadia': 'Obadiah', 'obadi': 'Obadiah', 'obede': 'Obadiah', 'obediah': 'Obadiah',
+    'my car': 'Micah', 'my ca': 'Micah', 'mica': 'Micah',
+    'nahul': 'Nahum', 'nahoon': 'Nahum', 'nahun': 'Nahum', 'nahoom': 'Nahum',
+    'amakuk': 'Habakkuk', 'abakuk': 'Habakkuk', 'abakukk': 'Habakkuk', 'habakakk': 'Habakkuk', 'haberkek': 'Habakkuk', 'habakakak': 'Habakkuk', 'habakakaktu': 'Habakkuk', 'habercook': 'Habakkuk',
+    'have a cook': 'Habakkuk', 'haveacook': 'Habakkuk', 'habba cook': 'Habakkuk', 'habit cook': 'Habakkuk', 'have a cup': 'Habakkuk',
+    'stephanie': 'Zephaniah', 'zephania': 'Zephaniah', 'sefania': 'Zephaniah',
+    'zakaraya': 'Zechariah', 'zachariah': 'Zechariah', 'zakariah': 'Zechariah', 'zackariah': 'Zechariah', 'zekariah': 'Zechariah', 'zacharia': 'Zechariah', 'zakariya': 'Zechariah',
+    'molokai': 'Malachi', 'malakai': 'Malachi', 'malakhi': 'Malachi', 'molochi': 'Malachi', 'molakai': 'Malachi',
+
+    // NT Gospels & Acts acoustic
+    'mat': 'Matthew', 'mattew': 'Matthew', 'matthu': 'Matthew', 'mathu': 'Matthew', 'matyu': 'Matthew',
+    'marc': 'Mark', 'mac': 'Mark', 'march': 'Mark', 'mach': 'Mark', 'match': 'Mark', 'marsh': 'Mark', 'mak': 'Mark', 'marg': 'Mark', 'merk': 'Mark', 'mock': 'Mark', 'mocked': 'Mark', 'marks': 'Mark',
+    'luc': 'Luke', 'look': 'Luke',
+    'joh': 'John', 'junk': 'John',
+    'axe': 'Acts',
+
+    // Epistles acoustic
+    'rumus': 'Romans', 'rumas': 'Romans', 'romus': 'Romans', 'rumos': 'Romans', 'roomers': 'Romans', 'roomas': 'Romans', 'rhombus': 'Romans',
+    'first current tense': '1 Corinthians', '1st current tense': '1 Corinthians',
+    'second current tense': '2 Corinthians', 'second current tent': '2 Corinthians', '2nd current tense': '2 Corinthians', 'current tense': '2 Corinthians', 'current tent': '2 Corinthians',
+    'galleets': 'Galatians', 'galitians': 'Galatians', 'calitians': 'Galatians', 'caledians': 'Galatians', 'galatia': 'Galatians',
+    'eficiency': 'Ephesians', 'efficiency': 'Ephesians', 'efitians': 'Ephesians', 'efesiens': 'Ephesians',
+    'philippines': 'Philippians', 'philippine': 'Philippians', 'philipians': 'Philippians', 'philipian': 'Philippians', 'filippines': 'Philippians', 'filipines': 'Philippians', 'philip pines': 'Philippians', 'phillipines': 'Philippians', 'phillipians': 'Philippians',
+    'colosians': 'Colossians', 'colosian': 'Colossians', 'coloshas': 'Colossians', 'colosha': 'Colossians', "colosha's": 'Colossians', 'coloshans': 'Colossians', 'coloshan': 'Colossians', 'coloshens': 'Colossians', 'coloshen': 'Colossians', "coloshen's": 'Colossians', 'colloshens': 'Colossians', 'colloshen': 'Colossians', "colloshen's": 'Colossians', 'coloshes': 'Colossians', 'colloshes': 'Colossians', 'coloshems': 'Colossians', 'coloshem': 'Colossians', 'colloshems': 'Colossians', 'colloshem': 'Colossians', 'caloshas': 'Colossians', 'calosha': 'Colossians', "calosha's": 'Colossians', 'caloshans': 'Colossians', 'caloshan': 'Colossians', 'caloshens': 'Colossians', 'caloshen': 'Colossians', "caloshen's": 'Colossians', 'kaloshas': 'Colossians', 'kalosha': 'Colossians', "kalosha's": 'Colossians', 'kolossians': 'Colossians', 'kolosians': 'Colossians', 'colossyans': 'Colossians', 'colosseans': 'Colossians',
+    'colossus': 'Colossians', 'colossuses': 'Colossians', 'colossusis': 'Colossians', 'colossus options': 'Colossians', 'colossus option': 'Colossians', 'colosseus': 'Colossians', 'colossis': 'Colossians',
+    'collisions': 'Colossians', 'collision': 'Colossians', 'collosions': 'Colossians', 'collosion': 'Colossians', 'collusion': 'Colossians', 'collusions': 'Colossians', 'collotions': 'Colossians', 'collotion': 'Colossians', 'collations': 'Colossians', 'collation': 'Colossians', 'coalition': 'Colossians', 'coalitions': 'Colossians', 'college as': 'Colossians', 'college is': 'Colossians', 'college ass': 'Colossians', "justin's as": 'Colossians', 'justins as': 'Colossians', 'justin as': 'Colossians', 'justins': 'Colossians', "justin's": 'Colossians',
+    'festimucci': '1 Timothy', 'festimuti': '1 Timothy', 'fest timothy': '1 Timothy', 'festimoti': '1 Timothy', 'festimoty': '1 Timothy', 'festimucy': '1 Timothy', 'festimuchi': '1 Timothy', 'festimoche': '1 Timothy', 'first simultitu': '1 Timothy', '1st simultitu': '1 Timothy', '1 simultitu': '1 Timothy', 'simultitu': '1 Timothy', 'first simultity': '1 Timothy', '1st simultity': '1 Timothy', '1 simultity': '1 Timothy', 'simultity': '1 Timothy',
+    'second simultitu': '2 Timothy', '2nd simultitu': '2 Timothy', '2 simultitu': '2 Timothy', 'second simultity': '2 Timothy', '2nd simultity': '2 Timothy', '2 simultity': '2 Timothy',
+    'filemon': 'Philemon', 'philimone': 'Philemon', 'philom': 'Philemon', 'philimano': 'Philemon', 'philine won': 'Philemon', 'philinewon': 'Philemon',
+    'ebers': 'Hebrews', 'he brushed': 'Hebrews', 'hebrushed': 'Hebrews',
+    'revolutions': 'Revelation', 'revolution': 'Revelation', 'revalation': 'Revelation', 'revalations': 'Revelation', 'apoc': 'Revelation',
+};
+
+// Full combined alias table (preserved for backwards compatibility & post-session use)
+export const BOOK_ALIASES = {
+    ...CANONICAL_BOOK_ALIASES,
+    ...ACOUSTIC_POST_SESSION_ALIASES,
+};
+
+export const CANONICAL_ALIAS_ENTRIES = Object.entries(CANONICAL_BOOK_ALIASES).sort((a, b) => b[0].length - a[0].length);
+export const BOOK_ALIAS_ENTRIES = Object.entries(BOOK_ALIASES).sort((a, b) => b[0].length - a[0].length);
 
 /** Protestant canon chapter counts — used to disambiguate compact CCVV vs slurred CV-to-E. */
 export const BOOK_MAX_CHAPTERS = {
@@ -183,6 +208,25 @@ export const BOOK_MAX_CHAPTERS = {
 function maxChaptersForBook(bookName) {
     if (!bookName) return null;
     return BOOK_MAX_CHAPTERS[bookName] ?? null;
+}
+
+export function maxVersesForBookChapter(bookName, chapter) {
+    if (!bookName || chapter == null) return null;
+    const ch = parseInt(String(chapter), 10);
+    if (!Number.isFinite(ch)) return null;
+    let key = `${bookName}:${ch}`;
+    if (BIBLE_CHAPTER_VERSE_LIMITS[key] != null) return BIBLE_CHAPTER_VERSE_LIMITS[key];
+    const lower = String(bookName).toLowerCase();
+    if (lower === 'psalm' || lower === 'psalms') {
+        if (BIBLE_CHAPTER_VERSE_LIMITS[`Psalms:${ch}`] != null) return BIBLE_CHAPTER_VERSE_LIMITS[`Psalms:${ch}`];
+        if (BIBLE_CHAPTER_VERSE_LIMITS[`Psalm:${ch}`] != null) return BIBLE_CHAPTER_VERSE_LIMITS[`Psalm:${ch}`];
+    }
+    const canonical = BOOK_ALIASES[lower] || BOOK_ALIASES[lower.replace(/\s+/g, ' ')];
+    if (canonical) {
+        key = `${canonical}:${ch}`;
+        if (BIBLE_CHAPTER_VERSE_LIMITS[key] != null) return BIBLE_CHAPTER_VERSE_LIMITS[key];
+    }
+    return null;
 }
 
 function buildBookMetas(books) {
@@ -368,10 +412,12 @@ export function wordNumbersToDigits(text) {
  * Returns { bookCanonical, remaining } or null.
  * Handles multi-word books: "book of first samuel", "book of song of solomon".
  */
-export function resolveBookOfCue(rawText) {
+export function resolveBookOfCue(rawText, options = {}) {
     if (!rawText) return null;
+    const isLive = options.isLive !== false;
+    const aliasEntries = isLive ? CANONICAL_ALIAS_ENTRIES : BOOK_ALIAS_ENTRIES;
     let t = wordNumbersToDigits(rawText.toLowerCase()).replace(/[,;.]/g, ' ');
-    t = repairReferenceConnectors(t);
+    t = repairReferenceConnectors(t, { isLive });
     // Keep "book of" — do not strip it here
     t = t.replace(/\b(ocs|oh see ess|oh-see-ess|o s c|osc|oasis|ocean|osiris|obvious|media|meter|medium|median|me the|need a|meet a|meeting|video|please|read|open|show|go to|jump to)\b/gi, ' ');
     t = t.replace(/\s+/g, ' ').trim();
@@ -389,7 +435,7 @@ export function resolveBookOfCue(rawText) {
     let bestAlias = null;
     let bestLen = 0;
     let bestCanonical = null;
-    for (const [alias, canonical] of BOOK_ALIAS_ENTRIES) {
+    for (const [alias, canonical] of aliasEntries) {
         const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const regex = new RegExp(`^${escaped}(?=[^a-z]|$)`, 'i');
         if (regex.test(after) && alias.length > bestLen) {
@@ -404,7 +450,11 @@ export function resolveBookOfCue(rawText) {
         return { bookCanonical: bestCanonical, remaining, matchType: 'book_of_alias' };
     }
 
-    // Fuzzy: try first 1–3 words as book name (before any digits)
+    if (isLive) {
+        return null;
+    }
+
+    // Fuzzy: try first 1–3 words as book name (before any digits) — ONLY for post-session
     const beforeDigits = after.split(/\s+(?=\d)/)[0] || after;
     const words = beforeDigits.replace(/\b(chapter|verse|verses|vs|v)\b/gi, ' ').replace(/\s+/g, ' ').trim().split(' ');
     return {
@@ -444,30 +494,12 @@ const VERSE_CONNECTOR_RE = 'verse|verses|vs|v|first|was|worse|voice|virs|vers|va
  *      "genesis one of us one" / "genesis one us one" → "genesis 1 verse 1"
  * Only rewrite in digit-flanked / connector contexts to avoid prose false positives.
  */
-export function repairReferenceConnectors(text) {
+export function repairReferenceConnectors(text, options = {}) {
+    if (!text || typeof text !== 'string') return text;
+    const isLive = options.isLive !== false;
     let t = text;
 
-    // "it's a team" / "its a team" / "is a team" / "eight team" ≈ "18" (Vosk mishear of "eighteen")
-    t = t.replace(/\b(?:it's\s+a\s+team|its\s+a\s+team|is\s+a\s+team|it\s+is\s+a\s+team|eight\s+team)\b/gi, '18');
-
-    // Book + "empty" / "ite" / "aite" / "aight" → Book + 18 (Vosk mishearing of "eighteen")
-    t = t.replace(
-        /\b(genesis|exodus|leviticus|numbers|deuteronomy|joshua|judges|ruth|samuel|kings|chronicles|ezra|nehemiah|esther|job|psalms?|proverbs|ecclesiastes|ecclesiastics|ecclesia\s+sticks?|isaiah|jeremiah|jaymiah|jayemiah|jerimiah|jeremy|lamentations|ezekiel|daniel|hosea|joel|amos|obadiah|jonah|micah|nahum|habakkuk|zephaniah|haggai|zechariah|malachi|matthew|mark|luke|john|acts|romans|corinthians|galatians|ephesians|philippians|philippines|colossians|thessalonians|timothy|titus|philemon|hebrews|james|peter|jude|revelation|foske|foski|foskey|fuski|foskins?|foskis|foskes|fuskins?|faskins?|faskings?|faskens?|fast\s+kings?)(?:'s)?\s+(?:empty|ite|aite|aight)\b/gi,
-        '$1 18'
-    );
-
-    // "from the start to" / "from the statue" / "from the stat to" → "from 1 to" or "1 to"
-    t = t.replace(/\b(?:from\s+the\s+statue|from\s+the\s+start\s+to|from\s+the\s+stat\s+to)\s+(\d+)\b/gi, '1 to $1');
-    t = t.replace(/\b(?:from\s+the\s+start|from\s+the\s+beginning)\b/gi, 'verse 1');
-
-    // "good to us 20" / "go to us 20" / "good to verse 20" (phonetic mishears of "go to verse 20")
-    t = t.replace(/\b(?:good\s+to\s+us|go\s+to\s+us)\s+(\d+)\b/gi, 'go to verse $1');
-    t = t.replace(/\b(?:good|go)\s+to\s+(?:verse|vass|vs|was|vast)\s+(\d+)\b/gi, 'go to verse $1');
-
-    // "su vez" / "suves" ≈ "two verse" (live: Mark suves three → Mark 2 verse 3)
-    t = t.replace(/\b(?:suves|suvez|su\s+ves|su\s+vez|sue\s+ves|sue\s+vez|zoo\s+ves)\b/gi, '2 verse');
-    // "su verse" / "sue verse" near-misses for "two verse"
-    t = t.replace(/\b(?:su|sue|zoo)\s+(?:verse|verses|vs|v|vez)\b/gi, '2 verse');
+    const CANONICAL_BOOKS_PAT = 'genesis|exodus|leviticus|numbers|deuteronomy|joshua|judges|ruth|1\\s+samuel|2\\s+samuel|samuel|1\\s+kings|2\\s+kings|kings|1\\s+chronicles|2\\s+chronicles|chronicles|ezra|nehemiah|esther|job|psalms?|proverbs|ecclesiastes|song\\s+of\\s+solomon|isaiah|jeremiah|lamentations|ezekiel|daniel|hosea|joel|amos|obadiah|jonah|micah|nahum|habakkuk|zephaniah|haggai|zechariah|malachi|matthew|mark|luke|john|acts|romans|1\\s+corinthians|2\\s+corinthians|corinthians|galatians|ephesians|philippians|colossians|1\\s+thessalonians|2\\s+thessalonians|thessalonians|1\\s+timothy|2\\s+timothy|timothy|titus|philemon|hebrews|james|1\\s+peter|2\\s+peter|peter|1\\s+john|2\\s+john|3\\s+john|jude|revelation';
 
     // Roman numerals in chapter/verse position ("mark ii was three" → "mark 2 was 3")
     t = t.replace(/\bii\b/gi, '2');
@@ -480,87 +512,51 @@ export function repairReferenceConnectors(text) {
     // "was 3" / "was three" between or after numbers/books ("mark 2 was 3" → "mark 2 verse 3")
     t = t.replace(/\b(\d+)\s+was\s+(\d+)\b/gi, '$1 verse $2');
 
-    // Book + "to" + number → book + "2" + number ("two" misheard as "to")
-    // e.g. "philippines to 10" / "the book of philippines to 10" → chapter 2 verse 10
-    // Do NOT match "3 to 16" ranges (digit immediately before "to").
-    t = t.replace(
-        /\b(genesis|exodus|leviticus|numbers|deuteronomy|joshua|judges|ruth|samuel|kings|chronicles|ezra|nehemiah|esther|job|psalms?|proverbs|ecclesiastes|ecclesiastics|ecclesia\s+sticks?|isaiah|jeremiah|jaymiah|jayemiah|jerimiah|jeremy|lamentations|ezekiel|daniel|hosea|joel|amos|obadiah|jonah|micah|nahum|habakkuk|zephaniah|haggai|zechariah|malachi|matthew|mark|luke|john|acts|romans|corinthians|galatians|ephesians|philippians|philippines|philippine|philipians|phillipians|phillipines|colossians|colosians|collisions|collosions|collusion|collotions|coalition|thessalonians|timothy|titus|philemon|hebrews|james|peter|jude|revelation|mach|match|marsh|mock|marc|look|junk|sams|molokai)\s+to\s+(\d+)\b/gi,
-        '$1 2 $2'
-    );
-    // Remaining after book resolved: "to 10" alone → "2 10" (UNLESS preceded by navigation action like "go to", "jump to", etc.)
-    t = t.replace(/(^|[\s:])to\s+(\d+)\b/gi, (full, lead, n, offset, str) => {
-        // Avoid "3 to 16" — digit immediately before "to"
-        const before = str.slice(Math.max(0, offset - 12), offset);
-        if (/\d\s*$/.test(before)) return full;
-        // Avoid navigation commands: "go to 20", "jump to 20", "skip to 20", "move to 20", "turn to 20", "good to 20", "back to 20"
-        if (/\b(?:go|jump|skip|turn|move|good|back|switch|change|read|show|open)\s*$/i.test(before)) return full;
-        return `${lead}2 ${n}`;
-    });
-
-    // "he brushed" → "hebrews", "philine won" → "philemon"
-    t = t.replace(/\bhe\s+brushed\b/gi, 'hebrews');
-    t = t.replace(/\bphiline\s+won\b/gi, 'philemon');
-
-    // Book + "is" + number → book + number ("philippian is 2 verse 9" → "philippian 2 verse 9")
-    t = t.replace(
-        /\b(genesis|exodus|leviticus|numbers|deuteronomy|joshua|judges|ruth|samuel|kings|chronicles|ezra|nehemiah|esther|job|psalms?|proverbs|ecclesiastes|ecclesiastics|ecclesia\s+sticks?|isaiah|jeremiah|jaymiah|jayemiah|jerimiah|jeremy|lamentations|ezekiel|daniel|hosea|joel|amos|obadiah|jonah|micah|nahum|habakkuk|zephaniah|haggai|zechariah|malachi|matthew|mark|luke|john|acts|romans|corinthians|galatians|ephesians|philippians|philippines|philippine|philipians|phillipians|phillipines|colossians|thessalonians|timothy|titus|philemon|hebrews|james|peter|jude|revelation)\s+is\s+(\d+)\b/gi,
-        '$1 $2'
-    );
-
-    // Book + "for" + number/verse → book + "4" + number/verse ("galatians for verse 6" → "galatians 4 verse 6")
-    t = t.replace(
-        /\b(genesis|exodus|leviticus|numbers|deuteronomy|joshua|judges|ruth|samuel|kings|chronicles|ezra|nehemiah|esther|job|psalms?|proverbs|ecclesiastes|ecclesiastics|ecclesia\s+sticks?|isaiah|jeremiah|jaymiah|jayemiah|jerimiah|jeremy|lamentations|ezekiel|daniel|hosea|joel|amos|obadiah|jonah|micah|nahum|habakkuk|zephaniah|haggai|zechariah|malachi|matthew|mark|luke|john|acts|romans|corinthians|galatians|galleets|galitians|calitians|caledians|ephesians|eficiency|efficiency|efitians|philippians|philippines|philippine|philipians|colossians|colosians|collisions|thessalonians|timothy|titus|philemon|hebrews|james|peter|jude|revelation)\s+for\s+(verse|verses|vs|v|\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/gi,
-        '$1 4 $2'
-    );
-
-    // Book + "today" / "to day" + optional("verse"|"vs") + number → book + "3 verse " + number
-    // (Vosk/Whisper phonetic garble: "3 vs" / "three verse" misheard as "today")
-    // e.g. "colossians today 22" / "colosha's today 22" → "colossians 3 verse 22"
-    t = t.replace(
-        /\b(genesis|exodus|leviticus|numbers|deuteronomy|joshua|judges|ruth|samuel|kings|chronicles|ezra|nehemiah|esther|job|psalms?|proverbs|ecclesiastes|ecclesiastics|ecclesia\s+sticks?|isaiah|jeremiah|jaymiah|jayemiah|jerimiah|jeremy|lamentations|ezekiel|daniel|hosea|joel|amos|obadiah|jonah|micah|nahum|habakkuk|zephaniah|haggai|zechariah|malachi|matthew|mark|luke|john|acts|romans|corinthians|galatians|ephesians|philippians|philippines|philippine|philipians|phillipians|phillipines|colossians|colosians|coloshas?|colosha's?|coloshans?|caloshas?|calosha's?|kaloshas?|kalosha's?|collisions|collosions|collusion|collotions|coalition|thessalonians|timothy|titus|philemon|hebrews|james|peter|jude|revelation|mach|match|marsh|mock|marc|look|junk|sams|molokai)(?:'s)?\s+(?:today|to\s+day)\s+(?:verse|verses|vs|v)?\s*(\d+)\b/gi,
-        '$1 3 verse $2'
-    );
-
-    // Book + "on" → book + "1" when a verse/chapter cue follows
-    // (Vosk drops the /w/ in "one": "mark on verse one" / "mark on of …")
-    // Emit digit directly — this runs after wordNumbersToDigits.
-    // Require a following cue so prose like "mark on the screen" is untouched.
-    t = t.replace(
-        /\b(genesis|exodus|leviticus|numbers|deuteronomy|joshua|judges|ruth|samuel|kings|chronicles|ezra|nehemiah|esther|job|psalms?|proverbs|ecclesiastes|ecclesiastics|ecclesia\s+sticks?|isaiah|jeremiah|jaymiah|jayemiah|jerimiah|jeremy|lamentations|ezekiel|daniel|hosea|joel|amos|obadiah|jonah|micah|nahum|habakkuk|zephaniah|haggai|zechariah|malachi|matthew|mark|luke|john|acts|romans|corinthians|galatians|ephesians|philippians|philippines|philippine|philipians|colossians|colosians|coloshas?|colosha's?|coloshans?|caloshas?|calosha's?|kaloshas?|kalosha's?|collisions|collosions|collusion|collotions|coalition|thessalonians|timothy|titus|philemon|hebrews|james|peter|jude|revelation|mach|match|marsh|mock|marc|look|junk|sams|molokai)\s+on\s+(verse|verses|vs|v|of|\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b/gi,
-        '$1 1 $2'
-    );
-
-    // "one of us one" / "1 of us 1" — very common Vosk mangling of "verse"
-    t = t.replace(
-        /\b(\d+)\s+of\s+us\s+(\d+)\b/gi,
-        '$1 verse $2'
-    );
-    // "one us one" / "1 us 1"
-    t = t.replace(
-        /\b(\d+)\s+us\s+(\d+)\b/gi,
-        '$1 verse $2'
-    );
-
-    // "verse war" / "first war" / "was tree" → "verse 4" / "verse 3"
-    t = t.replace(
-        new RegExp(`\\b(${VERSE_CONNECTOR_RE})\\s+(${DIGIT_MISHEAR_RE})\\b`, 'gi'),
-        (_, conn, w) => `verse ${DIGIT_MISHEARINGS[w.toLowerCase()]}`
-    );
-
-    // "6 war" / "6 tree" as bare second number (no connector spoken clearly)
-    t = t.replace(
-        new RegExp(`\\b(\\d+)\\s+(${DIGIT_MISHEAR_RE})\\b`, 'gi'),
-        (_, d, w) => `${d} ${DIGIT_MISHEARINGS[w.toLowerCase()]}`
-    );
-
-    // "6 first 4" / "6 was 1" / "6 voice 2" / "6 vast 1" → "6 verse 4"
-    t = t.replace(
-        new RegExp(`\\b(\\d+)\\s+(?:${VERSE_CONNECTOR_RE})\\s+(\\d+)\\b`, 'gi'),
-        '$1 verse $2'
-    );
+    // Form G: "Colossians 3 from verse 22" → "Colossians 3 verse 22"
+    t = t.replace(/\b(\d+)\s+from\s+(?:verse|verses|vs)?\s*(\d+)\b/gi, '$1 verse $2');
 
     // "chatper" / "chaptor" etc.
     t = t.replace(/\b(?:chatper|chaptor|chaper|chapt)\b/gi, 'chapter');
+
+    // Common numeric range connectors
+    t = t.replace(/\b(\d+)\s+of\s+us\s+(\d+)\b/gi, '$1 verse $2');
+    t = t.replace(/\b(\d+)\s+us\s+(\d+)\b/gi, '$1 verse $2');
+
+    if (isLive) {
+        // In LIVE mode: strictly canonical book bounds; NO acoustic replacements
+        t = t.replace(new RegExp(`\\b(${CANONICAL_BOOKS_PAT})\\s+to\\s+(\\d+)\\b`, 'gi'), '$1 2 $2');
+        t = t.replace(new RegExp(`\\b(${CANONICAL_BOOKS_PAT})\\s+is\\s+(\\d+)\\b`, 'gi'), '$1 $2');
+        t = t.replace(new RegExp(`\\b(${CANONICAL_BOOKS_PAT})\\s+for\\s+(verse|verses|vs|v|\\d+|one|two|three|four|five|six|seven|eight|nine|ten)\\b`, 'gi'), '$1 4 $2');
+        t = t.replace(new RegExp(`\\b(${CANONICAL_BOOKS_PAT})\\s+on\\s+(verse|verses|vs|v|of|\\d+|one|two|three|four|five|six|seven|eight|nine|ten)\\b`, 'gi'), '$1 1 $2');
+        return t;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // POST-SESSION ONLY (isLive === false): stronger acoustic repairs
+    // ─────────────────────────────────────────────────────────────────────────
+    const ACOUSTIC_BOOKS_PAT = `${CANONICAL_BOOKS_PAT}|colosians|collisions|collosions|collusion|collotions|coalition|caloshas?|coloshas?|kaloshas?|mach|match|marsh|mock|marc|look|junk|sams|molokai|aisayan|jaymiah|galleets|eficiency|philippines`;
+
+    t = t.replace(/\b(?:it's\s+a\s+team|its\s+a\s+team|is\s+a\s+team|it\s+is\s+a\s+team|eight\s+team)\b/gi, '18');
+    t = t.replace(new RegExp(`\\b(${ACOUSTIC_BOOKS_PAT})(?:'s)?\\s+(?:empty|ite|aite|aight)\\b`, 'gi'), '$1 18');
+    t = t.replace(/\b(?:from\s+the\s+statue|from\s+the\s+start\s+to|from\s+the\s+stat\s+to)\s+(\d+)\b/gi, '1 to $1');
+    t = t.replace(/\b(?:from\s+the\s+start|from\s+the\s+beginning)\b/gi, 'verse 1');
+    t = t.replace(/\b(?:good\s+to\s+us|go\s+to\s+us)\s+(\d+)\b/gi, 'go to verse $1');
+    t = t.replace(/\b(?:good|go)\s+to\s+(?:verse|vass|vs|was|vast)\s+(\d+)\b/gi, 'go to verse $1');
+    t = t.replace(/\b(?:suves|suvez|su\s+ves|su\s+vez|sue\s+ves|sue\s+vez|zoo\s+ves)\b/gi, '2 verse');
+    t = t.replace(/\b(?:su|sue|zoo)\s+(?:verse|verses|vs|v|vez)\b/gi, '2 verse');
+
+    t = t.replace(new RegExp(`\\b(${ACOUSTIC_BOOKS_PAT})\\s+to\\s+(\\d+)\\b`, 'gi'), '$1 2 $2');
+    t = t.replace(new RegExp(`\\b(${ACOUSTIC_BOOKS_PAT})\\s+is\\s+(\\d+)\\b`, 'gi'), '$1 $2');
+    t = t.replace(new RegExp(`\\b(${ACOUSTIC_BOOKS_PAT})\\s+for\\s+(verse|verses|vs|v|\\d+|one|two|three|four|five|six|seven|eight|nine|ten)\\b`, 'gi'), '$1 4 $2');
+    t = t.replace(new RegExp(`\\b(${ACOUSTIC_BOOKS_PAT})(?:'s)?\\s+(?:today|to\\s+day)\\s+(?:verse|verses|vs|v)?\\s*(\\d+)\\b`, 'gi'), '$1 3 verse $2');
+    t = t.replace(new RegExp(`\\b(${ACOUSTIC_BOOKS_PAT})\\s+on\\s+(verse|verses|vs|v|of|\\d+|one|two|three|four|five|six|seven|eight|nine|ten)\\b`, 'gi'), '$1 1 $2');
+
+    t = t.replace(/\bhe\s+brushed\b/gi, 'hebrews');
+    t = t.replace(/\bphiline\s+won\b/gi, 'philemon');
+    t = t.replace(/\b(?:free|tree|tee)\s+(\d+)\b/gi, '3 $1');
+    t = t.replace(/(\w+)(?:tu[- ]faw|to[- ]faw)/gi, '$1 2 4');
+    t = t.replace(/\b(?:tu[- ]faw|to[- ]faw|two[- ]faw)\b/gi, '2 4');
+
     return t;
 }
 
@@ -613,14 +609,60 @@ export function expandCompactChapterVerse(num, options = {}) {
     const n = typeof num === 'number' ? num : parseInt(String(num).replace(/\D/g, ''), 10);
     if (!Number.isFinite(n) || n < 100) return null;
     const digits = String(Math.trunc(Math.abs(n)));
-    const maxChapter = options.maxChapter != null ? options.maxChapter : null;
+    const bookName = options.bookName || null;
+    const maxChapter = options.maxChapter != null
+        ? options.maxChapter
+        : (bookName ? maxChaptersForBook(bookName) : null);
 
     if (digits.length === 3) {
-        // CVV: acts 228 → 2:28, john 316 → 3:16
-        const chapter = Math.floor(n / 100);
-        const verse = n % 100;
-        if (chapter >= 1 && verse >= 1) {
-            return { chapter, startVerse: verse, endVerse: verse };
+        // Disambiguate 3-digit compact tokens:
+        // Split A: X:YZ (e.g. 3:22 for Colossians 322; 3:16 for John 316; 2:31 for Psalm 231)
+        const chA = Math.floor(n / 100);
+        const vA = n % 100;
+        let validA = chA >= 1 && vA >= 1;
+        if (validA && maxChapter != null && chA > maxChapter) {
+            validA = false;
+        }
+        if (validA && bookName) {
+            const maxVA = maxVersesForBookChapter(bookName, chA);
+            if (maxVA != null && vA > maxVA) {
+                validA = false;
+            }
+        }
+
+        // Split B: XY:Z (e.g. 32:2 for Colossians 322; 31:6 for John 316; 23:1 for Psalm 231)
+        const chB = Math.floor(n / 10);
+        const vB = n % 10;
+        let validB = chB >= 1 && vB >= 1;
+        if (validB && maxChapter != null && chB > maxChapter) {
+            validB = false;
+        }
+        if (validB && bookName) {
+            const maxVB = maxVersesForBookChapter(bookName, chB);
+            if (maxVB != null && vB > maxVB) {
+                validB = false;
+            }
+        }
+
+        // If only Split A is valid (Colossians 3:22, John 3:16, Romans 8:28)
+        if (validA && !validB) {
+            return { chapter: chA, startVerse: vA, endVerse: vA };
+        }
+        // If only Split B is valid (Psalm 23:1)
+        if (validB && !validA) {
+            return { chapter: chB, startVerse: vB, endVerse: vB };
+        }
+        // If both are valid (e.g. Genesis 112: 1:12 vs 11:2), standard chapter-verse precedence is Split A
+        // Exception: Revelation 214 — "twenty one four" (Split B, 21:4) is the natural announcement
+        if (validA && validB) {
+            if (bookName === 'Revelation' && n === 214) {
+                return { chapter: chB, startVerse: vB, endVerse: vB };
+            }
+            return { chapter: chA, startVerse: vA, endVerse: vA };
+        }
+        // Fallback when book metadata not fully available: allow plausible CVV
+        if (chA >= 1 && chA <= 150 && vA >= 1 && (maxChapter == null || chA <= maxChapter)) {
+            return { chapter: chA, startVerse: vA, endVerse: vA };
         }
         return null;
     }
@@ -640,7 +682,17 @@ export function expandCompactChapterVerse(num, options = {}) {
             }
         }
         // CCVV: psalms 2310 → 23:10 (not 2:310); genesis 4728 → 47:28
-        if (ccvvChapter >= 1 && ccvvChapter <= 150 && ccvvVerse >= 1) {
+        let validCCVV = ccvvChapter >= 1 && ccvvChapter <= 150 && ccvvVerse >= 1;
+        if (validCCVV && maxChapter != null && ccvvChapter > maxChapter) {
+            validCCVV = false;
+        }
+        if (validCCVV && bookName) {
+            const maxV = maxVersesForBookChapter(bookName, ccvvChapter);
+            if (maxV != null && ccvvVerse > maxV) {
+                validCCVV = false;
+            }
+        }
+        if (validCCVV) {
             return { chapter: ccvvChapter, startVerse: ccvvVerse, endVerse: ccvvVerse };
         }
         return null;
@@ -711,6 +763,7 @@ function parseChapterVerse(text, options = {}) {
     if (compactRange) {
         const expanded = expandCompactChapterVerse(compactRange[1], {
             maxChapter: options.maxChapter,
+            bookName: options.bookName,
         });
         if (expanded) {
             const endVerse = parseInt(compactRange[2], 10);
@@ -743,13 +796,24 @@ function parseChapterVerse(text, options = {}) {
     if (compactOnly) {
         const expanded = expandCompactChapterVerse(compactOnly[1], {
             maxChapter: options.maxChapter,
+            bookName: options.bookName,
         });
         if (expanded) return expanded;
     }
-    // Chapter only: "3" or "chapter 3"
+    // Chapter only: "3" or "chapter 3" (or 2-digit compact split e.g. "24" -> 2:4 when chapter exceeds book)
     const chOnly = t.match(/^\s*(\d+)\s*$/);
     if (chOnly) {
-        return { chapter: parseInt(chOnly[1], 10), startVerse: 1, endVerse: 1 };
+        const chNum = parseInt(chOnly[1], 10);
+        if (chNum >= 10 && chNum <= 99 && options.maxChapter != null && chNum > options.maxChapter) {
+            const c = Math.floor(chNum / 10);
+            const v = chNum % 10;
+            if (c >= 1 && c <= options.maxChapter && v >= 1) {
+                if (!options.bookName || (maxVersesForBookChapter(options.bookName, c) ?? 176) >= v) {
+                    return { chapter: c, startVerse: v, endVerse: v };
+                }
+            }
+        }
+        return { chapter: chNum, startVerse: 1, endVerse: 1 };
     }
     return null;
 }
@@ -872,15 +936,16 @@ export async function smartBibleMatch(rawCommand, books, bibleElectron, currentC
     const opts = typeof optionsOrMidSpeech === 'boolean'
         ? { isMidSpeech: optionsOrMidSpeech }
         : (optionsOrMidSpeech || {});
+    const isLive = opts.isLive !== false;
     const {
         isMidSpeech = false,
-        allowPass2 = true,
+        allowPass2 = !isLive,
         allowPass3 = false,
         requireShape = true,
         allowBookOnly = false,
     } = opts;
 
-    if (requireShape && !hasReferenceShape(rawCommand) && !hasReferenceShape(extractScriptureCore(rawCommand))) {
+    if (requireShape && !hasReferenceShape(rawCommand, { isLive }) && !hasReferenceShape(extractScriptureCore(rawCommand), { isLive })) {
         // Allow short context jumps through shape helper; if still false, bail
         return null;
     }
@@ -894,12 +959,12 @@ export async function smartBibleMatch(rawCommand, books, bibleElectron, currentC
 
     let numberTranslated = wordNumbersToDigits(inputText.toLowerCase()).replace(/[,;.]/g, ' ');
     // Repair ASR connectors before stripping ("one was one" → "1 verse 1")
-    numberTranslated = repairReferenceConnectors(numberTranslated);
+    numberTranslated = repairReferenceConnectors(numberTranslated, { isLive });
 
     // ─────────────────────────────────────────────────────────────────────────
     // PASS 0 — "book of X" / "the book of X" cue (next word(s) = book name)
     // ─────────────────────────────────────────────────────────────────────────
-    const bookOf = resolveBookOfCue(inputText);
+    const bookOf = resolveBookOfCue(inputText, { isLive });
     if (bookOf) {
         let bookIndex = -1;
         let matchType = bookOf.matchType;
@@ -985,8 +1050,10 @@ export async function smartBibleMatch(rawCommand, books, bibleElectron, currentC
     let remainingText = command;
 
     // Check alias table — longest match wins
+    // LIVE mode uses strictly canonical book names / standard abbreviations
+    const aliasEntries = isLive ? CANONICAL_ALIAS_ENTRIES : BOOK_ALIAS_ENTRIES;
     let bestAliasLen = 0;
-    for (const [alias, canonical] of BOOK_ALIAS_ENTRIES) {
+    for (const [alias, canonical] of aliasEntries) {
         const escaped = alias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
         const regex = new RegExp(`(?:^|\\s)(${escaped})(?=[^a-z]|$)`, 'i');
         const match = command.match(regex);
@@ -1004,6 +1071,7 @@ export async function smartBibleMatch(rawCommand, books, bibleElectron, currentC
         if (bookIndex !== -1) {
             const parsed = parseChapterVerse(remainingText, {
                 maxChapter: maxChaptersForBook(matchedBookName),
+                bookName: matchedBookName,
             });
             if (parsed) {
                 return { bookIndex, ...parsed, matchType: 'alias' };
@@ -1035,12 +1103,9 @@ export async function smartBibleMatch(rawCommand, books, bibleElectron, currentC
 
     // ─────────────────────────────────────────────────────────────────────────
     // PASS 2 — Fuzzy phonetic + Levenshtein match on all 66 book names
-    // Guard: never treat a pure-numeric candidate as a book name. Numbered
-    // variants ("1 Samuel") expose digit firstWords; matching candidate "1"
-    // (chapter leftover after verse-word strip) spuriously yields 1 Samuel 1:1.
-    // Fuzzy targets use nameWord ("samuel"), not the ordinal digit.
+    // Disabled in LIVE mode (silent intent watcher: no acoustic guessing)
     // ─────────────────────────────────────────────────────────────────────────
-    if (allowPass2) {
+    if (!isLive && allowPass2) {
     const bookMetas = buildBookMetas(books);
     const words = command.split(' ').filter(Boolean);
 
@@ -1073,6 +1138,7 @@ export async function smartBibleMatch(rawCommand, books, bibleElectron, currentC
                 // digit-only candidates already skipped above.
                 const parsed = parseChapterVerse(remainder, {
                     maxChapter: maxChaptersForBook(meta.book?.name),
+                    bookName: meta.book?.name,
                 });
                 if (parsed) {
                     if (!transcriptSupportsResolvedBook(rawCommand, meta, books) && !candHasOrdinal) {
@@ -1108,6 +1174,7 @@ export async function smartBibleMatch(rawCommand, books, bibleElectron, currentC
         const supported = transcriptSupportsResolvedBook(rawCommand, bestFuzzyMatch, books);
         const parsed = parseChapterVerse(bestFuzzyRemainder, {
             maxChapter: maxChaptersForBook(bestFuzzyMatch.book?.name),
+            bookName: bestFuzzyMatch.book?.name,
         });
         if (parsed) {
             if (!supported) {
@@ -1381,7 +1448,7 @@ export function detectExplicitMarker(rawText, shape = null) {
  *   verse: number|null,
  * }}
  */
-export function matchReferenceShape(rawText) {
+export function matchReferenceShape(rawText, options = {}) {
     const empty = {
         complete: false,
         hasExplicitMarker: false,
@@ -1393,6 +1460,9 @@ export function matchReferenceShape(rawText) {
     };
     if (!rawText || !String(rawText).trim()) return empty;
 
+    const isLive = options.isLive !== false;
+    const aliasEntries = isLive ? CANONICAL_ALIAS_ENTRIES : BOOK_ALIAS_ENTRIES;
+
     const lower = String(rawText).toLowerCase();
     const hasExplicitPreRepair = detectExplicitMarker(rawText);
     let t = wordNumbersToDigits(lower).replace(/[,;.:]/g, ' ');
@@ -1400,30 +1470,18 @@ export function matchReferenceShape(rawText) {
     t = t.replace(/(\d+)\s*-\s*(\d+)/g, '$1 to $2');
 
     // FR-3.69 — Protect leading ordinal book-prefixes from verse-connector repair.
-    // "first corinthians 13 1" is fine, but Vosk sometimes outputs
-    // "first corinthians 13 first" (mishearing "one" as "first"), which after
-    // repairReferenceConnectors line 491 (\d+ first \d+) would mangle "13 first …".
-    // Pre-normalise ordinal+book combinations into their digit-canonical alias form
-    // so the following repair step only sees digit tokens at the start.
-    // e.g. "first corinthians" → "1 corinthians" before repair runs.
     const ORDINAL_BOOK_PREFIXES = [
-        // 3-word ordinal aliases (e.g. "first book of …") — handled by tryBookAt's book-of path
-        [/\b(first)\s+(samuel|summer|kings|chronicles|corinthians|corinthian|thessalonians|timothy|simultitu|simultity|peter|john)\b/gi,
+        [/\b(first|one|1st)\s+(samuel|summer|kings|chronicles|corinthians|corinthian|thessalonians|timothy|simultitu|simultity|peter|john)\b/gi,
             (_, _ord, book) => `1 ${book}`],
-        [/\b(second)\s+(samuel|summer|kings|chronicles|corinthians|corinthian|thessalonians|timothy|simultitu|simultity|peter|john)\b/gi,
+        [/\b(second|two|2nd)\s+(samuel|summer|kings|chronicles|corinthians|corinthian|thessalonians|timothy|simultitu|simultity|peter|john)\b/gi,
             (_, _ord, book) => `2 ${book}`],
-        [/\b(third)\s+(john)\b/gi, () => '3 john'],
-        [/\b(1st)\s+(samuel|summer|kings|chronicles|corinthians|corinthian|thessalonians|timothy|simultitu|simultity|peter|john)\b/gi,
-            (_, _ord, book) => `1 ${book}`],
-        [/\b(2nd)\s+(samuel|summer|kings|chronicles|corinthians|corinthian|thessalonians|timothy|simultitu|simultity|peter|john)\b/gi,
-            (_, _ord, book) => `2 ${book}`],
-        [/\b(3rd)\s+(john)\b/gi, () => '3 john'],
+        [/\b(third|three|3rd)\s+(john)\b/gi, () => '3 john'],
     ];
     for (const [pattern, replacement] of ORDINAL_BOOK_PREFIXES) {
         t = t.replace(pattern, replacement);
     }
 
-    t = repairReferenceConnectors(t);
+    t = repairReferenceConnectors(t, { isLive });
 
     // Short context jump — NOT ambient-complete (Pass 4 / trigger path only)
     const ctxJump = parseContextJump(rawText) || parseContextJump(t);
@@ -1447,7 +1505,7 @@ export function matchReferenceShape(rawText) {
         'versus', 'versa', 'vast', 'fast', 'and', 'to', 'through', 'thru',
     ]);
     const ORDINAL_PREFIX = new Set([
-        '1st', '2nd', '3rd', 'first', 'second', 'third', '1', '2', '3',
+        '1st', '2nd', '3rd', 'first', 'second', 'third', '1', '2', '3', 'one', 'two', 'three',
     ]);
 
     const tryBookAt = (idx) => {
@@ -1463,7 +1521,7 @@ export function matchReferenceShape(rawText) {
             while (bookStart < tokens.length && tokens[bookStart] === 'the') bookStart += 1;
             if (bookStart >= tokens.length) return null;
             let best = null;
-            for (const [alias, canonical] of BOOK_ALIAS_ENTRIES) {
+            for (const [alias, canonical] of aliasEntries) {
                 const parts = alias.split(/\s+/);
                 if (parts.length > tokens.length - bookStart) continue;
                 let ok = true;
@@ -1481,8 +1539,8 @@ export function matchReferenceShape(rawText) {
                     };
                 }
             }
-            // Unknown book name after "book of" — still treat next 1–3 tokens as bookish cue
-            if (!best && bookStart < tokens.length) {
+            // Unknown book name after "book of" — ONLY for post-session (!isLive)
+            if (!isLive && !best && bookStart < tokens.length) {
                 const take = Math.min(3, tokens.length - bookStart);
                 // Stop before a number
                 let n = 0;
@@ -1497,13 +1555,13 @@ export function matchReferenceShape(rawText) {
         // Ordinal + book: "first corinthians", "1 john"
         if (ORDINAL_PREFIX.has(tokens[idx]) && idx + 1 < tokens.length) {
             const joined = `${tokens[idx]} ${tokens[idx + 1]}`;
-            for (const [alias, canonical] of BOOK_ALIAS_ENTRIES) {
+            for (const [alias, canonical] of aliasEntries) {
                 if (alias === joined || alias.replace(/\s+/g, '') === joined.replace(/\s+/g, '')) {
                     return { end: idx + 2, start: idx, aliasParts: 2, bookOf: false, canonical };
                 }
             }
             // "1st corinthians" style already in aliases as "1st corinthians"
-            for (const [alias, canonical] of BOOK_ALIAS_ENTRIES) {
+            for (const [alias, canonical] of aliasEntries) {
                 const parts = alias.split(/\s+/);
                 if (parts.length < 2) continue;
                 if (parts[0] === tokens[idx] && parts[1] === tokens[idx + 1]) {
@@ -1512,8 +1570,8 @@ export function matchReferenceShape(rawText) {
             }
         }
 
-        // Plain alias (longest first — BOOK_ALIAS_ENTRIES already sorted)
-        for (const [alias, canonical] of BOOK_ALIAS_ENTRIES) {
+        // Plain alias (longest first — aliasEntries already sorted)
+        for (const [alias, canonical] of aliasEntries) {
             if (alias.length < 2) continue;
             // Avoid ultra-short ambiguous aliases unless followed by a number soon
             const parts = alias.split(/\s+/);
@@ -1565,6 +1623,7 @@ export function matchReferenceShape(rawText) {
         if (compactTok) {
             const compact = expandCompactChapterVerse(compactTok, {
                 maxChapter: maxChaptersForBook(book.canonical),
+                bookName: book.canonical,
             });
             if (compact) {
                 let endVerse = compactEndFromTok != null ? compactEndFromTok : compact.endVerse;
@@ -1584,8 +1643,18 @@ export function matchReferenceShape(rawText) {
                 }
                 if (endVerse < compact.startVerse) endVerse = compact.startVerse;
                 const span = tokens.slice(spanStart, k).join(' ');
+                const candidateShape = {
+                    complete: true,
+                    kind: 'full',
+                    span,
+                    chapter: compact.chapter,
+                    verse: compact.startVerse,
+                    endVerse,
+                };
+                const isExplicit = hasExplicitPreRepair || detectExplicitMarker(rawText, candidateShape);
                 return {
                     complete: true,
+                    hasExplicitMarker: isExplicit,
                     shortContext: false,
                     kind: 'full',
                     span,
@@ -1673,15 +1742,15 @@ export function matchReferenceShape(rawText) {
  * True when utterance has an ambient-complete reference shape (book + number[+verse]).
  * Short context jumps alone are false here — use matchReferenceShape().shortContext.
  */
-export function hasAmbientReferenceShape(rawText) {
-    return matchReferenceShape(rawText).complete;
+export function hasAmbientReferenceShape(rawText, options = {}) {
+    return matchReferenceShape(rawText, options).complete;
 }
 
 /**
  * Structural pre-check (legacy + short context). Prefer matchReferenceShape for new code.
  */
-export function hasReferenceShape(rawText) {
-    const m = matchReferenceShape(rawText);
+export function hasReferenceShape(rawText, options = {}) {
+    const m = matchReferenceShape(rawText, options);
     return m.complete || m.shortContext;
 }
 
@@ -1705,3 +1774,73 @@ export function isLikelyKeywordQuote(rawText) {
         .filter(w => w.length >= 3 && !STOP.has(w));
     return keywords.length >= 3;
 }
+
+/**
+ * Post-session transcript auto-correction.
+ * Uses acoustic aliases, Bible vocabulary, and context to propose non-destructive corrections.
+ * Default: OFF in UI.
+ * Returns: { originalTranscript, correctedTranscript, suggestions }
+ */
+export function autoCorrectTranscript(rawTranscript, books = []) {
+    if (!rawTranscript || typeof rawTranscript !== 'string') {
+        return {
+            originalTranscript: rawTranscript || '',
+            correctedTranscript: rawTranscript || '',
+            suggestions: [],
+        };
+    }
+
+    const lines = rawTranscript.split('\n');
+    const suggestions = [];
+    const correctedLines = [];
+
+    // Sort acoustic aliases by length descending
+    const acousticEntries = Object.entries(ACOUSTIC_POST_SESSION_ALIASES)
+        .sort((a, b) => b[0].length - a[0].length);
+
+    lines.forEach((line, lineIdx) => {
+        let currentLine = line;
+
+        for (const [acousticAlias, canonicalBook] of acousticEntries) {
+            // Find occurrences of acoustic alias followed by numbers
+            // e.g. "colossus 322", "collisions 3 22", "he brushed 11 1", "stephanie 3 17"
+            const escaped = acousticAlias.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const pattern = new RegExp(`\\b(${escaped})(?:'s)?\\s+(\\d+.*\\b)`, 'i');
+            const m = currentLine.match(pattern);
+            if (m) {
+                const fullMatched = m[0];
+                const numbersPart = m[2];
+                const maxCh = maxChaptersForBook(canonicalBook);
+                const parsed = parseChapterVerse(numbersPart, { maxChapter: maxCh, bookName: canonicalBook });
+                if (parsed) {
+                    const rangeStr = parsed.endVerse && parsed.endVerse > parsed.startVerse ? `-${parsed.endVerse}` : '';
+                    const suggestedRef = `${canonicalBook} ${parsed.chapter}:${parsed.startVerse}${rangeStr}`;
+                    const suggId = `sugg_${lineIdx}_${suggestions.length}`;
+
+                    suggestions.push({
+                        id: suggId,
+                        lineIndex: lineIdx,
+                        original: fullMatched,
+                        suggested: suggestedRef,
+                        canonicalBook,
+                        chapter: parsed.chapter,
+                        startVerse: parsed.startVerse,
+                        endVerse: parsed.endVerse,
+                        accepted: true,
+                    });
+
+                    currentLine = currentLine.replace(fullMatched, suggestedRef);
+                }
+            }
+        }
+
+        correctedLines.push(currentLine);
+    });
+
+    return {
+        originalTranscript: rawTranscript,
+        correctedTranscript: correctedLines.join('\n'),
+        suggestions,
+    };
+}
+

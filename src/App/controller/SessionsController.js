@@ -19,7 +19,9 @@ import {
   PiEraser,
   PiClock,
   PiLockKey,
+  PiSparkle,
 } from 'react-icons/pi';
+import { autoCorrectTranscript } from './smartBibleMatch';
 import SessionFolderCard, { formatBytes, formatDate } from './SessionFolderCard';
 import FileTypeBadge from './FileTypeBadge';
 import DisabledContainer from '../components/DisabledContainer';
@@ -44,6 +46,9 @@ export default function SessionsController() {
   const [editTranscript, setEditTranscript] = useState('');
   const [rawWithStamps, setRawWithStamps] = useState('');
   const [timestampsEnabled, setTimestampsEnabled] = useState(true);
+  const [autoCorrectEnabled, setAutoCorrectEnabled] = useState(false);
+  const [autoCorrectSuggestions, setAutoCorrectSuggestions] = useState([]);
+  const [originalBeforeAutoCorrect, setOriginalBeforeAutoCorrect] = useState('');
   const [activeTab, setActiveTab] = useState('transcript'); // 'transcript' | 'media' | 'files'
   const [pdfSavedMsg, setPdfSavedMsg] = useState(null);
   const [selectedIds, setSelectedIds] = useState(new Set());
@@ -138,6 +143,9 @@ export default function SessionsController() {
       setRawWithStamps(txt);
       const hasStamps = /^\s*\[?\d{1,2}:\d{2}/m.test(txt);
       setTimestampsEnabled(hasStamps);
+      setAutoCorrectEnabled(false);
+      setAutoCorrectSuggestions([]);
+      setOriginalBeforeAutoCorrect('');
       const url = await window.electron.Session.audioUrl?.(id);
       setAudioSrc(url || null);
       setActiveTab(s.transcriptText ? 'transcript' : (url ? 'media' : 'files'));
@@ -153,6 +161,9 @@ export default function SessionsController() {
     setDetail(null);
     setAudioSrc(null);
     setPdfSavedMsg(null);
+    setAutoCorrectEnabled(false);
+    setAutoCorrectSuggestions([]);
+    setOriginalBeforeAutoCorrect('');
   };
 
   const saveMeta = async () => {
@@ -264,6 +275,67 @@ export default function SessionsController() {
       }
       setTimestampsEnabled(true);
     }
+  };
+
+  const toggleAutoCorrect = () => {
+    if (!autoCorrectEnabled) {
+      setOriginalBeforeAutoCorrect(editTranscript);
+      const res = autoCorrectTranscript(editTranscript);
+      setAutoCorrectSuggestions(res.suggestions || []);
+      setEditTranscript(res.correctedTranscript);
+      setAutoCorrectEnabled(true);
+    } else {
+      if (originalBeforeAutoCorrect) {
+        setEditTranscript(originalBeforeAutoCorrect);
+      }
+      setAutoCorrectSuggestions([]);
+      setAutoCorrectEnabled(false);
+    }
+  };
+
+  const toggleSuggestion = (suggId) => {
+    setAutoCorrectSuggestions((prev) =>
+      prev.map((s) => {
+        if (s.id !== suggId) return s;
+        const newAccepted = !s.accepted;
+        setEditTranscript((curr) => {
+          if (newAccepted) {
+            return curr.replace(s.original, s.suggested);
+          } else {
+            return curr.replace(s.suggested, s.original);
+          }
+        });
+        return { ...s, accepted: newAccepted };
+      })
+    );
+  };
+
+  const acceptAllSuggestions = () => {
+    setAutoCorrectSuggestions((prev) => {
+      let text = editTranscript;
+      const updated = prev.map((s) => {
+        if (!s.accepted) {
+          text = text.replace(s.original, s.suggested);
+        }
+        return { ...s, accepted: true };
+      });
+      setEditTranscript(text);
+      return updated;
+    });
+  };
+
+  const rejectAllSuggestions = () => {
+    setAutoCorrectSuggestions((prev) => {
+      let text = editTranscript;
+      const updated = prev.map((s) => {
+        if (s.accepted) {
+          text = text.replace(s.suggested, s.original);
+        }
+        return { ...s, accepted: false };
+      });
+      setEditTranscript(text);
+      return updated;
+    });
   };
 
   const transcriptLinesCount = editTranscript.split('\n').filter(Boolean).length;
@@ -459,8 +531,21 @@ export default function SessionsController() {
                       <div className="flex items-center gap-2">
                         <button
                           type="button"
+                          onClick={toggleAutoCorrect}
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[10px] font-bold transition-all shadow-sm ${
+                            autoCorrectEnabled
+                              ? 'bg-violet-600/25 hover:bg-violet-600/35 border-violet-500/50 text-violet-200'
+                              : 'bg-white/10 hover:bg-white/15 border-white/20 text-white/70 hover:text-white'
+                          }`}
+                          title={autoCorrectEnabled ? 'Disable auto-correction and restore original text' : 'Run acoustic Bible mishearing detection with reviewable suggestions'}
+                        >
+                          <PiSparkle size={13} className={autoCorrectEnabled ? 'text-violet-400' : 'text-white/40'} />
+                          <span>{autoCorrectEnabled ? 'Auto-correct: ON' : 'Auto-correct transcript'}</span>
+                        </button>
+                        <button
+                          type="button"
                           onClick={toggleTimestamps}
-                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg border text-[10px] font-bold transition-all shadow-sm ${
+                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-[10px] font-bold transition-all shadow-sm ${
                             timestampsEnabled
                               ? 'bg-amber-500/15 hover:bg-amber-500/25 border-amber-500/40 text-amber-200 hover:text-amber-100'
                               : 'bg-white/10 hover:bg-white/15 border-white/20 text-white/70 hover:text-white'
@@ -474,7 +559,7 @@ export default function SessionsController() {
                           <button
                             type="button"
                             onClick={() => openFileInFolder('transcript.pdf')}
-                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-[10px] font-bold text-white/80 transition-colors"
+                            className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-[10px] font-bold text-white/80 transition-colors"
                           >
                             <PiArrowSquareOut size={13} /> Open PDF
                           </button>
@@ -496,6 +581,67 @@ export default function SessionsController() {
                       </div>
                     </div>
 
+                    {autoCorrectEnabled && autoCorrectSuggestions.length > 0 && (
+                      <div className="mb-2 p-2.5 rounded-xl bg-violet-950/40 border border-violet-500/30 flex flex-col gap-2 animate-in fade-in duration-150">
+                        <div className="flex items-center justify-between text-[11px] font-semibold text-violet-200">
+                          <span className="flex items-center gap-1.5">
+                            <PiSparkle size={12} className="text-violet-400" />
+                            Acoustic Scripture Suggestions ({autoCorrectSuggestions.filter(s => s.accepted).length}/{autoCorrectSuggestions.length} active)
+                          </span>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={acceptAllSuggestions}
+                              className="px-2 py-0.5 rounded-xl bg-emerald-600/30 hover:bg-emerald-600/50 border border-emerald-500/40 text-emerald-200 text-[10px] font-bold transition-all"
+                            >
+                              Accept All
+                            </button>
+                            <button
+                              type="button"
+                              onClick={rejectAllSuggestions}
+                              className="px-2 py-0.5 rounded-xl bg-red-600/20 hover:bg-red-600/40 border border-red-500/30 text-red-200 text-[10px] font-bold transition-all"
+                            >
+                              Reject All
+                            </button>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pr-1">
+                          {autoCorrectSuggestions.map((sugg) => (
+                            <div
+                              key={sugg.id}
+                              className={`flex items-center gap-1.5 px-2 py-1 rounded-xl border text-[10px] font-medium transition-all ${
+                                sugg.accepted
+                                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-200'
+                                  : 'bg-white/5 border-white/10 text-white/40 line-through'
+                              }`}
+                            >
+                              <span className="font-mono text-white/50">{sugg.original}</span>
+                              <span>→</span>
+                              <span className="font-bold text-white">{sugg.suggested}</span>
+                              <button
+                                type="button"
+                                onClick={() => toggleSuggestion(sugg.id)}
+                                className={`p-0.5 rounded-xl border transition-all ${
+                                  sugg.accepted
+                                    ? 'bg-red-500/20 hover:bg-red-500/40 border-red-500/40 text-red-300'
+                                    : 'bg-emerald-500/20 hover:bg-emerald-500/40 border-emerald-500/40 text-emerald-300'
+                                }`}
+                                title={sugg.accepted ? 'Reject suggestion' : 'Accept suggestion'}
+                              >
+                                {sugg.accepted ? <PiX size={10} /> : <PiCheck size={10} />}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {autoCorrectEnabled && autoCorrectSuggestions.length === 0 && (
+                      <div className="mb-2 px-3 py-1.5 rounded-xl bg-violet-950/20 border border-violet-500/20 text-violet-300 text-[11px] flex items-center gap-2">
+                        <PiSparkle size={13} className="text-violet-400 shrink-0" />
+                        <span>No acoustic Bible mishearings detected. Transcript is already clear.</span>
+                      </div>
+                    )}
+
                     {pdfSavedMsg && (
                       <div className="mb-2 px-3 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-200 text-xs flex items-center gap-2 animate-in fade-in duration-150">
                         <PiCheck size={16} className="text-emerald-400 shrink-0" />
@@ -503,7 +649,7 @@ export default function SessionsController() {
                       </div>
                     )}
 
-                    <div className="flex-1 min-h-[260px] relative rounded-2xl border border-white/10 bg-black/40 overflow-hidden flex flex-col">
+                    <div className="flex-1 min-h-[260px] relative rounded-xl border border-white/10 bg-black/40 overflow-hidden flex flex-col">
                       <textarea
                         value={editTranscript}
                         readOnly={!canEditPdf}
