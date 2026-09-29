@@ -83,6 +83,12 @@ import {
   mergeSelectedRegions,
   createCustomMarqueeRegion,
   findSmallestChildRegion,
+  findHoverCandidates,
+  unmergeRegion,
+  extractMergedRegionsToDataUrl,
+  analyzeBoundedArea,
+  inferRegionRelationships,
+  buildSpatialIndex,
 } from "./design/DesignAssetAnalyzer";
 import ImageEditPanel from "./design/ImageEditPanel";
 
@@ -3417,6 +3423,9 @@ export default function LiveDesignStudioModal({
   const [liveControlsMenuOpen, setLiveControlsMenuOpen] = useState(false);
   const [liveControlsMode, setLiveControlsMode] = useState("add"); // 'add' | 'update'
   const [closingWithUnsaved, setClosingWithUnsaved] = useState(false);
+  const [designToDelete, setDesignToDelete] = useState(null); // Saved design pending deletion confirmation
+  const [templateSubView, setTemplateSubView] = useState("presets"); // 'presets' | 'saved'
+  const [activeLiveOverlay, setActiveLiveOverlay] = useState(null);
   const docMenuRef = useRef(null);
   const templateSettingsRef = useRef(null);
   const liveControlsMenuRef = useRef(null);
@@ -3471,6 +3480,11 @@ export default function LiveDesignStudioModal({
   const [showDetectedRegions, setShowDetectedRegions] = useState(false);
   const [activeTextPickerField, setActiveTextPickerField] = useState(null);
   const [marqueeSelection, setMarqueeSelection] = useState(null);
+  const [smartSelectAreaMode, setSmartSelectAreaMode] = useState(false);
+  const [hoverCandidates, setHoverCandidates] = useState([]);
+  const [hoverDiscoveryCard, setHoverDiscoveryCard] = useState(null);
+  const [objectsCategoryFilter, setObjectsCategoryFilter] = useState("all"); // "all" | "text" | "shapes" | "graphics" | "subjects" | "groups"
+  const hoverDebounceTimerRef = useRef(null);
   const regionContextMenuRef = useRef(null);
 
   // Non-Destructive Pixel-Level Image Editing State (Part B)
@@ -3487,7 +3501,19 @@ export default function LiveDesignStudioModal({
       const el = document.querySelector(`[data-studio-layer-id="${imageEditingLayerId}"]`);
       if (el) {
         const r = el.getBoundingClientRect();
-        setImageEditRect({ left: r.left, top: r.top, width: r.width, height: r.height });
+        const editLayer = currentDesign.layers.find((l) => l.id === imageEditingLayerId);
+        const rot = editLayer?.rotation || 0;
+        const ow = el.offsetWidth || r.width;
+        const oh = el.offsetHeight || r.height;
+        const cx = r.left + r.width / 2;
+        const cy = r.top + r.height / 2;
+        setImageEditRect({
+          left: Math.round(cx - ow / 2),
+          top: Math.round(cy - oh / 2),
+          width: Math.round(ow),
+          height: Math.round(oh),
+          rotation: rot,
+        });
       }
     };
     updateRect();
@@ -3499,7 +3525,7 @@ export default function LiveDesignStudioModal({
       window.removeEventListener("resize", updateRect);
       window.removeEventListener("scroll", updateRect, true);
     };
-  }, [imageEditingLayerId, zoom, panOffset]);
+  }, [imageEditingLayerId, zoom, panOffset, currentDesign.layers]);
 
   // Canvas interaction refs & animation frame throttling
   const canvasRef = useRef(null);
@@ -3610,14 +3636,29 @@ export default function LiveDesignStudioModal({
     }
   }, [isOpen]);
 
-  // Load saved designs from DesignStudio service on mount
+  // Load saved designs and active live state from DesignStudio service on mount
   useEffect(() => {
-    if (isOpen && designApi?.listDesigns) {
-      designApi.listDesigns().then((res) => {
-        if (res?.ok && Array.isArray(res.designs)) {
-          setDesigns(res.designs);
-        }
-      }).catch((err) => console.warn("Could not list designs:", err));
+    if (isOpen && designApi) {
+      if (designApi.listDesigns) {
+        designApi.listDesigns().then((res) => {
+          if (res?.ok && Array.isArray(res.designs)) {
+            setDesigns(res.designs);
+          }
+        }).catch((err) => console.warn("Could not list designs:", err));
+      }
+      if (designApi.getLiveState) {
+        designApi.getLiveState().then((res) => {
+          if (res?.ok) setActiveLiveOverlay(res.liveState?.activeOverlay || res.activeOverlay || null);
+        }).catch(() => {});
+      }
+      if (designApi.onLiveStateChange) {
+        const unsub = designApi.onLiveStateChange((st) => {
+          setActiveLiveOverlay(st?.activeOverlay || null);
+        });
+        return () => {
+          if (typeof unsub === "function") unsub();
+        };
+      }
     }
   }, [isOpen, designApi]);
 
@@ -4829,8 +4870,10 @@ export default function LiveDesignStudioModal({
 
     try {
       let extractedDataUrl;
-      if (withCutout) {
-        if (region.type === "subject") {
+      if (region.type === "merged-region" || region.isMerged) {
+        extractedDataUrl = await extractMergedRegionsToDataUrl(imgSrc, region, withCutout, (p) => setBgRemovalProgress(p));
+      } else if (withCutout) {
+        if (region.type === "subject" || region.type === "person") {
           extractedDataUrl = await extractSubjectWithCutout(imgSrc, region, (p) => setBgRemovalProgress(p));
         } else {
           extractedDataUrl = await smartCutoutRegionToDataUrl(imgSrc, region, false);
@@ -4896,7 +4939,7 @@ export default function LiveDesignStudioModal({
     try {
       let dataUrl;
       if (withCutout) {
-        if (region.type === "subject") {
+        if (region.type === "subject" || region.type === "person") {
           dataUrl = await extractSubjectWithCutout(imgSrc, region);
         } else {
           dataUrl = await smartCutoutRegionToDataUrl(imgSrc, region, false);
@@ -4973,11 +5016,12 @@ export default function LiveDesignStudioModal({
       return;
     }
     const toMerge = inspectionData.visualRegions.filter((r) => selectedInspectRegionIds.includes(r.id));
-    const merged = mergeSelectedRegions(toMerge, inspectionData.imageWidth, inspectionData.imageHeight);
+    const merged = mergeSelectedRegions(toMerge, inspectionData.imageWidth || 1920, inspectionData.imageHeight || 1080);
     if (merged) {
       setInspectionData((prev) => ({
         ...prev,
         visualRegions: [merged, ...(prev.visualRegions || [])],
+        spatialIndex: buildSpatialIndex([merged, ...(prev.visualRegions || [])]),
       }));
       setSelectedInspectRegionId(merged.id);
       setSelectedInspectRegionIds([merged.id]);
@@ -4985,11 +5029,97 @@ export default function LiveDesignStudioModal({
     }
   };
 
+  const handleUnmergeRegion = (mergedRegionId) => {
+    const target = inspectionData?.visualRegions?.find((r) => r.id === mergedRegionId);
+    if (!target) return;
+    const restoredChildIds = target.childRegionIds || target.childIds || [];
+    setInspectionData((prev) => {
+      const updatedRegions = unmergeRegion(mergedRegionId, prev?.visualRegions || []);
+      return {
+        ...prev,
+        visualRegions: updatedRegions,
+        spatialIndex: buildSpatialIndex(updatedRegions),
+      };
+    });
+    setSelectedInspectRegionIds(restoredChildIds);
+    setSelectedInspectRegionId(restoredChildIds[0] || null);
+    showFeedback(`Unmerged "${target.label}" back into ${restoredChildIds.length} detected regions`, true);
+  };
+
+  const handleAnalyzeBoundedArea = async (bounds) => {
+    const activeLayer = currentDesign.layers.find((l) => l.id === inspectingLayerId);
+    const imgSrc = activeLayer?.content || activeLayer?.url || (activeLayer?.filePath ? `file://${activeLayer.filePath}` : null) || labPoster;
+    if (!imgSrc) return;
+
+    showFeedback("Analyzing bounded area with deep inspection...", true);
+    try {
+      const localRegion = await analyzeBoundedArea(
+        imgSrc,
+        bounds,
+        inspectionData?.visualRegions || [],
+        inspectionData?.imageWidth || 1920,
+        inspectionData?.imageHeight || 1080
+      );
+      if (localRegion) {
+        setInspectionData((prev) => {
+          const updated = [localRegion, ...(prev?.visualRegions || [])];
+          return {
+            ...prev,
+            visualRegions: updated,
+            spatialIndex: buildSpatialIndex(updated),
+          };
+        });
+        setSelectedInspectRegionId(localRegion.id);
+        setSelectedInspectRegionIds([localRegion.id]);
+        showFeedback(`Discovered local region "${localRegion.label}"`, true);
+      }
+    } catch (err) {
+      console.error("[Design Lab] Local area analysis failed:", err);
+      showFeedback(`Local analysis failed: ${err.message}`, false);
+    }
+  };
+
   const handleSplitRegion = (region) => {
-    if (!region || !region.childIds?.length) return;
-    setSelectedInspectRegionIds(region.childIds);
-    setSelectedInspectRegionId(region.childIds[0]);
-    showFeedback(`Split "${region.label}" into ${region.childIds.length} sub-regions`, true);
+    if (!region) return;
+    if (region.isMerged || region.type === "merged-region") {
+      handleUnmergeRegion(region.id);
+      return;
+    }
+    const cIds = region.childIds || region.childrenIds || [];
+    if (!cIds.length) return;
+    setSelectedInspectRegionIds(cIds);
+    setSelectedInspectRegionId(cIds[0]);
+    showFeedback(`Split "${region.label}" into ${cIds.length} sub-regions`, true);
+  };
+
+  const handleExtractGroupPeopleAsLayers = async (layer, groupRegion) => {
+    if (!groupRegion) return;
+    const allRegions = inspectionData?.visualRegions || labAnalysis?.visual_regions || [];
+    const cIds = groupRegion.childIds || groupRegion.childrenIds || [];
+    let people = allRegions.filter((r) => r.type === "person" && (r.parentId === groupRegion.id || cIds.includes(r.id)));
+    if (people.length === 0) {
+      const gX = groupRegion.normX != null ? groupRegion.normX : 0;
+      const gY = groupRegion.normY != null ? groupRegion.normY : 0;
+      const gW = groupRegion.normW != null ? groupRegion.normW : 0;
+      const gH = groupRegion.normH != null ? groupRegion.normH : 0;
+      people = allRegions.filter(
+        (r) =>
+          r.type === "person" &&
+          r.normX >= gX - 1 &&
+          r.normY >= gY - 1 &&
+          r.normX + r.normW <= gX + gW + 1 &&
+          r.normY + r.normH <= gY + gH + 1
+      );
+    }
+    if (people.length === 0) {
+      showFeedback("No individual person instances found in this group", false);
+      return;
+    }
+    showFeedback(`Extracting ${people.length} people as independent layers...`, true);
+    for (const p of people) {
+      await handleExtractVisualRegionAsImage(layer, p, true, false);
+    }
+    showFeedback(`Created ${people.length} individual person layers!`, true);
   };
 
   const handleCreateImageLayerFromSubject = async (layer, subject, withCutout = false) => {
@@ -5573,12 +5703,11 @@ export default function LiveDesignStudioModal({
     window.addEventListener("mouseup", handleCanvasMouseUp);
   };
 
+  const handleDragKeyDownRef = useRef(null);
+  const handleDragKeyUpRef = useRef(null);
+
   const handleMouseDownOnHandle = (e, layer, handle) => {
     e.stopPropagation();
-    if (e.shiftKey) {
-      handleMouseDownOnLayer(e, layer);
-      return;
-    }
     if (!canvasRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
 
@@ -5604,10 +5733,16 @@ export default function LiveDesignStudioModal({
       hasMoved: false,
     };
 
+    pendingMouseCoordsRef.current = { clientX: e.clientX, clientY: e.clientY, shiftKey: Boolean(e.shiftKey) };
+
     window.removeEventListener("mousemove", handleCanvasMouseMove);
     window.removeEventListener("mouseup", handleCanvasMouseUp);
+    if (handleDragKeyDownRef.current) window.removeEventListener("keydown", handleDragKeyDownRef.current);
+    if (handleDragKeyUpRef.current) window.removeEventListener("keyup", handleDragKeyUpRef.current);
     window.addEventListener("mousemove", handleCanvasMouseMove);
     window.addEventListener("mouseup", handleCanvasMouseUp);
+    if (handleDragKeyDownRef.current) window.addEventListener("keydown", handleDragKeyDownRef.current);
+    if (handleDragKeyUpRef.current) window.addEventListener("keyup", handleDragKeyUpRef.current);
   };
 
   const handlePointerDownOnCropHandle = (e, layer, handleId, initialRot, initialZoom) => {
@@ -5863,88 +5998,125 @@ export default function LiveDesignStudioModal({
       if (!drag.hasMoved && dist < 3) return;
       drag.hasMoved = true;
 
-      const deltaXPct = ((clientX - drag.startX) / drag.canvasW) * 100;
-      const deltaYPct = ((clientY - drag.startY) / drag.canvasH) * 100;
-
       const handle = drag.handle;
-      let newW = drag.origWidth;
-      let newH = drag.origHeight || 12;
-      let newX = drag.origX;
-      let newY = drag.origY;
-
+      const isShift = Boolean(coords.shiftKey);
+      const isProportional = Boolean(drag.aspectLocked || isShift);
       const isCorner = ["nw", "ne", "sw", "se"].includes(handle);
 
-      if (drag.aspectLocked && isCorner) {
-        // Physical aspect ratio in screen pixels
-        const ratio = (drag.origWidth * drag.canvasW) / ((drag.origHeight || 12) * drag.canvasH);
+      // Convert screen delta to local coordinate space aligned with layer rotation
+      const rad = ((drag.origRotation || 0) * Math.PI) / 180;
+      const cos = Math.cos(rad);
+      const sin = Math.sin(rad);
+      const screenDx = clientX - drag.startX;
+      const screenDy = clientY - drag.startY;
 
-        let scale = 1;
+      // Project screen delta into local layer axes
+      const localDxPx = screenDx * cos + screenDy * sin;
+      const localDyPx = -screenDx * sin + screenDy * cos;
+
+      // Convert local pixel delta to percentage of canvas
+      const deltaXPct = (localDxPx / drag.canvasW) * 100;
+      const deltaYPct = (localDyPx / drag.canvasH) * 100;
+
+      // Physical aspect ratio in screen pixels
+      const origPxW = (drag.origWidth / 100) * drag.canvasW;
+      const origPxH = ((drag.origHeight || 12) / 100) * drag.canvasH;
+      const ratio = origPxW / Math.max(0.1, origPxH);
+
+      let newW = drag.origWidth;
+      let newH = drag.origHeight || 12;
+      let localCenterShiftX = 0;
+      let localCenterShiftY = 0;
+
+      if (isCorner) {
+        let handleLocalDx = 0;
+        let handleLocalDy = 0;
+        let signX = 1;
+        let signY = 1;
+
         if (handle === "se") {
-          const sx = (drag.origWidth + deltaXPct) / drag.origWidth;
-          const sy = ((drag.origHeight || 12) + deltaYPct) / (drag.origHeight || 12);
-          scale = Math.max(0.05, Math.abs(deltaXPct) > Math.abs(deltaYPct) ? sx : sy);
-          newW = Math.max(3, Math.min(100, Number((drag.origWidth * scale).toFixed(2))));
-          newH = Math.max(2, Math.min(100, Number(((newW * drag.canvasW) / (ratio * drag.canvasH)).toFixed(2))));
-          newX = Number((drag.origX - drag.origWidth / 2 + newW / 2).toFixed(2));
-          newY = Number((drag.origY - (drag.origHeight || 12) / 2 + newH / 2).toFixed(2));
+          handleLocalDx = deltaXPct;
+          handleLocalDy = deltaYPct;
+          signX = 1;
+          signY = 1;
         } else if (handle === "sw") {
-          const sx = (drag.origWidth - deltaXPct) / drag.origWidth;
-          const sy = ((drag.origHeight || 12) + deltaYPct) / (drag.origHeight || 12);
-          scale = Math.max(0.05, Math.abs(deltaXPct) > Math.abs(deltaYPct) ? sx : sy);
-          newW = Math.max(3, Math.min(100, Number((drag.origWidth * scale).toFixed(2))));
-          newH = Math.max(2, Math.min(100, Number(((newW * drag.canvasW) / (ratio * drag.canvasH)).toFixed(2))));
-          newX = Number((drag.origX + drag.origWidth / 2 - newW / 2).toFixed(2));
-          newY = Number((drag.origY - (drag.origHeight || 12) / 2 + newH / 2).toFixed(2));
+          handleLocalDx = -deltaXPct;
+          handleLocalDy = deltaYPct;
+          signX = -1;
+          signY = 1;
         } else if (handle === "ne") {
-          const sx = (drag.origWidth + deltaXPct) / drag.origWidth;
-          const sy = ((drag.origHeight || 12) - deltaYPct) / (drag.origHeight || 12);
-          scale = Math.max(0.05, Math.abs(deltaXPct) > Math.abs(deltaYPct) ? sx : sy);
-          newW = Math.max(3, Math.min(100, Number((drag.origWidth * scale).toFixed(2))));
-          newH = Math.max(2, Math.min(100, Number(((newW * drag.canvasW) / (ratio * drag.canvasH)).toFixed(2))));
-          newX = Number((drag.origX - drag.origWidth / 2 + newW / 2).toFixed(2));
-          newY = Number((drag.origY + (drag.origHeight || 12) / 2 - newH / 2).toFixed(2));
+          handleLocalDx = deltaXPct;
+          handleLocalDy = -deltaYPct;
+          signX = 1;
+          signY = -1;
         } else if (handle === "nw") {
-          const sx = (drag.origWidth - deltaXPct) / drag.origWidth;
-          const sy = ((drag.origHeight || 12) - deltaYPct) / (drag.origHeight || 12);
-          scale = Math.max(0.05, Math.abs(deltaXPct) > Math.abs(deltaYPct) ? sx : sy);
-          newW = Math.max(3, Math.min(100, Number((drag.origWidth * scale).toFixed(2))));
-          newH = Math.max(2, Math.min(100, Number(((newW * drag.canvasW) / (ratio * drag.canvasH)).toFixed(2))));
-          newX = Number((drag.origX + drag.origWidth / 2 - newW / 2).toFixed(2));
-          newY = Number((drag.origY + (drag.origHeight || 12) / 2 - newH / 2).toFixed(2));
-        }
-      } else {
-        // Freeform resize
-        if (handle.includes("e") || handle === "mr") {
-          newW = Math.max(3, Math.min(100, Number((drag.origWidth + deltaXPct).toFixed(2))));
-          newX = Number((drag.origX + (newW - drag.origWidth) / 2).toFixed(2));
-        } else if (handle.includes("w") || handle === "ml") {
-          newW = Math.max(3, Math.min(100, Number((drag.origWidth - deltaXPct).toFixed(2))));
-          newX = Number((drag.origX - (newW - drag.origWidth) / 2).toFixed(2));
+          handleLocalDx = -deltaXPct;
+          handleLocalDy = -deltaYPct;
+          signX = -1;
+          signY = -1;
         }
 
-        if (handle.includes("s") || handle === "mb") {
-          newH = Math.max(2, Math.min(100, Number(((drag.origHeight || 12) + deltaYPct).toFixed(2))));
-          newY = Number((drag.origY + (newH - (drag.origHeight || 12)) / 2).toFixed(2));
-        } else if (handle.includes("n") || handle === "mt") {
-          newH = Math.max(2, Math.min(100, Number(((drag.origHeight || 12) - deltaYPct).toFixed(2))));
-          newY = Number((drag.origY - (newH - (drag.origHeight || 12)) / 2).toFixed(2));
+        if (isProportional) {
+          const sx = (drag.origWidth + handleLocalDx) / drag.origWidth;
+          const sy = ((drag.origHeight || 12) + handleLocalDy) / (drag.origHeight || 12);
+          const scale = Math.max(0.05, Math.abs(sx - 1) >= Math.abs(sy - 1) ? sx : sy);
+          newW = Math.max(3, Math.min(100, Number((drag.origWidth * scale).toFixed(2))));
+          newH = Math.max(2, Math.min(100, Number(((newW * drag.canvasW) / (ratio * drag.canvasH)).toFixed(2))));
+        } else {
+          newW = Math.max(3, Math.min(100, Number((drag.origWidth + handleLocalDx).toFixed(2))));
+          newH = Math.max(2, Math.min(100, Number(((drag.origHeight || 12) + handleLocalDy).toFixed(2))));
+        }
+
+        localCenterShiftX = (signX * (newW - drag.origWidth)) / 2;
+        localCenterShiftY = (signY * (newH - (drag.origHeight || 12))) / 2;
+      } else {
+        // Edge handles (ml, mr, mt, mb)
+        if (handle === "mr" || handle === "ml") {
+          const signX = handle === "mr" ? 1 : -1;
+          const handleLocalDx = signX * deltaXPct;
+          newW = Math.max(3, Math.min(100, Number((drag.origWidth + handleLocalDx).toFixed(2))));
+          if (isProportional) {
+            newH = Math.max(2, Math.min(100, Number(((newW * drag.canvasW) / (ratio * drag.canvasH)).toFixed(2))));
+          } else {
+            newH = drag.origHeight || 12;
+          }
+          localCenterShiftX = (signX * (newW - drag.origWidth)) / 2;
+          localCenterShiftY = 0;
+        } else if (handle === "mb" || handle === "mt") {
+          const signY = handle === "mb" ? 1 : -1;
+          const handleLocalDy = signY * deltaYPct;
+          newH = Math.max(2, Math.min(100, Number(((drag.origHeight || 12) + handleLocalDy).toFixed(2))));
+          if (isProportional) {
+            newW = Math.max(3, Math.min(100, Number(((newH * drag.canvasH * ratio) / drag.canvasW).toFixed(2))));
+          } else {
+            newW = drag.origWidth;
+          }
+          localCenterShiftX = 0;
+          localCenterShiftY = (signY * (newH - (drag.origHeight || 12))) / 2;
         }
       }
+
+      // Rotate local center shift back to screen/canvas coordinates
+      const shiftXPx = (localCenterShiftX / 100) * drag.canvasW;
+      const shiftYPx = (localCenterShiftY / 100) * drag.canvasH;
+      const screenShiftXPx = shiftXPx * cos - shiftYPx * sin;
+      const screenShiftYPx = shiftXPx * sin + shiftYPx * cos;
+
+      const newX = Number((drag.origX + (screenShiftXPx / drag.canvasW) * 100).toFixed(2));
+      const newY = Number((drag.origY + (screenShiftYPx / drag.canvasH) * 100).toFixed(2));
 
       setCurrentDesign((prev) => ({
         ...prev,
         layers: prev.layers.map((l) => {
           if (l.id !== drag.layerId) return l;
           const patch = { width: newW, x: newX };
-          // Apply height/y for ALL layer types (image, shape, text, etc.) whenever
-          // the active handle or aspect-lock math produces a vertical change.
           const shouldUpdateH =
-            (drag.aspectLocked && isCorner) ||
+            isProportional ||
             handle.includes("n") ||
             handle.includes("s") ||
             handle === "mt" ||
             handle === "mb" ||
-            (isCorner && !drag.aspectLocked);
+            isCorner;
           if (shouldUpdateH) {
             patch.height = newH;
             patch.y = newY;
@@ -6047,9 +6219,33 @@ export default function LiveDesignStudioModal({
     }
   }, [moveGroupWithSelected, zoom]);
 
+  const handleDragKeyDown = useCallback((e) => {
+    if (e.key === "Shift" && dragRef.current) {
+      if (pendingMouseCoordsRef.current) {
+        pendingMouseCoordsRef.current.shiftKey = true;
+      }
+      if (!animFrameRef.current) {
+        animFrameRef.current = requestAnimationFrame(processDragFrame);
+      }
+    }
+  }, [processDragFrame]);
+  handleDragKeyDownRef.current = handleDragKeyDown;
+
+  const handleDragKeyUp = useCallback((e) => {
+    if (e.key === "Shift" && dragRef.current) {
+      if (pendingMouseCoordsRef.current) {
+        pendingMouseCoordsRef.current.shiftKey = false;
+      }
+      if (!animFrameRef.current) {
+        animFrameRef.current = requestAnimationFrame(processDragFrame);
+      }
+    }
+  }, [processDragFrame]);
+  handleDragKeyUpRef.current = handleDragKeyUp;
+
   const handleCanvasMouseMove = useCallback((e) => {
     if (!dragRef.current) return;
-    pendingMouseCoordsRef.current = { clientX: e.clientX, clientY: e.clientY };
+    pendingMouseCoordsRef.current = { clientX: e.clientX, clientY: e.clientY, shiftKey: Boolean(e.shiftKey) };
     if (!animFrameRef.current) {
       animFrameRef.current = requestAnimationFrame(processDragFrame);
     }
@@ -6064,6 +6260,9 @@ export default function LiveDesignStudioModal({
       processDragFrame();
       pendingMouseCoordsRef.current = null;
     }
+
+    if (handleDragKeyDownRef.current) window.removeEventListener("keydown", handleDragKeyDownRef.current);
+    if (handleDragKeyUpRef.current) window.removeEventListener("keyup", handleDragKeyUpRef.current);
 
     const drag = dragRef.current;
     if (drag) {
@@ -6193,21 +6392,82 @@ export default function LiveDesignStudioModal({
     reader.readAsDataURL(file);
   };
 
-  const canCreateClippingMask = () => {
-    if (selectedLayerIds.length !== 2) return false;
-    const l1 = currentDesign.layers.find((l) => l.id === selectedLayerIds[0]);
-    const l2 = currentDesign.layers.find((l) => l.id === selectedLayerIds[1]);
-    if (!l1 || !l2) return false;
-    return (l1.type === "shape" && l2.type === "image") || (l2.type === "shape" && l1.type === "image");
-  };
+  const getUnderlyingShapeForImage = useCallback((imgLayer) => {
+    if (!imgLayer || imgLayer.type !== "image" || !Array.isArray(currentDesign?.layers)) return null;
+    const imgIndex = currentDesign.layers.findIndex((l) => l.id === imgLayer.id);
+    if (imgIndex < 0) return null;
 
-  const handleCreateClippingMask = () => {
-    if (!canCreateClippingMask()) return;
-    const l1 = currentDesign.layers.find((l) => l.id === selectedLayerIds[0]);
-    const l2 = currentDesign.layers.find((l) => l.id === selectedLayerIds[1]);
-    const shapeLayer = l1.type === "shape" ? l1 : l2;
-    const imageLayer = l1.type === "image" ? l1 : l2;
+    // Find candidate shape layers below this image in layer order or zIndex
+    const shapesBelow = currentDesign.layers.filter((l, idx) => {
+      if (l.type !== "shape" || l.id === imgLayer.id) return false;
+      const imgZ = imgLayer.zIndex ?? imgIndex;
+      const lZ = l.zIndex ?? idx;
+      return lZ <= imgZ && idx < imgIndex;
+    });
+
+    if (shapesBelow.length === 0) {
+      const anyShapeBelow = currentDesign.layers.slice(0, imgIndex).reverse().find((l) => l.type === "shape");
+      return anyShapeBelow || null;
+    }
+
+    const imgLeft = imgLayer.x - imgLayer.width / 2;
+    const imgRight = imgLayer.x + imgLayer.width / 2;
+    const imgTop = imgLayer.y - (imgLayer.height || 12) / 2;
+    const imgBottom = imgLayer.y + (imgLayer.height || 12) / 2;
+
+    const overlapping = shapesBelow.slice().reverse().find((s) => {
+      const sLeft = s.x - s.width / 2;
+      const sRight = s.x + s.width / 2;
+      const sTop = s.y - (s.height || 12) / 2;
+      const sBottom = s.y + (s.height || 12) / 2;
+      return !(imgLeft > sRight || imgRight < sLeft || imgTop > sBottom || imgBottom < sTop);
+    });
+
+    return overlapping || shapesBelow[shapesBelow.length - 1] || null;
+  }, [currentDesign?.layers]);
+
+  const canCreateClippingMask = useCallback(() => {
+    if (!Array.isArray(currentDesign?.layers)) return false;
+    if (selectedLayerIds.length === 2) {
+      const l1 = currentDesign.layers.find((l) => l.id === selectedLayerIds[0]);
+      const l2 = currentDesign.layers.find((l) => l.id === selectedLayerIds[1]);
+      if (!l1 || !l2) return false;
+      return (l1.type === "shape" && l2.type === "image") || (l2.type === "shape" && l1.type === "image");
+    }
+    if (selectedLayerIds.length === 1) {
+      const l = currentDesign.layers.find((ly) => ly.id === selectedLayerIds[0]);
+      if (l?.type === "image") {
+        return Boolean(getUnderlyingShapeForImage(l));
+      }
+    }
+    return false;
+  }, [selectedLayerIds, currentDesign?.layers, getUnderlyingShapeForImage]);
+
+  const handleCreateClippingMask = (explicitShapeId = null, explicitImageId = null) => {
+    let shapeLayer = null;
+    let imageLayer = null;
+
+    if (explicitShapeId && explicitImageId) {
+      shapeLayer = currentDesign.layers.find((l) => l.id === explicitShapeId);
+      imageLayer = currentDesign.layers.find((l) => l.id === explicitImageId);
+    } else if (selectedLayerIds.length === 2) {
+      const l1 = currentDesign.layers.find((l) => l.id === selectedLayerIds[0]);
+      const l2 = currentDesign.layers.find((l) => l.id === selectedLayerIds[1]);
+      if (l1 && l2) {
+        shapeLayer = l1.type === "shape" ? l1 : l2;
+        imageLayer = l1.type === "image" ? l1 : l2;
+      }
+    } else if (selectedLayerIds.length === 1) {
+      const l = currentDesign.layers.find((ly) => ly.id === selectedLayerIds[0]);
+      if (l?.type === "image") {
+        imageLayer = l;
+        shapeLayer = getUnderlyingShapeForImage(l);
+      }
+    }
+
+    if (!shapeLayer || !imageLayer || shapeLayer.type !== "shape" || imageLayer.type !== "image") return;
     const imgUrl = imageLayer.content || imageLayer.url || imageLayer.filePath;
+    if (!imgUrl) return;
 
     pushUndoSnapshot();
     const maskImage = {
@@ -6565,6 +6825,65 @@ export default function LiveDesignStudioModal({
     showFeedback("Created new blank design draft", true);
   };
 
+  const handleDeleteSavedDesign = useCallback((design, e) => {
+    if (e && typeof e.stopPropagation === "function") {
+      e.stopPropagation();
+    }
+    if (!design?.id) return;
+    if (activeLiveOverlay && activeLiveOverlay.designId === design.id && activeLiveOverlay.isLive) {
+      showFeedback("Cannot delete design while it is currently LIVE on stream.", false);
+      return;
+    }
+    setDesignToDelete(design);
+  }, [activeLiveOverlay, showFeedback]);
+
+  const handleConfirmDeleteDesign = useCallback(async () => {
+    if (!designToDelete?.id) return;
+    const target = designToDelete;
+    setDesignToDelete(null);
+
+    if (designApi?.deleteDesign) {
+      try {
+        const res = await designApi.deleteDesign(target.id);
+        if (!res?.ok) {
+          showFeedback(res?.error || "Failed to delete design", false);
+          return;
+        }
+      } catch (err) {
+        showFeedback(`Delete error: ${err.message}`, false);
+        return;
+      }
+    }
+
+    const remaining = designs.filter((d) => d.id !== target.id);
+    setDesigns(remaining);
+
+    // If deleting the active design, switch or reset cleanly so autosave never resurrects it
+    if (currentDesign?.id === target.id) {
+      if (remaining.length > 0) {
+        const next = JSON.parse(JSON.stringify(remaining[0]));
+        setCurrentDesign(next);
+        setSelectedLayerId(next.layers[0]?.id || null);
+        try {
+          localStorage.setItem("ocs_live_studio_active_design", JSON.stringify(next));
+        } catch (_) {}
+      } else {
+        const fresh = createEmptyDesign("Main Live Overlay");
+        setCurrentDesign(fresh);
+        setSelectedLayerId(null);
+        try {
+          localStorage.setItem("ocs_live_studio_active_design", JSON.stringify(fresh));
+        } catch (_) {}
+      }
+      setHasUnsavedChanges(false);
+      setUndoStack([]);
+      setRedoStack([]);
+    }
+
+    refreshRoleAssignments();
+    showFeedback(`Deleted "${target.name}"`, true);
+  }, [designToDelete, designApi, designs, currentDesign, setSelectedLayerId, refreshRoleAssignments, showFeedback]);
+
   // ── Close header popovers on outside click ───────────────────────────────
   useEffect(() => {
     if (!isOpen) return;
@@ -6766,23 +7085,40 @@ export default function LiveDesignStudioModal({
                       <div className="px-3.5 py-1 text-[10px] font-bold text-white/30 uppercase tracking-wider">
                         Open saved
                       </div>
-                      <div className="max-h-48 overflow-y-auto">
+                      <div className="max-h-48 overflow-y-auto space-y-0.5 px-1">
                         {designs.slice(0, 14).map((d) => (
-                          <button
+                          <div
                             key={d.id}
-                            type="button"
-                            role="menuitem"
-                            onClick={() => { handleSelectDesign(d.id); setDocMenuOpen(false); }}
-                            className={`w-full text-left px-3.5 py-1.5 text-[12px] truncate transition-colors flex items-center gap-2 ${
+                            className={`w-full px-2.5 py-1 text-[12px] rounded-[12px] transition-colors flex items-center justify-between group ${
                               d.id === currentDesign.id
-                                ? "text-[#8B5CF6]/80 bg-[#8B5CF6]/10"
+                                ? "text-[#8B5CF6]/90 bg-[#8B5CF6]/15 font-medium"
                                 : "text-white/70 hover:text-white hover:bg-white/8"
                             }`}
-                            title={d.name}
                           >
-                            <PiStack size={11} className="shrink-0 text-white/25" />
-                            <span className="truncate">{d.name}</span>
-                          </button>
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => { handleSelectDesign(d.id); setDocMenuOpen(false); }}
+                              className="flex items-center gap-2 truncate flex-1 text-left py-0.5"
+                              title={d.name}
+                            >
+                              <PiStack size={11} className="shrink-0 text-white/30" />
+                              <span className="truncate">{d.name}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setDocMenuOpen(false);
+                                handleDeleteSavedDesign(d, e);
+                              }}
+                              className="opacity-0 group-hover:opacity-100 p-1 text-white/30 hover:text-red-400 hover:bg-red-500/20 rounded-[12px] transition-all ml-1 shrink-0"
+                              title={`Delete "${d.name}"`}
+                              aria-label={`Delete ${d.name}`}
+                            >
+                              <PiTrash size={12} />
+                            </button>
+                          </div>
                         ))}
                       </div>
                     </>
@@ -7207,7 +7543,7 @@ export default function LiveDesignStudioModal({
             <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
               {/* TAB: Templates */}
               {activeToolTab === "templates" && (
-                <div className="space-y-2">
+                <div className="space-y-2.5">
                   <div className="pb-1">
                     <span className="text-[10px] uppercase font-bold tracking-widest text-white/40 block">
                       Lower Third Templates
@@ -7215,56 +7551,153 @@ export default function LiveDesignStudioModal({
                     <p className="text-[10px] text-white/40">1-click editable church overlays</p>
                   </div>
 
-                  {/* Category Filter Pills */}
-                  <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none">
-                    {["All", "Glassmorphism", "Minimal", "Modern", "Gradient"].map((cat) => (
-                      <button
-                        key={cat}
-                        type="button"
-                        onClick={() => setTemplateCategoryFilter(cat)}
-                        className={`px-2 py-0.5 rounded-[12px] text-[9px] font-bold transition-all shrink-0 border ${
-                          templateCategoryFilter === cat
-                            ? "bg-[#8B5CF6] border-[#8B5CF6] text-white shadow-sm"
-                            : "bg-black/30 border-white/10 text-white/50 hover:text-white hover:border-white/20"
-                        }`}
-                      >
-                        {cat}
-                      </button>
-                    ))}
+                  {/* Sub-tabs: Pre-built Templates vs Saved Designs */}
+                  <div className="grid grid-cols-2 p-0.5 bg-black/40 rounded-[12px] border border-white/10 mb-2">
+                    <button
+                      type="button"
+                      onClick={() => setTemplateSubView("presets")}
+                      className={`py-1 text-[10px] font-bold rounded-[12px] transition-all ${
+                        templateSubView === "presets"
+                          ? "bg-[#8B5CF6] text-white shadow-sm"
+                          : "text-white/50 hover:text-white"
+                      }`}
+                    >
+                      Presets ({TEMPLATES.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setTemplateSubView("saved")}
+                      className={`py-1 text-[10px] font-bold rounded-[12px] transition-all ${
+                        templateSubView === "saved"
+                          ? "bg-[#8B5CF6] text-white shadow-sm"
+                          : "text-white/50 hover:text-white"
+                      }`}
+                    >
+                      Saved ({designs.length})
+                    </button>
                   </div>
 
-                  {TEMPLATES.filter((t) => templateCategoryFilter === "All" || t.category === templateCategoryFilter).map((tmpl) => (
-                    <div
-                      key={tmpl.id}
-                      onClick={() => handleAddTemplate(tmpl)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          e.preventDefault();
-                          handleAddTemplate(tmpl);
-                        }
-                      }}
-                      role="button"
-                      tabIndex={0}
-                      className="p-2.5 rounded-[12px] bg-white/[0.02] border border-white/10 hover:border-[#8B5CF6]/50 hover:bg-white/[0.05] cursor-pointer transition-all group space-y-1.5 focus:outline-none focus:ring-1 focus:ring-[#8B5CF6]/30"
-                      title={`Insert ${tmpl.name}`}
-                      aria-label={`Insert ${tmpl.name}`}
-                    >
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="text-xs font-bold text-white group-hover:text-[#8B5CF6]/80 transition-colors truncate">
-                          {tmpl.name}
-                        </span>
-                        <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-[12px] bg-[#8B5CF6]/20 text-[#8B5CF6]/80 border border-[#8B5CF6]/30 shrink-0">
-                          {tmpl.category}
-                        </span>
+                  {templateSubView === "presets" ? (
+                    <>
+                      {/* Category Filter Pills */}
+                      <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none">
+                        {["All", "Glassmorphism", "Minimal", "Modern", "Gradient"].map((cat) => (
+                          <button
+                            key={cat}
+                            type="button"
+                            onClick={() => setTemplateCategoryFilter(cat)}
+                            className={`px-2 py-0.5 rounded-[12px] text-[9px] font-bold transition-all shrink-0 border ${
+                              templateCategoryFilter === cat
+                                ? "bg-[#8B5CF6] border-[#8B5CF6] text-white shadow-sm"
+                                : "bg-black/30 border-white/10 text-white/50 hover:text-white hover:border-white/20"
+                            }`}
+                          >
+                            {cat}
+                          </button>
+                        ))}
                       </div>
-                      <div className="h-14 w-full rounded-[12px] overflow-hidden border border-white/10 bg-[#08070e] flex items-center justify-center group-hover:border-[#8B5CF6]/40 transition-colors">
-                        <TemplateThumbnailPreview tmpl={tmpl} />
-                      </div>
-                      <p className="text-[10px] text-white/40 leading-snug truncate">
-                        {tmpl.layers.map((l) => l.name).join(" • ")}
-                      </p>
+
+                      {TEMPLATES.filter((t) => templateCategoryFilter === "All" || t.category === templateCategoryFilter).map((tmpl) => (
+                        <div
+                          key={tmpl.id}
+                          onClick={() => handleAddTemplate(tmpl)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              handleAddTemplate(tmpl);
+                            }
+                          }}
+                          role="button"
+                          tabIndex={0}
+                          className="p-2.5 rounded-[12px] bg-white/[0.02] border border-white/10 hover:border-[#8B5CF6]/50 hover:bg-white/[0.05] cursor-pointer transition-all group space-y-1.5 focus:outline-none focus:ring-1 focus:ring-[#8B5CF6]/30"
+                          title={`Insert ${tmpl.name}`}
+                          aria-label={`Insert ${tmpl.name}`}
+                        >
+                          <div className="flex items-center justify-between gap-1">
+                            <span className="text-xs font-bold text-white group-hover:text-[#8B5CF6]/80 transition-colors truncate">
+                              {tmpl.name}
+                            </span>
+                            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-[12px] bg-[#8B5CF6]/20 text-[#8B5CF6]/80 border border-[#8B5CF6]/30 shrink-0">
+                              {tmpl.category}
+                            </span>
+                          </div>
+                          <div className="h-14 w-full rounded-[12px] overflow-hidden border border-white/10 bg-[#08070e] flex items-center justify-center group-hover:border-[#8B5CF6]/40 transition-colors">
+                            <TemplateThumbnailPreview tmpl={tmpl} />
+                          </div>
+                          <p className="text-[10px] text-white/40 leading-snug truncate">
+                            {tmpl.layers.map((l) => l.name).join(" • ")}
+                          </p>
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    <div className="space-y-2">
+                      {designs.length === 0 ? (
+                        <div className="p-4 rounded-[12px] bg-white/[0.02] border border-white/10 text-center space-y-1.5">
+                          <p className="text-xs font-semibold text-white/70">No Saved Designs</p>
+                          <p className="text-[10px] text-white/40">Click Save in the top header to save your design drafts.</p>
+                        </div>
+                      ) : (
+                        designs.map((d) => {
+                          const isCur = d.id === currentDesign.id;
+                          const isLive = activeLiveOverlay && activeLiveOverlay.designId === d.id && activeLiveOverlay.isLive;
+                          const roleKey = Object.keys(roleAssignments || {}).find((k) => roleAssignments[k] === d.id);
+                          return (
+                            <div
+                              key={d.id}
+                              onClick={() => handleSelectDesign(d.id)}
+                              role="button"
+                              tabIndex={0}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  handleSelectDesign(d.id);
+                                }
+                              }}
+                              className={`p-2.5 rounded-[12px] border transition-all cursor-pointer group space-y-2 focus:outline-none ${
+                                isCur
+                                  ? "bg-[#8B5CF6]/15 border-[#8B5CF6]/50 shadow-sm"
+                                  : "bg-white/[0.02] border-white/10 hover:border-white/20 hover:bg-white/[0.04]"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-1.5">
+                                <span className={`text-xs font-bold truncate flex-1 ${isCur ? "text-white" : "text-white/80 group-hover:text-white"}`}>
+                                  {d.name}
+                                </span>
+                                <div className="flex items-center gap-1 shrink-0">
+                                  {isLive && (
+                                    <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-[12px] bg-red-600/30 text-red-300 border border-red-500/40 animate-pulse">
+                                      LIVE
+                                    </span>
+                                  )}
+                                  {roleKey && (
+                                    <span className="text-[8px] font-bold px-1.5 py-0.5 rounded-[12px] bg-[#8B5CF6]/30 text-[#8B5CF6]/80 border border-[#8B5CF6]/40 uppercase">
+                                      {roleKey}
+                                    </span>
+                                  )}
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleDeleteSavedDesign(d, e)}
+                                    className="p-1 rounded-[12px] text-white/30 hover:text-red-400 hover:bg-red-500/20 transition-colors"
+                                    title={`Delete "${d.name}"`}
+                                    aria-label={`Delete ${d.name}`}
+                                  >
+                                    <PiTrash size={13} />
+                                  </button>
+                                </div>
+                              </div>
+                              <div className="flex items-center justify-between text-[10px] text-white/40">
+                                <span>{(d.layers || []).length} elements</span>
+                                {d.updatedAt && (
+                                  <span>{new Date(d.updatedAt).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
                     </div>
-                  ))}
+                  )}
                 </div>
               )}
 
@@ -7987,12 +8420,12 @@ export default function LiveDesignStudioModal({
                             }%`,
                             opacity: typeof layer.opacity === "number" ? layer.opacity : 1,
                             zIndex,
-                            pointerEvents: isInlineEditing ? "none" : "auto",
+                            pointerEvents: (isInlineEditing || imageEditingLayerId) ? "none" : "auto",
                             animation: animName ? `${animName} ${animDur} ease-out forwards` : undefined,
                           }}
                         >
-                          {/* Transform & Rotate Handles when selected and NOT inline editing or crop editing */}
-                          {isSelected && !isInlineEditing && editingCropLayerId !== layer.id && (
+                          {/* Transform & Rotate Handles when selected and NOT inline editing, crop editing, or image editing */}
+                          {isSelected && !isInlineEditing && editingCropLayerId !== layer.id && !imageEditingLayerId && (
                             <>
                               {/* Selection outline */}
                               <div className="absolute -inset-1 border-2 border-[#8B5CF6] border-dashed rounded-[12px] pointer-events-none z-50" />
@@ -8242,7 +8675,7 @@ export default function LiveDesignStudioModal({
                                           className="absolute inset-0 pointer-events-auto z-30 select-none cursor-crosshair"
                                           onMouseDown={(e) => {
                                             e.stopPropagation();
-                                            if (e.button === 0 && e.target === e.currentTarget && e.shiftKey) {
+                                            if (e.button === 0 && (e.shiftKey || smartSelectAreaMode)) {
                                               const rect = e.currentTarget.getBoundingClientRect();
                                               const startX = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
                                               const startY = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
@@ -8259,14 +8692,52 @@ export default function LiveDesignStudioModal({
                                               const rect = e.currentTarget.getBoundingClientRect();
                                               const px = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
                                               const py = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
-                                              const smallest = findSmallestChildRegion(inspectionData.visualRegions || [], px, py);
-                                              if (smallest?.id !== hoveredInspectRegionId) {
-                                                setHoveredInspectRegionId(smallest?.id || null);
+                                              
+                                              // High-performance spatial lookup (no OCR on mousemove)
+                                              const candidates = findHoverCandidates(
+                                                inspectionData.visualRegions || [],
+                                                px,
+                                                py,
+                                                4.0,
+                                                inspectionData.spatialIndex
+                                              );
+                                              const topCand = candidates[0]?.region || null;
+                                              if (topCand?.id !== hoveredInspectRegionId) {
+                                                setHoveredInspectRegionId(topCand?.id || null);
+                                              }
+
+                                              // Settle delay (150ms) for contextual area discovery popover
+                                              if (hoverDebounceTimerRef.current) {
+                                                clearTimeout(hoverDebounceTimerRef.current);
+                                              }
+
+                                              if (candidates.length > 0) {
+                                                const clientX = e.clientX;
+                                                const clientY = e.clientY;
+                                                hoverDebounceTimerRef.current = setTimeout(() => {
+                                                  setHoverCandidates(candidates);
+                                                  setHoverDiscoveryCard({
+                                                    clientX,
+                                                    clientY,
+                                                    normX: px,
+                                                    normY: py,
+                                                    candidates: candidates.slice(0, 6),
+                                                    layer,
+                                                  });
+                                                }, 150);
+                                              } else {
+                                                hoverDebounceTimerRef.current = setTimeout(() => {
+                                                  setHoverCandidates([]);
+                                                  setHoverDiscoveryCard(null);
+                                                }, 150);
                                               }
                                             }
                                           }}
                                           onMouseLeave={() => {
+                                            if (hoverDebounceTimerRef.current) clearTimeout(hoverDebounceTimerRef.current);
                                             setHoveredInspectRegionId(null);
+                                            setHoverCandidates([]);
+                                            setHoverDiscoveryCard(null);
                                           }}
                                           onClick={(e) => {
                                             e.stopPropagation();
@@ -8274,7 +8745,14 @@ export default function LiveDesignStudioModal({
                                             const rect = e.currentTarget.getBoundingClientRect();
                                             const px = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
                                             const py = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
-                                            const smallest = findSmallestChildRegion(inspectionData.visualRegions || [], px, py);
+                                            const candidates = findHoverCandidates(
+                                              inspectionData.visualRegions || [],
+                                              px,
+                                              py,
+                                              2.5,
+                                              inspectionData.spatialIndex
+                                            );
+                                            const smallest = candidates[0]?.region || null;
                                             if (smallest) {
                                               if (e.shiftKey) {
                                                 setSelectedInspectRegionIds((prev) =>
@@ -8286,8 +8764,10 @@ export default function LiveDesignStudioModal({
                                                 setSelectedInspectRegionIds([smallest.id]);
                                               }
                                             } else {
+                                              // Clicked empty area -> clear selection (Feature 1.1)
                                               setSelectedInspectRegionId(null);
                                               setSelectedInspectRegionIds([]);
+                                              setHoverDiscoveryCard(null);
                                             }
                                           }}
                                           onContextMenu={(e) => {
@@ -8296,15 +8776,43 @@ export default function LiveDesignStudioModal({
                                             const rect = e.currentTarget.getBoundingClientRect();
                                             const px = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
                                             const py = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
-                                            const smallest = findSmallestChildRegion(inspectionData.visualRegions || [], px, py);
+                                            const candidates = findHoverCandidates(
+                                              inspectionData.visualRegions || [],
+                                              px,
+                                              py,
+                                              4.0,
+                                              inspectionData.spatialIndex
+                                            );
+                                            const smallest = candidates[0]?.region || null;
                                             if (smallest) {
-                                              setSelectedInspectRegionId(smallest.id);
-                                              setSelectedInspectRegionIds([smallest.id]);
+                                              if (!selectedInspectRegionIds.includes(smallest.id)) {
+                                                setSelectedInspectRegionId(smallest.id);
+                                                setSelectedInspectRegionIds([smallest.id]);
+                                              }
                                               setRegionContextMenu({
                                                 x: e.clientX,
                                                 y: e.clientY,
                                                 region: smallest,
+                                                candidates: candidates.map((c) => c.region),
                                                 layer,
+                                              });
+                                            } else {
+                                              // Context menu for empty area on flyer -> offer local area analysis
+                                              setRegionContextMenu({
+                                                x: e.clientX,
+                                                y: e.clientY,
+                                                region: {
+                                                  id: `empty_area_${Date.now()}`,
+                                                  type: "candidate_area",
+                                                  label: "Local Area",
+                                                  normX: Math.max(0, px - 10),
+                                                  normY: Math.max(0, py - 10),
+                                                  normW: 20,
+                                                  normH: 20,
+                                                },
+                                                candidates: [],
+                                                layer,
+                                                isEmptyArea: true,
                                               });
                                             }
                                           }}
@@ -8315,6 +8823,7 @@ export default function LiveDesignStudioModal({
                                               const width = Math.abs(marqueeSelection.currentX - marqueeSelection.startX);
                                               const height = Math.abs(marqueeSelection.currentY - marqueeSelection.startY);
                                               setMarqueeSelection(null);
+                                              setSmartSelectAreaMode(false);
                                               if (width > 2 && height > 2) {
                                                 const customRegion = createCustomMarqueeRegion(minX, minY, width, height, layer.aspectRatio || (16 / 9));
                                                 setInspectionData((prev) => prev ? {
@@ -8395,7 +8904,7 @@ export default function LiveDesignStudioModal({
                                               },
                                             };
 
-                                            return regionsToRender.map((region) => {
+                                            const renderedRegions = regionsToRender.map((region) => {
                                               const isSelected = selectedInspectRegionId === region.id || (selectedInspectRegionIds && selectedInspectRegionIds.includes(region.id));
                                               const isHovered = hoveredInspectRegionId === region.id;
                                               const currentStyle = typeStyles[region.type] || typeStyles.visual_group;
@@ -8428,7 +8937,55 @@ export default function LiveDesignStudioModal({
                                                 </div>
                                               );
                                             });
-                                          })()}
+
+                                              // Combined Outer Bounding Box for Multi-Selection (Feature 1.2)
+                                              let combinedBox = null;
+                                              if (selectedInspectRegionIds && selectedInspectRegionIds.length > 1) {
+                                                const selRegions = (inspectionData.visualRegions || []).filter((r) =>
+                                                  selectedInspectRegionIds.includes(r.id)
+                                                );
+                                                if (selRegions.length >= 2) {
+                                                  const minX = Math.min(...selRegions.map((r) => r.normX != null ? r.normX : 0));
+                                                  const minY = Math.min(...selRegions.map((r) => r.normY != null ? r.normY : 0));
+                                                  const maxX = Math.max(...selRegions.map((r) => (r.normX || 0) + (r.normW || 0)));
+                                                  const maxY = Math.max(...selRegions.map((r) => (r.normY || 0) + (r.normH || 0)));
+                                                  const combW = Math.max(1, maxX - minX);
+                                                  const combH = Math.max(1, maxY - minY);
+
+                                                  combinedBox = (
+                                                    <div
+                                                      key="multi_select_combined_box"
+                                                      className="absolute border-2 border-dashed border-[#8B5CF6] rounded-[12px] bg-[#8B5CF6]/10 pointer-events-none z-35 animate-in fade-in duration-100"
+                                                      style={{
+                                                        left: `${minX}%`,
+                                                        top: `${minY}%`,
+                                                        width: `${combW}%`,
+                                                        height: `${combH}%`,
+                                                      }}
+                                                    >
+                                                      <div
+                                                        className="absolute top-0 right-0 -translate-y-full mb-1 px-2 py-0.5 rounded-[12px] bg-[#8B5CF6] text-white text-[9px] font-mono font-bold shadow flex items-center gap-1.5 pointer-events-auto"
+                                                        style={{ transform: `scale(${1 / (zoom || 1)})`, transformOrigin: "top right" }}
+                                                      >
+                                                        <span>Combined: {selRegions.length} objects</span>
+                                                        <button
+                                                          type="button"
+                                                          onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            handleMergeSelectedRegions();
+                                                          }}
+                                                          className="px-1.5 py-0.5 rounded-[12px] bg-black/40 hover:bg-black/60 text-white font-bold transition-colors cursor-pointer"
+                                                        >
+                                                          Merge
+                                                        </button>
+                                                      </div>
+                                                    </div>
+                                                  );
+                                                }
+                                              }
+
+                                              return [...renderedRegions, combinedBox].filter(Boolean);
+                                            })()}
 
                                           {inspectionTab === "text" && (inspectionData.textBlocks || []).map((block) => {
                                             const isBlockSelected = selectedInspectBlockId === block.id;
@@ -9895,7 +10452,7 @@ export default function LiveDesignStudioModal({
                                         updateLayerDraft(selectedLayer.id, { glassOpacity: Math.max(0, Math.min(100, val)) / 100 });
                                       }
                                     }}
-                                    className="w-full h-1.5 bg-black/50 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                                    className="w-full h-1.5 bg-black/50 rounded-[12px] appearance-none cursor-pointer accent-purple-500"
                                     aria-label="Glass Opacity Slider"
                                   />
                                   <input
@@ -9935,7 +10492,7 @@ export default function LiveDesignStudioModal({
                                         updateLayerDraft(selectedLayer.id, { backgroundBlur: Math.max(0, Math.min(100, val)) });
                                       }
                                     }}
-                                    className={`w-full h-1.5 bg-black/50 rounded-lg appearance-none cursor-pointer accent-purple-500 ${selectedLayer.lightweightGlass ? "opacity-30 cursor-not-allowed" : ""}`}
+                                    className={`w-full h-1.5 bg-black/50 rounded-[12px] appearance-none cursor-pointer accent-purple-500 ${selectedLayer.lightweightGlass ? "opacity-30 cursor-not-allowed" : ""}`}
                                     aria-label="Background Blur Slider"
                                   />
                                   <input
@@ -10113,7 +10670,7 @@ export default function LiveDesignStudioModal({
                                     const val = Math.max(0, Math.min(99, parseInt(e.target.value, 10) || 0));
                                     updateLayer(selectedLayer.id, { borderRadius: val });
                                   }}
-                                  className="w-full h-1.5 bg-black/50 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                                  className="w-full h-1.5 bg-black/50 rounded-[12px] appearance-none cursor-pointer accent-purple-500"
                                 />
                                 <div className="flex items-center gap-1 bg-black/40 border border-white/15 px-1.5 py-0.5 rounded-[8px] shrink-0">
                                   <input
@@ -10248,7 +10805,7 @@ export default function LiveDesignStudioModal({
                                       setEditingCropTarget("image");
                                       showFeedback(`Editing image inside ${selectedLayer.name}. Drag canvas to pan image.`, true);
                                     }}
-                                    className={`text-[9px] font-bold px-2 py-0.5 rounded-[8px] transition-all border ${
+                                    className={`text-[10px] font-bold px-2 py-1 rounded-[12px] transition-all border ${
                                       editingCropLayerId === selectedLayer.id && editingCropTarget === "image"
                                         ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/40 shadow-sm"
                                         : "bg-[#8B5CF6]/30 text-[#8B5CF6]/70 border-[#8B5CF6]/40 hover:bg-[#8B5CF6]/50"
@@ -10262,7 +10819,7 @@ export default function LiveDesignStudioModal({
                                       setEditingCropLayerId(selectedLayer.id);
                                       setEditingCropTarget("frame");
                                     }}
-                                    className={`text-[9px] font-bold px-2 py-0.5 rounded-[8px] transition-all border ${
+                                    className={`text-[10px] font-bold px-2 py-1 rounded-[12px] transition-all border ${
                                       editingCropLayerId === selectedLayer.id && editingCropTarget === "frame"
                                         ? "bg-[#8B5CF6]/20 text-[#8B5CF6]/70 border-[#8B5CF6]/40"
                                         : "bg-white/5 text-white/70 border-white/10 hover:bg-white/10"
@@ -10273,23 +10830,24 @@ export default function LiveDesignStudioModal({
                                   <button
                                     type="button"
                                     onClick={() => handlePlaceImageInsideShape(selectedLayer.id)}
-                                    className="text-[9px] text-white/70 hover:text-white px-1.5 py-0.5 rounded-[8px] bg-white/5 hover:bg-white/10 font-medium"
+                                    className="text-[10px] text-white/70 hover:text-white px-2 py-1 rounded-[12px] bg-white/5 hover:bg-white/10 font-medium"
                                   >
                                     Replace
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => handleResetMaskCrop(selectedLayer.id)}
-                                    className="text-[9px] text-white/70 hover:text-white px-1.5 py-0.5 rounded-[8px] bg-white/5 hover:bg-white/10 font-medium"
+                                    className="text-[10px] text-white/70 hover:text-white px-2 py-1 rounded-[12px] bg-white/5 hover:bg-white/10 font-medium"
                                   >
                                     Reset Crop
                                   </button>
                                   <button
                                     type="button"
                                     onClick={() => handleReleaseClippingMask(selectedLayer.id)}
-                                    className="text-[9px] text-red-400 hover:text-red-300 px-1.5 py-0.5 rounded-[8px] bg-red-500/10 hover:bg-red-500/20 font-medium border border-red-500/20"
+                                    className="text-[10px] text-red-400 hover:text-red-300 px-2 py-1 rounded-[12px] bg-red-500/10 hover:bg-red-500/20 font-medium border border-red-500/20"
+                                    title="Remove image from mask and restore as separate layer"
                                   >
-                                    Release
+                                    Remove Clipping Mask
                                   </button>
                                 </div>
                               </div>
@@ -10349,7 +10907,7 @@ export default function LiveDesignStudioModal({
                                     },
                                   });
                                 }}
-                                className="w-full h-1.5 bg-black/50 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                                className="w-full h-1.5 bg-black/50 rounded-[12px] appearance-none cursor-pointer accent-purple-500"
                               />
                             </div>
 
@@ -10374,7 +10932,7 @@ export default function LiveDesignStudioModal({
                                       },
                                     });
                                   }}
-                                  className="w-full h-1.5 bg-black/50 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                                  className="w-full h-1.5 bg-black/50 rounded-[12px] appearance-none cursor-pointer accent-purple-500"
                                 />
                               </div>
 
@@ -10397,7 +10955,7 @@ export default function LiveDesignStudioModal({
                                       },
                                     });
                                   }}
-                                  className="w-full h-1.5 bg-black/50 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                                  className="w-full h-1.5 bg-black/50 rounded-[12px] appearance-none cursor-pointer accent-purple-500"
                                 />
                               </div>
                             </div>
@@ -10497,6 +11055,33 @@ export default function LiveDesignStudioModal({
                           </button>
                         </div>
                       </div>
+
+                      {/* Clipping Mask with Underlying Shape */}
+                      {(() => {
+                        const underlyingShape = getUnderlyingShapeForImage(selectedLayer);
+                        if (!underlyingShape) return null;
+                        return (
+                          <div className="p-2.5 bg-black/40 rounded-[12px] border border-[#8B5CF6]/30 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-bold uppercase tracking-wider text-white/60">Clipping Mask</span>
+                              <span className="text-[9px] font-mono text-[#8B5CF6]/90 bg-[#8B5CF6]/20 border border-[#8B5CF6]/30 px-1.5 py-0.5 rounded-[12px] truncate max-w-[120px]">
+                                Target: {underlyingShape.name || "Shape"}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-white/50 leading-snug">
+                              Mask this image inside {underlyingShape.name || "the underlying shape"}.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => handleCreateClippingMask(underlyingShape.id, selectedLayer.id)}
+                              className="w-full py-2 rounded-[12px] bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all shadow-md"
+                            >
+                              <PiIntersect size={14} />
+                              <span>Create Clipping Mask</span>
+                            </button>
+                          </div>
+                        );
+                      })()}
 
                       {/* Container Frame Shape Picker */}
                       <div>
@@ -10762,132 +11347,266 @@ export default function LiveDesignStudioModal({
                               </button>
                             </div>
 
-                            {/* TAB 0: VISUAL OBJECTS (V2) */}
-                            {inspectionTab === "objects" && (
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between text-[10px]">
-                                  <span className="text-white/50">Detected Visual Objects</span>
-                                  <span className="text-white/40 text-[9px] font-mono">
-                                    {(inspectionData.visualRegions || []).length} items
-                                  </span>
-                                </div>
-                                <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
-                                  {(inspectionData.visualRegions || []).map((region) => {
-                                    const isSelected = selectedInspectRegionId === region.id || (selectedInspectRegionIds && selectedInspectRegionIds.includes(region.id));
-                                    
-                                    const badgeColors = {
-                                      logo: "bg-amber-500/20 text-amber-300 border-amber-500/30",
-                                      visual_group: "bg-sky-500/20 text-sky-300 border-sky-500/30",
-                                      icon: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
-                                      subject: "bg-purple-500/20 text-purple-300 border-purple-500/30",
-                                      section: "bg-violet-500/20 text-violet-300 border-violet-500/30",
-                                      text_group: "bg-indigo-500/20 text-indigo-300 border-indigo-500/30",
-                                    };
+                            {/* TAB 0: VISUAL OBJECTS (Smart Flyer V3) */}
+                            {inspectionTab === "objects" && (() => {
+                              const allRegions = inspectionData.visualRegions || [];
+                              const filteredRegions = allRegions.filter((r) => {
+                                if (objectsCategoryFilter === "all") return true;
+                                if (objectsCategoryFilter === "people") return r.type === "person";
+                                if (objectsCategoryFilter === "text") return r.type === "text_group" || Boolean(r.text);
+                                if (objectsCategoryFilter === "shapes") return r.type === "shape" || r.type === "graphic_shape";
+                                if (objectsCategoryFilter === "graphics") return r.type === "logo" || r.type === "icon";
+                                if (objectsCategoryFilter === "subjects") return r.type === "subject" || r.type === "person";
+                                if (objectsCategoryFilter === "groups") return r.type === "visual_group" || r.type === "merged-region" || r.type === "section" || r.isMerged;
+                                return true;
+                              });
 
-                                    return (
-                                      <div
-                                        key={region.id}
-                                        onClick={(e) => {
-                                          if (e.shiftKey) {
-                                            setSelectedInspectRegionIds((prev) =>
-                                              prev.includes(region.id) ? prev.filter((id) => id !== region.id) : [...prev, region.id]
-                                            );
-                                            setSelectedInspectRegionId(region.id);
-                                          } else {
-                                            setSelectedInspectRegionId(region.id);
-                                            setSelectedInspectRegionIds([region.id]);
-                                          }
-                                        }}
-                                        className={`p-2 rounded-[12px] border text-xs transition-all flex flex-col gap-1.5 cursor-pointer ${
-                                          isSelected
-                                            ? "bg-[#8B5CF6]/20 border-[#8B5CF6]/60 text-white shadow-sm"
-                                            : "bg-black/30 border-white/5 text-white/80 hover:border-white/20"
-                                        }`}
-                                      >
-                                        <div className="flex items-start justify-between gap-2">
-                                          <div className="flex flex-col min-w-0">
-                                            <span className="font-semibold text-xs truncate leading-tight text-white">
-                                              {region.label || region.type}
+                              return (
+                                <div className="space-y-2">
+                                  {/* Filter Pills & Smart Select Toggle */}
+                                  <div className="flex items-center justify-between gap-1 pb-1 border-b border-white/5">
+                                    <div className="flex items-center gap-1 overflow-x-auto py-0.5 no-scrollbar">
+                                      {[
+                                        { id: "all", label: "All" },
+                                        { id: "people", label: "People" },
+                                        { id: "subjects", label: "Subjects" },
+                                        { id: "text", label: "Text" },
+                                        { id: "shapes", label: "Shapes" },
+                                        { id: "graphics", label: "Graphics" },
+                                        { id: "groups", label: "Groups" },
+                                      ].map((tab) => (
+                                        <button
+                                          key={tab.id}
+                                          type="button"
+                                          onClick={() => setObjectsCategoryFilter(tab.id)}
+                                          className={`px-2 py-0.5 rounded-[12px] text-[9px] font-semibold transition-all whitespace-nowrap ${
+                                            objectsCategoryFilter === tab.id
+                                              ? "bg-[#8B5CF6] text-white shadow-sm"
+                                              : "bg-white/5 text-white/50 hover:text-white"
+                                          }`}
+                                        >
+                                          {tab.label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setSmartSelectAreaMode(!smartSelectAreaMode)}
+                                      className={`px-2 py-0.5 rounded-[12px] text-[9px] font-bold shrink-0 border transition-all flex items-center gap-1 ${
+                                        smartSelectAreaMode
+                                          ? "bg-[#00A8FF]/30 text-sky-200 border-[#00A8FF]/60 shadow-sm"
+                                          : "bg-white/5 text-white/50 border-white/10 hover:text-white"
+                                      }`}
+                                      title="Drag a marquee box on canvas to inspect a custom area"
+                                    >
+                                      <span>Select Area</span>
+                                      {smartSelectAreaMode && <span className="w-1.5 h-1.5 rounded-full bg-sky-400 animate-ping" />}
+                                    </button>
+                                  </div>
+
+                                  {/* Multi-Selection Action Bar (Feature 1.2 & 6.2) */}
+                                  {selectedInspectRegionIds && selectedInspectRegionIds.length > 0 && (
+                                    <div className="p-1.5 rounded-[12px] bg-[#8B5CF6]/20 border border-[#8B5CF6]/50 flex items-center justify-between gap-1 text-[10px] animate-in fade-in duration-100">
+                                      <span className="font-bold text-white pl-1">
+                                        Selected ({selectedInspectRegionIds.length})
+                                      </span>
+                                      <div className="flex items-center gap-1">
+                                        {selectedInspectRegionIds.length >= 2 && (
+                                          <button
+                                            type="button"
+                                            onClick={handleMergeSelectedRegions}
+                                            className="px-2 py-0.5 rounded-[12px] bg-[#8B5CF6] hover:bg-[#7C3AED] text-white font-bold transition-all shadow"
+                                          >
+                                            Merge
+                                          </button>
+                                        )}
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            if (selectedInspectRegionIds.length === 1) {
+                                              const r = allRegions.find((x) => x.id === selectedInspectRegionIds[0]);
+                                              if (r) handleExtractVisualRegionAsImage(selectedLayer, r, true, false);
+                                            } else if (selectedInspectRegionIds.length >= 2) {
+                                              handleMergeSelectedRegions();
+                                            }
+                                          }}
+                                          className="px-2 py-0.5 rounded-[12px] bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-bold transition-all shadow"
+                                        >
+                                          Extract PNG
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setSelectedInspectRegionId(null);
+                                            setSelectedInspectRegionIds([]);
+                                          }}
+                                          className="px-1.5 py-0.5 rounded-[12px] bg-white/10 hover:bg-white/20 text-white/70 hover:text-white"
+                                        >
+                                          Clear
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )}
+
+                                  {/* Objects Card List */}
+                                  <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
+                                    {filteredRegions.map((region) => {
+                                      const isSelected = selectedInspectRegionId === region.id || (selectedInspectRegionIds && selectedInspectRegionIds.includes(region.id));
+                                      
+                                      const badgeColors = {
+                                        person: "bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/30",
+                                        logo: "bg-amber-500/20 text-amber-300 border-amber-500/30",
+                                        visual_group: "bg-sky-500/20 text-sky-300 border-sky-500/30",
+                                        "merged-region": "bg-purple-600/30 text-purple-200 border-purple-400/50",
+                                        icon: "bg-emerald-500/20 text-emerald-300 border-emerald-500/30",
+                                        subject: "bg-purple-500/20 text-purple-300 border-purple-500/30",
+                                        section: "bg-violet-500/20 text-violet-300 border-violet-500/30",
+                                        text_group: "bg-indigo-500/20 text-indigo-300 border-indigo-500/30",
+                                        candidate_area: "bg-teal-500/20 text-teal-300 border-teal-500/30",
+                                      };
+
+                                      return (
+                                        <div
+                                          key={region.id}
+                                          onClick={(e) => {
+                                            if (e.shiftKey) {
+                                              setSelectedInspectRegionIds((prev) =>
+                                                prev.includes(region.id) ? prev.filter((id) => id !== region.id) : [...prev, region.id]
+                                              );
+                                              setSelectedInspectRegionId(region.id);
+                                            } else {
+                                              setSelectedInspectRegionId(region.id);
+                                              setSelectedInspectRegionIds([region.id]);
+                                            }
+                                          }}
+                                          className={`p-2 rounded-[12px] border text-xs transition-all flex flex-col gap-1.5 cursor-pointer ${
+                                            isSelected
+                                              ? "bg-[#8B5CF6]/20 border-[#8B5CF6]/60 text-white shadow-sm"
+                                              : "bg-black/30 border-white/5 text-white/80 hover:border-white/20"
+                                          }`}
+                                        >
+                                          <div className="flex items-start justify-between gap-2">
+                                            <div className="flex items-center gap-1.5 min-w-0">
+                                              <input
+                                                type="checkbox"
+                                                checked={Boolean(selectedInspectRegionIds?.includes(region.id))}
+                                                onChange={() => {}}
+                                                className="w-3.5 h-3.5 rounded-[12px] accent-[#8B5CF6] cursor-pointer shrink-0"
+                                              />
+                                              <div className="flex flex-col min-w-0">
+                                                <span className="font-semibold text-xs truncate leading-tight text-white">
+                                                  {region.label || region.type}
+                                                </span>
+                                                {(region.relatedText || region.text) && (
+                                                  <span className={`text-[10px] truncate italic mt-0.5 ${region.type === "person" ? "text-fuchsia-300/90 font-medium" : "text-white/50"}`}>
+                                                    "{region.relatedText || region.text}"
+                                                  </span>
+                                                )}
+                                              </div>
+                                            </div>
+                                            <span className={`text-[8px] font-mono shrink-0 px-1.5 py-0.5 rounded-[12px] border uppercase font-bold ${
+                                              badgeColors[region.type] || "bg-white/10 text-white/70 border-white/10"
+                                            }`}>
+                                              {region.isMerged ? "MERGED" : region.type}
                                             </span>
-                                            {region.text && (
-                                              <span className="text-[10px] text-white/50 truncate italic mt-0.5">
-                                                "{region.text}"
-                                              </span>
-                                            )}
                                           </div>
-                                          <span className={`text-[8px] font-mono shrink-0 px-1.5 py-0.5 rounded-[12px] border uppercase font-bold ${
-                                            badgeColors[region.type] || "bg-white/10 text-white/70 border-white/10"
-                                          }`}>
-                                            {region.type}
-                                          </span>
-                                        </div>
 
-                                        <div className="flex items-center gap-1.5 pt-1 border-t border-white/5">
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleExtractVisualRegionAsImage(selectedLayer, region, true, false);
-                                            }}
-                                            className="px-2 py-0.5 rounded-[12px] bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-[10px] font-bold text-white transition-all shadow-sm"
-                                            title="Extract as high-quality transparent PNG layer"
-                                          >
-                                            Extract PNG
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleExtractVisualRegionAsImage(selectedLayer, region, false, false);
-                                            }}
-                                            className="px-2 py-0.5 rounded-[12px] bg-white/10 hover:bg-white/20 text-[10px] font-bold text-white transition-all"
-                                            title="Extract safe rectangular cropped layer"
-                                          >
-                                            Safe Box
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleCopyRegionImage(selectedLayer, region, true);
-                                            }}
-                                            className="px-2 py-0.5 rounded-[12px] bg-white/5 hover:bg-white/15 text-[10px] font-medium text-white/70 hover:text-white transition-all"
-                                            title="Copy visual to clipboard"
-                                          >
-                                            Copy
-                                          </button>
-                                          {region.text && (
+                                          <div className="flex items-center gap-1.5 pt-1 border-t border-white/5">
                                             <button
                                               type="button"
                                               onClick={(e) => {
                                                 e.stopPropagation();
-                                                handleCreateTextLayerFromBlock(selectedLayer, {
-                                                  text: region.text,
-                                                  normX: region.normX,
-                                                  normY: region.normY,
-                                                  normW: region.normW,
-                                                  normH: region.normH,
-                                                  conf: region.confidence || 90,
-                                                });
+                                                handleExtractVisualRegionAsImage(selectedLayer, region, true, false);
                                               }}
-                                              className="px-2 py-0.5 rounded-[12px] bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-[10px] font-bold text-emerald-300 transition-all ml-auto"
-                                              title="Create editable text layer"
+                                              className="px-2 py-0.5 rounded-[12px] bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-[10px] font-bold text-white transition-all shadow-sm"
+                                              title="Extract as high-quality transparent PNG layer"
                                             >
-                                              Text Layer
+                                              Extract PNG
                                             </button>
-                                          )}
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleExtractVisualRegionAsImage(selectedLayer, region, false, false);
+                                              }}
+                                              className="px-2 py-0.5 rounded-[12px] bg-white/10 hover:bg-white/20 text-[10px] font-bold text-white transition-all"
+                                              title="Extract safe rectangular cropped layer"
+                                            >
+                                              Safe Box
+                                            </button>
+
+                                            {(region.type === "visual_group" || (region.childIds && region.childIds.length > 0) || region.childrenIds?.length) && (
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleExtractGroupPeopleAsLayers(selectedLayer, region);
+                                                }}
+                                                className="px-2 py-0.5 rounded-[12px] bg-fuchsia-500/20 hover:bg-fuchsia-500/30 border border-fuchsia-500/40 text-fuchsia-200 text-[10px] font-bold transition-all"
+                                                title="Extract all detected individual people as separate layers"
+                                              >
+                                                Extract People
+                                              </button>
+                                            )}
+
+                                            {(region.isMerged || region.type === "merged-region") && (
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleUnmergeRegion(region.id);
+                                                }}
+                                                className="px-2 py-0.5 rounded-[12px] bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-200 text-[10px] font-bold transition-all"
+                                                title="Unmerge group and restore individual detected objects"
+                                              >
+                                                Unmerge
+                                              </button>
+                                            )}
+
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleCopyRegionImage(selectedLayer, region, true);
+                                              }}
+                                              className="px-2 py-0.5 rounded-[12px] bg-white/5 hover:bg-white/15 text-[10px] font-medium text-white/70 hover:text-white transition-all"
+                                              title="Copy visual to clipboard"
+                                            >
+                                              Copy
+                                            </button>
+                                            {region.text && (
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleCreateTextLayerFromBlock(selectedLayer, {
+                                                    text: region.text,
+                                                    normX: region.normX,
+                                                    normY: region.normY,
+                                                    normW: region.normW,
+                                                    normH: region.normH,
+                                                    conf: region.confidence || 90,
+                                                  });
+                                                }}
+                                                className="px-2 py-0.5 rounded-[12px] bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-500/40 text-[10px] font-bold text-emerald-300 transition-all ml-auto"
+                                                title="Create editable text layer"
+                                              >
+                                                Text Layer
+                                              </button>
+                                            )}
+                                          </div>
                                         </div>
+                                      );
+                                    })}
+                                    {filteredRegions.length === 0 && (
+                                      <div className="p-3 text-center text-xs text-white/40">
+                                        No objects in this category. Click "Select Area" or drag a marquee on the flyer to analyze custom areas.
                                       </div>
-                                    );
-                                  })}
-                                  {(!inspectionData.visualRegions || inspectionData.visualRegions.length === 0) && (
-                                    <div className="p-3 text-center text-xs text-white/40">
-                                      No visual regions detected. You can drag a marquee on the flyer to select a custom region.
-                                    </div>
-                                  )}
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            )}
+                              );
+                            })()}
 
                             {/* TAB 1: TEXT */}
                             {inspectionTab === "text" && (
@@ -10956,61 +11675,200 @@ export default function LiveDesignStudioModal({
                             )}
 
                             {/* TAB 2: SUBJECTS */}
-                            {inspectionTab === "subjects" && (
-                              <div className="space-y-2">
-                                <span className="text-[10px] text-white/50">Detected Faces & Graphic Elements</span>
-                                <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                                  {(inspectionData.subjects || []).map((subj) => {
-                                    const isSelected = selectedInspectSubjectId === subj.id;
-                                    return (
-                                      <div
-                                        key={subj.id}
-                                        onClick={() => setSelectedInspectSubjectId(subj.id)}
-                                        className={`p-2 rounded-[12px] border text-xs transition-all flex flex-col gap-1.5 cursor-pointer ${
-                                          isSelected
-                                            ? "bg-purple-500/20 border-purple-500/50 text-purple-100"
-                                            : "bg-black/30 border-white/5 text-white/80 hover:border-white/20"
-                                        }`}
+                            {inspectionTab === "subjects" && (() => {
+                              const allSubjs = inspectionData.subjects || [];
+                              const personSubjs = allSubjs.filter((s) => s.type === "person");
+                              const otherSubjs = allSubjs.filter((s) => s.type !== "person");
+
+                              // Group person instances by parent group label or parentId
+                              const peopleByGroup = {};
+                              personSubjs.forEach((p) => {
+                                const grpKey = p.parentId ? (inspectionData.visualRegions?.find((r) => r.id === p.parentId)?.label || "Group") : "Independent";
+                                if (!peopleByGroup[grpKey]) peopleByGroup[grpKey] = [];
+                                peopleByGroup[grpKey].push(p);
+                              });
+
+                              return (
+                                <div className="space-y-2">
+                                  <div className="flex items-center justify-between text-[10px]">
+                                    <span className="text-white/50">
+                                      {personSubjs.length > 0 ? `${personSubjs.length} People Detected` : "Detected Subjects"}
+                                    </span>
+                                    {personSubjs.length > 0 && (
+                                      <button
+                                        type="button"
+                                        onClick={async () => {
+                                          showFeedback(`Extracting ${personSubjs.length} people as layers...`, true);
+                                          for (const p of personSubjs) {
+                                            await handleExtractVisualRegionAsImage(selectedLayer, p, true, false);
+                                          }
+                                          showFeedback(`Created ${personSubjs.length} person layers!`, true);
+                                        }}
+                                        className="px-2 py-0.5 rounded-[12px] bg-gradient-to-r from-fuchsia-600 to-indigo-600 hover:from-fuchsia-500 hover:to-indigo-500 text-[10px] font-bold text-white transition-all shadow-sm"
+                                        title="Extract each detected person as a separate transparent layer"
                                       >
-                                        <div className="flex items-center justify-between">
-                                          <span className="font-semibold text-xs">{subj.label}</span>
-                                          <span className="text-[9px] font-mono px-1 py-0.5 rounded-[12px] bg-black/40 text-purple-300 capitalize">
-                                            {subj.type}
+                                        Create People as Layers ({personSubjs.length})
+                                      </button>
+                                    )}
+                                  </div>
+
+                                  <div className="space-y-2.5 max-h-56 overflow-y-auto pr-1">
+                                    {/* Render grouped people */}
+                                    {Object.entries(peopleByGroup).map(([groupName, persons]) => (
+                                      <div key={groupName} className="space-y-1.5">
+                                        <div className="flex items-center justify-between px-1">
+                                          <span className="text-[10px] font-bold uppercase tracking-wider text-fuchsia-300">
+                                            {groupName} ({persons.length})
                                           </span>
+                                          {persons.length > 1 && (
+                                            <button
+                                              type="button"
+                                              onClick={async () => {
+                                                showFeedback(`Extracting ${groupName} (${persons.length} people)...`, true);
+                                                for (const p of persons) {
+                                                  await handleExtractVisualRegionAsImage(selectedLayer, p, true, false);
+                                                }
+                                                showFeedback(`Created ${persons.length} layers for ${groupName}!`, true);
+                                              }}
+                                              className="text-[9px] font-bold text-fuchsia-400 hover:text-fuchsia-300 transition-colors"
+                                            >
+                                              Extract Group
+                                            </button>
+                                          )}
                                         </div>
-                                        <div className="flex items-center gap-1.5 pt-1 border-t border-white/5">
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleCreateImageLayerFromSubject(selectedLayer, subj, false);
-                                            }}
-                                            className="px-2 py-0.5 rounded-[12px] bg-white/10 hover:bg-white/20 text-[10px] font-bold text-white transition-all"
-                                          >
-                                            Crop Layer
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              handleCreateImageLayerFromSubject(selectedLayer, subj, true);
-                                            }}
-                                            className="px-2 py-0.5 rounded-[12px] bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-[10px] font-bold text-white transition-all"
-                                          >
-                                            Extract Cutout
-                                          </button>
+
+                                        <div className="space-y-1 pl-1">
+                                          {persons.map((subj) => {
+                                            const isSelected = selectedInspectSubjectId === subj.id;
+                                            return (
+                                              <div
+                                                key={subj.id}
+                                                onClick={() => setSelectedInspectSubjectId(subj.id)}
+                                                className={`p-2 rounded-[12px] border text-xs transition-all flex flex-col gap-1.5 cursor-pointer ${
+                                                  isSelected
+                                                    ? "bg-fuchsia-500/20 border-fuchsia-500/50 text-fuchsia-100"
+                                                    : "bg-black/30 border-white/5 text-white/80 hover:border-white/20"
+                                                }`}
+                                              >
+                                                <div className="flex items-start justify-between gap-1">
+                                                  <div className="flex flex-col min-w-0">
+                                                    <span className="font-semibold text-xs truncate leading-tight text-white">
+                                                      {subj.label}
+                                                    </span>
+                                                    {(subj.relatedText || (subj.text && subj.text !== "Person")) && (
+                                                      <span className="text-[10px] text-fuchsia-300/80 truncate italic mt-0.5">
+                                                        "{subj.relatedText || subj.text}"
+                                                      </span>
+                                                    )}
+                                                  </div>
+                                                  <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-[12px] bg-fuchsia-500/20 text-fuchsia-300 font-bold border border-fuchsia-500/30 uppercase shrink-0">
+                                                    {Math.round(subj.confidence || 85)}%
+                                                  </span>
+                                                </div>
+
+                                                <div className="flex items-center gap-1.5 pt-1 border-t border-white/5">
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      handleCreateImageLayerFromSubject(selectedLayer, subj, true);
+                                                    }}
+                                                    className="px-2 py-0.5 rounded-[12px] bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-[10px] font-bold text-white transition-all shadow-sm"
+                                                    title="Extract high-quality transparent person cutout"
+                                                  >
+                                                    Extract Cutout
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      handleCreateImageLayerFromSubject(selectedLayer, subj, false);
+                                                    }}
+                                                    className="px-2 py-0.5 rounded-[12px] bg-white/10 hover:bg-white/20 text-[10px] font-bold text-white transition-all"
+                                                    title="Crop safe rectangular box"
+                                                  >
+                                                    Safe Box
+                                                  </button>
+                                                  <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      handleCopyRegionImage(selectedLayer, subj, true);
+                                                    }}
+                                                    className="px-2 py-0.5 rounded-[12px] bg-white/5 hover:bg-white/15 text-[10px] font-medium text-white/70 hover:text-white transition-all"
+                                                    title="Copy cutout to clipboard"
+                                                  >
+                                                    Copy
+                                                  </button>
+                                                </div>
+                                              </div>
+                                            );
+                                          })}
                                         </div>
                                       </div>
-                                    );
-                                  })}
-                                  {(!inspectionData.subjects || inspectionData.subjects.length === 0) && (
-                                    <div className="p-3 text-center text-xs text-white/40">
-                                      No faces or isolated graphics detected.
-                                    </div>
-                                  )}
+                                    ))}
+
+                                    {/* Non-person subjects */}
+                                    {otherSubjs.length > 0 && (
+                                      <div className="space-y-1.5 pt-1 border-t border-white/5">
+                                        <span className="text-[10px] font-bold uppercase tracking-wider text-purple-300 px-1">
+                                          Other Subjects ({otherSubjs.length})
+                                        </span>
+                                        {otherSubjs.map((subj) => {
+                                          const isSelected = selectedInspectSubjectId === subj.id;
+                                          return (
+                                            <div
+                                              key={subj.id}
+                                              onClick={() => setSelectedInspectSubjectId(subj.id)}
+                                              className={`p-2 rounded-[12px] border text-xs transition-all flex flex-col gap-1.5 cursor-pointer ${
+                                                isSelected
+                                                  ? "bg-purple-500/20 border-purple-500/50 text-purple-100"
+                                                  : "bg-black/30 border-white/5 text-white/80 hover:border-white/20"
+                                              }`}
+                                            >
+                                              <div className="flex items-center justify-between">
+                                                <span className="font-semibold text-xs">{subj.label}</span>
+                                                <span className="text-[9px] font-mono px-1 py-0.5 rounded-[12px] bg-black/40 text-purple-300 capitalize">
+                                                  {subj.type}
+                                                </span>
+                                              </div>
+                                              <div className="flex items-center gap-1.5 pt-1 border-t border-white/5">
+                                                <button
+                                                  type="button"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleCreateImageLayerFromSubject(selectedLayer, subj, false);
+                                                  }}
+                                                  className="px-2 py-0.5 rounded-[12px] bg-white/10 hover:bg-white/20 text-[10px] font-bold text-white transition-all"
+                                                >
+                                                  Crop Layer
+                                                </button>
+                                                <button
+                                                  type="button"
+                                                  onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    handleCreateImageLayerFromSubject(selectedLayer, subj, true);
+                                                  }}
+                                                  className="px-2 py-0.5 rounded-[12px] bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-[10px] font-bold text-white transition-all"
+                                                >
+                                                  Extract Cutout
+                                                </button>
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+
+                                    {allSubjs.length === 0 && (
+                                      <div className="p-3 text-center text-xs text-white/40">
+                                        No people or isolated visual subjects detected.
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
-                              </div>
-                            )}
+                              );
+                            })()}
 
                             {/* TAB 3: CROP */}
                             {inspectionTab === "crop" && (
@@ -11830,7 +12688,7 @@ export default function LiveDesignStudioModal({
                       }}
                       className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-white/10 text-white/80 hover:text-white text-left flex items-center justify-between transition-colors"
                     >
-                      <span>Release Mask</span>
+                      <span>Remove Clipping Mask</span>
                     </button>
                     <div className="my-1 border-t border-white/10" />
                   </>
@@ -11839,6 +12697,28 @@ export default function LiveDesignStudioModal({
                 {/* Direct Image Layer Operations */}
                 {targetLayer.type === "image" && (
                   <>
+                    {(() => {
+                      const underlyingShape = getUnderlyingShapeForImage(targetLayer);
+                      if (!underlyingShape) return null;
+                      return (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            handleCreateClippingMask(underlyingShape.id, targetLayer.id);
+                            setContextMenu(null);
+                          }}
+                          className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-[#8B5CF6]/30 text-[#8B5CF6]/90 text-left flex items-center justify-between transition-colors font-medium"
+                        >
+                          <span className="flex items-center gap-1.5">
+                            <PiIntersect size={13} className="text-[#8B5CF6]/80" />
+                            <span>Create Clipping Mask</span>
+                          </span>
+                          <span className="text-[10px] text-[#8B5CF6]/80 truncate max-w-[80px]">
+                            {underlyingShape.name || "Shape"}
+                          </span>
+                        </button>
+                      );
+                    })()}
                     <button
                       type="button"
                       onClick={() => {
@@ -12060,6 +12940,59 @@ export default function LiveDesignStudioModal({
             <span className="text-[9px] text-purple-300 font-mono">Cutout</span>
           </button>
 
+          {/* Action: Detect Person Here (Manual Area Fallback / Cutout) */}
+          <button
+            type="button"
+            onClick={() => {
+              const reg = {
+                ...regionContextMenu.region,
+                type: "person",
+                label: regionContextMenu.region.label?.includes("Person") ? regionContextMenu.region.label : `Person: ${regionContextMenu.region.label || "Area"}`,
+                canCutout: true,
+              };
+              const lay = regionContextMenu.layer;
+              setRegionContextMenu(null);
+              handleExtractVisualRegionAsImage(lay, reg, true, false);
+            }}
+            className="w-full px-2.5 py-1.5 rounded-[12px] bg-fuchsia-500/20 hover:bg-fuchsia-500/30 border border-fuchsia-500/40 text-fuchsia-200 text-left flex items-center justify-between transition-colors font-semibold"
+          >
+            <span>Detect Person Here</span>
+            <span className="text-[9px] text-fuchsia-300 font-mono">Person Cutout</span>
+          </button>
+
+          {/* Action: Create People as Layers (For Visual Groups / Rows) */}
+          {(regionContextMenu.region.type === "visual_group" || (regionContextMenu.region.childIds && regionContextMenu.region.childIds.length > 0) || regionContextMenu.region.childrenIds?.length) && (
+            <button
+              type="button"
+              onClick={() => {
+                const reg = regionContextMenu.region;
+                const lay = regionContextMenu.layer;
+                setRegionContextMenu(null);
+                handleExtractGroupPeopleAsLayers(lay, reg);
+              }}
+              className="w-full px-2.5 py-1.5 rounded-[12px] bg-fuchsia-600/30 hover:bg-fuchsia-600/50 border border-fuchsia-400/50 text-white text-left flex items-center justify-between transition-colors font-bold"
+            >
+              <span>Create People as Layers</span>
+              <span className="text-[9px] text-fuchsia-200 font-mono">All Instances</span>
+            </button>
+          )}
+
+          {/* Action: Split Into People / Sub-regions */}
+          {(regionContextMenu.region.childIds?.length > 0 || regionContextMenu.region.childrenIds?.length > 0) && (
+            <button
+              type="button"
+              onClick={() => {
+                const reg = regionContextMenu.region;
+                setRegionContextMenu(null);
+                handleSplitRegion(reg);
+              }}
+              className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-white/10 text-white text-left flex items-center justify-between transition-colors font-semibold"
+            >
+              <span>Split Into People / Items</span>
+              <span className="text-[9px] text-white/50 font-mono">{(regionContextMenu.region.childIds || regionContextMenu.region.childrenIds).length} items</span>
+            </button>
+          )}
+
           {/* Action: Convert to Shape (for simple geometric elements) */}
           {(regionContextMenu.region.is_convertible_shape || regionContextMenu.region.shape_geometry?.is_convertible) && (
             <button
@@ -12164,6 +13097,77 @@ export default function LiveDesignStudioModal({
             </>
           )}
 
+          {/* Merged Region Unmerge Action (Feature 2.7) */}
+          {(regionContextMenu.region.isMerged || regionContextMenu.region.type === "merged-region") && (
+            <>
+              <div className="my-1 border-t border-white/10" />
+              <button
+                type="button"
+                onClick={() => {
+                  const reg = regionContextMenu.region;
+                  setRegionContextMenu(null);
+                  handleUnmergeRegion(reg.id);
+                }}
+                className="w-full px-2.5 py-1.5 rounded-[12px] bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 text-left flex items-center justify-between transition-colors font-bold"
+              >
+                <span>Unmerge / Split Group</span>
+                <span className="text-[9px] text-amber-300">Restore items</span>
+              </button>
+            </>
+          )}
+
+          {/* Deep Local Area Analysis (Feature 4.1) */}
+          <div className="my-1 border-t border-white/10" />
+          <button
+            type="button"
+            onClick={() => {
+              const bounds = {
+                normX: regionContextMenu.region.normX != null ? regionContextMenu.region.normX : 0,
+                normY: regionContextMenu.region.normY != null ? regionContextMenu.region.normY : 0,
+                normW: regionContextMenu.region.normW || 20,
+                normH: regionContextMenu.region.normH || 20,
+              };
+              setRegionContextMenu(null);
+              handleAnalyzeBoundedArea(bounds);
+            }}
+            className="w-full px-2.5 py-1.5 rounded-[12px] hover:bg-sky-500/20 text-sky-300 text-left flex items-center justify-between transition-colors font-medium"
+          >
+            <span>Analyze This Area</span>
+            <span className="text-[9px] text-sky-400 font-mono">Deep Scan</span>
+          </button>
+
+          {/* Overlapping Candidates Switcher (Feature 3.6) */}
+          {Array.isArray(regionContextMenu.candidates) && regionContextMenu.candidates.length > 1 && (
+            <>
+              <div className="my-1 border-t border-white/10" />
+              <div className="px-1 text-[9px] uppercase tracking-wider text-white/40 font-bold">
+                Objects at this position:
+              </div>
+              <div className="space-y-0.5 max-h-28 overflow-y-auto">
+                {regionContextMenu.candidates.map((cand) => {
+                  const isSelectedCand = cand.id === regionContextMenu.region.id;
+                  return (
+                    <button
+                      key={cand.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedInspectRegionId(cand.id);
+                        setSelectedInspectRegionIds([cand.id]);
+                        setRegionContextMenu((prev) => prev ? { ...prev, region: cand } : null);
+                      }}
+                      className={`w-full px-2 py-1 rounded-[12px] text-left text-[10px] flex items-center justify-between transition-colors ${
+                        isSelectedCand ? "bg-[#8B5CF6]/30 text-white font-bold" : "text-white/70 hover:bg-white/10"
+                      }`}
+                    >
+                      <span className="truncate">{cand.label || cand.type}</span>
+                      <span className="text-[8px] font-mono text-white/40 uppercase">{cand.type}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          )}
+
           {regionContextMenu.region.childrenIds && regionContextMenu.region.childrenIds.length > 0 && (
             <>
               <div className="my-1 border-t border-white/10" />
@@ -12181,6 +13185,146 @@ export default function LiveDesignStudioModal({
               </button>
             </>
           )}
+        </div>
+      )}
+
+      {/* ── Hover Area Discovery Popover Card (Feature 3: Area Discovery) ───────── */}
+      {hoverDiscoveryCard && hoverDiscoveryCard.candidates?.length > 0 && inspectingLayerId && (
+        <div
+          style={{
+            position: "fixed",
+            left: `${Math.min(hoverDiscoveryCard.clientX + 16, window.innerWidth - 300)}px`,
+            top: `${Math.min(hoverDiscoveryCard.clientY - 20, window.innerHeight - 320)}px`,
+            zIndex: 10002,
+          }}
+          className="w-72 bg-[#12101e]/95 backdrop-blur-md border border-[#8B5CF6]/40 rounded-[12px] shadow-2xl p-2.5 space-y-2 select-none animate-in fade-in zoom-in-95 duration-100 text-white"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between pb-1.5 border-b border-white/10">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-[#8B5CF6] animate-pulse" />
+              <span className="text-[10px] font-bold uppercase tracking-wider text-purple-200">
+                Detected Here
+              </span>
+            </div>
+            <div className="flex items-center gap-1">
+              <span className="text-[9px] font-mono text-white/50 bg-white/5 px-1.5 py-0.5 rounded-[12px]">
+                {hoverDiscoveryCard.candidates.length} objects
+              </span>
+              <button
+                type="button"
+                onClick={() => setHoverDiscoveryCard(null)}
+                className="w-4 h-4 rounded-[12px] hover:bg-white/10 flex items-center justify-center text-white/60 hover:text-white text-xs"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
+          {/* List of candidates with checkboxes */}
+          <div className="space-y-1 max-h-44 overflow-y-auto pr-0.5">
+            {hoverDiscoveryCard.candidates.map(({ region }) => {
+              const isChecked = selectedInspectRegionIds.includes(region.id);
+              return (
+                <div
+                  key={region.id}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedInspectRegionIds((prev) =>
+                      prev.includes(region.id) ? prev.filter((id) => id !== region.id) : [...prev, region.id]
+                    );
+                    setSelectedInspectRegionId(region.id);
+                  }}
+                  className={`p-1.5 rounded-[12px] border text-xs flex items-center gap-2 cursor-pointer transition-colors ${
+                    isChecked
+                      ? "bg-[#8B5CF6]/25 border-[#8B5CF6]/60 text-white"
+                      : "bg-black/20 border-white/5 text-white/80 hover:bg-white/5"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => {}}
+                    className="w-3.5 h-3.5 rounded-[12px] accent-[#8B5CF6] cursor-pointer shrink-0"
+                  />
+                  <div className="flex flex-col min-w-0 flex-1">
+                    <div className="flex items-center justify-between gap-1">
+                      <span className="font-semibold text-[11px] truncate text-white">
+                        {region.label || region.type}
+                      </span>
+                      <span className="text-[8px] font-mono px-1 py-0.2 rounded-[12px] bg-white/10 text-white/60 shrink-0 uppercase">
+                        {region.type}
+                      </span>
+                    </div>
+                    {region.text && (
+                      <span className="text-[9px] text-white/50 truncate italic">
+                        "{region.text}"
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Bottom Actions: Merge or Extract */}
+          <div className="pt-1.5 border-t border-white/10 flex items-center justify-between gap-1.5">
+            {selectedInspectRegionIds.length > 1 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  handleMergeSelectedRegions();
+                  setHoverDiscoveryCard(null);
+                }}
+                className="flex-1 py-1.5 rounded-[12px] bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-[10px] font-bold shadow flex items-center justify-center gap-1 transition-all"
+              >
+                <span>Merge ({selectedInspectRegionIds.length})</span>
+              </button>
+            ) : selectedInspectRegionIds.length === 1 ? (
+              <button
+                type="button"
+                onClick={() => {
+                  const reg = inspectionData?.visualRegions?.find((r) => r.id === selectedInspectRegionIds[0]);
+                  if (reg) {
+                    handleExtractVisualRegionAsImage(hoverDiscoveryCard.layer, reg, true, false);
+                    setHoverDiscoveryCard(null);
+                  }
+                }}
+                className="flex-1 py-1.5 rounded-[12px] bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-[10px] font-bold shadow flex items-center justify-center gap-1 transition-all"
+              >
+                <span>Extract PNG</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  const candIds = hoverDiscoveryCard.candidates.map((c) => c.region.id);
+                  setSelectedInspectRegionIds(candIds);
+                  if (candIds.length > 0) setSelectedInspectRegionId(candIds[0]);
+                }}
+                className="py-1 px-2 rounded-[12px] bg-white/10 hover:bg-white/20 text-white text-[10px] font-medium transition-colors"
+              >
+                Select All ({hoverDiscoveryCard.candidates.length})
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                handleAnalyzeBoundedArea({
+                  normX: Math.max(0, hoverDiscoveryCard.normX - 10),
+                  normY: Math.max(0, hoverDiscoveryCard.normY - 10),
+                  normW: 20,
+                  normH: 20,
+                });
+                setHoverDiscoveryCard(null);
+              }}
+              className="py-1 px-2 rounded-[12px] bg-white/5 hover:bg-white/15 text-white/70 hover:text-white text-[9px] font-medium transition-colors shrink-0"
+              title="Run deeper local analysis strictly inside this area"
+            >
+              Analyze Area
+            </button>
+          </div>
         </div>
       )}
 
@@ -12668,6 +13812,7 @@ export default function LiveDesignStudioModal({
                     {labAnalysis.visual_regions.map((region) => {
                       const isSelected = labSelectedRegionId === region.id;
                       const badgeColors = {
+                        person: "bg-fuchsia-400/20 text-fuchsia-300 border-fuchsia-400/30",
                         logo: "bg-amber-400/20 text-amber-300 border-amber-400/30",
                         visual_group: "bg-sky-400/20 text-sky-300 border-sky-400/30",
                         subject: "bg-purple-400/20 text-purple-300 border-purple-400/30",
@@ -13100,6 +14245,65 @@ export default function LiveDesignStudioModal({
           />
         );
       })()}
+
+      {/* Delete Design Confirmation Modal */}
+      {designToDelete && (
+        <div
+          className="fixed inset-0 z-[10050] flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-in fade-in duration-150"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-design-title"
+          onClick={() => setDesignToDelete(null)}
+        >
+          <div
+            className="w-full max-w-md bg-[#161324] border border-white/15 rounded-[12px] shadow-2xl p-5 space-y-4"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") setDesignToDelete(null);
+              if (e.key === "Enter") handleConfirmDeleteDesign();
+            }}
+            tabIndex={-1}
+          >
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-[12px] bg-red-500/15 border border-red-500/30 flex items-center justify-center text-red-400 shrink-0">
+                <PiTrash size={20} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 id="delete-design-title" className="text-sm font-bold text-white truncate">
+                  Delete &ldquo;{designToDelete.name}&rdquo;?
+                </h3>
+                <p className="text-xs text-white/50 mt-1 leading-relaxed">
+                  This action cannot be undone. All custom layers, shapes, and layouts in this design draft will be permanently removed.
+                </p>
+                {activeLiveOverlay && activeLiveOverlay.designId === designToDelete.id && activeLiveOverlay.isLive && (
+                  <div className="mt-2.5 p-2 rounded-[12px] bg-red-500/20 border border-red-500/40 text-red-300 text-xs font-semibold">
+                    Warning: This design is currently assigned to an active live broadcast overlay.
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => setDesignToDelete(null)}
+                className="px-3.5 py-1.5 rounded-[12px] text-xs font-semibold text-white/70 hover:text-white bg-white/5 hover:bg-white/10 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteDesign}
+                disabled={activeLiveOverlay && activeLiveOverlay.designId === designToDelete.id && activeLiveOverlay.isLive}
+                className="px-4 py-1.5 rounded-[12px] text-xs font-bold text-white bg-red-600 hover:bg-red-500 transition-colors shadow disabled:opacity-40 disabled:pointer-events-none flex items-center gap-1.5"
+              >
+                <PiTrash size={14} />
+                <span>Delete Design</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 

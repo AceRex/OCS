@@ -499,15 +499,31 @@ class DesignStudioService {
   }
 
   deleteDesign(id) {
+    if (this.activeLiveOverlay && this.activeLiveOverlay.designId === id && this.activeLiveOverlay.isLive) {
+      return { ok: false, error: "Cannot delete design while it is currently LIVE on stream." };
+    }
+
     const prevCount = this.designs.length;
     this.designs = this.designs.filter((d) => d.id !== id);
 
     if (this.designs.length < prevCount) {
+      // Clear any role assignment pointing to this deleted design
+      let roleModified = false;
+      for (const [role, assignedId] of Object.entries(this.roleAssignments || {})) {
+        if (assignedId === id) {
+          delete this.roleAssignments[role];
+          roleModified = true;
+        }
+      }
+      if (roleModified) {
+        this.persistRoleAssignments();
+      }
+
       this.persistDesigns();
       this.cleanupOrphanAssets();
     }
 
-    // If deleting currently live design, hide it
+    // If deleting design currently referenced by inactive overlay, clear it
     if (this.activeLiveOverlay && this.activeLiveOverlay.designId === id) {
       this.activeLiveOverlay = null;
     }
@@ -606,6 +622,25 @@ class DesignStudioService {
         if (Array.isArray(design.layers)) {
           for (const layer of design.layers) {
             if (layer.assetId) referencedAssetIds.add(layer.assetId);
+            if (layer.maskImage?.assetId) referencedAssetIds.add(layer.maskImage.assetId);
+          }
+        }
+      }
+
+      if (this.activeLiveOverlay && Array.isArray(this.activeLiveOverlay.layers)) {
+        for (const layer of this.activeLiveOverlay.layers) {
+          if (layer.assetId) referencedAssetIds.add(layer.assetId);
+          if (layer.maskImage?.assetId) referencedAssetIds.add(layer.maskImage.assetId);
+        }
+      }
+
+      if (Array.isArray(this.liveControls)) {
+        for (const ctrl of this.liveControls) {
+          if (Array.isArray(ctrl.snapshotLayers)) {
+            for (const layer of ctrl.snapshotLayers) {
+              if (layer.assetId) referencedAssetIds.add(layer.assetId);
+              if (layer.maskImage?.assetId) referencedAssetIds.add(layer.maskImage.assetId);
+            }
           }
         }
       }

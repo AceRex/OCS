@@ -43,6 +43,8 @@ class VisualRegion:
     can_cutout: bool = True
     cutout_quality: str = "high"  # "high" | "medium" | "safe_crop"
     related_ocr_blocks: List[int] = field(default_factory=list)
+    related_text: str = ""
+    related_texts: List[str] = field(default_factory=list)
     parent_id: Optional[str] = None
     child_ids: List[str] = field(default_factory=list)
     shape_geometry: Optional[Dict[str, Any]] = None  # For graphic_shape type: {shape, aspect, fill_color_hex, area_px}
@@ -61,6 +63,8 @@ class VisualRegion:
             "can_cutout": bool(self.can_cutout),
             "cutout_quality": self.cutout_quality,
             "related_ocr_blocks": self.related_ocr_blocks,
+            "related_text": self.related_text,
+            "related_texts": self.related_texts,
             "parent_id": self.parent_id,
             "child_ids": self.child_ids,
         }
@@ -180,11 +184,12 @@ class FlyerDecomposer:
             regions.append(ic)
 
         # ──────────────────────────────────────────────────────────────────
-        # 5. SUBJECT / SILHOUETTE DETECTION (People, Silhouettes, Figures)
+        # 5. SUBJECT / PERSON / SILHOUETTE DETECTION (People, Silhouettes, Figures)
         # ──────────────────────────────────────────────────────────────────
-        subject_regions = self._detect_subjects(arr, gray, hsv, detected_faces, w, h)
+        subject_regions = self._detect_subjects(arr, gray, hsv, detected_faces, clean_blocks, w, h)
         for s in subject_regions:
-            s.id = next_id("subj")
+            if not s.id or s.id.startswith("subj_face_"):
+                s.id = next_id("subj")
             regions.append(s)
 
         # ──────────────────────────────────────────────────────────────────
@@ -503,16 +508,78 @@ class FlyerDecomposer:
         gray: np.ndarray,
         hsv: np.ndarray,
         detected_faces: List[Any],
+        clean_blocks: List[Any],
         w: int,
         h: int
     ) -> List[VisualRegion]:
         """
-        Detects prominent people figures, silhouettes, and speaker portraits.
+        Detects individual person instances, speaker portraits, people groups, and silhouettes.
         """
         subjects: List[VisualRegion] = []
 
-        # 1. Detected Faces from Haar / Face detector
-        if detected_faces:
+        # 1. Advanced Person Instance Detection (Individual People & Hierarchical Groups)
+        try:
+            try:
+                from vision.person_detector import PersonDetector
+            except ImportError:
+                from ocs_image_engine.vision.person_detector import PersonDetector
+            p_detector = PersonDetector()
+            pil_img = Image.fromarray(arr)
+            ocr_dicts = [
+                {
+                    "x": b["x"] if isinstance(b, dict) else getattr(b, "x", 0),
+                    "y": b["y"] if isinstance(b, dict) else getattr(b, "y", 0),
+                    "w": b["w"] if isinstance(b, dict) else getattr(b, "w", 0),
+                    "h": b["h"] if isinstance(b, dict) else getattr(b, "h", 0),
+                    "text": b.get("text", "") if isinstance(b, dict) else getattr(b, "text", "")
+                }
+                for b in (clean_blocks or [])
+            ]
+            person_instances, people_groups = p_detector.detect_person_instances(pil_img, ocr_dicts)
+
+            # Add Parent People Groups
+            for grp in people_groups:
+                subjects.append(VisualRegion(
+                    id=grp["id"],
+                    type="visual_group",
+                    label=grp["label"],
+                    text=grp["label"],
+                    x=grp["x"],
+                    y=grp["y"],
+                    w=grp["w"],
+                    h=grp["h"],
+                    conf=95.0,
+                    can_cutout=True,
+                    cutout_quality="high",
+                    child_ids=grp.get("child_ids", [])
+                ))
+
+            # Add Independent Person Instances
+            for p in person_instances:
+                rel_str = " ".join(p.related_text) if p.related_text else ""
+                subjects.append(VisualRegion(
+                    id=p.id,
+                    type="person",
+                    label=p.label,
+                    text=rel_str or "Person",
+                    x=p.x,
+                    y=p.y,
+                    w=p.w,
+                    h=p.h,
+                    conf=p.confidence,
+                    can_cutout=True,
+                    cutout_quality="high",
+                    parent_id=p.group_id,
+                    related_ocr_blocks=p.related_ocr_blocks,
+                    related_text=rel_str,
+                    related_texts=p.related_text
+                ))
+
+        except Exception as e:
+            logger.error("Person instance detection error: %s", e)
+
+        # Fallback to detected faces if no person instances were detected
+        if not subjects and detected_faces:
             for i, f in enumerate(detected_faces):
                 fx = getattr(f, "x", 0)
                 fy = getattr(f, "y", 0)
@@ -1028,6 +1095,7 @@ class FlyerDecomposer:
         Filters noise, removes redundant overlaps, and sorts semantically.
         """
         priority_map = {
+            "person": 11,
             "logo": 10,
             "visual_group": 9,
             "subject": 8,
@@ -1049,6 +1117,10 @@ class FlyerDecomposer:
         for r in filtered:
             overlap = False
             for u in unique:
+                # Person instances and containers/groups must never suppress each other
+                if (r.type == "person" and u.type != "person") or (u.type == "person" and r.type != "person"):
+                    continue
+
                 ix1 = max(r.x, u.x)
                 iy1 = max(r.y, u.y)
                 ix2 = min(r.x + r.w, u.x + u.w)

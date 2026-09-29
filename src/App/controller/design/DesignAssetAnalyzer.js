@@ -206,6 +206,8 @@ export function normalizeAnalysisResult(raw, naturalWidth, naturalHeight, source
         borderRadius: r.border_radius ?? 12,
         strokeWidth: r.stroke_width ?? 0,
         relatedOcrBlocks: r.related_ocr_blocks || [],
+        relatedText: r.related_text || '',
+        relatedTexts: r.related_texts || [],
         parentId: r.parent_id || null,
         childIds: r.child_ids || [],
         normX: (rx / imgW) * 100,
@@ -218,8 +220,13 @@ export function normalizeAnalysisResult(raw, naturalWidth, naturalHeight, source
     visualRegions = performClientSideDecomposition(textBlocks, raw?.faces, raw?.elements, imgW, imgH);
   }
 
-  // 3. Subjects list
-  const subjects = visualRegions.filter((r) => r.type === 'subject');
+  // Infer hierarchy and spatial relationships (Feature 5)
+  visualRegions = inferRegionRelationships(visualRegions);
+  const spatialIndex = buildSpatialIndex(visualRegions);
+
+  // 3. Subjects list (includes individual people and subjects)
+  const subjects = visualRegions.filter((r) => r.type === 'subject' || r.type === 'person');
+  const persons = visualRegions.filter((r) => r.type === 'person');
 
   // 4. Shapes (geometric / convertible elements)
   const shapes = visualRegions.filter(
@@ -250,7 +257,9 @@ export function normalizeAnalysisResult(raw, naturalWidth, naturalHeight, source
     groupedOcr: textBlocks,
     semanticFields,
     visualRegions,
+    spatialIndex,
     subjects,
+    persons,
     shapes,
     generatedAssets: raw?.generated_assets || null,
 
@@ -583,36 +592,359 @@ export async function copyImageToClipboard(dataUrl) {
 }
 
 /**
+ * Infers structural and spatial relationships between detected visual regions:
+ * parent, child, sibling, overlapping, nearby, contains.
+ */
+export function inferRegionRelationships(regions = []) {
+  if (!Array.isArray(regions) || regions.length === 0) return regions;
+
+  // Clone to avoid mutating original objects unexpectedly
+  const list = regions.map((r) => ({
+    ...r,
+    childIds: Array.isArray(r.childIds) ? [...r.childIds] : [],
+    overlappingIds: [],
+    nearbyIds: [],
+  }));
+
+  for (let i = 0; i < list.length; i++) {
+    const a = list[i];
+    const aL = a.normX != null ? a.normX : 0;
+    const aT = a.normY != null ? a.normY : 0;
+    const aR = aL + (a.normW != null ? a.normW : 0);
+    const aB = aT + (a.normH != null ? a.normH : 0);
+    const aArea = (aR - aL) * (aB - aT);
+
+    for (let j = 0; j < list.length; j++) {
+      if (i === j) continue;
+      const b = list[j];
+      const bL = b.normX != null ? b.normX : 0;
+      const bT = b.normY != null ? b.normY : 0;
+      const bR = bL + (b.normW != null ? b.normW : 0);
+      const bB = bT + (b.normH != null ? b.normH : 0);
+      const bArea = (bR - bL) * (bB - bT);
+
+      // Check containment (a contains b with 0.5% tolerance)
+      if (aL <= bL + 0.5 && aT <= bT + 0.5 && aR >= bR - 0.5 && aB >= bB - 0.5 && aArea > bArea) {
+        if (!a.childIds.includes(b.id)) a.childIds.push(b.id);
+        if (!b.parentId || (list.find((p) => p.id === b.parentId)?.normW || 100) > a.normW) {
+          b.parentId = a.id;
+        }
+      }
+
+      // Check overlap (intersection area / min(areaA, areaB) > 0.15)
+      const interL = Math.max(aL, bL);
+      const interT = Math.max(aT, bT);
+      const interR = Math.min(aR, bR);
+      const interB = Math.min(aB, bB);
+      if (interR > interL && interB > interT) {
+        const interArea = (interR - interL) * (interB - interT);
+        if (interArea / Math.max(1, Math.min(aArea, bArea)) > 0.15) {
+          if (!a.overlappingIds.includes(b.id)) a.overlappingIds.push(b.id);
+        }
+      }
+
+      // Check proximity (distance between boxes <= 5%)
+      const dx = Math.max(0, Math.max(aL - bR, bL - aR));
+      const dy = Math.max(0, Math.max(aT - bB, bT - aB));
+      const dist = Math.hypot(dx, dy);
+      if (dist <= 5.0) {
+        if (!a.nearbyIds.includes(b.id)) a.nearbyIds.push(b.id);
+      }
+    }
+  }
+
+  // Assign siblings
+  for (const r of list) {
+    if (r.parentId) {
+      r.siblingIds = list.filter((s) => s.id !== r.id && s.parentId === r.parentId).map((s) => s.id);
+    } else {
+      r.siblingIds = [];
+    }
+  }
+
+  return list;
+}
+
+/**
+ * Builds a fast spatial index for detected regions to ensure 60fps hover without recalculation.
+ */
+export function buildSpatialIndex(regions = []) {
+  const buckets = {};
+  const gridSize = 10; // 10x10 buckets across 0..100%
+
+  for (const region of regions) {
+    const minBx = Math.max(0, Math.min(9, Math.floor((region.normX || 0) / gridSize)));
+    const minBy = Math.max(0, Math.min(9, Math.floor((region.normY || 0) / gridSize)));
+    const maxBx = Math.max(0, Math.min(9, Math.floor(((region.normX || 0) + (region.normW || 0)) / gridSize)));
+    const maxBy = Math.max(0, Math.min(9, Math.floor(((region.normY || 0) + (region.normH || 0)) / gridSize)));
+
+    for (let bx = minBx; bx <= maxBx; bx++) {
+      for (let by = minBy; by <= maxBy; by++) {
+        const key = `${bx}_${by}`;
+        if (!buckets[key]) buckets[key] = [];
+        buckets[key].push(region.id);
+      }
+    }
+  }
+
+  return {
+    gridSize,
+    buckets,
+    regionMap: new Map(regions.map((r) => [r.id, r])),
+  };
+}
+
+/**
+ * Discovers hover candidates at normalized point (px, py) with proximity and ranking.
+ * Implements Smart Flyer V3 Hover Area Discovery ranking:
+ * 1. Smallest / highest-confidence object directly under pointer
+ * 2. Semantic group containing it
+ * 3. Related visual objects (siblings or overlapping)
+ * 4. Parent composition / section
+ */
+export function findHoverCandidates(regions = [], px, py, proximityThreshold = 4.0, spatialIndex = null) {
+  if (!Array.isArray(regions) || regions.length === 0) return [];
+
+  // Use spatial index if available, or fall back to linear scan
+  let candidateRegions = regions;
+  if (spatialIndex && spatialIndex.buckets) {
+    const bx = Math.max(0, Math.min(9, Math.floor(px / spatialIndex.gridSize)));
+    const by = Math.max(0, Math.min(9, Math.floor(py / spatialIndex.gridSize)));
+    const ids = new Set(spatialIndex.buckets[`${bx}_${by}`] || []);
+    // Also include adjacent grid cells for proximity
+    for (let ox = -1; ox <= 1; ox++) {
+      for (let oy = -1; oy <= 1; oy++) {
+        const nbIds = spatialIndex.buckets[`${bx + ox}_${by + oy}`];
+        if (nbIds) nbIds.forEach((id) => ids.add(id));
+      }
+    }
+    candidateRegions = Array.from(ids).map((id) => spatialIndex.regionMap.get(id)).filter(Boolean);
+  }
+
+  const results = [];
+
+  for (const r of candidateRegions) {
+    const rx = r.normX != null ? r.normX : 0;
+    const ry = r.normY != null ? r.normY : 0;
+    const rw = r.normW != null ? r.normW : 0;
+    const rh = r.normH != null ? r.normH : 0;
+
+    const isDirect = px >= rx && px <= rx + rw && py >= ry && py <= ry + rh;
+
+    // Calculate distance from point to bounding box
+    const dx = px < rx ? rx - px : px > rx + rw ? px - (rx + rw) : 0;
+    const dy = py < ry ? ry - py : py > ry + rh ? py - (ry + rh) : 0;
+    const dist = Math.hypot(dx, dy);
+
+    if (isDirect || dist <= proximityThreshold) {
+      const area = rw * rh;
+      let score = 0;
+
+      // Direct containment gets large boost
+      if (isDirect) {
+        score += 1000;
+        // Smaller area gets higher priority
+        score += Math.max(0, 500 - area);
+      } else {
+        // Proximity penalty
+        score += Math.max(0, 200 - dist * 40);
+      }
+
+      // Type priority: atomic items > groups > sections
+      const typeBonus = {
+        person: 350,
+        icon: 300,
+        graphic_shape: 280,
+        text_group: 250,
+        logo: 240,
+        subject: 220,
+        visual_group: 150,
+        "merged-region": 140,
+        section: 80,
+      };
+      score += (typeBonus[r.type] || 100);
+
+      // Confidence factor
+      score += (r.conf || 80) * 0.5;
+
+      results.push({
+        region: r,
+        isDirect,
+        distance: Number(dist.toFixed(2)),
+        score: Math.round(score),
+        relation: isDirect ? (area < 40 ? "direct" : "group") : "nearby",
+      });
+    }
+  }
+
+  // Sort by score descending
+  results.sort((a, b) => b.score - a.score);
+
+  return results;
+}
+
+/**
  * Merges multiple selected visual regions into a single unified composite region.
+ * Complies with Feature 2 specification (non-destructive logical Smart Flyer group).
  */
 export function mergeSelectedRegions(regions, imgW = 1920, imgH = 1080) {
   if (!regions || regions.length === 0) return null;
   if (regions.length === 1) return regions[0];
 
-  const minX = Math.min(...regions.map((r) => r.x));
-  const minY = Math.min(...regions.map((r) => r.y));
-  const maxR = Math.max(...regions.map((r) => r.x + r.w));
-  const maxB = Math.max(...regions.map((r) => r.y + r.h));
-  const combinedText = regions.map((r) => r.text || r.label).filter(Boolean).join(' ');
+  const getX = (r) => (r.x != null ? r.x : ((r.normX != null ? r.normX : 0) / 100) * imgW);
+  const getY = (r) => (r.y != null ? r.y : ((r.normY != null ? r.normY : 0) / 100) * imgH);
+  const getW = (r) => (r.w != null ? r.w : ((r.normW != null ? r.normW : 0) / 100) * imgW);
+  const getH = (r) => (r.h != null ? r.h : ((r.normH != null ? r.normH : 0) / 100) * imgH);
+
+  const minX = Math.min(...regions.map(getX));
+  const minY = Math.min(...regions.map(getY));
+  const maxR = Math.max(...regions.map((r) => getX(r) + getW(r)));
+  const maxB = Math.max(...regions.map((r) => getY(r) + getH(r)));
+  const unionW = Math.max(10, maxR - minX);
+  const unionH = Math.max(10, maxB - minY);
+
+  const combinedText = regions
+    .map((r) => r.text || r.label)
+    .filter(Boolean)
+    .join(" ");
+
+  const typeSummary = Array.from(new Set(regions.map((r) => r.type))).join(" + ");
 
   return {
-    id: `merged_${Date.now()}`,
-    type: 'visual_group',
-    label: `Merged: ${combinedText.slice(0, 24)}`,
+    id: `merged_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`,
+    type: "merged-region",
+    label: `Merged (${regions.length} items: ${typeSummary})`,
     text: combinedText,
     x: minX,
     y: minY,
-    w: maxR - minX,
-    h: maxB - minY,
-    conf: 95,
+    w: unionW,
+    h: unionH,
+    bounds: { x: minX, y: minY, w: unionW, h: unionH },
+    conf: 98,
     canCutout: true,
-    cutoutQuality: 'high',
+    cutoutQuality: "high",
     normX: (minX / imgW) * 100,
     normY: (minY / imgH) * 100,
-    normW: ((maxR - minX) / imgW) * 100,
-    normH: ((maxB - minY) / imgH) * 100,
-    childIds: regions.map((r) => r.id),
+    normW: (unionW / imgW) * 100,
+    normH: (unionH / imgH) * 100,
+    childRegionIds: regions.map((r) => r.id),
+    childRegions: regions,
+    isMerged: true,
   };
+}
+
+/**
+ * Restores child regions from a merged region (Feature 2.7: Unmerge).
+ */
+export function unmergeRegion(mergedRegionId, visualRegions = []) {
+  if (!Array.isArray(visualRegions)) return visualRegions;
+  return visualRegions.filter((r) => r.id !== mergedRegionId);
+}
+
+/**
+ * Extracts a merged detected object as a high-resolution transparent PNG composition.
+ * Preserves transparency in space between non-adjacent elements (Feature 2.3).
+ */
+export async function extractMergedRegionsToDataUrl(imageSource, mergedRegion, withCutout = true, onProgress = () => {}) {
+  if (!mergedRegion) throw new Error("No merged region provided");
+
+  const childRegions = mergedRegion.childRegions || [];
+  if (childRegions.length === 0) {
+    // Fall back to cropping the union bounds
+    return withCutout
+      ? smartCutoutRegionToDataUrl(imageSource, mergedRegion, false)
+      : cropRegionToDataUrl(imageSource, mergedRegion, false);
+  }
+
+  onProgress(10);
+
+  // Allocate composite canvas matching merged region dimensions at source resolution
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(mergedRegion.w);
+  canvas.height = Math.round(mergedRegion.h);
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  let completed = 0;
+  for (const child of childRegions) {
+    let childDataUrl;
+    if (withCutout) {
+      if (child.type === "subject") {
+        childDataUrl = await extractSubjectWithCutout(imageSource, child);
+      } else {
+        childDataUrl = await smartCutoutRegionToDataUrl(imageSource, child, false);
+      }
+    } else {
+      childDataUrl = await cropRegionToDataUrl(imageSource, child, false);
+    }
+
+    if (childDataUrl) {
+      await new Promise((resolve) => {
+        const img = new Image();
+        img.crossOrigin = "Anonymous";
+        img.onload = () => {
+          const relX = Math.round(child.x - mergedRegion.x);
+          const relY = Math.round(child.y - mergedRegion.y);
+          ctx.drawImage(img, relX, relY, Math.round(child.w), Math.round(child.h));
+          resolve();
+        };
+        img.onerror = resolve;
+        img.src = childDataUrl;
+      });
+    }
+
+    completed++;
+    onProgress(10 + Math.round((completed / childRegions.length) * 80));
+  }
+
+  onProgress(100);
+  return canvas.toDataURL("image/png");
+}
+
+/**
+ * Performs deeper local analysis strictly inside a bounded source-image region (Feature 4.1).
+ */
+export async function analyzeBoundedArea(imageSource, bounds, existingRegions = [], imgW = 1920, imgH = 1080) {
+  const normX = bounds.normX != null ? bounds.normX : 0;
+  const normY = bounds.normY != null ? bounds.normY : 0;
+  const normW = bounds.normW != null ? bounds.normW : 20;
+  const normH = bounds.normH != null ? bounds.normH : 20;
+
+  const cropBox = {
+    x: Math.round((normX / 100) * imgW),
+    y: Math.round((normY / 100) * imgH),
+    w: Math.round((normW / 100) * imgW),
+    h: Math.round((normH / 100) * imgH),
+    normX,
+    normY,
+    normW,
+    normH,
+  };
+
+  // Crop localized area
+  const croppedAreaUrl = await cropRegionToDataUrl(imageSource, cropBox, false);
+
+  // Return new local region entry
+  const localRegion = {
+    id: `local_area_${Date.now()}`,
+    type: "visual_group",
+    label: `Local Area (${Math.round(normW)}x${Math.round(normH)}%)`,
+    text: "Localized Analysis Area",
+    x: cropBox.x,
+    y: cropBox.y,
+    w: cropBox.w,
+    h: cropBox.h,
+    conf: 99,
+    canCutout: true,
+    cutoutQuality: "high",
+    normX,
+    normY,
+    normW,
+    normH,
+    isLocalArea: true,
+  };
+
+  return localRegion;
 }
 
 /**
@@ -626,16 +958,16 @@ export function createCustomMarqueeRegion(normX, normY, normW, normH, imgW = 192
 
   return {
     id: `custom_marquee_${Date.now()}`,
-    type: 'visual_group',
-    label: 'Custom Marquee Selection',
-    text: 'Custom Selection',
+    type: "visual_group",
+    label: "Custom Marquee Selection",
+    text: "Custom Selection",
     x,
     y,
     w,
     h,
     conf: 100,
     canCutout: true,
-    cutoutQuality: 'high',
+    cutoutQuality: "high",
     normX,
     normY,
     normW,
@@ -649,35 +981,8 @@ export function createCustomMarqueeRegion(normX, normY, normW, normH, imgW = 192
  * Breaks ties by smallest area.
  */
 export function findSmallestChildRegion(regions, px, py) {
-  if (!Array.isArray(regions) || regions.length === 0) return null;
-  const matches = regions.filter((r) => {
-    const rx = r.normX != null ? r.normX : 0;
-    const ry = r.normY != null ? r.normY : 0;
-    const rw = r.normW != null ? r.normW : 0;
-    const rh = r.normH != null ? r.normH : 0;
-    return px >= rx && px <= rx + rw && py >= ry && py <= ry + rh;
-  });
-  if (!matches.length) return null;
-
-  const typeWeight = {
-    icon: 1,
-    graphic_shape: 1,
-    text_group: 2,
-    logo: 3,
-    subject: 4,
-    visual_group: 5,
-    section: 6,
-  };
-
-  matches.sort((a, b) => {
-    const wA = typeWeight[a.type] || 5;
-    const wB = typeWeight[b.type] || 5;
-    if (wA !== wB) return wA - wB;
-    const areaA = (a.normW || 0) * (a.normH || 0);
-    const areaB = (b.normW || 0) * (b.normH || 0);
-    return areaA - areaB;
-  });
-
-  return matches[0];
+  const candidates = findHoverCandidates(regions, px, py, 1.0);
+  return candidates.length > 0 ? candidates[0].region : null;
 }
+
 

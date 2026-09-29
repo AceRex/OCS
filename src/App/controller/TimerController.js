@@ -385,7 +385,7 @@ export default function TimerController() {
     dispatch(utilAction.setIsRunning(true));
     setActiveMenuId(null);
 
-    isAgendaDrivenRef.current = true;
+    isAgendaDrivenRef.current = false; // let local interval run immediately; onTimerSync will set this true once engine confirms
     const sessIdx = agenda ? agenda.findIndex((a) => a._id === item._id) : 0;
     window.electron?.Agenda?.controlExecution?.({
       command: "start",
