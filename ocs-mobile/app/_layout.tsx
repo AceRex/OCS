@@ -78,9 +78,13 @@ class CrashReporter extends Component<{ children: React.ReactNode }, CrashState>
           </View>
           <ScrollView style={crashStyles.scrollBox} contentContainerStyle={{ padding: 16 }}>
             <Text style={crashStyles.errorLabel}>Error Message:</Text>
-            <Text style={crashStyles.errorText}>{this.state.error}</Text>
-            <Text style={[crashStyles.errorLabel, { marginTop: 16 }]}>Stack Trace:</Text>
-            <Text style={crashStyles.stackText}>{this.state.stack}</Text>
+            <Text style={crashStyles.errorText}>{this.state.error || "An unexpected error occurred. Please restart the app or contact support."}</Text>
+            {__DEV__ && this.state.stack ? (
+              <>
+                <Text style={[crashStyles.errorLabel, { marginTop: 16 }]}>Stack Trace (Debug Mode):</Text>
+                <Text style={crashStyles.stackText}>{this.state.stack}</Text>
+              </>
+            ) : null}
           </ScrollView>
         </View>
       );
