@@ -459,7 +459,7 @@ async function refreshPairingQr() {
   try {
     const apiBase =
       (appSettings ? appSettings.get("apiBaseUrl") : null) ||
-      "https://ocs-backend-git-main-acerexs-projects.vercel.app/api";
+      (appSettings ? appSettings.CANONICAL_API_BASE_URL : "https://ocs-web-three.vercel.app/api");
     const payload = buildPairPayload({
       ip: serverIp,
       port: PORT,
@@ -1140,6 +1140,8 @@ ipcMain.handle("open-external-url", async (_event, url) => {
   }
   return false;
 });
+
+ipcMain.handle("app:get-version", () => app.getVersion());
 
 ipcMain.handle("media-request-camera-permission", async () => {
   if (process.platform === "darwin" && systemPreferences.askForMediaAccess) {
@@ -1919,10 +1921,10 @@ serverApp.get("/pair-info", (_req, res) => {
     pairingRequired: true,
     apiBaseUrl:
       (appSettings ? appSettings.get("apiBaseUrl") : null) ||
-      "https://ocs-backend-git-main-acerexs-projects.vercel.app/api",
+      (appSettings ? appSettings.CANONICAL_API_BASE_URL : "https://ocs-web-three.vercel.app/api"),
     authLoginUrl:
       (appSettings ? appSettings.get("authLoginUrl") : null) ||
-      "https://waveio-git-main-acerexs-projects.vercel.app",
+      (appSettings ? appSettings.CANONICAL_WEB_ORIGIN : "https://ocs-web-three.vercel.app"),
     // Never expose the live token/code over an unauthenticated HTTP GET
   });
 });
@@ -2878,10 +2880,10 @@ io.on("connection", (socket) => {
       device.deviceRole = device.isAdmin ? "admin" : "speaker";
     const apiBase =
       (appSettings ? appSettings.get("apiBaseUrl") : null) ||
-      "https://ocs-backend-git-main-acerexs-projects.vercel.app/api";
+      (appSettings ? appSettings.CANONICAL_API_BASE_URL : "https://ocs-web-three.vercel.app/api");
     const authUrl =
       (appSettings ? appSettings.get("authLoginUrl") : null) ||
-      "https://waveio-git-main-acerexs-projects.vercel.app";
+      (appSettings ? appSettings.CANONICAL_WEB_ORIGIN : "https://ocs-web-three.vercel.app");
     console.log(
       "[Remote] paired via handshake:",
       socket.id,
@@ -2974,10 +2976,10 @@ io.on("connection", (socket) => {
       device.deviceRole = device.isAdmin ? "admin" : "speaker";
     const apiBase =
       (appSettings ? appSettings.get("apiBaseUrl") : null) ||
-      "https://ocs-backend-git-main-acerexs-projects.vercel.app/api";
+      (appSettings ? appSettings.CANONICAL_API_BASE_URL : "https://ocs-web-three.vercel.app/api");
     const authUrl =
       (appSettings ? appSettings.get("authLoginUrl") : null) ||
-      "https://waveio-git-main-acerexs-projects.vercel.app";
+      (appSettings ? appSettings.CANONICAL_WEB_ORIGIN : "https://ocs-web-three.vercel.app");
     socket.emit("pair-result", {
       ok: true,
       deviceName: device.name,
@@ -7352,6 +7354,25 @@ app.whenReady().then(async () => {
     openShortcuts: () => {
       if (controllerWindow && !controllerWindow.isDestroyed()) {
         controllerWindow.webContents.send("menu-action", "open_shortcuts");
+      }
+    },
+    checkForUpdates: async () => {
+      try {
+        const { updaterService } = require("./src/main/updater/updaterService");
+        const status = await updaterService.checkForUpdates(true);
+        if (status && status.status === "not-available") {
+          const { dialog } = require("electron");
+          const parentWin = controllerWindow && !controllerWindow.isDestroyed() ? controllerWindow : null;
+          await dialog.showMessageBox(parentWin, {
+            type: "info",
+            title: "wave.io Updates",
+            message: "You're up to date.",
+            detail: `wave.io v${status.currentVersion} is currently the newest version available.`,
+            buttons: ["OK"],
+          });
+        }
+      } catch (err) {
+        console.warn("[Menu] Check for updates error:", err);
       }
     },
   };

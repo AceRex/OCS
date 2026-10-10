@@ -64,32 +64,34 @@ export default function UpdateModal() {
       
       {/* ─── 1. UPDATE AVAILABLE STATE ─── */}
       {isAvailable && (
-        <div className="bg-[#130E22]/95 border border-[#3E3159] p-5 rounded-3xl shadow-2xl shadow-[#8B5CF6]/80 backdrop-blur-xl space-y-4 text-white">
+        <div className="bg-[#130E22]/95 border border-[#3E3159] p-5 rounded-[12px] shadow-2xl shadow-[#8B5CF6]/80 backdrop-blur-xl space-y-4 text-white">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#A788FA] to-[#6366F1] flex items-center justify-center text-[#0B0814] shadow-lg shadow-[#8B5CF6]/30">
+              <div className="w-10 h-10 rounded-[12px] bg-gradient-to-br from-[#A788FA] to-[#6366F1] flex items-center justify-center text-[#0B0814] shadow-lg shadow-[#8B5CF6]/30">
                 <PiSparkle size={20} className="animate-pulse" />
               </div>
               <div>
-                <h4 className="text-sm font-black uppercase tracking-wider text-white">OCS Update Available</h4>
+                <h4 className="text-sm font-black uppercase tracking-wider text-white">Update Available</h4>
                 <div className="flex items-center gap-2 mt-0.5">
-                  <span className="text-xs text-[#A788FA] font-bold">v{latestVersion}</span>
+                  <span className="text-xs text-[#A788FA] font-bold">OCS v{latestVersion} is available.</span>
                   <span className="text-[10px] text-[#8882A4]">Current: v{currentVersion}</span>
                 </div>
               </div>
             </div>
             <button
               onClick={dismissNotification}
-              className="text-[#8882A4] hover:text-white p-1 rounded-xl hover:bg-white/5 transition-colors"
+              className="text-[#8882A4] hover:text-white p-1 rounded-[12px] hover:bg-white/5 transition-colors"
               title="Dismiss"
             >
               <PiX size={18} />
             </button>
           </div>
 
+          <p className="text-xs text-[#C8C2DC]">Downloading update...</p>
+
           {/* Release Notes Preview */}
           {releaseNotes && (
-            <div className="bg-[#1E1735]/80 border border-[#2E2448] p-3 rounded-2xl text-xs text-[#C8C2DC] max-h-28 overflow-y-auto leading-relaxed no-scrollbar">
+            <div className="bg-[#1E1735]/80 border border-[#2E2448] p-3 rounded-[12px] text-xs text-[#C8C2DC] max-h-28 overflow-y-auto leading-relaxed no-scrollbar">
               <span className="text-[10px] font-black uppercase tracking-widest text-[#8882A4] block mb-1">What's New:</span>
               <div className="whitespace-pre-line text-[11px]">
                 {typeof releaseNotes === 'string' ? releaseNotes : 'New features, stability improvements, and performance updates.'}
@@ -119,20 +121,22 @@ export default function UpdateModal() {
 
       {/* ─── 2. DOWNLOADING STATE ─── */}
       {isDownloading && (
-        <div className="bg-[#130E22]/95 border border-[#3E3159] p-5 rounded-3xl shadow-2xl shadow-[#8B5CF6]/80 backdrop-blur-xl space-y-3.5 text-white">
+        <div className="bg-[#130E22]/95 border border-[#3E3159] p-5 rounded-[12px] shadow-2xl shadow-[#8B5CF6]/80 backdrop-blur-xl space-y-3.5 text-white">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
-              <div className="w-8 h-8 rounded-xl bg-[#8B5CF6]/20 text-[#A788FA] flex items-center justify-center">
+              <div className="w-8 h-8 rounded-[12px] bg-[#8B5CF6]/20 text-[#A788FA] flex items-center justify-center">
                 <PiArrowClockwise size={18} className="animate-spin" />
               </div>
               <div>
-                <h4 className="text-xs font-black uppercase tracking-wider text-white">Downloading OCS v{latestVersion}</h4>
-                <p className="text-[10px] text-[#8882A4]">You can continue using OCS normally</p>
+                <h4 className="text-xs font-black uppercase tracking-wider text-white">
+                  Downloading update — {downloadProgress.percent}%
+                </h4>
+                <p className="text-[10px] text-[#8882A4]">OCS v{latestVersion} • You can continue using OCS normally</p>
               </div>
             </div>
             <button
               onClick={dismissNotification}
-              className="text-[#8882A4] hover:text-white p-1 rounded-xl hover:bg-white/5"
+              className="text-[#8882A4] hover:text-white p-1 rounded-[12px] hover:bg-white/5"
               title="Hide progress"
             >
               <PiX size={16} />
@@ -160,29 +164,29 @@ export default function UpdateModal() {
 
       {/* ─── 3. UPDATE READY STATE ─── */}
       {isDownloaded && !confirmLiveRestart && (
-        <div className="bg-[#130E22]/95 border border-emerald-500/30 p-5 rounded-3xl shadow-2xl shadow-emerald-950/80 backdrop-blur-xl space-y-4 text-white">
+        <div className="bg-[#130E22]/95 border border-emerald-500/30 p-5 rounded-[12px] shadow-2xl shadow-emerald-950/80 backdrop-blur-xl space-y-4 text-white">
           <div className="flex items-start justify-between gap-3">
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+              <div className="w-10 h-10 rounded-[12px] bg-emerald-500/20 text-emerald-400 flex items-center justify-center shadow-lg shadow-emerald-500/20">
                 <PiCheckCircle size={22} className="animate-bounce" />
               </div>
               <div>
-                <h4 className="text-sm font-black uppercase tracking-wider text-white">Update Ready to Install</h4>
+                <h4 className="text-sm font-black uppercase tracking-wider text-white">Update Ready</h4>
                 <p className="text-xs text-emerald-300/90 font-medium mt-0.5">
-                  OCS v{latestVersion} is downloaded and verified.
+                  A new version of OCS has been downloaded.
                 </p>
               </div>
             </div>
             <button
               onClick={dismissNotification}
-              className="text-[#8882A4] hover:text-white p-1 rounded-xl hover:bg-white/5"
+              className="text-[#8882A4] hover:text-white p-1 rounded-[12px] hover:bg-white/5"
             >
               <PiX size={18} />
             </button>
           </div>
 
-          <p className="text-[11px] text-[#8882A4] leading-relaxed">
-            Restart OCS now to apply the new version, or continue working and install on next launch.
+          <p className="text-xs text-[#C8C2DC] leading-relaxed">
+            Restart the app to finish installing the update.
           </p>
 
           <div className="flex items-center gap-2 pt-1">
@@ -256,13 +260,13 @@ export default function UpdateModal() {
 
       {/* ─── 4. ERROR STATE ─── */}
       {isError && errorMessage && (
-        <div className="bg-[#1D1018]/95 border border-rose-500/30 p-4 rounded-3xl shadow-2xl shadow-rose-950/60 backdrop-blur-xl space-y-3 text-white">
+        <div className="bg-[#1D1018]/95 border border-rose-500/30 p-4 rounded-[12px] shadow-2xl shadow-rose-950/60 backdrop-blur-xl space-y-3 text-white">
           <div className="flex items-start justify-between gap-2">
             <div className="flex items-center gap-2.5 text-rose-400">
               <PiWarning size={18} />
               <h4 className="text-xs font-black uppercase tracking-wider text-white">Update Notice</h4>
             </div>
-            <button onClick={dismissNotification} className="text-[#8882A4] hover:text-white p-1">
+            <button onClick={dismissNotification} className="text-[#8882A4] hover:text-white p-1 rounded-[12px]">
               <PiX size={16} />
             </button>
           </div>
@@ -273,7 +277,7 @@ export default function UpdateModal() {
             <button
               type="button"
               onClick={() => checkForUpdates(true)}
-              className="px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-bold text-white transition-colors"
+              className="px-3 py-1.5 rounded-[12px] bg-white/10 hover:bg-white/15 text-xs font-bold text-white transition-colors"
             >
               Retry Check
             </button>

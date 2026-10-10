@@ -3,7 +3,11 @@
  * @description Central auto-updater orchestrator and state machine for OCS Desktop.
  */
 
-const { app } = require('electron');
+let app = null;
+try {
+  const electron = require('electron');
+  app = electron.app || null;
+} catch (_) {}
 const { UPDATE_STATUS, UPDATER_CHANNELS } = require('./updaterTypes');
 const GitHubUpdateProvider = require('./gitHubUpdateProvider');
 

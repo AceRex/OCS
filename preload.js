@@ -581,6 +581,7 @@ contextBridge.exposeInMainWorld("electron", {
     },
   },
   Updater: {
+    getVersion: () => ipcRenderer.invoke('app:get-version'),
     checkForUpdates: (isManual = true) => ipcRenderer.invoke('updater:check', isManual),
     downloadUpdate: () => ipcRenderer.invoke('updater:download'),
     quitAndInstall: (options) => ipcRenderer.invoke('updater:install', options),

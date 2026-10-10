@@ -13,6 +13,10 @@ exports.createTemplate = (electronApp, actions = {}) => {
             label: appName,
             submenu: [
               { role: "about", label: "About wave.io" },
+              {
+                label: "Check for Updates...",
+                click: () => actions?.checkForUpdates?.(),
+              },
               { type: "separator" },
               {
                 label: "Sanctuary Shortcuts Guide...",
@@ -152,9 +156,14 @@ exports.createTemplate = (electronApp, actions = {}) => {
       role: "help",
       submenu: [
         {
+          label: "Check for Updates...",
+          click: () => actions?.checkForUpdates?.(),
+        },
+        { type: "separator" },
+        {
           label: "wave.io Documentation & Setup Guide",
           click: async () => {
-            await shell.openExternal("https://waveio-git-main-acerexs-projects.vercel.app/docs");
+            await shell.openExternal("https://ocs-web-three.vercel.app/docs");
           },
         },
         {

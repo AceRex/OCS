@@ -27,6 +27,15 @@ const DEFAULT_STYLES = {
   bibleHighlightColor: '#FFEB3B', // Default readable yellow
 };
 
+const CANONICAL_WEB_ORIGIN = (process.env.OCS_AUTH_BASE_URL || 'https://ocs-web-three.vercel.app').replace(/\/+$/, '');
+const CANONICAL_API_BASE_URL = (process.env.OCS_API_BASE_URL || `${CANONICAL_WEB_ORIGIN}/api`).replace(/\/+$/, '');
+
+function joinUrl(base, path = '') {
+  const cleanBase = (base || CANONICAL_WEB_ORIGIN).replace(/\/+$/, '');
+  const cleanPath = String(path).replace(/^\/+/, '');
+  return cleanPath ? `${cleanBase}/${cleanPath}` : cleanBase;
+}
+
 const DEFAULTS = {
   /** 'always' | 'live' — FR-13.3 */
   sleepPrevention: 'always',
@@ -54,9 +63,9 @@ const DEFAULTS = {
   /** Authentication Offline Grace Period in hours (FR-13.5). Default 72 hours. */
   authGracePeriodHours: 72,
   /** Auth server login base URL (FR-13.3). Overridable via OCS_AUTH_BASE_URL in dev. */
-  authLoginUrl: process.env.OCS_AUTH_BASE_URL || 'https://waveio-git-main-acerexs-projects.vercel.app',
+  authLoginUrl: CANONICAL_WEB_ORIGIN,
   /** Backend API base URL */
-  apiBaseUrl: process.env.OCS_API_BASE_URL || 'https://ocs-backend-git-main-acerexs-projects.vercel.app/api',
+  apiBaseUrl: CANONICAL_API_BASE_URL,
   /** Launch OCS Service on System Startup / Boot */
   startAtLogin: false,
   /** Display overlay & Scripture styling configuration */
@@ -144,5 +153,18 @@ function set(key, value) {
   return cache;
 }
 
-module.exports = { init, load, loadSync, save, resetDefaults, get, set, DEFAULTS, DEFAULT_STYLES };
+module.exports = {
+  init,
+  load,
+  loadSync,
+  save,
+  resetDefaults,
+  get,
+  set,
+  DEFAULTS,
+  DEFAULT_STYLES,
+  CANONICAL_WEB_ORIGIN,
+  CANONICAL_API_BASE_URL,
+  joinUrl,
+};
 

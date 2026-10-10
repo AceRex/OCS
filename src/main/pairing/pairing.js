@@ -3,6 +3,7 @@
  * Short-lived credential generated per app launch — embedded in QR + shown as 6-digit code.
  */
 const crypto = require('crypto');
+const { CANONICAL_API_BASE_URL } = require('../appSettings');
 
 const PAIRED_SOCKETS = new Set(); // socket ids that have successfully paired this session
 
@@ -22,7 +23,7 @@ function generatePairing() {
  * Build the QR payload string. Mobile app parses:
  *   ocs://pair?ip=...&port=4000&token=...&code=...&api=...
  */
-function buildPairPayload({ ip, port, token, code, api = "https://ocs-backend-git-main-acerexs-projects.vercel.app/api" }) {
+function buildPairPayload({ ip, port, token, code, api = CANONICAL_API_BASE_URL }) {
   return `ocs://pair?ip=${encodeURIComponent(ip)}&port=${port}&token=${encodeURIComponent(token)}&code=${encodeURIComponent(code)}&api=${encodeURIComponent(api)}`;
 }
 

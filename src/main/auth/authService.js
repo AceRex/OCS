@@ -18,6 +18,7 @@ const os = require('os');
 const EventEmitter = require('events');
 
 const appSettings = require('../appSettings');
+const { CANONICAL_WEB_ORIGIN, CANONICAL_API_BASE_URL, joinUrl } = appSettings;
 
 let safeStorage = null;
 try {
@@ -25,7 +26,7 @@ try {
   safeStorage = electron.safeStorage || null;
 } catch (_) {}
 
-const PRODUCTION_AUTH_HOST = 'waveio-git-main-acerexs-projects.vercel.app';
+const PRODUCTION_AUTH_HOST = new URL(CANONICAL_WEB_ORIGIN).hostname; // 'ocs-web-three.vercel.app'
 
 function assertProductionAuthUrl(customUrl, isPackagedOverride) {
   let isPackaged = false;
@@ -40,7 +41,7 @@ function assertProductionAuthUrl(customUrl, isPackagedOverride) {
   // dev/test: allow anything
   if (process.env.NODE_ENV !== 'production' && !isPackaged) return;
 
-  const configuredStr = customUrl || (appSettings ? appSettings.get('authLoginUrl') : null) || 'https://waveio-git-main-acerexs-projects.vercel.app';
+  const configuredStr = customUrl || (appSettings ? appSettings.get('authLoginUrl') : null) || CANONICAL_WEB_ORIGIN;
   let configured;
   try {
     configured = new URL(configuredStr);
@@ -87,21 +88,33 @@ class AuthService extends EventEmitter {
     this.guestDurationMs = guestDurationMs;
     this.machineId = getMachineId();
 
-    let host = defaultAuthHost || (appSettings ? appSettings.get("authLoginUrl") : null) || "https://waveio-git-main-acerexs-projects.vercel.app";
-    if (typeof host === "string" && !host.includes("waveio-git-main-acerexs-projects.vercel.app") && !host.includes("localhost")) {
-      host = "https://waveio-git-main-acerexs-projects.vercel.app";
+    let host = defaultAuthHost || (appSettings ? appSettings.get("authLoginUrl") : null) || CANONICAL_WEB_ORIGIN;
+    if (typeof host === "string" && !host.includes(PRODUCTION_AUTH_HOST) && !host.includes("localhost")) {
+      host = CANONICAL_WEB_ORIGIN;
     }
     this.defaultAuthHost = host;
 
     if (appSettings) {
       try {
         const currentApi = appSettings.get("apiBaseUrl");
-        if (typeof currentApi === "string" && (currentApi.includes("ocs-backend.netlify.app") || currentApi.includes("ocs-backend-ten.vercel.app"))) {
-          appSettings.set("apiBaseUrl", "https://ocs-backend-git-main-acerexs-projects.vercel.app/api");
+        if (
+          typeof currentApi === "string" &&
+          (currentApi.includes("ocs-backend-git-main-acerexs-projects.vercel.app") ||
+           currentApi.includes("ocs-backend.netlify.app") ||
+           !currentApi.includes(PRODUCTION_AUTH_HOST)) &&
+          !currentApi.includes("localhost")
+        ) {
+          appSettings.set("apiBaseUrl", CANONICAL_API_BASE_URL);
         }
         const currentAuth = appSettings.get("authLoginUrl");
-        if (typeof currentAuth === "string" && (currentAuth.includes("ocs-web-three.vercel.app") || currentAuth.includes("waveiosoftware.netlify.app"))) {
-          appSettings.set("authLoginUrl", "https://waveio-git-main-acerexs-projects.vercel.app");
+        if (
+          typeof currentAuth === "string" &&
+          (currentAuth.includes("waveio-git-main-acerexs-projects.vercel.app") ||
+           currentAuth.includes("waveiosoftware.netlify.app") ||
+           !currentAuth.includes(PRODUCTION_AUTH_HOST)) &&
+          !currentAuth.includes("localhost")
+        ) {
+          appSettings.set("authLoginUrl", CANONICAL_WEB_ORIGIN);
         }
       } catch (err) {
         console.warn("[Auth] Settings migration notice:", err.message);
@@ -186,10 +199,10 @@ class AuthService extends EventEmitter {
   async syncGuestWithCloud() {
     if (this.isAuthenticated()) return;
     try {
-      const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-git-main-acerexs-projects.vercel.app/api";
+      const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || CANONICAL_API_BASE_URL;
       const https = require("https");
       const http = require("http");
-      const url = new URL(`${apiBase.replace(/\/+$/, "")}/auth/guest-check`);
+      const url = new URL(joinUrl(apiBase, "auth/guest-check"));
       const client = url.protocol === "http:" ? http : https;
 
       const postData = JSON.stringify({
@@ -209,6 +222,9 @@ class AuthService extends EventEmitter {
             timeout: 5000,
           },
           (res) => {
+            if (process.env.NODE_ENV !== "production") {
+              console.log("[AUTH] response status:", res.statusCode);
+            }
             let data = "";
             res.on("data", (chunk) => (data += chunk));
             res.on("end", () => {
@@ -403,10 +419,10 @@ class AuthService extends EventEmitter {
     const session = this.loadSession();
     if (!session || !session.token) return;
     try {
-      const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-git-main-acerexs-projects.vercel.app/api";
+      const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || CANONICAL_API_BASE_URL;
       const https = require("https");
       const http = require("http");
-      const url = new URL(`${apiBase.replace(/\/+$/, "")}/auth/device/register`);
+      const url = new URL(joinUrl(apiBase, "auth/device/register"));
       const client = url.protocol === "http:" ? http : https;
       const postData = JSON.stringify({
         platform: "desktop",
@@ -426,7 +442,11 @@ class AuthService extends EventEmitter {
           },
           timeout: 5000,
         },
-        () => {}
+        (res) => {
+          if (process.env.NODE_ENV !== "production") {
+            console.log("[AUTH] response status:", res.statusCode);
+          }
+        }
       );
       req.on("error", () => {});
       req.write(postData);
@@ -436,10 +456,10 @@ class AuthService extends EventEmitter {
 
   async validateTokenOnline(token) {
     try {
-      const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || "https://ocs-backend-git-main-acerexs-projects.vercel.app/api";
+      const apiBase = (appSettings ? appSettings.get("apiBaseUrl") : null) || CANONICAL_API_BASE_URL;
       const https = require("https");
       const http = require("http");
-      const url = new URL(`${apiBase.replace(/\/+$/, "")}/auth/validate-token`);
+      const url = new URL(joinUrl(apiBase, "auth/validate-token"));
       const client = url.protocol === "http:" ? http : https;
       const deviceId = this.machineId || getMachineId();
       const deviceName = os.hostname() || "Desktop Workstation";
@@ -465,6 +485,9 @@ class AuthService extends EventEmitter {
             timeout: 5000,
           },
           (res) => {
+            if (process.env.NODE_ENV !== "production") {
+              console.log("[AUTH] response status:", res.statusCode);
+            }
             let data = "";
             res.on("data", (chunk) => (data += chunk));
             res.on("end", () => {
@@ -608,10 +631,15 @@ class AuthService extends EventEmitter {
 
   getLoginUrl(customAuthHost) {
     const state = this.generateAuthState();
-    const host = (customAuthHost || this.defaultAuthHost || "https://waveio-git-main-acerexs-projects.vercel.app").replace(/\/+$/, "");
+    const host = (customAuthHost || this.defaultAuthHost || CANONICAL_WEB_ORIGIN).replace(/\/+$/, "");
+    const loginEndpoint = joinUrl(host, "auth/desktop");
     const redirectUri = encodeURIComponent("ocs://auth/callback");
+    if (process.env.NODE_ENV !== "production") {
+      console.log("[AUTH] login origin:", host);
+      console.log("[AUTH] login endpoint:", loginEndpoint);
+    }
     return {
-      url: `${host}/auth/desktop?state=${state}&platform=desktop&redirect_uri=${redirectUri}`,
+      url: `${loginEndpoint}?state=${state}&platform=desktop&redirect_uri=${redirectUri}`,
       state,
     };
   }

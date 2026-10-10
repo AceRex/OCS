@@ -51,7 +51,7 @@ function runCorsTests() {
     const req = {
       method: 'POST',
       headers: {
-        origin: 'https://waveio-git-main-acerexs-projects.vercel.app',
+        origin: 'https://ocs-web-three.vercel.app',
       },
     };
 
@@ -68,7 +68,7 @@ function runCorsTests() {
     });
 
     assert.strictEqual(nextCalled, true, 'POST must call next()');
-    assert.strictEqual(headersSet['access-control-allow-origin'], 'https://waveio-git-main-acerexs-projects.vercel.app');
+    assert.strictEqual(headersSet['access-control-allow-origin'], 'https://ocs-web-three.vercel.app');
     assert.strictEqual(headersSet['access-control-allow-credentials'], 'true');
     console.log('✔ Standard POST request received correct CORS origin and credentials.');
   }

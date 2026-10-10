@@ -31,8 +31,8 @@ class GitHubUpdateProvider extends EventEmitter {
       return;
     }
 
-    // Never auto-download without user consent (PRD FR-14.3 / Architectural Rule 6)
-    this.autoUpdater.autoDownload = false;
+    // Automatically download updates in the background when available (PRD FR-14.3)
+    this.autoUpdater.autoDownload = true;
 
     // Allow installation on natural application quit if deferred
     this.autoUpdater.autoInstallOnAppQuit = true;
