@@ -1,3 +1,4 @@
+import { startTimer as startControllerTimer, stopTimer as stopControllerTimer } from "./timerCommands";
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useSelector, useDispatch } from "react-redux";
 import {
@@ -1525,14 +1526,7 @@ export default function BroadcastEngine({ onOpenPreview }) {
       return;
     }
     if (action === "timer_clear" || action === "stop_timer") {
-      window.electron?.Session?.emitTimerLifecycle?.({
-        type: "timer:stopped",
-        timerId: null,
-        elapsedSec: 0,
-      });
-      dispatch(utilAction.setTime(0));
-      dispatch(utilAction.setPaused(false));
-      dispatch(utilAction.setActiveId(null));
+      stopControllerTimer();
       setCommandFeedback({ label: "Timer Cleared", ok: true });
       setTimeout(() => setCommandFeedback(null), 3000);
       return;
@@ -1541,20 +1535,8 @@ export default function BroadcastEngine({ onOpenPreview }) {
     if (stageTimerMatch) {
       const mins = parseInt(stageTimerMatch[1], 10);
       const seconds = mins * 60;
-      dispatch(utilAction.setEventMode(false));
-      dispatch(utilAction.setTime(seconds));
-      dispatch(utilAction.setPaused(false));
-      dispatch(utilAction.setActiveId(null));
+      startControllerTimer(seconds);
       const activeItem = agenda?.find?.((a) => a._id === activeId);
-      window.electron?.Session?.emitTimerLifecycle?.({
-        type: "timer:started",
-        timerId: activeId || null,
-        title: activeItem?.agenda || `Stage Timer ${mins}m`,
-        durationSec: seconds,
-        category: activeItem?.agenda || "custom",
-        speakerName:
-          (activeItem?.anchor && String(activeItem.anchor).trim()) || "Speaker",
-      });
       setCommandFeedback({ label: `Stage Timer: ${mins}m`, ok: true });
       setTimeout(() => setCommandFeedback(null), 3500);
       return;
@@ -1569,20 +1551,8 @@ export default function BroadcastEngine({ onOpenPreview }) {
         setTimeout(() => setCommandFeedback(null), 3500);
         return;
       }
-      dispatch(utilAction.setEventMode(false));
-      dispatch(utilAction.setTime(seconds));
-      dispatch(utilAction.setPaused(false));
-      dispatch(utilAction.setActiveId(null));
+      startControllerTimer(seconds);
       const activeItem = agenda?.find?.((a) => a._id === activeId);
-      window.electron?.Session?.emitTimerLifecycle?.({
-        type: "timer:started",
-        timerId: activeId || null,
-        title: activeItem?.agenda || `Voice timer ${Math.round(seconds / 60)}m`,
-        durationSec: seconds,
-        category: activeItem?.agenda || "custom",
-        speakerName:
-          (activeItem?.anchor && String(activeItem.anchor).trim()) || "Speaker",
-      });
       const mins = Math.floor(seconds / 60);
       const secs = seconds % 60;
       const label = secs
@@ -4218,10 +4188,7 @@ export default function BroadcastEngine({ onOpenPreview }) {
                   <button
                     type="button"
                     onClick={() => {
-                      dispatch(utilAction.setEventMode(false));
-                      dispatch(utilAction.setTime(300));
-                      dispatch(utilAction.setPaused(false));
-                      dispatch(utilAction.setActiveId(null));
+                      startControllerTimer(300);
                       setCommandFeedback({
                         label: "5m Timer Started",
                         ok: true,
@@ -4236,10 +4203,7 @@ export default function BroadcastEngine({ onOpenPreview }) {
                   <button
                     type="button"
                     onClick={() => {
-                      dispatch(utilAction.setEventMode(false));
-                      dispatch(utilAction.setTime(600));
-                      dispatch(utilAction.setPaused(false));
-                      dispatch(utilAction.setActiveId(null));
+                      startControllerTimer(600);
                       setCommandFeedback({
                         label: "10m Timer Started",
                         ok: true,
@@ -4254,10 +4218,7 @@ export default function BroadcastEngine({ onOpenPreview }) {
                   <button
                     type="button"
                     onClick={() => {
-                      dispatch(utilAction.setEventMode(false));
-                      dispatch(utilAction.setTime(900));
-                      dispatch(utilAction.setPaused(false));
-                      dispatch(utilAction.setActiveId(null));
+                      startControllerTimer(900);
                       setCommandFeedback({
                         label: "15m Timer Started",
                         ok: true,
@@ -4272,10 +4233,7 @@ export default function BroadcastEngine({ onOpenPreview }) {
                   <button
                     type="button"
                     onClick={() => {
-                      dispatch(utilAction.setEventMode(false));
-                      dispatch(utilAction.setTime(1800));
-                      dispatch(utilAction.setPaused(false));
-                      dispatch(utilAction.setActiveId(null));
+                      startControllerTimer(1800);
                       setCommandFeedback({
                         label: "30m Timer Started",
                         ok: true,
@@ -4290,9 +4248,7 @@ export default function BroadcastEngine({ onOpenPreview }) {
                   <button
                     type="button"
                     onClick={() => {
-                      dispatch(utilAction.setTime(0));
-                      dispatch(utilAction.setPaused(false));
-                      dispatch(utilAction.setActiveId(null));
+                      stopControllerTimer();
                       setCommandFeedback({ label: "Timer Cleared", ok: true });
                       setTimeout(() => setCommandFeedback(null), 2500);
                     }}

@@ -4862,21 +4862,24 @@ agendaExecutionEngine = new AgendaExecutionEngine({
   },
   syncTimer: (timerPayload) => {
     broadcastToAllWindows("agenda-timer-sync", timerPayload);
-    // Agenda timer must NEVER appear on General Screen
+    const active = timerPayload.isRunning === true || timerPayload.isPaused === true;
+    const overlay = {
+      ...timerPayload,
+      time: active ? timerPayload.remainingSec : null,
+      countdown: active ? timerPayload.remainingSec : 0,
+      duration: active ? timerPayload.durationSec : 0,
+      activeId: active ? timerPayload.sessionId : null,
+      agenda: active ? (timerPayload.sessionTitle || '') : '',
+      isEventMode: false,
+      theme: latestOverlayTimer?.theme || 'default',
+      fromAgenda: true,
+      target: ['speaker', 'controller'],
+      agendaItems: latestOverlayTimer?.agendaItems || [],
+    };
+    latestOverlayTimer = overlay;
+    safeWebContentsSend(speakerWindow, "set-timer", overlay);
     safeWebContentsSend(generalWindow, "set-timer", { time: null, isEventMode: false, fromAgenda: true });
-    if (io) {
-      const isRunning = timerPayload.isRunning === true;
-      const isPaused = timerPayload.isPaused === true;
-      io.emit("overlay-timer", {
-        agenda: isRunning || isPaused ? (timerPayload.sessionTitle || timerPayload.agendaTitle || "") : "",
-        countdown: isRunning || isPaused ? (timerPayload.remainingSec || 0) : 0,
-        duration: isRunning || isPaused ? (timerPayload.durationSec || 0) : 0,
-        isRunning,
-        isPaused,
-        fromAgenda: isRunning || isPaused,
-        target: ["speaker", "controller"], // Agenda timer strictly isolated from General Screen
-      });
-    }
+    if (io) io.emit("overlay-timer", overlay);
   },
   broadcastState: (engineState) => {
     broadcastToAllWindows("agenda-execution-state", engineState);
@@ -6233,8 +6236,8 @@ function createWindows() {
 
   ipcMain.handle("agenda-execution-control", async (_event, { command, payload }) => {
     try {
-      if (payload?.agenda) {
-        if (!agendaExecutionEngine.agendaSnapshot || agendaExecutionEngine.agendaSnapshot.id !== payload.agenda.id) {
+      if (payload?.agenda && command !== "update-live-schedule") {
+        if (command === "start" || !agendaExecutionEngine.agendaSnapshot || agendaExecutionEngine.agendaSnapshot.id !== payload.agenda.id) {
           agendaExecutionEngine.loadAgenda(payload.agenda);
         } else {
           agendaExecutionEngine.updateLiveSchedule(payload.agenda);
@@ -6256,7 +6259,10 @@ function createWindows() {
       else if (command === "next") agendaExecutionEngine.nextSession();
       else if (command === "skip") agendaExecutionEngine.skipTo(payload?.seconds);
       else if (command === "set-armed") agendaExecutionEngine.setAutomationArmed(payload?.armed);
-      else if (command === "update-live-schedule") agendaExecutionEngine.updateLiveSchedule(payload?.agenda);
+      else if (command === "update-live-schedule") {
+        agendaExecutionEngine.updateLiveSchedule(payload?.agenda, payload?.remainingSec);
+        if (payload?.cancelInterval) agendaExecutionEngine.cancelInterval();
+      }
 
       return { ok: true, state: agendaExecutionEngine.getState() };
     } catch (err) {

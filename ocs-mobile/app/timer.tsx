@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useState } from "react";
 import {
   View,
   Text,
@@ -33,17 +33,13 @@ export default function TimerPage() {
     activeId,
     isPaused,
     isEventMode,
-    setTime,
-    setAgenda,
     addAgendaItem,
     deleteAgendaItem,
     editAgendaItem,
     setActiveId,
-    setIsPaused,
     setEventMode,
     togglePause,
     stopTimer,
-    decrementTime,
     startTimer,
   } = useTimerStore();
 
@@ -55,33 +51,13 @@ export default function TimerPage() {
   const [eventTime, setEventTime] = useState("");
 
   // Local state for list item menu
-  const [activeMenuId, setActiveMenuId] = useState<number | null>(null);
+  const [activeMenuId, setActiveMenuId] = useState<number | string | null>(null);
 
   // Local state for editing
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<number | string | null>(null);
   const [editLabel, setEditLabel] = useState("");
   const [editAnchor, setEditAnchor] = useState("");
   const [editTime, setEditTime] = useState(0);
-
-  // Interval Ref
-  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  // --- Timer Logic ---
-  const isTimerActive = !isPaused && time > 0;
-
-  useEffect(() => {
-    if (timerRef.current) clearInterval(timerRef.current);
-
-    if (isTimerActive) {
-      timerRef.current = setInterval(() => {
-        decrementTime();
-      }, 1000);
-    }
-
-    return () => {
-      if (timerRef.current) clearInterval(timerRef.current);
-    };
-  }, [isTimerActive]); // Only re-run when pause state or zero-state changes
 
   // --- Format Helper ---
   const formatTime = (timeToFormat: number) => {
@@ -139,30 +115,27 @@ export default function TimerPage() {
       m,
       0,
     );
+    if (!Number.isInteger(h) || !Number.isInteger(m) || h < 0 || h > 23 || m < 0 || m > 59) return;
     if (target < now) {
       target.setDate(target.getDate() + 1);
     }
 
     const diff = Math.floor((target.getTime() - now.getTime()) / 1000);
 
-    startTimer(diff);
-    setEventMode(true);
+    startTimer(diff, null, true);
   };
 
   // --- List Item Actions ---
   const handleItemStart = (item: AgendaItem) => {
-    startTimer(item.time);
+    startTimer(item.time, item._id);
     setActiveId(item._id);
     setActiveMenuId(null);
   };
 
   const handleItemAdd1m = (item: AgendaItem) => {
     // Update list item
-    editAgendaItem(item._id, { time: item.time + 60 });
-    // If active, update running time too
-    if (activeId === item._id) {
-      setTime(time + 60);
-    }
+    editAgendaItem(item._id, { time: item.time + 60 }, 'add');
+
   };
 
   const handleEditStart = (item: AgendaItem) => {
@@ -174,7 +147,7 @@ export default function TimerPage() {
   };
 
   const handleEditSave = () => {
-    if (editingId) {
+    if (editingId !== null) {
       editAgendaItem(editingId, {
         agenda: editLabel,
         anchor: editAnchor,

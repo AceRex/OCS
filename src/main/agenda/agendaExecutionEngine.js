@@ -1,3 +1,4 @@
+const { performance } = require('perf_hooks');
 /**
  * wave.io Authoritative Desktop Agenda Execution Engine
  * 
@@ -85,12 +86,24 @@ class AgendaExecutionEngine extends EventEmitter {
   constructor(options = {}) {
     super();
     this.options = options;
+    this.now = options.now || (() => performance.now());
 
     // External dispatch hooks (bridged to Presentation, Canvas, Audio, Timer, Socket, Recording)
     this.dispatchBackground = options.dispatchBackground || (() => {});
     this.dispatchPresentation = options.dispatchPresentation || (() => {});
     this.dispatchAudio = options.dispatchAudio || (() => {});
-    this.syncTimer = options.syncTimer || (() => {});
+    this.syncTimer = (payload) => {
+      const interval = this.status === 'interval' || (this.status === 'paused' && this.intervalRemainingSec > 0);
+      const active = payload.isRunning || payload.isPaused;
+      (options.syncTimer || (() => {}))({
+        ...payload,
+        sessionId: active ? this.currentSession?.id ?? null : null,
+        sessionIndex: active ? this.sessionIndex : null,
+        isInterval: Boolean(interval),
+        ...(interval ? { durationSec: this.intervalDurationSec, remainingSec: Math.ceil(this.intervalRemainingSec) } : {}),
+        completed: this.status === 'completed',
+      });
+    };
     this.broadcastState = options.broadcastState || (() => {});
     this.recordJournal = options.recordJournal || (() => {});
     this.startRecording = options.startRecording || (() => Promise.resolve({ ok: false }));
@@ -109,6 +122,7 @@ class AgendaExecutionEngine extends EventEmitter {
     this.sessionElapsedSec = 0;
     this.sessionDurationSec = 0;
     this.intervalRemainingSec = 0;
+    this.intervalDurationSec = 0;
     this.lastTickTime = 0;
     this.tickerInterval = null;
 
@@ -154,7 +168,7 @@ class AgendaExecutionEngine extends EventEmitter {
       throw new Error('Cannot load agenda: invalid agenda document');
     }
 
-    if (this.status === 'running' || this.status === 'interval') {
+    if (this.status === 'running' || this.status === 'interval' || this.status === 'paused') {
       this.stop();
     }
 
@@ -201,6 +215,9 @@ class AgendaExecutionEngine extends EventEmitter {
       return this.getState();
     }
 
+    if (targetSessionIndex !== null && (!Number.isInteger(targetSessionIndex) || targetSessionIndex < 0 || targetSessionIndex >= this.agendaSnapshot.sessions.length)) {
+      throw new Error('Invalid timer session index');
+    }
     if (targetSessionIndex !== null && typeof targetSessionIndex === 'number') {
       if (targetSessionIndex >= 0 && targetSessionIndex < this.agendaSnapshot.sessions.length) {
         this.sessionIndex = targetSessionIndex;
@@ -227,10 +244,12 @@ class AgendaExecutionEngine extends EventEmitter {
       return this.getState();
     }
 
+    this.intervalRemainingSec = 0;
+    this.intervalDurationSec = 0;
     this.status = 'running';
     this.runId = 'run_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7);
     this.activeLayerCues.clear();
-    this.lastTickTime = Date.now();
+    this.lastTickTime = this.now();
     this.ensureTicker();
 
     this.recordJournal('AGENDA_START', {
@@ -270,6 +289,8 @@ class AgendaExecutionEngine extends EventEmitter {
   pause() {
     if (this.status !== 'running' && this.status !== 'interval') return;
 
+    this.tick();
+    if (this.status !== 'running' && this.status !== 'interval') return;
     this.status = 'paused';
     this.stopTicker();
 
@@ -302,7 +323,7 @@ class AgendaExecutionEngine extends EventEmitter {
     if (this.status !== 'paused') return;
 
     this.status = this.intervalRemainingSec > 0 ? 'interval' : 'running';
-    this.lastTickTime = Date.now();
+    this.lastTickTime = this.now();
     this.ensureTicker();
 
     this.dispatchAudio({ command: 'resume' });
@@ -350,8 +371,10 @@ class AgendaExecutionEngine extends EventEmitter {
     this.currentBackgroundState = null;
     this.currentPresentationState = null;
     this.currentAudioState = null;
+    this.sessionDurationSec = 0;
     this.sessionElapsedSec = 0;
     this.intervalRemainingSec = 0;
+    this.intervalDurationSec = 0;
 
     this.sessionStopRecordingPromise = this.handleStopSessionRecording();
 
@@ -526,7 +549,9 @@ class AgendaExecutionEngine extends EventEmitter {
     if (!this.currentSession) return;
     const target = Math.max(0, Math.min(this.sessionDurationSec, Number(seconds) || 0));
     this.sessionElapsedSec = target;
+    this.lastTickTime = this.now();
     this.evaluateLateActions();
+    this.publishTimer();
     this.emitState();
   }
 
@@ -564,43 +589,42 @@ class AgendaExecutionEngine extends EventEmitter {
     }
   }
 
-  tick() {
-    const now = Date.now();
-    const deltaSec = (now - this.lastTickTime) / 1000;
-    this.lastTickTime = now;
+  cancelInterval() {
+    if (this.status !== 'interval' && !(this.status === 'paused' && this.intervalRemainingSec > 0)) return;
+    this.intervalRemainingSec = 0;
+    this.intervalDurationSec = 0;
+    this.status = 'paused';
+    this.stopTicker();
+    this.publishTimer();
+    this.emitState();
+  }
 
+  publishTimer() {
+    this.syncTimer({
+      agendaTitle: this.agendaSnapshot?.name,
+      sessionTitle: this.currentSession?.name || '',
+      durationSec: this.sessionDurationSec,
+      remainingSec: Math.max(0, Math.ceil(this.sessionDurationSec - this.sessionElapsedSec)),
+      totalSessions: this.agendaSnapshot?.sessions.length,
+      isRunning: this.status === 'running' || this.status === 'interval',
+      isPaused: this.status === 'paused',
+    });
+  }
+
+  tick() {
+    const now = this.now();
+    const deltaSec = Math.max(0, (now - this.lastTickTime) / 1000);
+    this.lastTickTime = now;
     if (this.status === 'running') {
       this.sessionElapsedSec += deltaSec;
-
-      // Evaluate cues
       this.evaluateCues(false);
-
-      // Check session completion
-      if (this.sessionElapsedSec >= this.sessionDurationSec) {
-        this.handleSessionEnd();
-      } else {
-        // Sync to timer display every ~500ms
-        if (Math.floor(this.sessionElapsedSec * 2) !== Math.floor((this.sessionElapsedSec - deltaSec) * 2)) {
-          this.syncTimer({
-            agendaTitle: this.agendaSnapshot?.name,
-            sessionTitle: this.currentSession?.name,
-            durationSec: this.sessionDurationSec,
-            remainingSec: Math.max(0, Math.round(this.sessionDurationSec - this.sessionElapsedSec)),
-            sessionIndex: this.sessionIndex,
-            totalSessions: this.agendaSnapshot?.sessions.length,
-            isRunning: true,
-            isPaused: false,
-          });
-        }
-      }
+      if (this.sessionElapsedSec >= this.sessionDurationSec) this.handleSessionEnd();
+      else this.publishTimer();
     } else if (this.status === 'interval') {
-      this.intervalRemainingSec -= deltaSec;
-      if (this.intervalRemainingSec <= 0) {
-        this.intervalRemainingSec = 0;
-        this.nextSession();
-      }
+      this.intervalRemainingSec = Math.max(0, this.intervalRemainingSec - deltaSec);
+      if (this.intervalRemainingSec === 0) this.nextSession();
+      else this.publishTimer();
     }
-
     this.emitState();
   }
 
@@ -1017,6 +1041,7 @@ class AgendaExecutionEngine extends EventEmitter {
       if (interval > 0) {
         this.status = 'interval';
         this.intervalRemainingSec = interval;
+        this.intervalDurationSec = interval;
         this.syncTimer({
           agendaTitle: this.agendaSnapshot.name,
           sessionTitle: `Next: ${this.agendaSnapshot.sessions[this.sessionIndex + 1]?.name}`,
@@ -1031,6 +1056,7 @@ class AgendaExecutionEngine extends EventEmitter {
     } else {
       // Wait for operator manual advancement
       this.status = 'paused';
+      this.stopTicker();
       this.sessionElapsedSec = this.sessionDurationSec;
       this.syncTimer({
         agendaTitle: this.agendaSnapshot.name,
@@ -1062,31 +1088,36 @@ class AgendaExecutionEngine extends EventEmitter {
   /**
    * Applies an explicit update to the running schedule snapshot without restarting clock
    */
-  updateLiveSchedule(updatedAgenda) {
-    if (!updatedAgenda) {
-      return this.getState();
-    }
-
+  updateLiveSchedule(updatedAgenda, remainingSec) {
+    if (!updatedAgenda) return this.getState();
     if (!this.agendaSnapshot || this.status === 'idle' || this.status === 'ready') {
       this.loadAgenda(updatedAgenda);
       return this.getState();
     }
-
-    // Preserve current clock & active execution pointers
-    const curIndex = this.sessionIndex;
-    const curElapsed = this.sessionElapsedSec;
-
+    const active = ['running', 'interval', 'paused'].includes(this.status);
+    const sessionId = this.currentSession?.id;
     this.agendaSnapshot = JSON.parse(JSON.stringify(updatedAgenda));
-    if (!Array.isArray(this.agendaSnapshot.sessions)) {
-      this.agendaSnapshot.sessions = [];
+    if (!Array.isArray(this.agendaSnapshot.sessions)) this.agendaSnapshot.sessions = [];
+    if (!active) {
+      this.currentSession = null;
+      this.upcomingSession = null;
+      this.sessionIndex = -1;
+      return this.getState();
     }
-    this.currentSession = this.agendaSnapshot.sessions[curIndex] || this.agendaSnapshot.sessions[0] || null;
-    this.upcomingSession = this.agendaSnapshot.sessions[curIndex + 1] || null;
-    this.sessionDurationSec = this.currentSession ? (this.currentSession.durationSec || 0) : 0;
-    this.sessionElapsedSec = curElapsed;
-
-    console.log(`[AgendaEngine] Live schedule updated cleanly for session "${this.currentSession?.name}"`);
+    const index = this.agendaSnapshot.sessions.findIndex((s) => s.id === sessionId);
+    if (index < 0) { this.stop(); return this.getState(); }
+    this.sessionIndex = index;
+    this.currentSession = this.agendaSnapshot.sessions[index];
+    this.upcomingSession = this.agendaSnapshot.sessions[index + 1] || null;
+    const duration = Math.max(0, Number(this.currentSession.durationSec) || 0);
+    if (Number.isFinite(remainingSec) && remainingSec >= 0) {
+      this.sessionElapsedSec = Math.max(0, duration - remainingSec);
+    }
+    this.sessionDurationSec = duration;
+    this.lastTickTime = this.now();
+    this.publishTimer();
     this.emitState();
+    return this.getState();
   }
 
   /**
@@ -1113,10 +1144,13 @@ class AgendaExecutionEngine extends EventEmitter {
       agendaName: this.agendaSnapshot ? this.agendaSnapshot.name : '',
       sessionIndex: this.sessionIndex >= 0 ? this.sessionIndex : null,
       sessionName: this.currentSession ? this.currentSession.name : '',
+      sessionId: this.currentSession?.id ?? null,
+      isInterval: this.status === 'interval' || (this.status === 'paused' && this.intervalRemainingSec > 0),
+      intervalDurationSec: this.intervalDurationSec,
       sessionDurationSec: this.sessionDurationSec,
       sessionElapsedSec: Math.round(this.sessionElapsedSec),
-      sessionRemainingSec: Math.max(0, Math.round(this.sessionDurationSec - this.sessionElapsedSec)),
-      intervalRemainingSec: Math.max(0, Math.round(this.intervalRemainingSec)),
+      sessionRemainingSec: Math.max(0, Math.ceil(this.sessionDurationSec - this.sessionElapsedSec)),
+      intervalRemainingSec: Math.max(0, Math.ceil(this.intervalRemainingSec)),
       automationArmed: this.automationArmed,
       operatorOverridden: this.operatorOverridden,
       activeCueCount: this.activeCues.size,

@@ -4,7 +4,7 @@ import { utilAction } from "../../Redux/state";
 import { Button, Input } from "../../../components";
 import { useAuth } from "../context/AuthContext";
 
-export default function SetTimePage() {
+export default function SetTimePage({ onStart }: { onStart: (seconds: number, eventMode?: boolean) => void }) {
   let dispatch = useDispatch();
   const { hasPermission } = useAuth();
 
@@ -54,6 +54,7 @@ export default function SetTimePage() {
     let [m, s] = intervalInput.split(":").map(Number);
     if (isNaN(m)) m = 0;
     if (isNaN(s)) s = 0;
+    if (!Number.isInteger(m) || !Number.isInteger(s) || m < 0 || s < 0 || s > 59) return;
     const totalSeconds = m * 60 + s;
     dispatch(utilAction.setNextStartInterval(totalSeconds));
   };
@@ -78,10 +79,10 @@ export default function SetTimePage() {
 
   const handleEventStart = () => {
     if (!eventTime) return;
+    if (!/^\d{1,2}:\d{2}$/.test(eventTime)) return;
     const now = new Date();
     let [hours, minutes] = eventTime.split(":").map(Number);
-    if (isNaN(hours)) hours = 0;
-    if (isNaN(minutes)) minutes = 0;
+    if (hours < 1 || hours > 12 || minutes < 0 || minutes > 59) return;
 
     if (period === "PM" && hours < 12) hours += 12;
     if (period === "AM" && hours === 12) hours = 0;
@@ -103,18 +104,17 @@ export default function SetTimePage() {
     const diffInSeconds = Math.floor(
       (eventDate.getTime() - now.getTime()) / 1000,
     );
-    dispatch(utilAction.setEventMode(true));
-    dispatch(utilAction.setActiveId(null));
-    dispatch(utilAction.setTime(diffInSeconds));
+    if (diffInSeconds > 0) onStart(diffInSeconds, true);
   };
   const handleClose = () => {
+    if (!Number.isInteger(Number(hours)) || !Number.isInteger(Number(minutes)) || Number(hours) < 0 || Number(minutes) < 0 || Number(minutes) > 59) return;
     const totalTimeInSeconds = Number(hours) * 3600 + Number(minutes) * 60;
-    dispatch(utilAction.setEventMode(false));
-    dispatch(utilAction.setActiveId(null));
-    dispatch(utilAction.setTime(totalTimeInSeconds));
+    if (Number.isFinite(totalTimeInSeconds) && totalTimeInSeconds > 0) onStart(totalTimeInSeconds);
   };
   const handleClick = () => {
+    if (!Number.isInteger(Number(hours)) || !Number.isInteger(Number(minutes)) || Number(hours) < 0 || Number(minutes) < 0 || Number(minutes) > 59) return;
     const totalTimeInSeconds = Number(hours) * 3600 + Number(minutes) * 60;
+    if (!Number.isFinite(totalTimeInSeconds) || totalTimeInSeconds <= 0) return;
     dispatch(
       utilAction.setAgenda({
         _id: Date.now(),
@@ -131,9 +131,9 @@ export default function SetTimePage() {
     setInCharge("");
   };
   return (
-    <div className="max-w-[30%] min-w-[30%] rounded-2xl space-y-4 text-light">
-      <div className="bg-primary/70 p-4 rounded-[50px] space-y-8">
-        <div className="w-full max-h-[200px] min-h-0 bg-primary rounded-[35px] flex items-center justify-center">
+    <div className="max-w-[30%] min-w-[30%] rounded-[12px] space-y-4 text-light">
+      <div className="bg-primary/70 p-4 rounded-[12px] space-y-8">
+        <div className="w-full max-h-[200px] min-h-0 bg-primary rounded-[12px] flex items-center justify-center">
           {isEditingHours ? (
             <input
               name="HH"
@@ -142,7 +142,7 @@ export default function SetTimePage() {
               autoFocus
               value={hours}
               onChange={(e) =>
-                setHours(e.target.value === "" ? "" : Number(e.target.value))
+                setHours(e.target.value)
               }
               onBlur={() => {
                 setIsEditingHours(false);
@@ -177,7 +177,7 @@ export default function SetTimePage() {
               autoFocus
               value={minutes}
               onChange={(e) =>
-                setMinutes(e.target.value === "" ? "" : Number(e.target.value))
+                setMinutes(e.target.value)
               }
               onBlur={() => {
                 setIsEditingMinutes(false);

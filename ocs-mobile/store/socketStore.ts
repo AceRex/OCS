@@ -1,3 +1,4 @@
+import { useTimerStore } from './timerStore';
 
 import { create } from 'zustand';
 import { io, Socket } from 'socket.io-client';
@@ -708,6 +709,15 @@ export const useSocketStore = create<SocketState>((set, get) => ({
 
         socket.on('overlay-timer', (timer: any) => {
             set({ overlayTimer: timer });
+            const seconds = Number(timer?.time ?? timer?.countdown) || 0;
+            useTimerStore.setState({
+                time: Math.max(0, seconds),
+                activeId: timer?.activeId ?? timer?.sessionId ?? null,
+                isPaused: Boolean(timer?.isPaused),
+                isEventMode: Boolean(timer?.isEventMode),
+                theme: timer?.theme || 'default',
+                ...(Array.isArray(timer?.agendaItems) ? { agenda: timer.agendaItems } : {}),
+            });
         });
 
         // ── Switcher event listeners (Phase A & B) ───────────────────────────

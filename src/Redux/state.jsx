@@ -5,6 +5,7 @@ const utilSlice = createSlice({
   initialState: {
     setTime: false,
     time: 0,
+    timerRevision: 0,
     agenda: [],
     isEventMode: false,
     isPaused: false,
@@ -18,6 +19,29 @@ const utilSlice = createSlice({
     loadedAgenda: null,
   },
   reducers: {
+    startTimer: (state, action) => {
+      const seconds = Number(action.payload.time);
+      if (!Number.isFinite(seconds) || seconds <= 0) return;
+      state.time = Math.ceil(seconds);
+      state.timerRevision += 1;
+      state.activeId = action.payload.activeId ?? null;
+      state.isEventMode = Boolean(action.payload.isEventMode);
+      state.isPaused = false;
+      state.isRunning = true;
+      state.isDelayRunning = false;
+      state.delayCountdown = 0;
+      state.nextItemToStart = null;
+    },
+    clearTimer: (state) => {
+      state.time = 0;
+      state.isRunning = false;
+      state.isPaused = false;
+      state.isEventMode = false;
+      state.activeId = null;
+      state.isDelayRunning = false;
+      state.delayCountdown = 0;
+      state.nextItemToStart = null;
+    },
     setIsRunning: (state, action) => {
       state.isRunning = Boolean(action.payload);
     },
@@ -30,7 +54,7 @@ const utilSlice = createSlice({
           _id: s.id || `sess_${idx}`,
           time: s.durationSec || 300,
           agenda: s.name || `Session ${idx + 1}`,
-          anchor: s.notes || '',
+          anchor: s.person || s.speakerName || '',
           intervalSec: s.intervalSec || 0,
           transitionMode: s.transitionMode || 'manual',
         }));

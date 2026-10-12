@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { useSocketStore } from './socketStore';
 
 export interface AgendaItem {
-    _id: number;
+    _id: number | string;
     time: number;
     agenda: string;
     anchor: string;
@@ -11,7 +11,7 @@ export interface AgendaItem {
 interface TimerState {
     time: number;
     agenda: AgendaItem[];
-    activeId: number | null;
+    activeId: number | string | null;
     isPaused: boolean;
     isEventMode: boolean;
     theme: string;
@@ -20,9 +20,9 @@ interface TimerState {
     setTime: (time: number) => void;
     setAgenda: (agenda: AgendaItem[]) => void;
     addAgendaItem: (item: AgendaItem) => void;
-    deleteAgendaItem: (id: number) => void;
-    editAgendaItem: (id: number, updates: Partial<AgendaItem>) => void;
-    setActiveId: (id: number | null) => void;
+    deleteAgendaItem: (id: number | string) => void;
+    editAgendaItem: (id: number | string, updates: Partial<AgendaItem>, mode?: 'add' | 'replace' | 'preserve') => void;
+    setActiveId: (id: number | string | null) => void;
     setIsPaused: (isPaused: boolean) => void;
     setEventMode: (isEventMode: boolean) => void;
     setTheme: (theme: string) => void;
@@ -31,7 +31,7 @@ interface TimerState {
     // Composite actions
     stopTimer: () => void;
     togglePause: () => void;
-    startTimer: (time: number) => void;
+    startTimer: (time: number, activeId?: number | string | null, isEventMode?: boolean) => void;
 }
 
 export const useTimerStore = create<TimerState>((set) => ({
@@ -56,12 +56,12 @@ export const useTimerStore = create<TimerState>((set) => ({
         const socket = useSocketStore.getState().socket;
         if (socket) socket.emit('mobile-action', { type: 'delete-agenda', payload: { id } });
     },
-    editAgendaItem: (id, updates) => {
+    editAgendaItem: (id, updates, mode = 'replace') => {
         set((state) => ({
             agenda: state.agenda.map(i => i._id === id ? { ...i, ...updates } : i)
         }));
         const socket = useSocketStore.getState().socket;
-        if (socket) socket.emit('mobile-action', { type: 'edit-agenda', payload: { _id: id, ...updates } });
+        if (socket) socket.emit('mobile-action', { type: 'edit-agenda', payload: { _id: id, ...updates, mode } });
     },
     setActiveId: (activeId) => set({ activeId }),
     setIsPaused: (isPaused) => {
@@ -88,10 +88,11 @@ export const useTimerStore = create<TimerState>((set) => ({
     },
 
     // Explicit action to start timer and sync
-    startTimer: (time: number) => {
-        set({ time, isPaused: false, activeId: null, isEventMode: false });
+    startTimer: (time: number, activeId = null, isEventMode = false) => {
+        if (!Number.isFinite(time) || time <= 0) return;
+        set({ time, isPaused: false, activeId, isEventMode });
         const socket = useSocketStore.getState().socket;
-        if (socket) socket.emit('mobile-action', { type: 'set-timer', payload: { time } });
+        if (socket) socket.emit('mobile-action', { type: 'set-timer', payload: { time, activeId, isEventMode } });
     }
 }));
 

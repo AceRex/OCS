@@ -26,6 +26,7 @@ import IncomingAgendaModal from "./IncomingAgendaModal";
 function NextTimerBanner() {
   const delayCountdown = useSelector((state) => state.util.delayCountdown);
   const isDelayRunning = useSelector((state) => state.util.isDelayRunning);
+  const isPaused = useSelector((state) => state.util.isPaused);
   const pendingItem = useSelector((state) => state.util.nextItemToStart);
 
   if (!isDelayRunning || delayCountdown <= 0) return null;
@@ -55,7 +56,7 @@ function NextTimerBanner() {
         gap: 12,
         background: "#0d0d0d",
         border: "1.5px solid rgba(255,255,255,0.08)",
-        borderRadius: 999,
+        borderRadius: 12,
         padding: "10px 22px",
         boxShadow: "0 8px 32px rgba(0,0,0,0.7)",
         backdropFilter: "blur(12px)",
@@ -76,7 +77,7 @@ function NextTimerBanner() {
             textTransform: "uppercase",
           }}
         >
-          Next Timer Starts In
+          {isPaused ? 'Next Timer Paused At' : 'Next Timer Starts In'}
         </span>
         {pendingItem?.agenda && (
           <span
@@ -134,7 +135,8 @@ function App() {
 
       // 1. Rehydrate Timer State if previously present
       if (s.timer && s.timer.durationSec > 0) {
-        dispatch(utilAction.setTime(s.timer.remainingSec || s.timer.durationSec));
+        const remaining = s.timer.remainingSec ?? s.timer.durationSec;
+        if (remaining > 0) dispatch(utilAction.startTimer({ time: remaining, isEventMode: s.timer.type === 'event' }));
         dispatch(utilAction.setPaused(true)); // Always safety-paused upon recovery
       }
 

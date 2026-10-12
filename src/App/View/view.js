@@ -439,6 +439,7 @@ function App({ mode: propMode }) {
     let unsubStyle = null;
     let unsubSession = null;
     let unsubCanvas = null;
+    let unsubTimer = null;
 
     // Session archive REC badge — Speaker View default on; General View off (FR-5.16)
     if (mode === 'speaker' && window.electron?.Session) {
@@ -482,11 +483,13 @@ function App({ mode: propMode }) {
 
     // Timer Listener
     if (window.electron && window.electron.Timer) {
-      window.electron.Timer.onSetTimer((value) => {
+      let timerRevision = 0;
+      const applyTimer = (value) => {
+        timerRevision += 1;
         let newTime, newEventMode, newTheme;
 
         if (typeof value === "object" && value !== null) {
-          newTime = value.time;
+          newTime = Object.prototype.hasOwnProperty.call(value, 'time') ? value.time : value.countdown;
           newEventMode = value.isEventMode || false;
           newTheme = value.theme || "default";
         } else {
@@ -505,7 +508,7 @@ function App({ mode: propMode }) {
         setIsEventMode(newEventMode);
         setTheme(newTheme);
         if (value?.isRunning !== undefined) {
-          setIsTimerRunning(Boolean(value.isRunning));
+          setIsTimerRunning(Boolean(value.isRunning || value.isPaused));
         } else {
           setIsTimerRunning(newTime > 0 && !value?.isPaused);
         }
@@ -521,7 +524,12 @@ function App({ mode: propMode }) {
 
           return newTime;
         });
-      });
+      };
+      unsubTimer = window.electron.Timer.onSetTimer(applyTimer);
+      const revision = timerRevision;
+      window.electron.Timer.getState?.().then((value) => {
+        if (value && timerRevision === revision) applyTimer(value);
+      }).catch(() => {});
     }
 
     if (window.electron && window.electron.Presentation) {
@@ -700,7 +708,7 @@ function App({ mode: propMode }) {
         socket.on('overlay-timer', (value) => {
           let newTime, newEventMode, newTheme;
           if (typeof value === 'object' && value !== null) {
-            newTime = value.time;
+            newTime = Object.prototype.hasOwnProperty.call(value, 'time') ? value.time : value.countdown;
             newEventMode = value.isEventMode || false;
             newTheme = value.theme || 'default';
           } else {
@@ -719,7 +727,7 @@ function App({ mode: propMode }) {
           setIsEventMode(newEventMode);
           setTheme(newTheme);
           if (value?.isRunning !== undefined) {
-            setIsTimerRunning(Boolean(value.isRunning));
+            setIsTimerRunning(Boolean(value.isRunning || value.isPaused));
           } else {
             setIsTimerRunning(newTime > 0 && !value?.isPaused);
           }
@@ -799,9 +807,7 @@ function App({ mode: propMode }) {
       if (socket) {
         try { socket.disconnect(); } catch (_) {}
       }
-      if (window.electron && window.electron.Timer) {
-        window.electron.Timer.removeSetTimerListener();
-      }
+      if (typeof unsubTimer === 'function') unsubTimer();
       if (typeof unsubContent === 'function') unsubContent();
       if (typeof unsubStyle === 'function') unsubStyle();
       if (typeof unsubSession === 'function') unsubSession();
