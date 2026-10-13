@@ -348,9 +348,9 @@ function showLoginWindow() {
   return loginWindow;
 }
 
-function handleAuthDeepLink(rawUrl) {
-  console.log("[Auth] Processing deep-link callback:", rawUrl);
-  const result = authService.validateAuthCallback(rawUrl);
+async function handleAuthDeepLink(rawUrl) {
+  console.log("[Auth] Processing authentication callback");
+  const result = await authService.validateAuthCallback(rawUrl);
   if (result.ok) {
     console.log("[Auth] Authentication successful for:", result.session?.email);
     if (loginWindow && !loginWindow.isDestroyed()) {
@@ -459,7 +459,7 @@ async function refreshPairingQr() {
   try {
     const apiBase =
       (appSettings ? appSettings.get("apiBaseUrl") : null) ||
-      (appSettings ? appSettings.CANONICAL_API_BASE_URL : "https://ocs-web-three.vercel.app/api");
+      appSettings.CANONICAL_API_BASE_URL;
     const payload = buildPairPayload({
       ip: serverIp,
       port: PORT,
@@ -488,7 +488,7 @@ function rotatePairing() {
     } catch (_) {}
   }
   clearPaired();
-  console.log(`[Pairing] Rotated pairing code to: ${pairing.code}`);
+  console.log("[Pairing] Rotated pairing credential");
   return refreshPairingQr();
 }
 
@@ -1791,7 +1791,7 @@ ipcMain.handle("design:capture-ui", async (_event, outPath) => {
 });
 
 // Development UI Capture Watcher (Confined to explicit dev flag)
-if (process.env.OCS_DEV_SCREENSHOT === "1" || !app.isPackaged) {
+if (!app.isPackaged && process.env.OCS_DEV_SCREENSHOT === "1") {
   setInterval(async () => {
     try {
       const triggerFile = path.join(
@@ -1826,7 +1826,7 @@ const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const cors = require("cors");
-const ip = require("ip");
+const ip = require("./src/main/networkAddress");
 
 const serverApp = express();
 serverApp.use(cors());
@@ -1921,16 +1921,16 @@ serverApp.get("/pair-info", (_req, res) => {
     pairingRequired: true,
     apiBaseUrl:
       (appSettings ? appSettings.get("apiBaseUrl") : null) ||
-      (appSettings ? appSettings.CANONICAL_API_BASE_URL : "https://ocs-web-three.vercel.app/api"),
+      appSettings.CANONICAL_API_BASE_URL,
     authLoginUrl:
       (appSettings ? appSettings.get("authLoginUrl") : null) ||
-      (appSettings ? appSettings.CANONICAL_WEB_ORIGIN : "https://ocs-web-three.vercel.app"),
+      appSettings.CANONICAL_WEB_ORIGIN,
     // Never expose the live token/code over an unauthenticated HTTP GET
   });
 });
 
 // Direct HTTP Upload Endpoint for heavy video/media transfers
-serverApp.post("/api/upload-asset", async (req, res) => {
+serverApp.post("/api/upload-asset", requirePairingToken, async (req, res) => {
   try {
     const { name, type, size, mimeType, dataBase64, deviceName, pairingCode } =
       req.body || {};
@@ -2006,7 +2006,7 @@ serverApp.post("/api/upload-asset", async (req, res) => {
 });
 
 // Direct Raw Binary Stream Upload Endpoint (compatible with Expo uploadAsync)
-serverApp.post("/api/upload-asset-raw", (req, res) => {
+serverApp.post("/api/upload-asset-raw", requirePairingToken, (req, res) => {
   try {
     const filename = decodeURIComponent(
       req.headers["x-filename"] || `asset_${Date.now()}`,
@@ -2123,7 +2123,11 @@ serverApp.get("/api/ndi/sources", async (_req, res) => {
 // every socket handler in the system.
 function requirePairingToken(req, res, next) {
   const cred = req.headers['x-pairing-token'] || req.headers['x-pairing-code'] || '';
+  const clientIp = req.ip || req.socket?.remoteAddress || 'unknown';
+  const rate = _pairingRateLimiter.check(clientIp);
+  if (!rate.allowed) return res.status(429).json({ ok: false, error: 'Too many pairing attempts' });
   if (!validateCredential(pairing, cred)) {
+    _pairingRateLimiter.recordFailure(clientIp);
     const ip = req.ip || req.socket?.remoteAddress || 'unknown';
     console.warn(`[AgendaHTTP] Rejected unauthenticated request from ${ip} to ${req.path}`);
     return res.status(401).json({ ok: false, error: 'Pairing credential required' });
@@ -2785,7 +2789,7 @@ function broadcastDevicesUpdated() {
     paired: !!d.paired,
     status: d.paired ? "connected" : "pending",
     isAdmin:
-      adminDeviceIds.has(d.id) || adminDeviceNames.has(d.name) || !!d.isAdmin,
+      adminDeviceIds.has(d.id) || !!d.isAdmin,
     isVoiceActive: !!d.isVoiceActive,
     connectedAt: d.connectedAt,
     isCameraSource: switcherCameraSlots.has(d.id),
@@ -2875,15 +2879,15 @@ io.on("connection", (socket) => {
     device.status = "connected";
     device.name = socket.handshake.auth.deviceName || "Mobile";
     device.isAdmin =
-      adminDeviceIds.has(device.id) || adminDeviceNames.has(device.name);
+      adminDeviceIds.has(device.id);
     if (!device.deviceRole)
       device.deviceRole = device.isAdmin ? "admin" : "speaker";
     const apiBase =
       (appSettings ? appSettings.get("apiBaseUrl") : null) ||
-      (appSettings ? appSettings.CANONICAL_API_BASE_URL : "https://ocs-web-three.vercel.app/api");
+      appSettings.CANONICAL_API_BASE_URL;
     const authUrl =
       (appSettings ? appSettings.get("authLoginUrl") : null) ||
-      (appSettings ? appSettings.CANONICAL_WEB_ORIGIN : "https://ocs-web-three.vercel.app");
+      appSettings.CANONICAL_WEB_ORIGIN;
     console.log(
       "[Remote] paired via handshake:",
       socket.id,
@@ -2971,15 +2975,15 @@ io.on("connection", (socket) => {
     device.status = "connected";
     device.name = payload.deviceName || device.name || "Mobile";
     device.isAdmin =
-      adminDeviceIds.has(device.id) || adminDeviceNames.has(device.name);
+      adminDeviceIds.has(device.id);
     if (!device.deviceRole)
       device.deviceRole = device.isAdmin ? "admin" : "speaker";
     const apiBase =
       (appSettings ? appSettings.get("apiBaseUrl") : null) ||
-      (appSettings ? appSettings.CANONICAL_API_BASE_URL : "https://ocs-web-three.vercel.app/api");
+      appSettings.CANONICAL_API_BASE_URL;
     const authUrl =
       (appSettings ? appSettings.get("authLoginUrl") : null) ||
-      (appSettings ? appSettings.CANONICAL_WEB_ORIGIN : "https://ocs-web-three.vercel.app");
+      appSettings.CANONICAL_WEB_ORIGIN;
     socket.emit("pair-result", {
       ok: true,
       deviceName: device.name,
@@ -4142,7 +4146,6 @@ io.on("connection", (socket) => {
     if (action.type === "stage-control") {
       const isDeviceAdmin =
         adminDeviceIds.has(device.id) ||
-        adminDeviceNames.has(device.name) ||
         !!device.isAdmin;
       if (!isDeviceAdmin) {
         console.warn(
@@ -4271,7 +4274,7 @@ server.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
   console.log(`Local IP: ${serverIp}`);
   refreshPairingQr().then(() => {
-    console.log(`[Pairing] code ${pairing.code} ready`);
+    console.log("[Pairing] Credential ready");
   });
 });
 
@@ -4295,7 +4298,7 @@ ipcMain.handle("get-server-info", async () => {
       paired: !!d.paired,
       status: d.paired ? "connected" : "pending",
       isAdmin:
-        adminDeviceIds.has(d.id) || adminDeviceNames.has(d.name) || !!d.isAdmin,
+        adminDeviceIds.has(d.id) || !!d.isAdmin,
       isVoiceActive: !!d.isVoiceActive,
       connectedAt: d.connectedAt,
     })),
@@ -4312,7 +4315,7 @@ ipcMain.handle("get-paired-devices", async () => {
     paired: !!d.paired,
     status: d.paired ? "connected" : d.status || "connected",
     isAdmin:
-      adminDeviceIds.has(d.id) || adminDeviceNames.has(d.name) || !!d.isAdmin,
+      adminDeviceIds.has(d.id) || !!d.isAdmin,
     deviceRole:
       d.deviceRole || (adminDeviceIds.has(d.id) ? "admin" : "speaker"),
     isVoiceActive: !!d.isVoiceActive,
@@ -4350,7 +4353,7 @@ ipcMain.handle("pairing-rotate", async () => {
       paired: !!d.paired,
       status: d.paired ? "connected" : "pending",
       isAdmin:
-        adminDeviceIds.has(d.id) || adminDeviceNames.has(d.name) || !!d.isAdmin,
+        adminDeviceIds.has(d.id) || !!d.isAdmin,
       deviceRole:
         d.deviceRole || (adminDeviceIds.has(d.id) ? "admin" : "speaker"),
       isVoiceActive: !!d.isVoiceActive,
@@ -7234,6 +7237,9 @@ ipcMain.handle("auth:open-browser-login", async () => {
   return { ok: true, state: loginInfo.state, url: loginInfo.url };
 });
 ipcMain.handle("auth:simulate-callback", async (_event, customUrl) => {
+  if (app.isPackaged || process.env.NODE_ENV !== "development") {
+    return { ok: false, error: "Authentication simulation is disabled" };
+  }
   const pendingState =
     authService.pendingAuthState?.state || authService.generateAuthState();
   const mockUrl =

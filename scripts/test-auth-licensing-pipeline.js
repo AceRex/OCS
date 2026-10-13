@@ -1,3 +1,5 @@
+process.env.OCS_AUTH_BASE_URL = 'https://auth.example.com';
+process.env.OCS_API_BASE_URL = 'https://api.example.com/api';
 /**
  * Integration & Security Test Suite for Authentication & Licensing (PRD.md v1.10 Section 4.10 / FR-13.1–FR-13.8)
  */
@@ -35,7 +37,7 @@ async function runTests() {
     const systemAnchorPath = path.join(tmpDir, '.ocs_sys_anchor');
     auth.init(tmpDir, {
       gracePeriodHours: 72,
-      defaultAuthHost: 'https://ocs-web-three.vercel.app',
+      defaultAuthHost: 'https://auth.example.com',
       systemAnchorPath,
     });
 
@@ -93,7 +95,7 @@ async function runTests() {
     console.log('\n--- 2. Web-Redirect Flow & CSRF Validation (FR-13.3) ---');
     const loginInfo = auth.getLoginUrl();
     ok(typeof loginInfo.url === 'string', 'T2.1: Generated browser login URL');
-    ok(loginInfo.url.includes('https://ocs-web-three.vercel.app'), 'T2.2: Login URL targets hosted auth endpoint');
+    ok(loginInfo.url.includes('https://auth.example.com'), 'T2.2: Login URL targets hosted auth endpoint');
     ok(loginInfo.url.includes(`state=${loginInfo.state}`), 'T2.3: Login URL contains cryptographic state query param');
     ok(loginInfo.url.includes('redirect_uri=ocs%3A%2F%2Fauth%2Fcallback'), 'T2.4: Redirect URI is encoded ocs://auth/callback');
     ok(auth.pendingAuthState.state === loginInfo.state, 'T2.5: Pending auth state saved in memory');
@@ -101,7 +103,7 @@ async function runTests() {
     // Mismatched state rejection (CSRF Attack Prevention)
     console.log('\n--- 2b. CSRF Protection Gate ---');
     const forgedCallback = `ocs://auth/callback?token=malicious_token&state=FORGED_STATE_VALUE&email=attacker@evil.com`;
-    const csrfResult = auth.validateAuthCallback(forgedCallback);
+    const csrfResult = await auth.validateAuthCallback(forgedCallback);
     ok(csrfResult.ok === false, 'T2.6: Forged CSRF state callback is rejected');
     ok(csrfResult.error.includes('CSRF State Mismatch'), 'T2.7: Error message explicitly flags CSRF State Mismatch');
     ok(auth.isAuthenticated() === false, 'T2.8: App remains unauthenticated after CSRF attack');
@@ -109,7 +111,13 @@ async function runTests() {
     // Valid callback acceptance
     console.log('\n--- 2c. Valid Auth Deep-Link Acceptance ---');
     const validCallback = `ocs://auth/callback?token=jwt_valid_sample_token_xyz123&state=${loginInfo.state}&email=lead_pastor@gracecommunity.org&org=Grace%20Community%20Church&tier=enterprise`;
-    const validResult = auth.validateAuthCallback(validCallback);
+    auth.validateTokenOnline = async () => ({ valid: true, data: { user: {
+      email: 'lead_pastor@gracecommunity.org', name: 'Lead Pastor',
+      churchName: 'Grace Community Church', subscriptionTier: 'standard',
+      trialRemainingDays: 60, features: ['presentation.basic'],
+    } } });
+    const validResult = await auth.validateAuthCallback(validCallback);
+    ok(validResult.session.licenseTier === 'standard', 'Server tier overrides the callback enterprise claim');
     ok(validResult.ok === true, 'T2.9: Valid deep-link callback with matching state accepted');
     ok(validResult.session.email === 'lead_pastor@gracecommunity.org', 'T2.10: Session email extracted correctly');
     ok(validResult.session.orgName === 'Grace Community Church', 'T2.11: Session orgName extracted correctly');
@@ -187,11 +195,11 @@ async function runTests() {
     // Case 7.2: Packaged production build with correct production host MUST NOT throw
     let prodValidThrew = false;
     try {
-      assertProductionAuthUrl('https://ocs-web-three.vercel.app', true); // isPackaged = true
+      assertProductionAuthUrl('https://auth.example.com', true); // isPackaged = true
     } catch (err) {
       prodValidThrew = true;
     }
-    ok(prodValidThrew === false, 'T7.3: Packaged build with official ocs-web-three.vercel.app launches cleanly');
+    ok(prodValidThrew === false, 'T7.3: Packaged build with official auth.example.com launches cleanly');
 
     // Case 7.3: Dev mode (isPackaged = false, NODE_ENV != 'production') MUST NOT throw regardless of URL
     let devCustomThrew = false;

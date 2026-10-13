@@ -18,6 +18,7 @@ files:
   - "src/Bible/**/*"
   - "dist/**/*"
   - "package.json"
+  - "deployment-config.json"
   - "!ocs-mobile/**/*"
   - "!tests/**/*"
   - "!scripts/**/*"

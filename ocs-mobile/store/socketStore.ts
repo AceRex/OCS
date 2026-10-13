@@ -904,6 +904,7 @@ export const useSocketStore = create<SocketState>((set, get) => ({
                     headers: {
                         'x-filename': encodeURIComponent(asset.name),
                         'x-filetype': asset.type,
+                        'x-pairing-token': lastCode,
                         'x-devicename': encodeURIComponent(deviceName || 'Mobile Companion'),
                         'content-type': asset.mimeType || 'application/octet-stream',
                     },
@@ -930,7 +931,7 @@ export const useSocketStore = create<SocketState>((set, get) => ({
                 const timeoutId = setTimeout(() => controller.abort(), 120000); // 2min timeout
                 const response = await fetch(`http://${host}:${port}/api/upload-asset`, {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
+                    headers: { 'Content-Type': 'application/json', 'x-pairing-token': lastCode },
                     body: JSON.stringify({
                         ...asset,
                         deviceName: deviceName || 'Mobile Companion',

@@ -15,7 +15,7 @@
 const os    = require('os');
 const dgram = require('dgram');
 const EventEmitter = require('events');
-const ip    = require('ip');
+const ip    = require('../networkAddress');
 
 const BOUNDARY = 'ocsframe';
 

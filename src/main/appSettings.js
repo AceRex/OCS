@@ -27,8 +27,11 @@ const DEFAULT_STYLES = {
   bibleHighlightColor: '#FFEB3B', // Default readable yellow
 };
 
-const CANONICAL_WEB_ORIGIN = (process.env.OCS_AUTH_BASE_URL || 'https://ocs-web-three.vercel.app').replace(/\/+$/, '');
-const CANONICAL_API_BASE_URL = (process.env.OCS_API_BASE_URL || `${CANONICAL_WEB_ORIGIN}/api`).replace(/\/+$/, '');
+let deployment = {};
+const deploymentPath = path.resolve(__dirname, '../../deployment-config.json');
+if (fs.existsSync(deploymentPath)) deployment = JSON.parse(fs.readFileSync(deploymentPath, 'utf8'));
+const CANONICAL_WEB_ORIGIN = (process.env.OCS_AUTH_BASE_URL || deployment.webUrl || 'http://localhost:5173').replace(/\/+$/, '');
+const CANONICAL_API_BASE_URL = (process.env.OCS_API_BASE_URL || deployment.apiUrl || 'http://localhost:5001/api').replace(/\/+$/, '');
 
 function joinUrl(base, path = '') {
   const cleanBase = (base || CANONICAL_WEB_ORIGIN).replace(/\/+$/, '');

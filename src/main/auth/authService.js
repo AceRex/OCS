@@ -49,7 +49,7 @@ function assertProductionAuthUrl(customUrl, isPackagedOverride) {
     throw new Error(`Invalid authLoginUrl configured: "${configuredStr}".`);
   }
 
-  if (configured.hostname !== PRODUCTION_AUTH_HOST) {
+  if (configured.hostname !== PRODUCTION_AUTH_HOST || configured.protocol !== "https:" || configured.username || configured.password || ["localhost", "127.0.0.1", "::1"].includes(configured.hostname)) {
     throw new Error(
       `Refusing to launch: authLoginUrl is set to "${configured.hostname}" in a production build. ` +
       `Expected "${PRODUCTION_AUTH_HOST}". This usually means a dev override (OCS_AUTH_BASE_URL or ` +
@@ -93,33 +93,6 @@ class AuthService extends EventEmitter {
       host = CANONICAL_WEB_ORIGIN;
     }
     this.defaultAuthHost = host;
-
-    if (appSettings) {
-      try {
-        const currentApi = appSettings.get("apiBaseUrl");
-        if (
-          typeof currentApi === "string" &&
-          (currentApi.includes("ocs-backend-git-main-acerexs-projects.vercel.app") ||
-           currentApi.includes("ocs-backend.netlify.app") ||
-           !currentApi.includes(PRODUCTION_AUTH_HOST)) &&
-          !currentApi.includes("localhost")
-        ) {
-          appSettings.set("apiBaseUrl", CANONICAL_API_BASE_URL);
-        }
-        const currentAuth = appSettings.get("authLoginUrl");
-        if (
-          typeof currentAuth === "string" &&
-          (currentAuth.includes("waveio-git-main-acerexs-projects.vercel.app") ||
-           currentAuth.includes("waveiosoftware.netlify.app") ||
-           !currentAuth.includes(PRODUCTION_AUTH_HOST)) &&
-          !currentAuth.includes("localhost")
-        ) {
-          appSettings.set("authLoginUrl", CANONICAL_WEB_ORIGIN);
-        }
-      } catch (err) {
-        console.warn("[Auth] Settings migration notice:", err.message);
-      }
-    }
 
     // Initialize or restore unauthenticated guest session timer
     this._initGuestSession();
@@ -493,9 +466,9 @@ class AuthService extends EventEmitter {
             res.on("end", () => {
               try {
                 const parsed = JSON.parse(data);
-                resolve({ valid: res.statusCode === 200 && parsed.valid !== false, data: parsed });
+                resolve({ valid: res.statusCode === 200 && parsed.valid === true, data: parsed });
               } catch (_) {
-                resolve({ valid: res.statusCode === 200 });
+                resolve({ valid: false, error: "invalid_response" });
               }
             });
           }
@@ -553,7 +526,7 @@ class AuthService extends EventEmitter {
       const baseDays = session.daysRemaining !== undefined ? Number(session.daysRemaining) : 60;
       const refTime = session.lastValidatedAt || session.savedAt || Date.now();
       const elapsedDays = Math.max(0, Math.floor((Date.now() - refTime) / (24 * 3600 * 1000)));
-      daysRemaining = Math.min(60, Math.max(0, baseDays - elapsedDays));
+      daysRemaining = Math.max(0, baseDays - elapsedDays);
     }
 
     return {
@@ -584,11 +557,15 @@ class AuthService extends EventEmitter {
     const baseDays = session.daysRemaining !== undefined ? Number(session.daysRemaining) : 60;
     const refTime = session.lastValidatedAt || session.savedAt || Date.now();
     const elapsedDays = Math.max(0, Math.floor((Date.now() - refTime) / (24 * 3600 * 1000)));
-    const calculatedDays = Math.min(60, Math.max(0, baseDays - elapsedDays));
+    const calculatedDays = Math.max(0, baseDays - elapsedDays);
 
     // 2. Silently attempt online refresh in the background if network is available
     try {
       const onlineCheck = await this.validateTokenOnline(session.token);
+      if (onlineCheck && !onlineCheck.valid && !["network_error", "timeout"].includes(onlineCheck.error)) {
+        this.logoutSync();
+        return this.getAuthStatus();
+      }
       if (onlineCheck && onlineCheck.valid && onlineCheck.data) {
         const userData = onlineCheck.data.user || {};
         const serverDays = userData.trialRemainingDays !== undefined
@@ -596,7 +573,7 @@ class AuthService extends EventEmitter {
           : (userData.graceExpiresAt ? Math.max(0, Math.ceil((new Date(userData.graceExpiresAt).getTime() - Date.now()) / (24 * 3600 * 1000))) : undefined);
 
         if (serverDays !== undefined) {
-          session.daysRemaining = Math.min(60, Math.max(0, serverDays));
+          session.daysRemaining = Math.max(0, serverDays);
         } else {
           session.daysRemaining = calculatedDays;
         }
@@ -644,14 +621,15 @@ class AuthService extends EventEmitter {
     };
   }
 
-  validateAuthCallback(rawUrl) {
+  async validateAuthCallback(rawUrl) {
     try {
       if (!rawUrl || typeof rawUrl !== "string") {
         return { ok: false, error: "Invalid callback: Missing callback URL" };
       }
 
       // Canonical Scheme: strictly ocs://auth/callback (FR-13.8a)
-      if (!rawUrl.startsWith("ocs://auth/callback")) {
+      const callback = new URL(rawUrl);
+      if (callback.protocol !== "ocs:" || callback.hostname !== "auth" || callback.pathname !== "/callback" || callback.username || callback.password || callback.port || callback.hash) {
         return {
           ok: false,
           error: 'Invalid callback scheme format: Must strictly match canonical URI "ocs://auth/callback"',
@@ -692,26 +670,22 @@ class AuthService extends EventEmitter {
         return { ok: false, error: 'CSRF State Mismatch: Security validation failed. Please try again.' };
       }
 
-      // Clear pending state after successful validation
+      // Consume the nonce before awaiting network I/O to prevent replay races.
       this.pendingAuthState = null;
-
-      // Save encrypted session
-      let parsedFeatures = [];
-      try {
-        if (parsed.features) parsedFeatures = typeof parsed.features === "string" ? JSON.parse(parsed.features) : parsed.features;
-      } catch (_) {}
-
-      const userEmail = parsed.email || 'admin@churchocs.com';
-      const fallbackOrg = parsed.name ? `${parsed.name}'s Sanctuary` : `${userEmail.split('@')[0]}'s Sanctuary`;
+      const verified = await this.validateTokenOnline(parsed.token);
+      const user = verified.data?.user;
+      if (!verified.valid || !user || typeof user.email !== "string") {
+        return { ok: false, error: "Unable to verify authentication with the server. Please sign in again." };
+      }
       const session = this.saveSessionSync({
         token: parsed.token,
-        email: userEmail,
-        name: parsed.name || userEmail.split('@')[0],
-        orgName: (parsed.org && parsed.org !== 'OCS Community Church') ? parsed.org : fallbackOrg,
-        licenseTier: parsed.tier || 'trial',
-        subscriptionPlan: parsed.tier || 'trial',
-        daysRemaining: parsed.daysRemaining ? Number(parsed.daysRemaining) : 60,
-        features: parsedFeatures,
+        email: user.email,
+        name: user.name || "",
+        orgName: user.churchName || "",
+        licenseTier: user.effectiveTier || user.subscriptionTier || "free",
+        subscriptionPlan: user.subscriptionTier || "free",
+        daysRemaining: Number(user.trialRemainingDays ?? 0),
+        features: Array.isArray(user.features) ? user.features : [],
       });
 
       this.registerDeviceOnline().catch(() => {});

@@ -50,3 +50,8 @@ scratch/
 Thumbs.db
 .idea/
 .vscode/
+
+# Local environment settings
+.env
+.env.*
+!.env.example

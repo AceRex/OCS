@@ -6,6 +6,8 @@ const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
 const { BrowserWindow } = require('electron');
+const { pathToFileURL } = require('url');
+const os = require('os');
 
 async function convertPdfToPngSlides(pdfPath, slidesDir, sendProgress = () => {}) {
   await fsp.mkdir(slidesDir, { recursive: true });
@@ -20,8 +22,9 @@ async function convertPdfToPngSlides(pdfPath, slidesDir, sendProgress = () => {}
     height: 1080,
     webPreferences: {
       offscreen: true,
-      nodeIntegration: true,
-      contextIsolation: false,
+      nodeIntegration: false,
+      contextIsolation: true,
+      sandbox: true,
     },
   });
 
@@ -32,7 +35,7 @@ async function convertPdfToPngSlides(pdfPath, slidesDir, sendProgress = () => {}
     <!DOCTYPE html>
     <html>
       <head>
-        <script src="file://${pdfJsPath}"></script>
+        <script src="${pathToFileURL(pdfJsPath).href}"></script>
         <style>
           body, html { margin: 0; padding: 0; background: #000; overflow: hidden; }
           canvas { display: block; }
@@ -41,14 +44,14 @@ async function convertPdfToPngSlides(pdfPath, slidesDir, sendProgress = () => {}
       <body>
         <canvas id="pdf-canvas"></canvas>
         <script>
-          pdfjsLib.GlobalWorkerOptions.workerSrc = "file://${pdfWorkerPath}";
+          pdfjsLib.GlobalWorkerOptions.workerSrc = "${pathToFileURL(pdfWorkerPath).href}";
           window.renderPdfPage = async function(base64Data, pageNum) {
             const raw = atob(base64Data);
             const uint8Array = new Uint8Array(raw.length);
             for (let i = 0; i < raw.length; i++) {
               uint8Array[i] = raw.charCodeAt(i);
             }
-            const loadingTask = pdfjsLib.getDocument({ data: uint8Array });
+            const loadingTask = pdfjsLib.getDocument({ data: uint8Array, isEvalSupported: false });
             const doc = await loadingTask.promise;
             const numPages = doc.numPages;
             const page = await doc.getPage(pageNum);
@@ -80,10 +83,13 @@ async function convertPdfToPngSlides(pdfPath, slidesDir, sendProgress = () => {}
     </html>
   `;
 
-  await win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(htmlContent)}`);
+  const renderDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'ocs-pdf-render-'));
+  const renderPath = path.join(renderDir, 'render.html');
 
   const slideList = [];
   try {
+    await fsp.writeFile(renderPath, htmlContent);
+    await win.loadFile(renderPath);
     // Render first page to get total page count
     const firstPageResult = await win.webContents.executeJavaScript(
       `window.renderPdfPage("${pdfBase64}", 1)`
@@ -138,6 +144,7 @@ async function convertPdfToPngSlides(pdfPath, slidesDir, sendProgress = () => {}
       });
     }
   } finally {
+    await fsp.rm(renderDir, { recursive: true, force: true });
     try {
       win.close();
     } catch (_) {}

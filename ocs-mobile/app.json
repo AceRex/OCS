@@ -72,7 +72,8 @@
       "expo-audio",
       "expo-asset",
       "expo-camera",
-      "@config-plugins/react-native-webrtc"
+      "@config-plugins/react-native-webrtc",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true,
