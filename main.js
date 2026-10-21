@@ -5998,9 +5998,10 @@ function createWindows() {
         const tokens = (scene?.pages || []).flatMap((p) =>
           p.content ? p.content.toLowerCase().split(/\s+/) : [],
         );
-        asrEngine.setSongContext({ isSong: true, lyrics: allLyrics, tokens });
+        const isSong = scene?.sceneType === "song" || scene?.isSong === true;
+        asrEngine.setSongContext({ isSong, lyrics: allLyrics, tokens });
         broadcastAsrEvent("scene-song-active", {
-          isSong: true,
+          isSong,
           sceneId: scene?.id,
           sceneName: scene?.name,
         });

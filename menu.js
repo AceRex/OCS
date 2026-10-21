@@ -163,7 +163,7 @@ exports.createTemplate = (electronApp, actions = {}) => {
         {
           label: "wave.io Documentation & Setup Guide",
           click: async () => {
-            await shell.openExternal("https://ocs-web-three.vercel.app/docs");
+            await shell.openExternal("https://wavebc.com/docs");
           },
         },
         {

@@ -225,16 +225,6 @@ function App() {
 
   return (
     <section className="w-screen h-screen flex flex-row bg-[#08080c] p-3 gap-3 overflow-hidden text-white selection:bg-[#8B5CF6]/30 font-outfit">
-      {/* Background Ambient Radial Pattern */}
-      <div
-        className="fixed inset-0 pointer-events-none opacity-[0.03] z-0"
-        style={{
-          backgroundImage:
-            "radial-gradient(circle at 2px 2px, white 1px, transparent 0)",
-          backgroundSize: "40px 40px",
-        }}
-      />
-
       {/* Global floating delay banner — persists across all tabs */}
       <NextTimerBanner />
 

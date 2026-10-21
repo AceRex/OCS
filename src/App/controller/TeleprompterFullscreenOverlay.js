@@ -1,3 +1,4 @@
+const { scrollDistance, ignoresPlaybackShortcut } = require("./teleprompterPlayback");
 import React, { useEffect, useRef, useState, useMemo } from "react";
 import StudioPhoneRenderer from "./StudioPhoneRenderer";
 import {
@@ -59,11 +60,13 @@ export default function TeleprompterFullscreenOverlay({
   // Continuous auto-scroll loop matching mobile experience
   useEffect(() => {
     let animFrame = null;
+    let previousTime = null;
     if (isOpen && isAutoScrolling && !isPaused) {
-      const step = () => {
+      const step = (time) => {
         if (textContainerRef.current) {
-          textContainerRef.current.scrollTop += (scrollSpeed || 1.5) * 0.8;
+          textContainerRef.current.scrollTop += scrollDistance(scrollSpeed, previousTime === null ? 0 : time - previousTime);
         }
+        previousTime = time;
         animFrame = requestAnimationFrame(step);
       };
       animFrame = requestAnimationFrame(step);
@@ -72,6 +75,12 @@ export default function TeleprompterFullscreenOverlay({
       if (animFrame) cancelAnimationFrame(animFrame);
     };
   }, [isOpen, isAutoScrolling, isPaused, scrollSpeed]);
+
+  useEffect(() => {
+    if (isOpen) { setIsPaused(false); setShowControls(true); }
+  }, [isOpen]);
+
+  useEffect(() => { setLocalFontSize(fontSize); }, [fontSize]);
 
   // Sync props
   useEffect(() => {
@@ -100,16 +109,18 @@ export default function TeleprompterFullscreenOverlay({
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e) => {
+      if (ignoresPlaybackShortcut(e)) return;
       if (e.key === "Escape") {
         onClose();
       } else if (e.key === " ") {
         e.preventDefault();
-        setIsPaused((prev) => !prev);
+        if (onToggleAutoScroll) onToggleAutoScroll();
+        else setIsPaused((prev) => !prev);
       }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, onToggleAutoScroll]);
 
   // Auto-hide top control bar after 3.5 seconds of inactivity
   const handleMouseMove = () => {
@@ -197,7 +208,7 @@ export default function TeleprompterFullscreenOverlay({
 
   // Smoothly scroll active word into the reading horizon (~35% viewport) across all sections
   useEffect(() => {
-    if (!isOpen || isPaused || activeWordIndex < 0) return;
+    if (!isOpen || isPaused || isAutoScrolling || activeWordIndex < 0) return;
     const isSegmented = script?.scrollMode === "segmented";
     if (isSegmented) {
       const secEl = document.getElementById(`tp-fs-sec-${currentSegmentIndex}`);
@@ -226,7 +237,7 @@ export default function TeleprompterFullscreenOverlay({
         });
       }
     }
-  }, [activeWordIndex, currentSegmentIndex, isOpen, isPaused, script?.scrollMode]);
+  }, [activeWordIndex, currentSegmentIndex, isOpen, isPaused, isAutoScrolling, script?.scrollMode]);
 
   if (!isOpen) return null;
 
@@ -234,7 +245,7 @@ export default function TeleprompterFullscreenOverlay({
     <div
       ref={containerRef}
       onMouseMove={handleMouseMove}
-      className="fixed inset-0 z-[300] bg-black overflow-hidden flex flex-col font-outfit select-none"
+      className="tp-workspace fixed inset-0 z-[300] bg-black overflow-hidden flex flex-col font-outfit select-none"
     >
       {/* SVG Sharpener Definition */}
       <TeleprompterSharpenerSvgDef
@@ -298,12 +309,12 @@ export default function TeleprompterFullscreenOverlay({
             <span>{script?.title || "Live Teleprompter"}</span>
           </div>
           <span className="text-xs text-white/50 font-mono">
-            Word {activeWordIndex + 1} of {totalTokensCount}
+            Word {totalTokensCount ? activeWordIndex + 1 : 0} of {totalTokensCount}
           </span>
         </div>
 
         {/* Center: Live Quick Adjustments & Playback Deck */}
-        <div className="flex items-center gap-3 bg-black/75 backdrop-blur-xl border border-white/15 rounded-2xl px-4 py-2 text-xs text-white flex-wrap">
+        <div className="flex items-center gap-3 bg-black/75 backdrop-blur-xl border border-white/15 rounded-xl px-4 py-2 text-xs text-white flex-wrap">
           {/* Play / Pause Auto-Scroll */}
           <button
             onClick={() => onToggleAutoScroll && onToggleAutoScroll()}
@@ -320,13 +331,15 @@ export default function TeleprompterFullscreenOverlay({
 
           {/* Speed Selector */}
           <div className="flex items-center gap-1 bg-white/5 border border-white/10 rounded-xl p-0.5">
-            {[0.5, 1, 1.5, 2, 3].map((spd) => (
+            {[0.5, 1, 1.5, 2, 3, 4].map((spd) => (
               <button
                 key={spd}
+                    aria-label={`Scroll speed ${spd}x`}
+                    aria-pressed={scrollSpeed === spd}
                 onClick={() => onChangeScrollSpeed && onChangeScrollSpeed(spd)}
-                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all ${
+                className={`px-2 py-0.5 rounded-xl text-[10px] font-bold transition-all ${
                   scrollSpeed === spd
-                    ? "bg-[#8B5CF6] text-white"
+                    ? "bg-sky-700 text-white"
                     : "text-white/50 hover:text-white"
                 }`}
               >
@@ -358,7 +371,7 @@ export default function TeleprompterFullscreenOverlay({
                 onClick={onToggleMirror}
                 className={`px-2.5 py-1 rounded-xl text-[10px] font-bold border transition-all flex items-center gap-1 ${
                   isMirrored
-                    ? "bg-[#8B5CF6]/30 border-[#8B5CF6]/50 text-[#8B5CF6]"
+                    ? "bg-[#8B5CF6]/30 border-[#8B5CF6]/50 text-sky-300"
                     : "bg-white/5 border-white/10 text-white/60 hover:text-white"
                 }`}
                 title={isMirrored ? "Camera is mirrored (selfie view). Click for standard view." : "Camera is standard (unmirrored). Click to mirror."}
@@ -377,12 +390,12 @@ export default function TeleprompterFullscreenOverlay({
                 onClick={onOpenFilterModal}
                 className={`px-2.5 py-1 rounded-xl text-[10px] font-bold border transition-all flex items-center gap-1 ${
                   filterState?.presetId && filterState.presetId !== "normal"
-                    ? "bg-[#8B5CF6]/30 border-[#8B5CF6]/50 text-[#8B5CF6]"
+                    ? "bg-[#8B5CF6]/30 border-[#8B5CF6]/50 text-sky-300"
                     : "bg-white/5 border-white/10 text-white/60 hover:text-white"
                 }`}
                 title="Camera video sharpener, color grading & balancing effects"
               >
-                <PiSparkle size={12} className={filterState?.presetId && filterState.presetId !== "normal" ? "text-[#8B5CF6] animate-pulse" : ""} />
+                <PiSparkle size={12} className={filterState?.presetId && filterState.presetId !== "normal" ? "text-sky-300 animate-pulse" : ""} />
                 <span>
                   {filterState?.presetId && filterState.presetId !== "normal"
                     ? (PRO_FILTER_PRESETS.find((p) => p.id === filterState.presetId)?.label || "Graded")
@@ -396,7 +409,7 @@ export default function TeleprompterFullscreenOverlay({
 
           {/* Scene Break Quick Selector */}
           <div className="flex items-center gap-1">
-            <span className="text-[#8B5CF6] font-bold text-[10px] uppercase mr-1">
+            <span className="text-sky-300 font-bold text-[10px] uppercase mr-1">
               Break:
             </span>
             {[
@@ -407,9 +420,9 @@ export default function TeleprompterFullscreenOverlay({
               <button
                 key={b.id}
                 onClick={() => setLocalBreakStyle(b.id)}
-                className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all ${
+                className={`px-2 py-0.5 rounded-xl text-[10px] font-bold transition-all ${
                   localBreakStyle === b.id
-                    ? "bg-[#8B5CF6] text-white"
+                    ? "bg-sky-700 text-white"
                     : "bg-white/5 text-white/50 hover:text-white"
                 }`}
               >
@@ -425,7 +438,7 @@ export default function TeleprompterFullscreenOverlay({
             <PiTextAa size={14} className="text-white/50" />
             <button
               onClick={() => setLocalFontSize((prev) => Math.max(24, prev - 4))}
-              className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center font-bold"
+              className="w-6 h-6 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center font-bold"
             >
               -
             </button>
@@ -434,7 +447,7 @@ export default function TeleprompterFullscreenOverlay({
             </span>
             <button
               onClick={() => setLocalFontSize((prev) => Math.min(92, prev + 4))}
-              className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center font-bold"
+              className="w-6 h-6 rounded-xl bg-white/10 hover:bg-white/20 flex items-center justify-center font-bold"
             >
               +
             </button>
@@ -455,7 +468,7 @@ export default function TeleprompterFullscreenOverlay({
         {/* Right: Exit Fullscreen */}
         <button
           onClick={onClose}
-          className="px-4 py-2 rounded-2xl bg-red-600/80 hover:bg-red-600 text-white font-bold text-xs flex items-center gap-2 shadow-lg backdrop-blur-md transition-all active:scale-95"
+          className="px-4 py-2 rounded-xl bg-red-600/80 hover:bg-red-600 text-white font-bold text-xs flex items-center gap-2 shadow-lg backdrop-blur-md transition-all active:scale-95"
         >
           <PiX size={15} />
           <span>Exit [Esc]</span>
@@ -488,15 +501,15 @@ export default function TeleprompterFullscreenOverlay({
                   : localBreakStyle === "spotlight"
                   ? isSecActive
                     ? "opacity-100 scale-100"
-                    : "opacity-25 scale-95"
+                    : "opacity-80 scale-95"
                   : isSecActive
                   ? "opacity-100"
-                  : "opacity-45"
+                  : "opacity-90"
               }`}
             >
               {/* Scene Divider Card Header */}
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#8B5CF6]/15 border border-[#8B5CF6]/30 text-xs font-bold text-[#8B5CF6] mb-8 tracking-widest uppercase backdrop-blur-md shadow-lg shadow-[#8B5CF6]/10">
-                <span className="w-2 h-2 rounded-full bg-[#8B5CF6] animate-pulse" />
+              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-[#8B5CF6]/15 border border-[#8B5CF6]/30 text-xs font-bold text-sky-300 mb-8 tracking-widest uppercase backdrop-blur-md shadow-lg shadow-[#8B5CF6]/10">
+                <span className="w-2 h-2 rounded-full bg-sky-700 animate-pulse" />
                 {sec.label || `Scene ${secIdx + 1}`}
               </div>
 
@@ -515,14 +528,14 @@ export default function TeleprompterFullscreenOverlay({
                   return (
                     <div
                       key={line.id}
-                      className={`transition-all duration-300 py-2 rounded-2xl ${
+                      className={`transition-all duration-300 py-2 rounded-xl ${
                         isLineActive
                           ? "bg-white/[0.06] backdrop-blur-sm px-4 shadow-xl"
                           : isLinePast
                           ? localBreakStyle === "scroll-out"
                             ? "-translate-y-1 opacity-55"
                             : "opacity-55"
-                          : "opacity-30"
+                          : "opacity-90"
                       }`}
                     >
                       {line.words.map((wObj) => {
@@ -565,7 +578,7 @@ export default function TeleprompterFullscreenOverlay({
                                   ? "#FFFFFF"
                                   : isWordPast
                                   ? "rgba(255,255,255,0.8)"
-                                  : "rgba(255,255,255,0.35)",
+                                  : "rgba(255,255,255,0.85)",
                                 fontWeight: isWordActive ? 900 : isWordPast ? 700 : 600,
                                 transition: "all 140ms cubic-bezier(0.2, 0.8, 0.2, 1)",
                                 textShadow: isWordActive

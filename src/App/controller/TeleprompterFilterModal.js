@@ -214,11 +214,11 @@ export default function TeleprompterFilterModal({
       {/* SVG Sharpener Definition */}
       <TeleprompterSharpenerSvgDef sharpness={customSettings.sharpness} />
 
-      <div className="bg-[#11101a] border border-[#8B5CF6]/30 rounded-3xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
+      <div className="bg-[#11101a] border border-[#8B5CF6]/30 rounded-xl w-full max-w-2xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
         {/* Header */}
         <div className="p-5 border-b border-white/10 flex items-center justify-between bg-[#161424]">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-[#8B5CF6]/20 border border-[#8B5CF6]/40 flex items-center justify-center text-[#8B5CF6] shadow-md shadow-[#8B5CF6]/10">
+            <div className="w-10 h-10 rounded-xl bg-[#8B5CF6]/20 border border-[#8B5CF6]/40 flex items-center justify-center text-sky-300 shadow-md shadow-[#8B5CF6]/10">
               <PiSparkle size={20} />
             </div>
             <div>
@@ -242,7 +242,7 @@ export default function TeleprompterFilterModal({
         {/* Content Body */}
         <div className="p-6 overflow-y-auto space-y-6 flex-1 no-scrollbar">
           {/* Live Filter Preview Swatch Box */}
-          <div className="rounded-2xl p-4 bg-[#0a0a10] border border-white/10 flex items-center justify-between relative overflow-hidden gap-4">
+          <div className="rounded-xl p-4 bg-[#0a0a10] border border-white/10 flex items-center justify-between relative overflow-hidden gap-4">
             <div className="flex items-center gap-4 min-w-0">
               {videoStream ? (
                 <div className="w-24 h-20 rounded-xl overflow-hidden border border-white/20 shadow-inner bg-black shrink-0 relative">
@@ -269,20 +269,20 @@ export default function TeleprompterFilterModal({
               <div className="min-w-0">
                 <span className="text-xs font-bold text-white block truncate">
                   Active Look:{" "}
-                  <span className="text-[#8B5CF6]">
+                  <span className="text-sky-300">
                     {selectedPresetId === "custom"
                       ? "Custom Manual Grading"
                       : PRO_FILTER_PRESETS.find((p) => p.id === selectedPresetId)?.label}
                   </span>
                 </span>
                 <div className="flex items-center gap-2 mt-1 flex-wrap">
-                  <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[10px] text-cyan-300 font-mono">
+                  <span className="px-2 py-0.5 rounded-xl bg-white/5 border border-white/10 text-[10px] text-cyan-300 font-mono">
                     Sharp: {customSettings.sharpness || 0}%
                   </span>
-                  <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[10px] text-amber-300 font-mono">
+                  <span className="px-2 py-0.5 rounded-xl bg-white/5 border border-white/10 text-[10px] text-amber-300 font-mono">
                     Temp: {customSettings.warmth > 0 ? `+${customSettings.warmth}` : customSettings.warmth}
                   </span>
-                  <span className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[10px] text-[#8B5CF6] font-mono">
+                  <span className="px-2 py-0.5 rounded-xl bg-white/5 border border-white/10 text-[10px] text-sky-300 font-mono">
                     Contrast: {customSettings.contrast}%
                   </span>
                 </div>
@@ -299,7 +299,7 @@ export default function TeleprompterFilterModal({
 
           {/* Section 1: Color Grading Presets */}
           <div>
-            <label className="text-xs font-bold uppercase tracking-wider text-[#8B5CF6] block mb-3">
+            <label className="text-xs font-bold uppercase tracking-wider text-sky-300 block mb-3">
               Cinematic Camera Profiles
             </label>
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5">
@@ -309,7 +309,7 @@ export default function TeleprompterFilterModal({
                   <div
                     key={preset.id}
                     onClick={() => handleSelectPreset(preset)}
-                    className={`p-3 rounded-2xl border cursor-pointer transition-all flex flex-col justify-between gap-1.5 relative group ${
+                    className={`p-3 rounded-xl border cursor-pointer transition-all flex flex-col justify-between gap-1.5 relative group ${
                       isSelected
                         ? "bg-[#8B5CF6]/30 border-[#8B5CF6]/80 shadow-lg shadow-[#8B5CF6]/20"
                         : "bg-[#181624]/60 border-white/5 hover:border-white/20 hover:bg-[#181624]"
@@ -318,13 +318,13 @@ export default function TeleprompterFilterModal({
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-bold text-white">{preset.label}</span>
                       {isSelected && (
-                        <div className="w-4 h-4 rounded-full bg-[#8B5CF6] flex items-center justify-center text-white text-[9px]">
+                        <div className="w-4 h-4 rounded-full bg-sky-700 flex items-center justify-center text-white text-[9px]">
                           <PiCheck size={10} />
                         </div>
                       )}
                     </div>
                     <div
-                      className={`h-5 rounded-lg bg-gradient-to-r ${preset.previewGradient} border border-white/10 shadow-sm`}
+                      className={`h-5 rounded-xl bg-gradient-to-r ${preset.previewGradient} border border-white/10 shadow-sm`}
                     />
                     <span className="text-[10px] text-white/40 line-clamp-2 leading-tight">
                       {preset.description}
@@ -336,7 +336,7 @@ export default function TeleprompterFilterModal({
           </div>
 
           {/* Section 2: Video Sharpener */}
-          <div className="bg-[#181624]/40 p-4 rounded-2xl border border-white/5 space-y-3">
+          <div className="bg-[#181624]/40 p-4 rounded-xl border border-white/5 space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold uppercase tracking-wider text-cyan-300 flex items-center gap-1.5">
                 <PiEye size={14} className="text-cyan-400" />
@@ -353,7 +353,7 @@ export default function TeleprompterFilterModal({
                   <button
                     key={s.val}
                     onClick={() => handleSliderChange("sharpness", s.val)}
-                    className={`px-2 py-0.5 rounded-lg text-[10px] font-bold transition-all ${
+                    className={`px-2 py-0.5 rounded-xl text-[10px] font-bold transition-all ${
                       customSettings.sharpness === s.val
                         ? "bg-cyan-500 text-black shadow-md shadow-cyan-500/20"
                         : "bg-white/5 text-white/50 hover:text-white"
@@ -382,7 +382,7 @@ export default function TeleprompterFilterModal({
           </div>
 
           {/* Section 3: Color Balancing Effects (White Balance & Tint) */}
-          <div className="bg-[#181624]/40 p-4 rounded-2xl border border-white/5 space-y-4">
+          <div className="bg-[#181624]/40 p-4 rounded-xl border border-white/5 space-y-4">
             <label className="text-xs font-bold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
               <PiSun size={14} className="text-amber-400" />
               Color Balancing (White Balance & Tint)
@@ -434,9 +434,9 @@ export default function TeleprompterFilterModal({
           </div>
 
           {/* Section 4: Pro Color Grading & Tone */}
-          <div className="bg-[#181624]/40 p-4 rounded-2xl border border-white/5 space-y-4">
-            <label className="text-xs font-bold uppercase tracking-wider text-[#8B5CF6] flex items-center gap-1.5">
-              <PiSlidersHorizontal size={14} className="text-[#8B5CF6]" />
+          <div className="bg-[#181624]/40 p-4 rounded-xl border border-white/5 space-y-4">
+            <label className="text-xs font-bold uppercase tracking-wider text-sky-300 flex items-center gap-1.5">
+              <PiSlidersHorizontal size={14} className="text-sky-300" />
               Color Grading & Tone Curves
             </label>
 
@@ -444,7 +444,7 @@ export default function TeleprompterFilterModal({
             <div className="space-y-1">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-white/60 font-semibold">Brightness / Exposure</span>
-                <span className="font-mono text-[#8B5CF6]">{customSettings.brightness}%</span>
+                <span className="font-mono text-sky-300">{customSettings.brightness}%</span>
               </div>
               <input
                 type="range"
@@ -460,7 +460,7 @@ export default function TeleprompterFilterModal({
             <div className="space-y-1">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-white/60 font-semibold">Contrast & Punch</span>
-                <span className="font-mono text-[#8B5CF6]">{customSettings.contrast}%</span>
+                <span className="font-mono text-sky-300">{customSettings.contrast}%</span>
               </div>
               <input
                 type="range"
@@ -476,7 +476,7 @@ export default function TeleprompterFilterModal({
             <div className="space-y-1">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-white/60 font-semibold">Saturation & Color Depth</span>
-                <span className="font-mono text-[#8B5CF6]">{customSettings.saturation}%</span>
+                <span className="font-mono text-sky-300">{customSettings.saturation}%</span>
               </div>
               <input
                 type="range"
@@ -492,7 +492,7 @@ export default function TeleprompterFilterModal({
             <div className="space-y-1">
               <div className="flex items-center justify-between text-xs">
                 <span className="text-white/60 font-semibold">Black & White (B&W Conversion)</span>
-                <span className="font-mono text-[#8B5CF6]">{customSettings.grayscale}%</span>
+                <span className="font-mono text-sky-300">{customSettings.grayscale}%</span>
               </div>
               <input
                 type="range"

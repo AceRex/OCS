@@ -26,7 +26,7 @@ try {
   safeStorage = electron.safeStorage || null;
 } catch (_) {}
 
-const PRODUCTION_AUTH_HOST = new URL(CANONICAL_WEB_ORIGIN).hostname; // 'ocs-web-three.vercel.app'
+const PRODUCTION_AUTH_HOST = new URL(CANONICAL_WEB_ORIGIN).hostname; // 'wavebc.com'
 
 function assertProductionAuthUrl(customUrl, isPackagedOverride) {
   let isPackaged = false;

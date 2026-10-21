@@ -42,13 +42,12 @@ const COMMANDS = [
  * @returns {string}
  */
 function buildWhisperInitialPrompt(opts = {}) {
-  const maxChars = opts.maxChars || 800;
+  const maxChars = Math.max(0, Math.min(800, Math.floor(Number(opts.maxChars) || 800)));
+  if (maxChars === 0) return '';
   const parts = [
-    'Bible scripture references and church AV commands.',
+    `AV: ${COMMANDS.join(', ')}.`,
+    `Scripture: ${EXAMPLE_REFS.slice(0, 6).join('; ')}.`,
     `Books: ${CORE_BOOKS.join(', ')}.`,
-    `Examples: ${EXAMPLE_REFS.join('; ')}.`,
-    `Commands: ${COMMANDS.join(', ')}.`,
-    'Prefer book names Colossians Thessalonians Philippians Habakkuk over similar English words like colossus or collisions.',
   ];
   let prompt = parts.join(' ');
   if (prompt.length > maxChars) {

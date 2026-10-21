@@ -3635,19 +3635,7 @@ export default function BroadcastEngine({ onOpenPreview }) {
                       REC
                     </span>
                   )}
-                  <button
-                    onClick={() =>
-                      setVoiceDiag((prev) => ({ ...prev, show: !prev.show }))
-                    }
-                    className={`text-[9px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-[12px] border transition-all ${
-                      voiceDiag.show
-                        ? "bg-purple-500/20 text-purple-300 border-purple-500/40 shadow-[0_0_10px_rgba(168,85,247,0.3)]"
-                        : "bg-white/5 text-white/30 border-white/10 hover:text-white/60"
-                    }`}
-                    title="Toggle Speech Recognition & Audio Pipeline Diagnostics"
-                  >
-                    DIAG
-                  </button>
+
                 </div>
 
                 {/* {isTranscribing && langFilterDebug?.language && (

@@ -34,11 +34,12 @@ const COMMANDS = [
  * @returns {string}
  */
 function buildWhisperInitialPrompt(opts = {}) {
-  const maxChars = opts.maxChars || 400;
+  const maxChars = Math.max(0, Math.min(800, Math.floor(Number(opts.maxChars) || 400)));
+  if (maxChars === 0) return '';
   const parts = [
-    `Scripture: ${EXAMPLE_REFS.join(', ')}.`,
-    `Books: ${FOCUSED_BOOKS.join(', ')}.`,
-    'AV: next verse, previous verse, clear screen.',
+    `AV: ${COMMANDS.join(', ')}.`,
+    `Scripture: ${EXAMPLE_REFS.slice(0, 6).join('; ')}.`,
+    `Books: ${CORE_BOOKS.join(', ')}.`,
   ];
   let prompt = parts.join(' ');
   if (prompt.length > maxChars) {

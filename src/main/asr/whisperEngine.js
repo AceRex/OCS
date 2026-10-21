@@ -262,11 +262,11 @@ class WhisperEngine extends EventEmitter {
     this._lastDetectedLang = 'en';
   }
 
-  setSongContext({ lyrics } = {}) {
+  setSongContext({ lyrics, isSong = true } = {}) {
     if (lyrics && typeof lyrics === 'string' && lyrics.trim()) {
       const cleanLyrics = lyrics.replace(/\s+/g, ' ').trim().slice(0, 800);
-      this._initialPrompt = `Worship song lyrics: ${cleanLyrics}`;
-      this._isSongMode = true;
+      this._initialPrompt = `${isSong ? "Worship song lyrics" : "Reading passage"}: ${cleanLyrics}`;
+      this._isSongMode = isSong === true;
       console.log(`[Whisper] Song lyrics context active (${this._initialPrompt.length} chars)`);
     } else {
       this._initialPrompt = buildWhisperInitialPrompt();

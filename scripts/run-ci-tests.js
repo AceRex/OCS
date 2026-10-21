@@ -10,6 +10,7 @@ const path = require('path');
 const fs = require('fs');
 
 const TEST_SUITES = [
+  { name: 'Voice Context & Teleprompter Reliability', script: 'scripts/test-teleprompter-reliability.js' },
   { name: 'Timer Feature State & Clock Regression', script: 'scripts/test-timer-feature.js' },
   { name: 'P0-03 Live Execution State Recovery', script: 'scripts/test-service-journal-recovery.js' },
   { name: 'Display Canvas Dynamic Sizing & Bands', script: 'scripts/test-display-canvas-bands.js' },

@@ -748,6 +748,30 @@ export default function SettingsController() {
                 <label className="text-[10px] font-black text-[#8882A4] uppercase tracking-widest flex items-center gap-2">
                   <PiPaintBucket /> Stage Background Color
                 </label>
+                <ActionButton
+                  type="button"
+                  onClick={() => {
+                    updateStyles({
+                      bgType: "color",
+                      backgroundColor: "#0B0814",
+                      backgroundImage: null,
+                      backgroundVideo: null,
+                    });
+                    window.electron?.Canvas?.setBackground?.({
+                      type: "color",
+                      color: "#0B0814",
+                      url: null,
+                      fromAgenda: false,
+                      destination: "all",
+                      panX: 0,
+                      panY: 0,
+                      zoom: 1,
+                    });
+                  }}
+                  className="rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-semibold text-white hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-400"
+                >
+                  Restore default background
+                </ActionButton>
                 <div className="flex items-center gap-3">
                   <input
                     type="color"

@@ -24,7 +24,7 @@ export const BRAND = {
   name: "wave.io",
   legalName: "wave.io Technologies",
   tagline: "Live Worship & Presentation Suite",
-  docsUrl: "https://ocs-web-three.vercel.app/docs",
+  docsUrl: "https://wavebc.com/docs",
   supportEmail: "support@wave.io",
 
   colors: {

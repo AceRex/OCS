@@ -177,12 +177,12 @@ export default function TeleprompterScriptModal({
 
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/85 backdrop-blur-md p-4 animate-in fade-in duration-200 font-outfit">
-      <div className="bg-[#0e0e14] border border-white/10 rounded-3xl w-full max-w-5xl h-[88vh] flex overflow-hidden shadow-2xl relative text-white flex-col">
+      <div className="bg-[#0e0e14] border border-white/10 rounded-xl w-full max-w-5xl h-[88vh] flex overflow-hidden shadow-2xl relative text-white flex-col">
         
         {/* Header */}
         <div className="h-16 px-6 border-b border-white/10 flex items-center justify-between bg-[#13121c] shrink-0">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-[#8B5CF6]/20 border border-[#8B5CF6]/30 flex items-center justify-center text-[#8B5CF6]">
+            <div className="w-9 h-9 rounded-xl bg-[#8B5CF6]/20 border border-[#8B5CF6]/30 flex items-center justify-center text-sky-300">
               <PiFileText size={20} />
             </div>
             <div>
@@ -202,7 +202,7 @@ export default function TeleprompterScriptModal({
                 onClick={() => setScrollMode("continuous")}
                 className={`px-3 py-1.5 text-xs font-semibold flex items-center gap-1.5 transition-all ${
                   scrollMode === "continuous"
-                    ? "bg-[#8B5CF6] text-white shadow-inner"
+                    ? "bg-sky-700 text-white shadow-inner"
                     : "text-white/50 hover:text-white/80"
                 }`}
                 title="Continuous: words scroll smoothly as you speak"
@@ -229,7 +229,7 @@ export default function TeleprompterScriptModal({
             </button>
             <button
               onClick={handleSave}
-              className="px-4 py-2 rounded-xl bg-[#8B5CF6] hover:bg-[#8B5CF6] text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-[#8B5CF6]/30 transition-all active:scale-95"
+              className="px-4 py-2 rounded-xl bg-sky-700 hover:bg-sky-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg shadow-[#8B5CF6]/30 transition-all active:scale-95"
             >
               <PiFloppyDisk size={15} /> Save Script
             </button>
@@ -277,7 +277,7 @@ export default function TeleprompterScriptModal({
                   <div
                     key={p.id || idx}
                     onClick={() => setActivePageIndex(idx)}
-                    className={`p-3 rounded-2xl border transition-all cursor-pointer flex flex-col gap-1 relative group ${
+                    className={`p-3 rounded-xl border transition-all cursor-pointer flex flex-col gap-1 relative group ${
                       isActive
                         ? "bg-[#8B5CF6]/20 border-[#8B5CF6]/60 shadow-md text-white"
                         : "bg-[#181622]/60 hover:bg-[#1f1d2b] border-white/5 text-white/70"
@@ -285,8 +285,8 @@ export default function TeleprompterScriptModal({
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-2">
-                        <span className={`w-5 h-5 rounded-lg flex items-center justify-center text-[10px] font-black ${
-                          isActive ? "bg-[#8B5CF6] text-white" : "bg-white/10 text-white/60"
+                        <span className={`w-5 h-5 rounded-xl flex items-center justify-center text-[10px] font-black ${
+                          isActive ? "bg-sky-700 text-white" : "bg-white/10 text-white/60"
                         }`}>
                           {idx + 1}
                         </span>
@@ -372,7 +372,7 @@ export default function TeleprompterScriptModal({
                   <button
                     onClick={() => setActivePageIndex((prev) => Math.max(0, prev - 1))}
                     disabled={activePageIndex === 0}
-                    className="p-1 rounded-lg text-white/50 hover:text-white disabled:opacity-20 transition-all"
+                    className="p-1 rounded-xl text-white/50 hover:text-white disabled:opacity-20 transition-all"
                   >
                     <PiArrowLeft size={14} />
                   </button>
@@ -382,7 +382,7 @@ export default function TeleprompterScriptModal({
                   <button
                     onClick={() => setActivePageIndex((prev) => Math.min(pages.length - 1, prev + 1))}
                     disabled={activePageIndex >= pages.length - 1}
-                    className="p-1 rounded-lg text-white/50 hover:text-white disabled:opacity-20 transition-all"
+                    className="p-1 rounded-xl text-white/50 hover:text-white disabled:opacity-20 transition-all"
                   >
                     <PiArrowRight size={14} />
                   </button>
@@ -424,10 +424,10 @@ export default function TeleprompterScriptModal({
         {/* Raw Paste Plain Text Modal Overlay */}
         {rawPasteOpen && (
           <div className="absolute inset-0 z-30 bg-black/90 backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in duration-150">
-            <div className="bg-[#12111a] border border-white/10 rounded-2xl w-full max-w-2xl flex flex-col p-6 gap-4 shadow-2xl">
+            <div className="bg-[#12111a] border border-white/10 rounded-xl w-full max-w-2xl flex flex-col p-6 gap-4 shadow-2xl">
               <div className="flex items-center justify-between">
                 <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                  <PiScissors size={16} className="text-[#8B5CF6]" />
+                  <PiScissors size={16} className="text-sky-300" />
                   Import / Paste Entire Script
                 </h3>
                 <button
@@ -456,7 +456,7 @@ export default function TeleprompterScriptModal({
                 </button>
                 <button
                   onClick={handleApplyRawPaste}
-                  className="px-4 py-2 rounded-xl bg-[#8B5CF6] hover:bg-[#8B5CF6] text-white text-xs font-bold shadow-md"
+                  className="px-4 py-2 rounded-xl bg-sky-700 hover:bg-sky-700 text-white text-xs font-bold shadow-md"
                 >
                   Split into Sections
                 </button>
